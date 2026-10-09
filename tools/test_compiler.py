@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--strict-c', action='store_true', help='Compile generated C with strict warnings as errors')
     ns = parser.parse_args()
     compiler = shlex.split(ns.command)
-    cc = shutil.which('cc')
+    cc = shutil.which('cc') or shutil.which('gcc')
     if cc is None:
         raise SystemExit('Missing cc (C11 compiler)')
     fixtures = sorted((ROOT / 'tests' / 'fixtures').glob('*.sirius'))
