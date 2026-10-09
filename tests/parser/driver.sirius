@@ -1,0 +1,19 @@
+# Concatenate after src/tokenizer.sirius and src/parser.sirius.
+def main() -> i64
+	let args = arguments()
+	let source = read_text(args[1?] or "") or ""
+	let result = parse_module(source)
+	if result.state.error != ""
+		print("ERROR " + str(result.state.error_line) + ": " + result.state.error)
+		return 0
+	for i in 0..len(result.state.nodes)
+		let entry = result.state.nodes[i?]!
+		var info = str(i) + " " + entry.kind
+		if entry.kind == "name" or entry.kind == "bool" or entry.kind == "delete" or entry.kind == "integer" or entry.kind == "float" or entry.kind == "string" or entry.kind == "binary" or entry.kind == "unary" or entry.kind == "attr" or entry.kind == "type" or entry.kind == "param" or entry.kind == "def" or entry.kind == "field" or entry.kind == "case" or entry.kind == "let" or entry.kind == "var" or entry.kind == "pub" or entry.kind == "assign"
+			info = info + " " + token_text(result.state.source, result.state.tokens[entry.token?]!)
+		info = info + " ->"
+		for j in entry.first..(entry.first + entry.count)
+			info = info + " " + str(result.state.edges[j?]!)
+		print(info)
+	print("ROOT " + str(result.node))
+	return 0

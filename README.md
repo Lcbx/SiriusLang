@@ -15,8 +15,10 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 - `bootstrap_compiler/syntax.py` — SLY lexer, explicit indentation tokens, dataclass AST, Pratt expression parser.
 - `bootstrap_compiler/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
 - `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
-- `src/tokenizer.sirius` — first stage-1 component, an ASCII-oriented byte scanner with source-span tokens, indentation and lexical diagnostics.
-- `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer input/output golden tests and their Sirius driver.
+- `src/tokenizer.sirius` — Sirius-written byte-span lexer (ASCII identifiers, UTF-8 strings), indentation and lexical diagnostics.
+- `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics (no semantic analysis yet).
+- `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer golden tests.
+- `tests/parser/{fixtures,expected_output}/`, `tests/parser/driver.sirius`, `tools/test_parser.py` — parser AST/diagnostic golden tests and syntax smoke tests.
 - `LANGUAGE_DESIGN.md` — current Sirius language design and agreed clarifications.
 - `target_ir.py`, `IR_DESIGN.md` — proposed **future** typed HIR and CFG MIR representation (not yet integrated).
 - `tools/verify_c.py` — C11 compilation and execution of all reference C fixtures.
@@ -176,14 +178,15 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [x] UTF-8 string/byte inspection (`byte_at`), comparison, slices, search, joining and text construction using arrays of strings (sufficient for an initial lexer/emitter).
 - [x] File reading/writing, command-line arguments, `print` diagnostics (API remains provisional; richer error propagation is deferred).
 - [x] Test a small compiler-shaped workload (token record array, symbol dictionary, assembled C text), plus nested CoW and managed unions.
-- [ ] Extend to an indexed AST arena and a realistic multi-file source/diagnostic workflow.
+- [x] Introduce an indexed AST arena and syntax diagnostics in Sirius; cross-file imports/compilation remain open.
 - [ ] Freeze the minimal bootstrap subset once the Sirius compiler compiles its own replacement.
 
 ### 2. Rewrite compiler in Sirius (start as soon as phase 1 basics work)
 
 - [x] Write and independently test a self-contained Sirius tokenizer, including indentation, bracket continuations and lexical diagnostics.
-- [ ] Write the Sirius indentation-aware parser; represent recursive syntax using arena indices if recursive structural types are inconvenient.
-- [ ] Add AST definitions, simple symbol/type resolution and a deliberately small C emitter in Sirius.
+- [x] Write the Sirius indentation-aware parser using token indices and an AST arena; validate all stage-0 positive syntax fixtures.
+- [x] Add stage-1 AST node/edge definitions and stable structural dump tests.
+- [ ] Resolve names, types and call targets against the AST, then implement a small stage-1 C emitter.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
 - [ ] Compare stage-0 Python and stage-1 Sirius compilers on the shared golden/negative tests.
 - [ ] Use stage-1 to compile its own source (stage-2); check that stage-2 compiles the same suite successfully.
@@ -215,3 +218,11 @@ Run `python tools/test_tokenizer.py`. It concatenates `src/tokenizer.sirius` and
 `tokenize(source: string) -> Array[Token]` emits half-open UTF-8 byte spans (`start`, `end`), 1-based line numbers, and 1-based **byte** columns. Token kinds are documented at the top of `tokenizer.sirius`; negative kinds indicate a fatal lexical error and terminate the stream. Keywords remain ordinary `NAME` tokens for the future parser. NEWLINE/INDENT/DEDENT are explicit; blank/comment-only lines and bracketed continuations do not affect indentation. A final NEWLINE is synthesized when necessary.
 
 Bootstrap lexer scope: ASCII identifiers; UTF-8 allowed inside quoted strings and comments; decimal/scientific literals; quoted strings with escapes (but no multiline/triple-quoted strings yet); common punctuation and operators. Grammar validation and semantic diagnostics belong to the parser. `byte_at` and `slice` are sufficient; neither regex nor additional runtime features were needed. Numeric character tests are annotated with ASCII spellings; parenthesized expressions (including conditions and argument lists) may span lines and contain inline comments. This is covered by `tests/fixtures/37_multiline_parentheses.sirius` and `tests/tokenizer/fixtures/19_multiline_condition.sirius`.
+
+## Stage-1 parser
+
+Run `python tools/test_parser.py` from the project root. The runner concatenates `src/tokenizer.sirius`, `src/parser.sirius` and its test driver (imports are still unavailable), builds with the Python stage-0 compiler and C11, then checks AST golden files and syntax-error diagnostics. It also smoke-tests parsing of the 37 existing positive language fixtures **and the tokenizer/parser's own Sirius sources**. This is syntax coverage only, not self-hosting or semantic conformance.
+
+`parse_module(source)` returns `ParseResult(state, node)`. `state.nodes` is an `Array[Node]`; `state.edges` is a flat array of child node IDs. Every `Node` stores `kind`, a token index, and a half-open span in the edge array (`first`, `count`). Names, literal text and source locations remain in the tokenizer's spans. Parse errors are returned as `state.error` and `state.error_line`. This avoids recursive managed record types and creates a stable representation for the upcoming name/type resolver and C emitter.
+
+The stage-1 parser covers functions, typed/default arguments, constructors/`pub`, blocks, `if/elif/else`, `while`, `for`, `match`, `let`/`var`, assignments, `return`/`recur`, record and array literals, unary/binary precedence, calls, fields, optional/checked indexing and lambda syntax. It does **not** yet perform semantic type checking, desugar constructors, resolve overloads, lower ownership, or emit C. Module/import syntax, advanced pattern matching and richer diagnostics remain to be implemented.

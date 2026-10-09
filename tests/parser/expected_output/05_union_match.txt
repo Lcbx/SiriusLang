@@ -1,0 +1,34 @@
+0 type i64 ->
+1 param value -> 0
+2 pub value ->
+3 block -> 2
+4 def Success -> 1 3
+5 type i64 ->
+6 param code -> 5
+7 pub code ->
+8 block -> 7
+9 def Failure -> 6 8
+10 name Success ->
+11 name Failure ->
+12 binary | -> 10 11
+13 let Result -> 12
+14 type Result ->
+15 param result -> 14
+16 type i64 ->
+17 name result ->
+18 binding ->
+19 name value ->
+20 return -> 19
+21 block -> 20
+22 case Success -> 18 21
+23 binding ->
+24 name code ->
+25 unary - -> 24
+26 return -> 25
+27 block -> 26
+28 case Failure -> 23 27
+29 match -> 17 22 28
+30 block -> 29
+31 def unwrap -> 15 16 30
+32 module -> 4 9 13 31
+ROOT 32

@@ -1,0 +1,7 @@
+def main() -> i64
+	let ok = true and not false
+	var values = [10, 20]
+	values[0?]! = 30
+	if ok
+		return values[0?] or 0
+	return 0

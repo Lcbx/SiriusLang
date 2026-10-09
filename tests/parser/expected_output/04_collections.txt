@@ -1,0 +1,26 @@
+0 type i64 ->
+1 name Array ->
+2 name string ->
+3 index -> 1 2
+4 call -> 3
+5 var a -> 4
+6 name a ->
+7 name a ->
+8 attr append -> 7
+9 string "hi" ->
+10 call -> 8 9
+11 assign = -> 6 10
+12 name a ->
+13 integer 0 ->
+14 optional_index -> 12 13
+15 string "missing" ->
+16 binary or -> 14 15
+17 let v -> 16
+18 name len ->
+19 name v ->
+20 call -> 18 19
+21 return -> 20
+22 block -> 5 11 17 21
+23 def main -> 0 22
+24 module -> 23
+ROOT 24

@@ -1,0 +1,31 @@
+0 type i64 ->
+1 bool true ->
+2 bool false ->
+3 unary not -> 2
+4 binary and -> 1 3
+5 let ok -> 4
+6 integer 10 ->
+7 integer 20 ->
+8 array -> 6 7
+9 var values -> 8
+10 name values ->
+11 integer 0 ->
+12 checked_index -> 10 11
+13 integer 30 ->
+14 assign = -> 12 13
+15 name ok ->
+16 name values ->
+17 integer 0 ->
+18 optional_index -> 16 17
+19 integer 0 ->
+20 binary or -> 18 19
+21 return -> 20
+22 block -> 21
+23 arm -> 15 22
+24 if -> 23
+25 integer 0 ->
+26 return -> 25
+27 block -> 5 9 14 24 26
+28 def main -> 0 27
+29 module -> 28
+ROOT 29

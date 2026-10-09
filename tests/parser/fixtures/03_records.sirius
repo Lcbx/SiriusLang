@@ -1,0 +1,8 @@
+def Point(x: i64, y: i64)
+	pub x
+	pub y
+
+def main() -> i64
+	var p = Point(2, 3)
+	p = {p.*, del y, x = p.x + 1}
+	return p.x

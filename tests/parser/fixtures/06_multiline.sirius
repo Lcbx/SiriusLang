@@ -1,0 +1,5 @@
+def main() -> i64
+	let result = (1 + # comment
+		2 * (3 +
+		4))
+	return result
