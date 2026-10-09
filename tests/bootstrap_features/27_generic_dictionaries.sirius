@@ -1,0 +1,17 @@
+def Person(name: string, age: i64)
+	pub name
+	pub age
+
+def main() -> i64
+	var table = Dict[string,Person]()
+	table = table.insert("one", Person("Ada", 7))
+	let previous = table
+	table = table.insert("one", Person("Bea", 8))
+	table = table.insert("two", Person("Lin", 9))
+	print(len(table))
+	let old = previous.get("one") else return -1
+	let new = table.get("one") else return -1
+	print(old.name)
+	print(new.name)
+	print((table.get("two") or Person("No", 0)).age)
+	return 0

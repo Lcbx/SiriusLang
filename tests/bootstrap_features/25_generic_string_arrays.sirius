@@ -1,0 +1,11 @@
+def main() -> i64
+	var names = Array[string,1]()
+	names = names.append("Ada")
+	names = names.append("Bob")
+	let before = names
+	names[0?]! = "Eve"
+	print(len(names))
+	print(before[0?]!)
+	print(names[0?]!)
+	print(" & ".join(names))
+	return 0

@@ -1,0 +1,14 @@
+def Person(name: string, age: i64)
+	pub name
+	pub age
+
+def main() -> i64
+	var people = [Person("Ada", 7)]
+	let before = people
+	people = people.append(Person("Lin", 8))
+	print(len(before))
+	print(people[1?]!.name)
+	people[0?]! = Person("Bea", 9)
+	print(before[0?]!.name)
+	print(people[0?]!.age)
+	return 0

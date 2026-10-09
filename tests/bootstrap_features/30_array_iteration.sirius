@@ -1,0 +1,11 @@
+def main() -> i64
+	let names = ["Ada", "Bea", "Lin"]
+	var length = 0
+	for name in names
+		length += len(name)
+	print(length)
+	var count = 0
+	for x in [1, 2, 3]
+		count += x
+	print(count)
+	return 0

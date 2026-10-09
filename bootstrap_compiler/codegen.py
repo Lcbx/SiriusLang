@@ -5,6 +5,7 @@ an explicit CFG MIR. All managed expression results are scoped owner temporaries
 """
 from __future__ import annotations
 from dataclasses import dataclass
+import re
 from contextlib import contextmanager
 from syntax import Definition, Statement, Expr, TypeExpr, CompileError
 
@@ -19,14 +20,16 @@ class T:
 
     @property
     def c(self):
+        if self.kind == 'optional': return 'S_Opt_' + re.sub(r'[^A-Za-z0-9_]', '_', self.args[0].name)
         return {'i64': 'int64_t', 'f64': 'double', 'bool': 'bool', 'void': 'void',
-                'string': 'S_String *', 'array': 'S_Array_i64 *',
-                'dict': 'S_Dict_i64_i64 *', 'opt_i64': 'S_Optional_i64',
+                'string': 'S_String *', 'array': 'S_Array *',
+                'dict': 'S_Dict *', 'opt_i64': 'S_Optional_i64',
                 'opt_string': 'S_Optional_string'}.get(self.kind, self.name)
 
     @property
     def managed(self):
         return (self.kind in ('string', 'array', 'dict', 'opt_string')
+                or (self.kind == 'optional' and self.args[0].managed)
                 or (self.kind == 'record' and any(t.managed for _, t in self.fields))
                 or (self.kind == 'union' and any(t.managed for _, t in self.variants)))
 
@@ -155,6 +158,10 @@ class Compiler:
         self.defs: dict[str, Definition] = {d.name: d for d in program if isinstance(d, Definition)}
         self.aliases: dict[str, T] = {}
         self.record_cache: dict[tuple[tuple[str, T], ...], T] = {}
+        self.arrays: set[T] = set()
+        self.dicts: set[T] = set()
+        self.optional_types: set[T] = set()
+        self.container_elements: set[T] = set()
         self.instances: dict[tuple[str, tuple[T, ...]], Instance] = {}
         self.extra_functions: dict[str, Definition] = {}
         self.num_lambda = 0
@@ -173,14 +180,64 @@ class Compiler:
             self.record_cache[canonical] = T('record', f'S_Record_{len(self.record_cache)}', fields=canonical)
         return self.record_cache[canonical]
 
+    def array_type(self, elem: T) -> T:
+        result = T('array', f'Array[{elem.name},1]', (elem,))
+        self.arrays.add(result)
+        self.container_elements.add(elem)
+        return result
+
+    def dict_type(self, key: T, value: T) -> T:
+        if key not in (I64, STRING):
+            self.error('E_UNKNOWN_TYPE', 0, 'Dict keys must be i64 or string initially')
+        result = T('dict', f'Dict[{key.name},{value.name}]', (key, value))
+        self.dicts.add(result)
+        self.container_elements.update((key, value))
+        return result
+
+    def optional_type(self, elem: T) -> T:
+        if elem == I64: return OPT_I64
+        if elem == STRING: return OPT_STRING
+        result = T('optional', f'Optional[{elem.name}]', (elem,))
+        self.optional_types.add(result)
+        return result
+
+    @staticmethod
+    def type_suffix(t: T) -> str:
+        return re.sub(r'[^A-Za-z0-9_]', '_', t.name)
+
+    def elem_copy(self, t: T) -> str:
+        return f's_copy_elem_{self.type_suffix(t)}' if t.managed else 'NULL'
+
+    def elem_drop(self, t: T) -> str:
+        return f's_drop_elem_{self.type_suffix(t)}' if t.managed else 'NULL'
+
+    def array_new(self, t: T) -> str:
+        return f's_array_new(sizeof({t.c}), {self.elem_copy(t)}, {self.elem_drop(t)})'
+
+    def dict_new(self, key: T, value: T) -> str:
+        hash_fn, eq_fn = (('s_hash_string_key', 's_eq_string_key') if key == STRING
+                           else ('s_hash_i64_key', 's_eq_i64_key'))
+        return (f's_dict_new(sizeof({key.c}), sizeof({value.c}), '
+                f'{self.elem_copy(key)}, {self.elem_drop(key)}, '
+                f'{self.elem_copy(value)}, {self.elem_drop(value)}, {hash_fn}, {eq_fn})')
+
     def resolve(self, typ: TypeExpr | None) -> T | None:
         if typ is None: return None
         table = {'i64': I64, 'f64': F64, 'bool': BOOL, 'string': STRING,
                  'void': VOID}
         if typ.name in table and not typ.args: return table[typ.name]
-        if typ.name == 'Array' and typ.args == (TypeExpr('i64'), 1): return ARRAY
-        if typ.name == 'Dict' and typ.args == (TypeExpr('i64'), TypeExpr('i64')): return DICT
+        if typ.name == 'Array' and len(typ.args) == 2 and typ.args[1] == 1:
+            return self.array_type(self.resolve(typ.args[0]))
+        if typ.name == 'Dict' and len(typ.args) == 2:
+            return self.dict_type(self.resolve(typ.args[0]), self.resolve(typ.args[1]))
+        if typ.name == 'Optional' and len(typ.args) == 1:
+            return self.optional_type(self.resolve(typ.args[0]))
         if typ.name in self.aliases and not typ.args: return self.aliases[typ.name]
+        if typ.name in self.defs and not typ.args:
+            d = self.defs[typ.name]
+            if all(ann is not None for _, ann in d.params):
+                inst = self.specialize(d.name, tuple(self.resolve(ann) for _, ann in d.params))
+                if inst.ret.kind == 'record': return inst.ret
         self.error('E_UNKNOWN_TYPE', 0, f'unsupported type {typ!r}')
 
     def prep_aliases(self):
@@ -220,18 +277,20 @@ class Compiler:
     def copy_code(self, typ: T, code: str) -> str:
         if typ.kind == 'string': return f's_string_retain({code})'
         if typ.kind == 'opt_string': return f's_opt_string_retain({code})'
+        if typ.kind == 'optional' and typ.managed: return f'{typ.c}_retain({code})'
         if typ.kind == 'union' and typ.managed: return f'{typ.name}_retain({code})'
-        if typ.kind == 'array': return f's_array_i64_retain({code})'
-        if typ.kind == 'dict': return f's_dict_i64_i64_retain({code})'
+        if typ.kind == 'array': return f's_array_retain({code})'
+        if typ.kind == 'dict': return f's_dict_retain({code})'
         if typ.kind == 'record' and typ.managed: return f'{typ.name}_retain({code})'
         return code
 
     def drop_code(self, typ: T, code: str) -> str:
         if typ.kind == 'string': return f's_string_release({code})'
         if typ.kind == 'opt_string': return f's_opt_string_drop({code})'
+        if typ.kind == 'optional' and typ.managed: return f'{typ.c}_drop({code})'
         if typ.kind == 'union' and typ.managed: return f'{typ.name}_drop({code})'
-        if typ.kind == 'array': return f's_array_i64_release({code})'
-        if typ.kind == 'dict': return f's_dict_i64_i64_release({code})'
+        if typ.kind == 'array': return f's_array_release({code})'
+        if typ.kind == 'dict': return f's_dict_release({code})'
         if typ.kind == 'record' and typ.managed: return f'{typ.name}_drop({code})'
         return f'(void)({code})'
 
@@ -297,6 +356,9 @@ class Compiler:
             lines = ['    for (;;) {', *('    ' + line for line in ctx.lines), '    }']
         else:
             lines = ctx.lines
+        if name == 'main':
+            params = 'int argc, char **argv'
+            lines = ['    s_set_arguments(argc, argv);', *lines]
         inst.code = f'{result} {c_name}({params}) {{\n' + '\n'.join(lines) + '\n}'
         inst.building = False
         return inst
@@ -345,7 +407,7 @@ class Compiler:
                     rhs = self.typed(ctx, e.args[1], BOOL)
                     ctx.emit(f'{out} = {rhs.code};')
                 return Value(out, BOOL)
-            if op == 'or' and lhs.typ.kind.startswith('opt_'):
+            if op == 'or' and lhs.typ.kind.startswith('opt_') or lhs.typ.kind == 'optional':
                 target = lhs.typ.args[0]
                 result = ctx.fresh('fallback')
                 ctx.emit(f'{self.declaration(target, result)};')
@@ -358,6 +420,8 @@ class Compiler:
                 return Value(result, target)
             rhs = ctx.snapshot(self.expr(ctx, e.args[1]))
             if op == '..': return Value('', T('range', 'range', (lhs.typ, rhs.typ)))
+            if op in ('==','!=','<','<=','>','>=') and lhs.typ == rhs.typ == STRING:
+                return Value(f'(s_string_compare({lhs.code}, {rhs.code}) {op} 0)', BOOL)
             if op == '+' and lhs.typ == rhs.typ == STRING:
                 return ctx.temp(f's_string_concat({lhs.code}, {rhs.code})', STRING)
             if lhs.typ != rhs.typ:
@@ -371,8 +435,15 @@ class Compiler:
                 return Value(f'({lhs.code} {op} {rhs.code})', BOOL)
             self.error('E_UNSUPPORTED', e.line, f'operator {op} unsupported at runtime')
         if k == 'array':
-            items = [ctx.snapshot(self.typed(ctx, x, I64)) for x in e.args]
-            return ctx.temp(f's_array_i64_make({len(items)}, (int64_t[]){{{", ".join(x.code for x in items)}}})', ARRAY)
+            if not e.args:
+                self.error('E_ARRAY_TYPE', e.line, 'empty arrays need Array[T,1]()')
+            items = [ctx.snapshot(self.expr(ctx, x)) for x in e.args]
+            elem = items[0].typ
+            items = [self.cast(ctx, v, elem, e.line) for v in items]
+            arr_typ = self.array_type(elem)
+            vals = ', '.join(v.code for v in items)
+            return ctx.temp(f's_array_make({len(items)}, ({elem.c}[]){{{vals}}}, sizeof({elem.c}), '
+                            f'{self.elem_copy(elem)}, {self.elem_drop(elem)})', arr_typ)
         if k == 'record':
             fields: dict[str, Value] = {}
             for kind, name, expr in e.value:
@@ -400,12 +471,17 @@ class Compiler:
         if k == 'index':
             arr = ctx.snapshot(self.expr(ctx, e.args[0]))
             ix = ctx.snapshot(self.typed(ctx, e.args[1], I64))
-            if arr.typ != ARRAY: self.error('E_TYPE_MISMATCH', e.line, 'index expects Array[i64,1]')
+            if arr.typ.kind != 'array': self.error('E_TYPE_MISMATCH', e.line, 'index expects Array')
             if e.value == 'proven':
                 self.error('E_INDEX_NOT_PROVEN_SAFE', e.line, 'bounds not statically proven')
+            elem = arr.typ.args[0]
+            suffix = self.type_suffix(elem)
             if e.value == 'panic':
-                return Value(f's_array_i64_get_checked({arr.code}, {ix.code})', I64)
-            return ctx.temp(f's_array_i64_get({arr.code}, {ix.code})', OPT_I64)
+                result = f's_array_get_checked_{suffix}({arr.code}, {ix.code})'
+                return ctx.temp(result, elem) if elem.managed else Value(result, elem)
+            opt = self.optional_type(elem)
+            result = f's_array_get_{suffix}({arr.code}, {ix.code})'
+            return ctx.temp(result, opt) if opt.managed else Value(result, opt)
         if k == 'lambda':
             for _, annotation in e.value:
                 if annotation is None: self.error('E_FUNCTION_SIGNATURE', e.line, 'lambda arguments need types')
@@ -426,31 +502,61 @@ class Compiler:
             inst.code = f'{inst.ret.c} {inst.c_name}({params_c}) {{\n' + '\n'.join(sub.lines) + '\n}'
             return Value(inst.c_name, T('function', 'fn', (*args, inst.ret)))
         if k == 'dict_type':
-            if e.value != (TypeExpr('i64'), TypeExpr('i64')):
-                self.error('E_UNKNOWN_TYPE', e.line, 'only Dict[i64,i64] available initially')
-            return Value('s_dict_i64_i64_new()', DICT)
+            key, val = (self.resolve(a) for a in e.value)
+            return Value(self.dict_new(key, val), self.dict_type(key, val))
+        if k == 'array_type':
+            elem = self.resolve(e.value[0])
+            return Value(self.array_new(elem), self.array_type(elem))
         if k == 'call':
             callee = e.args[0]
-            if callee.kind == 'name' and callee.value in ('print','sqrt','write_text','read_text'):
+            if callee.kind == 'name' and callee.value in ('print','sqrt','write_text','read_text','len','str','arguments'):
                 return self.builtin(ctx, callee.value, e.args[1:], e.line)
             if callee.kind == 'name' and callee.value in self.defs:
                 args = [ctx.snapshot(self.expr(ctx, a)) for a in e.args[1:]]
                 return self.call(ctx, callee.value, args, e.line)
-            if callee.kind == 'dict_type':
-                if len(e.args) != 1: self.error('E_ARGUMENT_COUNT', e.line, 'Dict() takes no arguments')
-                return ctx.temp(self.expr(ctx, callee).code, DICT)
+            if callee.kind in ('dict_type','array_type'):
+                if len(e.args) != 1: self.error('E_ARGUMENT_COUNT', e.line, 'collection constructor takes no arguments')
+                v = self.expr(ctx, callee)
+                return ctx.temp(v.code, v.typ)
             if callee.kind == 'attr':
                 receiver = ctx.snapshot(self.expr(ctx, callee.args[0]))
                 method = callee.value
                 args = [ctx.snapshot(self.expr(ctx, a)) for a in e.args[1:]]
-                if receiver.typ == DICT:
+                if receiver.typ.kind == 'dict':
+                    key_type, val_type = receiver.typ.args
+                    suffix = self.type_suffix(val_type)
                     if method == 'insert' and len(args) == 2:
-                        key, val = (self.cast(ctx, a, I64, e.line) for a in args)
-                        return ctx.temp(f's_dict_i64_i64_insert(s_dict_i64_i64_retain({receiver.code}), {key.code}, {val.code})', DICT)
+                        key, val = (self.cast(ctx, v, t, e.line) for v, t in zip(args, (key_type, val_type)))
+                        return ctx.temp(f's_dict_insert(s_dict_retain({receiver.code}), &{key.code}, &{val.code})', receiver.typ)
                     if method == 'get' and len(args) == 1:
-                        key = self.cast(ctx, args[0], I64, e.line)
-                        return ctx.temp(f's_dict_i64_i64_get({receiver.code}, {key.code})', OPT_I64)
-                if method == 'map' and receiver.typ == ARRAY:
+                        key = self.cast(ctx, args[0], key_type, e.line)
+                        opt = self.optional_type(val_type)
+                        result = f's_dict_get_{suffix}({receiver.code}, &{key.code})'
+                        return ctx.temp(result, opt) if opt.managed else Value(result, opt)
+                if receiver.typ.kind == 'array':
+                    elem = receiver.typ.args[0]
+                    if method == 'append' and len(args) == 1:
+                        value = self.cast(ctx, args[0], elem, e.line)
+                        return ctx.temp(f's_array_append(s_array_retain({receiver.code}), &{value.code})', receiver.typ)
+                if receiver.typ == STRING:
+                    if method == 'slice' and len(args) == 2:
+                        a, b = (self.cast(ctx, v, I64, e.line) for v in args)
+                        return ctx.temp(f's_string_slice({receiver.code}, {a.code}, {b.code})', STRING)
+                    if method == 'byte_at' and len(args) == 1:
+                        a = self.cast(ctx, args[0], I64, e.line)
+                        return Value(f's_string_byte_at({receiver.code}, {a.code})', OPT_I64)
+                    if method == 'find' and len(args) == 1:
+                        needle = self.cast(ctx, args[0], STRING, e.line)
+                        return Value(f's_string_find({receiver.code}, {needle.code})', OPT_I64)
+                    if method in ('starts_with','ends_with') and len(args) == 1:
+                        sub = self.cast(ctx, args[0], STRING, e.line)
+                        call_name = 's_string_starts_with' if method == 'starts_with' else 's_string_ends_with'
+                        return Value(f'{call_name}({receiver.code}, {sub.code})', BOOL)
+                    if method == 'join' and len(args) == 1:
+                        if args[0].typ != self.array_type(STRING):
+                            self.error('E_TYPE_MISMATCH', e.line, 'join requires Array[string,1]')
+                        return ctx.temp(f's_string_join({receiver.code}, {args[0].code})', STRING)
+                if method == 'map' and receiver.typ.kind == 'array':
                     # Until map is implemented, reject it honestly as unsupported.
                     # A known directly/transitively impure named callback still gets
                     # the more specific purity diagnostic.
@@ -505,6 +611,18 @@ class Compiler:
             printers = {I64: 's_print_i64', F64: 's_print_f64', BOOL: 's_print_bool', STRING: 's_print_string'}
             if typ not in printers: self.error('E_TYPE_MISMATCH', line, 'cannot print this type yet')
             return Value(f'{printers[typ]}({vals[0].code})', VOID)
+        if name == 'len' and len(vals) == 1:
+            v = vals[0]
+            if v.typ.kind == 'array': return Value(f'(int64_t)s_array_length({v.code})', I64)
+            if v.typ.kind == 'dict': return Value(f'(int64_t)s_dict_length({v.code})', I64)
+            if v.typ == STRING: return Value(f'(int64_t)s_string_length({v.code})', I64)
+            self.error('E_TYPE_MISMATCH', line, 'len requires array, dict, or string')
+        if name == 'str' and len(vals) == 1:
+            if vals[0].typ == STRING: return vals[0]
+            if vals[0].typ == I64: return ctx.temp(f's_string_from_i64({vals[0].code})', STRING)
+            self.error('E_TYPE_MISMATCH', line, 'str currently supports i64 and string')
+        if name == 'arguments' and not vals:
+            return ctx.temp('s_arguments()', self.array_type(STRING))
         if name == 'sqrt' and len(vals) == 1:
             v = self.cast(ctx, vals[0], F64, line)
             return Value(f'sqrt({v.code})', F64)
@@ -539,7 +657,7 @@ class Compiler:
             val = self.expr(ctx, s.args[0])
             if ann is not None: val = self.cast(ctx, val, self.resolve(ann), s.line)
             if s.args[1] is not None:
-                if val.typ.kind not in ('opt_i64', 'opt_string'):
+                if val.typ.kind not in ('opt_i64', 'opt_string', 'optional'):
                     self.error('E_TYPE_MISMATCH', s.line, 'else return requires Optional')
                 ctx.emit(f'if (!{val.code}.has_value) {{')
                 ctx.indent += 1
@@ -602,15 +720,33 @@ class Compiler:
             b = ctx.lookup(node.value, s.line)
             if not b.mutable:
                 self.error(b.immutable_reason, s.line, f'{node.value} is immutable')
+            # A local update using a persistent collection method can hand
+            # ownership of the old binding directly to the runtime operation.
+            # This is crucial for O(1)-amortized append/insert in compiler
+            # workloads; the runtime performs CoW if any aliases still exist.
+            if (target.kind == 'name' and s.value == '=' and rhs.kind == 'call'
+                and rhs.args[0].kind == 'attr' and rhs.args[0].args[0].kind == 'name'
+                and rhs.args[0].args[0].value == target.value):
+                method = rhs.args[0].value
+                if b.typ.kind == 'array' and method == 'append' and len(rhs.args) == 2:
+                    element = self.cast(ctx, ctx.snapshot(self.expr(ctx, rhs.args[1])), b.typ.args[0], s.line)
+                    ctx.emit(f'{b.cname} = s_array_append({b.cname}, &{element.code});')
+                    return
+                if b.typ.kind == 'dict' and method == 'insert' and len(rhs.args) == 3:
+                    key, value = (self.cast(ctx, ctx.snapshot(self.expr(ctx, expression)), typ, s.line)
+                                  for expression, typ in zip(rhs.args[1:], b.typ.args))
+                    ctx.emit(f'{b.cname} = s_dict_insert({b.cname}, &{key.code}, &{value.code});')
+                    return
             if target.kind == 'index':
                 # Native CoW for array field or root array; writes require checked index.
                 arr = self.expr(ctx, target.args[0]); idx = self.typed(ctx, target.args[1], I64)
                 if target.value != 'panic':
                     self.error('E_INDEX_NOT_PROVEN_SAFE', s.line, 'use [index?]! for checked update')
-                val = self.typed(ctx, rhs, I64)
-                if arr.typ != ARRAY: self.error('E_TYPE_MISMATCH', s.line, 'indexed assignment requires Array')
+                if arr.typ.kind != 'array': self.error('E_TYPE_MISMATCH', s.line, 'indexed assignment requires Array')
+                val = self.typed(ctx, rhs, arr.typ.args[0])
                 if s.value != '=': self.error('E_UNSUPPORTED', s.line, 'compound indexed assignment deferred')
-                ctx.emit(f's_array_i64_set(&{arr.code}, {idx.code}, {val.code});')
+                saved = ctx.snapshot(val)
+                ctx.emit(f's_array_set(&{arr.code}, {idx.code}, &{saved.code});')
                 return
             if target.kind == 'attr':
                 dest = self.expr(ctx, target)
@@ -666,19 +802,30 @@ class Compiler:
             return
         if kind == 'for':
             iterable = s.args[0]
-            if iterable.kind != 'binary' or iterable.value != '..':
-                self.error('E_UNSUPPORTED', s.line, 'initial for supports integer range')
-            lo = self.typed(ctx, iterable.args[0], I64)
-            hi = self.typed(ctx, iterable.args[1], I64)
-            end = ctx.fresh('end')
-            ctx.emit(f'int64_t {end} = {hi.code};')
-            counter = ctx.fresh('for')
             ctx.loop_scope_depths.append(len(ctx.scopes))
-            with ctx.block(f'for (int64_t {counter} = {lo.code}; {counter} < {end}; ++{counter})'):
-                old = ctx.bindings.get(s.value)
-                ctx.bindings[s.value] = Binding(I64, False, counter)
-                ctx.scopes[-1].append((s.value, old, None, None))
-                for stmt in s.args[1]: self.statement(ctx, stmt)
+            if iterable.kind == 'binary' and iterable.value == '..':
+                lo = self.typed(ctx, iterable.args[0], I64)
+                hi = self.typed(ctx, iterable.args[1], I64)
+                end = ctx.fresh('end')
+                ctx.emit(f'int64_t {end} = {hi.code};')
+                counter = ctx.fresh('for')
+                with ctx.block(f'for (int64_t {counter} = {lo.code}; {counter} < {end}; ++{counter})'):
+                    old = ctx.bindings.get(s.value)
+                    ctx.bindings[s.value] = Binding(I64, False, counter)
+                    ctx.scopes[-1].append((s.value, old, None, None))
+                    for stmt in s.args[1]: self.statement(ctx, stmt)
+            else:
+                arr = ctx.snapshot(self.expr(ctx, iterable))
+                if arr.typ.kind != 'array':
+                    self.error('E_TYPE_MISMATCH', s.line, 'for requires a range or array')
+                elem = arr.typ.args[0]
+                counter = ctx.fresh('for')
+                end = ctx.fresh('end')
+                ctx.emit(f'int64_t {end} = (int64_t)s_array_length({arr.code});')
+                with ctx.block(f'for (int64_t {counter} = 0; {counter} < {end}; ++{counter})'):
+                    value = ctx.temp(f's_array_get_checked_{self.type_suffix(elem)}({arr.code}, {counter})', elem)
+                    ctx.bind(s.value, elem, value, mutable=False, reason='E_IMMUTABLE_PARAMETER')
+                    for stmt in s.args[1]: self.statement(ctx, stmt)
             ctx.loop_scope_depths.pop()
             return
         if kind in ('break', 'continue'):
@@ -731,25 +878,69 @@ class Compiler:
         self.error('E_UNSUPPORTED', s.line, f'statement {kind} unsupported')
 
     def render_types(self) -> str:
+        for a in self.arrays: self.optional_type(a.args[0])
+        for d in self.dicts: self.optional_type(d.args[1])
         out = []
+        # Layouts first, then retain/drop helpers and collection callbacks.
         for rec in self.record_cache.values():
             out.append(f'typedef struct {{ {" ".join(self.declaration(t, f) + ";" for f,t in rec.fields)} }} {rec.name};')
-            if rec.managed:
-                retain = '\n'.join(f'    value.{n} = {self.copy_code(t, f"value.{n}")};' for n,t in rec.fields if t.managed)
-                drop = '\n'.join(f'    {self.drop_code(t, f"value.{n}")};' for n,t in rec.fields if t.managed)
-                out.append(f'static {rec.c} {rec.name}_retain({rec.c} value) {{\n{retain}\n    return value;\n}}')
-                out.append(f'static void {rec.name}_drop({rec.c} value) {{\n{drop}\n}}')
         for u in self.aliases.values():
             if u.kind == 'union':
                 inner = ' '.join(f'{v.c} v{i};' for i, (_, v) in enumerate(u.variants))
                 out.append(f'typedef struct {{ int tag; union {{ {inner} }} data; }} {u.name};')
-                if u.managed:
-                    rt = '\n'.join(f'    case {i}: value.data.v{i} = {self.copy_code(v, f"value.data.v{i}")}; break;'
-                                   for i,(_,v) in enumerate(u.variants))
-                    dt = '\n'.join(f'    case {i}: {self.drop_code(v, f"value.data.v{i}")}; break;'
-                                   for i,(_,v) in enumerate(u.variants))
-                    out.append(f'static inline {u.c} {u.name}_retain({u.c} value) {{\n    switch (value.tag) {{\n{rt}\n    default: s_panic("invalid union tag");\n    }}\n    return value;\n}}')
-                    out.append(f'static inline void {u.name}_drop({u.c} value) {{\n    switch (value.tag) {{\n{dt}\n    default: s_panic("invalid union tag");\n    }}\n}}')
+        for opt in sorted(self.optional_types, key=lambda t:t.name):
+            out.append(f'typedef struct {{ bool has_value; {opt.args[0].c} value; }} {opt.c};')
+        for rec in self.record_cache.values():
+            if rec.managed:
+                retain = '\n'.join(f'    value.{n} = {self.copy_code(t, f"value.{n}")};' for n,t in rec.fields if t.managed)
+                drop = '\n'.join(f'    {self.drop_code(t, f"value.{n}")};' for n,t in rec.fields if t.managed)
+                out.append(f'static inline {rec.c} {rec.name}_retain({rec.c} value) {{\n{retain}\n    return value;\n}}')
+                out.append(f'static inline void {rec.name}_drop({rec.c} value) {{\n{drop}\n}}')
+        for u in self.aliases.values():
+            if u.kind == 'union' and u.managed:
+                rt = '\n'.join(f'    case {i}: value.data.v{i} = {self.copy_code(v, f"value.data.v{i}")}; break;'
+                               for i,(_,v) in enumerate(u.variants))
+                dt = '\n'.join(f'    case {i}: {self.drop_code(v, f"value.data.v{i}")}; break;'
+                               for i,(_,v) in enumerate(u.variants))
+                out.append(f'static inline {u.c} {u.name}_retain({u.c} value) {{\n    switch (value.tag) {{\n{rt}\n    default: s_panic("invalid union tag");\n    }}\n    return value;\n}}')
+                out.append(f'static inline void {u.name}_drop({u.c} value) {{\n    switch (value.tag) {{\n{dt}\n    default: s_panic("invalid union tag");\n    }}\n}}')
+        for opt in sorted(self.optional_types, key=lambda t:t.name):
+            if opt.managed:
+                item = opt.args[0]
+                out.append(f'static inline {opt.c} {opt.c}_retain({opt.c} v) {{ if (v.has_value) v.value = {self.copy_code(item, "v.value")}; return v; }}')
+                out.append(f'static inline void {opt.c}_drop({opt.c} v) {{ if (v.has_value) {self.drop_code(item, "v.value")}; }}')
+        for elem in sorted(self.container_elements, key=lambda t:t.name):
+            suffix = self.type_suffix(elem)
+            if elem.managed:
+                out.append(f'static inline void s_copy_elem_{suffix}(void *dst, const void *src) {{ '
+                           f'*({elem.c} *)dst = {self.copy_code(elem, f"*({elem.c} const *)src")}; }}')
+                out.append(f'static inline void s_drop_elem_{suffix}(void *src) {{ '
+                           f'{self.drop_code(elem, f"*({elem.c} *)src")}; }}')
+        for arr in sorted(self.arrays, key=lambda t:t.name):
+            elem = arr.args[0]
+            opt = self.optional_type(elem)
+            suffix = self.type_suffix(elem)
+            # A successful get owns its result. The caller releases it, even
+            # when the source array is overwritten or destroyed afterwards.
+            out.append(f'static inline {opt.c} s_array_get_{suffix}(const S_Array *a, int64_t idx) {{\n'
+                       f'    {elem.c} const *ptr = s_array_at(a, idx);\n'
+                       f'    if (!ptr) return ({opt.c}){{.has_value = false}};\n'
+                       f'    return ({opt.c}){{.has_value = true, .value = {self.copy_code(elem, "*ptr")}}};\n}}')
+            out.append(f'static inline {elem.c} s_array_get_checked_{suffix}(const S_Array *a, int64_t idx) {{\n'
+                       f'    {elem.c} const *ptr = s_array_at(a, idx);\n'
+                       f'    if (!ptr) s_panic("index out of bounds");\n'
+                       f'    return {self.copy_code(elem, "*ptr")};\n}}')
+        seen_dict_values: set[T] = set()
+        for d in sorted(self.dicts, key=lambda t:t.name):
+            val = d.args[1]
+            if val in seen_dict_values: continue
+            seen_dict_values.add(val)
+            opt = self.optional_type(val)
+            suffix = self.type_suffix(val)
+            out.append(f'static inline {opt.c} s_dict_get_{suffix}(const S_Dict *d, const void *key) {{\n'
+                       f'    {val.c} const *ptr = s_dict_get(d, key);\n'
+                       f'    if (!ptr) return ({opt.c}){{.has_value = false}};\n'
+                       f'    return ({opt.c}){{.has_value = true, .value = {self.copy_code(val, "*ptr")}}};\n}}')
         return '\n'.join(out)
 
     def compile(self) -> str:
@@ -764,7 +955,7 @@ class Compiler:
         prototypes = []
         for inst in all_instances:
             decl = ', '.join(self.declaration(t, f'arg_{p}') for t, p in zip(inst.args, inst.params)) or 'void'
-            prototypes.append(f'{"int" if inst.name == "main" else inst.ret.c} {inst.c_name}({decl});')
+            prototypes.append(f'{"int" if inst.name == "main" else inst.ret.c} {inst.c_name}({"int argc, char **argv" if inst.name == "main" else decl});')
         return ('/* Generated by the Sirius Python bootstrap compiler. */\n'
                 '#include "sirius_runtime.h"\n#include <math.h>\n\n'
                 'static inline S_Optional_string s_opt_string_retain(S_Optional_string v) { if (v.has_value) v.value = s_string_retain(v.value); return v; }\n'

@@ -1,0 +1,19 @@
+def Token(text: string, kind: i64)
+	pub text
+	pub kind
+
+def main() -> i64
+	var tokens = Array[Token,1]()
+	tokens = tokens.append(Token("let", 1))
+	tokens = tokens.append(Token("x", 2))
+	tokens = tokens.append(Token("let", 1))
+	var counts = Dict[string,i64]()
+	var c_lines = Array[string,1]()
+	for token in tokens
+		let number = (counts.get(token.text) or 0) + 1
+		counts = counts.insert(token.text, number)
+		c_lines = c_lines.append("/*" + token.text + "*/")
+	print(counts.get("let") or 0)
+	print(counts.get("x") or 0)
+	print("".join(c_lines))
+	return 0

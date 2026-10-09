@@ -29,7 +29,8 @@ def main():
     cc = shutil.which('cc') or shutil.which('gcc')
     if cc is None:
         raise SystemExit('Missing cc (C11 compiler)')
-    fixtures = sorted((ROOT / 'tests' / 'fixtures').glob('*.sirius'))
+    fixtures = sorted([*(ROOT / 'tests' / 'fixtures').glob('*.sirius'),
+                       *(ROOT / 'tests' / 'bootstrap_features').glob('*.sirius')])
     if not ns.provisional:
         fixtures = [x for x in fixtures if '_PROVISIONAL' not in x.name]
     with tempfile.TemporaryDirectory() as td:

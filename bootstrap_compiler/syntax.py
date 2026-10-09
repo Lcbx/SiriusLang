@@ -333,7 +333,13 @@ class Parser:
             import ast
             lhs = Expr('string', ast.literal_eval(v), (), t.line)
         elif v[0].isalpha() or v[0] == '_':
-            if v == 'Dict' and self.at('['):
+            if v == 'Array' and self.at('['):
+                self.pop('[')
+                elem = self.typeexpr(); self.pop(',')
+                rank = self.pop().value; self.pop(']')
+                if rank != '1': raise CompileError('E_UNKNOWN_TYPE', t.line, 'only rank-1 arrays available')
+                lhs = Expr('array_type', (elem, 1), (), t.line)
+            elif v == 'Dict' and self.at('['):
                 self.pop('[')
                 keytype = self.typeexpr(); self.pop(',')
                 valtype = self.typeexpr(); self.pop(']')

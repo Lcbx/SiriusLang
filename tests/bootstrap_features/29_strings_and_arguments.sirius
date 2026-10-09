@@ -1,0 +1,12 @@
+def main() -> i64
+	let text = "hello world"
+	print(len(text))
+	print(text.slice(0, 5))
+	print(text.byte_at(1) or -1)
+	print(text.find("world") or -1)
+	print(text.starts_with("hel"))
+	print(text.ends_with("world"))
+	print("abc" < "abd")
+	print(str(42) + "!")
+	print(len(arguments()) > 0)
+	return 0

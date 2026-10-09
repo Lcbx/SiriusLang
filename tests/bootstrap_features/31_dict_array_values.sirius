@@ -1,0 +1,8 @@
+def main() -> i64
+	var dict = Dict[string,Array[i64,1]]()
+	dict = dict.insert("a", [1, 2])
+	let old = dict
+	dict = dict.insert("a", [3, 4, 5])
+	print(len(old.get("a") or [0]))
+	print(len(dict.get("a") or [0]))
+	return 0

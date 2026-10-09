@@ -51,4 +51,44 @@ void s_print_i64(int64_t v);
 void s_print_f64(double v);
 void s_print_bool(bool v);
 _Noreturn void s_panic(const char *reason);
-#endif
+
+/* Generic, type-specialized-by-the-compiler bootstrap collections.  The
+   callbacks retain/drop embedded managed values; NULL denotes trivial data. */
+typedef void (*S_CopyElem)(void *, const void *);
+typedef void (*S_DropElem)(void *);
+typedef uint64_t (*S_HashKey)(const void *);
+typedef bool (*S_EqualKey)(const void *, const void *);
+typedef struct S_Array S_Array;
+typedef struct S_Dict S_Dict;
+S_Array *s_array_new(size_t size, S_CopyElem copy, S_DropElem drop);
+S_Array *s_array_make(size_t n, const void *data, size_t size, S_CopyElem copy, S_DropElem drop);
+S_Array *s_array_retain(S_Array *a);
+void s_array_release(S_Array *a);
+size_t s_array_length(const S_Array *a);
+const void *s_array_at(const S_Array *a, int64_t i);
+S_Array *s_array_append(S_Array *owned, const void *item);
+void s_array_set(S_Array **owned, int64_t index, const void *item);
+S_Dict *s_dict_new(size_t ksize, size_t vsize, S_CopyElem kcopy, S_DropElem kdrop,
+                   S_CopyElem vcopy, S_DropElem vdrop, S_HashKey hash, S_EqualKey eq);
+S_Dict *s_dict_retain(S_Dict *d);
+void s_dict_release(S_Dict *d);
+S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value);
+const void *s_dict_get(const S_Dict *d, const void *key);
+size_t s_dict_length(const S_Dict *d);
+uint64_t s_hash_i64_key(const void *key);
+bool s_eq_i64_key(const void *a, const void *b);
+uint64_t s_hash_string_key(const void *key);
+bool s_eq_string_key(const void *a, const void *b);
+int s_string_compare(const S_String *a, const S_String *b);
+size_t s_string_length(const S_String *s);
+S_Optional_i64 s_string_byte_at(const S_String *s, int64_t i);
+S_String *s_string_slice(const S_String *s, int64_t start, int64_t end);
+S_Optional_i64 s_string_find(const S_String *s, const S_String *needle);
+bool s_string_starts_with(const S_String *s, const S_String *prefix);
+bool s_string_ends_with(const S_String *s, const S_String *suffix);
+S_String *s_string_from_i64(int64_t value);
+S_String *s_string_join(const S_String *separator, const S_Array *parts);
+void s_set_arguments(int argc, char **argv);
+S_Array *s_arguments(void);
+
+#endif /* SIRIUS_RUNTIME_H */

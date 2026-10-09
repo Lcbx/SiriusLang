@@ -9,8 +9,9 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 - `tests/expected_output/*.txt` — standard output, with exit status 0.
 - `tests/negative/*.sirius`, `tests/negative/expectations.json` — expected rejection cases and suggested stable diagnostic IDs.
 - `tests/runtime_errors/` — checked failure examples with expected nonzero exit and panic message.
+- `tests/bootstrap_features/*.sirius` — additional compiler-authoring regression cases (generated C only; no independent reference C yet).
 - `tests/deferred/` — planned language features with illustrative source and expected output; not yet exercised by the runner.
-- `include/sirius_runtime.{h,c}` — intentionally small reference implementation of managed strings, 1D i64 arrays, optional values, CoW, an i64 hash map, and text file I/O.
+- `include/sirius_runtime.{h,c}` — C11 runtime with managed strings, generic 1D arrays and hash dictionaries (typed element callbacks), reference counting, CoW, and file I/O; retains the original i64-only APIs for independent C references.
 - `bootstrap_compiler/sirius.py` — actual CLI compiler entry point.
 - `bootstrap_compiler/syntax.py` — SLY lexer, explicit indentation tokens, dataclass AST, Pratt expression parser.
 - `bootstrap_compiler/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
@@ -21,6 +22,8 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 - `tools/test_compiler.py` — executable end-to-end compiler conformance suite, with optional strict C warnings, negative diagnostics, and runtime panic tests.
 
 ## Positive tests
+
+The original 24 independent reference cases remain unchanged. Additional compiler-only feature fixtures (`tests/bootstrap_features/25_*.sirius` through `34_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; and a miniature token/symbol-table/C-text workflow.
 
 | File | Bootstrap behavior |
 | --- | --- |
@@ -84,27 +87,55 @@ python tools/test_compiler.py --command "python bootstrap_compiler/sirius.py" --
 - Tab-indented declarations, literals, operators, functions, branches, loops, and `recur`.
 - Static i64/f64/bool/string typing, inferred returns, basic generic monomorphization, function pointers and noncapturing lambdas.
 - Structural record interning with lexicographically sorted fields, record spreads/deletions, immutable constructor publication and conditional overrides.
-- Arrays of i64 (1D), checked and optional indexing, strings, and `Dict[i64,i64]`, using managed CoW storage.
+- Rank-1 `Array[T,1]` of scalar, string, record, union and nested-array elements; array literals, empty typed construction, `append`, `len`, indexed reads/updates, and sequential `for` iteration.
+- `Dict[K,V]` with `i64`/`string` keys and arbitrary supported value types; `insert`, `get` and `len`. Managed fields retain/drop correctly in CoW copies.
+- UTF-8 immutable strings with byte length, byte inspection, slices, searching, prefix/suffix tests, lexical comparison, concatenation, `str(i64)`, and joining arrays of strings.
+- `arguments()` exposes command-line arguments as `Array[string,1]`; provisional `read_text` / `write_text` provide basic compiler I/O.
+- Local CoW update reuse (`a = a.append(...)`, `d = d.insert(...)`) transfers ownership directly, allowing amortized growth when the binding is unshared.
 - Optional fallback and `else return`, constructor-based structural tagged unions and basic exhaustive matching.
 - Explicit cleanup of managed locals/temporaries (arrays, records, strings, optionals and unions) on returns and control-flow exits.
 - Ordered evaluation of expressions and short-circuit conditions; checked source diagnostics for the negative tests.
-- Simple `print`, `sqrt`, and provisional `read_text` / `write_text` runtime calls.
+- Simple `print`, `sqrt`, `len`, `str`, `arguments`, and provisional `read_text` / `write_text` runtime calls.
 
 ### Not implemented yet / known limitations
 
 - The IR design documents a typed HIR and CFG MIR; **the working compiler currently uses syntax AST -> specialization/type-check + direct C lowering**. The revised roadmap puts the durable HIR/MIR work **after the minimal Sirius compiler becomes self-hosting**, rather than implementing these stages twice.
-- Arrays other than 1D i64 and dictionaries other than `Dict[i64,i64]`, multidimensional numeric operations, general operator overloading, dynamic `Any`, modules, richer pattern matching, and parallel operations are missing.
+- Multidimensional numeric operations, arbitrary-key dictionaries (beyond `i64` and `string`), general operator overloading, dynamic `Any`, modules, richer pattern matching, and parallel operations are missing.
 - Indexing without `?` is rejected unless/provisionally until a static bounds-proven lowering is implemented.
 - `map` itself is not implemented. A small static call scan emits the intended purity error for the known impure callback fixture, but **transitive general-purpose effect checking is not implemented**.
 - Structurally identical union alternatives are intentionally rejected; constructor names alone do not create distinct variants.
 - Constructors support direct publication and overrides of previously published fields. Other complex conditional publication flows are not yet supported.
-- `recur` for managed parameters and mutable managed values in advanced loops need a dedicated ownership-aware MIR pass.
+- `recur` for managed parameters still requires an ownership-aware implementation. Complex nested aliasing/ownership and all platform-specific C backends need additional checks.
 - Integer overflow, narrowing conversions, platform portability, and robust diagnostics need explicit policy and further tests.
 
 ## Future improvements (medium priority)
 
 - **Python-style negative array indexing:** `a[-1]` addresses the last element; in general, a negative index `i` addresses element `len(a) + i`. The same normalization applies to `a[i?]`, `a[i?]!`, and mutable indexed assignment. For indices still out of range, optional indexing yields `None` and checked indexing panics. Plain `a[i]` continues to require a static bounds proof.
 - `tests/deferred/25_negative_indexing.sirius` records the intended behavior and expected output; the working compiler/runtime do **not** support negative array indices yet.
+
+## Compiler-authoring API additions
+
+```python
+var tokens = Array[string,1]()  # typed empty array
+tokens = tokens.append("def")  # CoW; reuses uniquely owned storage
+let token = tokens[0?]!        # checked access
+
+var counts = Dict[string,i64]()
+counts = counts.insert("def", 1)
+let n = counts.get("def") or 0
+
+for token in tokens            # sequential; immutable loop binding
+    print(token)
+
+let data = "hello".slice(0, 4)  # byte-oriented UTF-8 slice
+let location = data.find("ell") or -1
+let text = ", ".join(tokens)   # join Array[string,1]
+let paths = arguments()          # program name plus CLI parameters
+```
+
+`str` currently formats `i64`; dictionary keys are `i64` or `string`. Explicit constructor-name annotations such as `Array[Token,1]` and `Dict[string,Token]` resolve to the constructor's canonical structural record type. Generic managed optionals are supported. Arrays other than rank 1 and Python-style negative indices remain deferred.
+
+For assignments of the form `a = a.append(v)` and `d = d.insert(k, v)`, the old binding's ownership is *consumed* by the update. If references are shared the runtime copies; otherwise the allocation is reused. This optimization preserves Sirius immutable-value semantics. The Python bootstrap still uses conservative retain/release elsewhere; it is not a replacement for future ownership MIR.
 
 ## Established bootstrap semantics and remaining assumptions
 
@@ -125,25 +156,26 @@ A union of constructors refers to their **structural result record types**. `let
 
 This checklist separates **implemented bootstrap capabilities** from **features needed to write the compiler in Sirius** and from the larger language goals. Checkmarks refer to demonstrated test coverage, not full language-spec completeness.
 
-### 0. Test-first Python bootstrap (current)
+### 0. Test-first Python bootstrap
 
-- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 cases).
+- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 independent C references; 10 more compiler-authored fixtures).
 - [x] Python SLY lexer, indentation-aware parser and syntax AST.
 - [x] Basic static type checking, concrete function specialization and C11 emission.
 - [x] Structural records with deterministic field order, constructors, unions, basic matching, function values.
-- [x] Scalar expressions, sequential control flow, recursion/`recur`, managed strings, 1D i64 arrays, `Dict[i64,i64]`, basic `Optional`.
+- [x] Scalar expressions, sequential control flow, recursion/`recur`, managed strings, rank-1 typed arrays, typed dictionaries, basic `Optional`.
 - [x] Reference/runtime test runners, negative diagnostics and checked-index panic test.
 - [ ] Tighten ownership correctness for managed `recur` parameters and more complex loops; extend tests.
 - [ ] Improve error reporting and verify portability with Zig C compiler and Windows toolchains.
 
-### 1. Make the subset practical for compiler authoring (next, in Python bootstrap)
+### 1. Make the subset practical for compiler authoring (Python stage-0)
 
-- [ ] Generic `Array[T, 1]` supporting strings, records, unions and compiler data structures; allocation, length, append and indexed access/update.
-- [ ] Generic `Dict[K, V]` (at least string keys and compiler-specific values) or a deliberately simpler symbol-table representation written in Sirius.
-- [ ] String/byte inspection, comparison, slices and practical incremental text construction (needed for lexing and C output).
-- [ ] Stable file reading/writing, command-line arguments and diagnostics; settle the provisional file-I/O API.
-- [ ] Test compiler-shaped programs (token streams, node tables/arenas, symbol lookup, generated C text) and ARC across those types.
-- [ ] Freeze a documented minimal bootstrap language subset once it can compile its own replacement.
+- [x] Generic `Array[T, 1]` supporting strings, records, unions and compiler data structures; allocation, length, append, checked/optional indexed access/update, and sequential iteration.
+- [x] Generic `Dict[K, V]` with `string`/`i64` keys and compiler data types as values, including CoW updates.
+- [x] UTF-8 string/byte inspection, comparison, slices, search, joining and text construction using arrays of strings (sufficient for an initial lexer/emitter).
+- [x] File reading/writing, command-line arguments, `print` diagnostics (API remains provisional; richer error propagation is deferred).
+- [x] Test a small compiler-shaped workload (token record array, symbol dictionary, assembled C text), plus nested CoW and managed unions.
+- [ ] Extend to an indexed AST arena and a realistic multi-file source/diagnostic workflow.
+- [ ] Freeze the minimal bootstrap subset once the Sirius compiler compiles its own replacement.
 
 ### 2. Rewrite compiler in Sirius (start as soon as phase 1 basics work)
 
