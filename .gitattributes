@@ -1,0 +1,5 @@
+# Stable UTF-8 byte offsets in tokenizer golden fixtures across Git checkouts.
+tests/tokenizer/fixtures/*.sirius text eol=lf
+# Preserve explicitly tested line endings instead of letting Git translate them.
+tests/tokenizer/fixtures/08_crlf.sirius -text
+tests/tokenizer/fixtures/18_cr.sirius -text

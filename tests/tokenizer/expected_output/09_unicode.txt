@@ -1,0 +1,5 @@
+NAME 0:4 1:1 name
+OP 5:6 1:6 =
+STRING 7:19 1:8 "café 🐍"
+NEWLINE 44:45 1:45
+EOF 45:45 2:1

@@ -1,0 +1,5 @@
+let result = (
+	foo(1, 2.5e-2), # comment
+	.bar
+)
+x = 0..10

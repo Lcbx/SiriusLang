@@ -1,0 +1,285 @@
+# Sirius stage-1 tokenizer. Byte offsets are half-open UTF-8 source spans.
+# Token kinds: 1 name, 2 integer, 3 float, 4 string, 5 operator,
+#              6 newline, 7 indent, 8 dedent, 9 EOF.
+# Negative kinds are lexical errors. The first error terminates tokenization.
+
+def Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
+	pub kind
+	pub start
+	pub end
+	pub line
+	pub column
+
+def token_text(source: string, token: Token) -> string
+	return source.slice(token.start, token.end)
+
+def token_kind_name(kind: i64) -> string
+	if kind == 1
+		return "NAME"
+	if kind == 2
+		return "INT"
+	if kind == 3
+		return "FLOAT"
+	if kind == 4
+		return "STRING"
+	if kind == 5
+		return "OP"
+	if kind == 6
+		return "NEWLINE"
+	if kind == 7
+		return "INDENT"
+	if kind == 8
+		return "DEDENT"
+	if kind == 9
+		return "EOF"
+	if kind == -1
+		return "INVALID_CHAR"
+	if kind == -2
+		return "INVALID_INDENT"
+	if kind == -3
+		return "UNCLOSED_STRING"
+	if kind == -4
+		return "INVALID_BRACKET"
+	if kind == -5
+		return "UNCLOSED_BRACKET"
+	return "UNKNOWN"
+
+def peek(source: string, i: i64) -> i64
+	return source.byte_at(i) or -1
+
+def is_alpha(c: i64) -> bool
+	return (
+		(c >= 65 and c <= 90) or # A-Z
+		(c >= 97 and c <= 122) or # a-z
+		c == 95                    # _
+	)
+
+def is_digit(c: i64) -> bool
+	return c >= 48 and c <= 57 # 0-9
+
+def is_ident(c: i64) -> bool
+	return is_alpha(c) or is_digit(c)
+
+def scan_identifier(source: string, start: i64) -> i64
+	var i = start + 1
+	while is_ident(peek(source, i))
+		i += 1
+	return i
+
+def scan_number(source: string, start: i64) -> i64
+	var i = start
+	while is_digit(peek(source, i))
+		i += 1
+	if peek(source, i) == 46 and is_digit(peek(source, i + 1)) # .
+		i += 1
+		while is_digit(peek(source, i))
+			i += 1
+	# Scientific notation is a float, even without a decimal point.
+	let c = peek(source, i)
+	if c == 101 or c == 69 # e E
+		var j = i + 1
+		if peek(source, j) == 43 or peek(source, j) == 45 # + -
+			j += 1
+		if is_digit(peek(source, j))
+			i = j + 1
+			while is_digit(peek(source, i))
+				i += 1
+	return i
+
+def is_float(source: string, start: i64, end: i64) -> bool
+	for i in start..end
+		let c = peek(source, i)
+		if c == 46 or c == 101 or c == 69 # . e E
+			return true
+	return false
+
+def scan_string(source: string, start: i64) -> i64
+	let quote = peek(source, start)
+	var i = start + 1
+	while i < len(source)
+		let c = peek(source, i)
+		if c == 10 or c == 13 # LF CR
+			return -1
+		if c == 92 # \
+			let next = peek(source, i + 1)
+			if next == -1 or next == 10 or next == 13 # EOF LF CR
+				return -1
+			i += 2
+			continue
+		if c == quote
+			return i + 1
+		i += 1
+	return -1
+
+def scan_operator(source: string, start: i64) -> i64
+	let c = peek(source, start)
+	let n = peek(source, start + 1)
+	let third = peek(source, start + 2)
+	if (
+		(c == 42 and n == 42) or # **=
+		(c == 47 and n == 47) or # //=
+		(c == 60 and n == 60) or # <<=
+		(c == 62 and n == 62)    # >>=
+	) and third == 61 # =
+		return start + 3
+	if (
+		(c == 46 and n == 46) or # ..
+		(c == 45 and n == 62)    # ->
+	)
+		return start + 2
+	if n == 61 and ( # =
+		c == 61 or # ==
+		c == 33 or # !=
+		c == 60 or # <=
+		c == 62 or # >=
+		c == 43 or # +=
+		c == 45 or # -=
+		c == 42 or # *=
+		c == 47 or # /=
+		c == 37 or # %=
+		c == 38 or # &=
+		c == 124 or # |=
+		c == 94     # ^=
+	)
+		return start + 2
+	if c == n and ( # repeated operators
+		c == 42 or # **
+		c == 38 or # &&
+		c == 124 or # ||
+		c == 60 or # <<
+		c == 62 or # >>
+		c == 47    # //
+	)
+		return start + 2
+	if (
+		(c >= 40 and c <= 47) or # ( ) * + , - . /
+		(c >= 60 and c <= 63) or # < = > ?
+		c == 33 or # !
+		c == 37 or # %
+		c == 38 or # &
+		c == 58 or # :
+		c == 91 or # [
+		c == 93 or # ]
+		c == 94 or # ^
+		c == 123 or # {
+		c == 124 or # |
+		c == 125 or # }
+		c == 126    # ~
+	)
+		return start + 1
+	return start
+
+# Negative token kinds describe errors. All other tokens are ordered source spans.
+# Tabs indent code; whitespace-only and comment-only lines do not change depth.
+# Bracketed continuations suppress indentation and NEWLINE tokens.
+def tokenize(source: string) -> Array[Token]
+	var tokens = Array[Token]()
+	var brackets = Array[i64]()
+	var depth = 0
+	var level = 0
+	var pos = 0
+	var line = 1
+	var column = 1
+	var line_start = true
+	var line_has_code = false
+	let size = len(source)
+
+	while pos < size
+		if line_start
+			var indent = 0
+			var spaces = false
+			while peek(source, pos) == 9 or peek(source, pos) == 32 # TAB SPACE
+				if peek(source, pos) == 9 # TAB
+					indent += 1
+				else
+					spaces = true
+				pos += 1
+				column += 1
+			let first = peek(source, pos)
+			if depth == 0 and (
+				first != 10 and # LF
+				first != 13 and # CR
+				first != 35 and # # comment
+				first != -1      # EOF
+			)
+				if spaces or indent > level + 1
+					return tokens.append(Token(-2, pos, pos, line, column))
+				if indent > level
+					tokens = tokens.append(Token(7, pos, pos, line, 1))
+					level += 1
+				while level > indent
+					tokens = tokens.append(Token(8, pos, pos, line, 1))
+					level -= 1
+			line_start = false
+
+		let c = peek(source, pos)
+		if c == 10 or c == 13 # LF CR
+			let start = pos
+			if c == 13 and peek(source, pos + 1) == 10 # CRLF
+				pos += 2
+			else
+				pos += 1
+			if depth == 0 and line_has_code
+				tokens = tokens.append(Token(6, start, pos, line, column))
+			line += 1
+			column = 1
+			line_start = true
+			line_has_code = false
+			continue
+		if c == 32 or c == 9 # SPACE TAB
+			pos += 1
+			column += 1
+			continue
+		if c == 35 # # comment
+			while pos < size and peek(source, pos) != 10 and peek(source, pos) != 13 # LF CR
+				pos += 1
+				column += 1
+			continue
+
+		let start = pos
+		let start_column = column
+		var kind = 5
+		var end = pos
+		if is_alpha(c)
+			kind = 1
+			end = scan_identifier(source, pos)
+		elif is_digit(c) or (c == 46 and is_digit(peek(source, pos + 1))) # .
+			kind = 2
+			end = scan_number(source, pos)
+			if is_float(source, start, end)
+				kind = 3
+		elif c == 34 or c == 39 # " '
+			kind = 4
+			end = scan_string(source, pos)
+			if end < 0
+				return tokens.append(Token(-3, pos, pos + 1, line, column))
+		else
+			end = scan_operator(source, pos)
+			if end == pos
+				return tokens.append(Token(-1, pos, pos + 1, line, column))
+			if c == 40 or c == 91 or c == 123 # ( [ {
+				if depth == len(brackets)
+					brackets = brackets.append(c)
+				else
+					brackets[depth?]! = c
+				depth += 1
+			elif c == 41 or c == 93 or c == 125 # ) ] }
+				if depth == 0
+					return tokens.append(Token(-4, pos, end, line, column))
+				let opening = brackets[depth - 1?]!
+				if (c == 41 and opening != 40) or (c == 93 and opening != 91) or (c == 125 and opening != 123) # () [] {}
+					return tokens.append(Token(-4, pos, end, line, column))
+				depth -= 1
+		tokens = tokens.append(Token(kind, start, end, line, start_column))
+		column += end - pos
+		pos = end
+		line_has_code = true
+
+	if depth != 0
+		return tokens.append(Token(-5, size, size, line, column))
+	if line_has_code
+		tokens = tokens.append(Token(6, size, size, line, column))
+	while level > 0
+		tokens = tokens.append(Token(8, size, size, line, 1))
+		level -= 1
+	return tokens.append(Token(9, size, size, line, column))

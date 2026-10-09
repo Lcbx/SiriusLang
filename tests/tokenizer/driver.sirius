@@ -1,0 +1,10 @@
+# Concatenate with src/tokenizer.sirius until Sirius has module imports.
+def main() -> i64
+	let args = arguments()
+	let source = read_text(args[1?] or "") or ""
+	for token in tokenize(source)
+		var shown = ""
+		if token.kind >= 1 and token.kind <= 5
+			shown = " " + token_text(source, token)
+		print(token_kind_name(token.kind) + " " + str(token.start) + ":" + str(token.end) + " " + str(token.line) + ":" + str(token.column) + shown)
+	return 0

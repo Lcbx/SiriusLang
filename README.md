@@ -4,18 +4,19 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 
 ## Layout
 
-- `tests/fixtures/*.sirius` — positive examples, one (or a few closely related) bootstrap features each.
+- `tests/fixtures/*.sirius` — all positive compiler fixtures, including compiler-authoring features (only the first 24 have independent C references).
 - `tests/expected_c/*.c` — compilable C11 **reference lowering**, not an expected byte-for-byte compiler output.
 - `tests/expected_output/*.txt` — standard output, with exit status 0.
 - `tests/negative/*.sirius`, `tests/negative/expectations.json` — expected rejection cases and suggested stable diagnostic IDs.
 - `tests/runtime_errors/` — checked failure examples with expected nonzero exit and panic message.
-- `tests/bootstrap_features/*.sirius` — additional compiler-authoring regression cases (generated C only; no independent reference C yet).
 - `tests/deferred/` — planned language features with illustrative source and expected output; not yet exercised by the runner.
 - `include/sirius_runtime.{h,c}` — C11 runtime with managed strings, generic 1D arrays and hash dictionaries (typed element callbacks), reference counting, CoW, and file I/O; retains the original i64-only APIs for independent C references.
 - `bootstrap_compiler/sirius.py` — actual CLI compiler entry point.
 - `bootstrap_compiler/syntax.py` — SLY lexer, explicit indentation tokens, dataclass AST, Pratt expression parser.
 - `bootstrap_compiler/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
 - `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
+- `src/tokenizer.sirius` — first stage-1 component, an ASCII-oriented byte scanner with source-span tokens, indentation and lexical diagnostics.
+- `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer input/output golden tests and their Sirius driver.
 - `LANGUAGE_DESIGN.md` — current Sirius language design and agreed clarifications.
 - `target_ir.py`, `IR_DESIGN.md` — proposed **future** typed HIR and CFG MIR representation (not yet integrated).
 - `tools/verify_c.py` — C11 compilation and execution of all reference C fixtures.
@@ -23,7 +24,7 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 
 ## Positive tests
 
-The original 24 independent reference cases remain unchanged. Additional compiler-only feature fixtures (`tests/bootstrap_features/25_*.sirius` through `36_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; a miniature token/symbol-table/C-text workflow; the rank-1 array shorthand; and UTF-8 byte inspection.
+The first 24 compiler fixtures have independent C reference programs. Additional compiler-only feature fixtures (`tests/fixtures/25_*.sirius` through `37_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; a miniature token/symbol-table/C-text workflow; the rank-1 array shorthand; and UTF-8 byte inspection.
 
 | File | Bootstrap behavior |
 | --- | --- |
@@ -159,7 +160,7 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 
 ### 0. Test-first Python bootstrap
 
-- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 independent C references; 10 more compiler-authored fixtures).
+- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 independent C references; 13 additional compiler-authored fixtures).
 - [x] Python SLY lexer, indentation-aware parser and syntax AST.
 - [x] Basic static type checking, concrete function specialization and C11 emission.
 - [x] Structural records with deterministic field order, constructors, unions, basic matching, function values.
@@ -180,7 +181,8 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 
 ### 2. Rewrite compiler in Sirius (start as soon as phase 1 basics work)
 
-- [ ] Write a self-contained Sirius tokenizer and indentation-aware parser; represent recursive syntax using arena indices if recursive structural types are inconvenient.
+- [x] Write and independently test a self-contained Sirius tokenizer, including indentation, bracket continuations and lexical diagnostics.
+- [ ] Write the Sirius indentation-aware parser; represent recursive syntax using arena indices if recursive structural types are inconvenient.
 - [ ] Add AST definitions, simple symbol/type resolution and a deliberately small C emitter in Sirius.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
 - [ ] Compare stage-0 Python and stage-1 Sirius compilers on the shared golden/negative tests.
@@ -205,3 +207,11 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [ ] Deferred medium-priority negative array indexing (`tests/deferred/25_negative_indexing.sirius`).
 
 **Strategy:** Do not first port the Python compiler's mixed analysis/emission code wholesale, and do not implement a full typed HIR + CFG MIR in both languages. Extend Python just enough to compile a *small new compiler written in Sirius*, reach self-hosting, and then develop the durable IR architecture in Sirius. The present `target_ir.py` is a design reference rather than mandatory Python implementation work.
+
+## Stage-1 tokenizer
+
+Run `python tools/test_tokenizer.py`. It concatenates `src/tokenizer.sirius` and `tests/tokenizer/driver.sirius` in a temporary file because module imports are not yet supported, then compiles that file using the Python bootstrap and checks the token streams against `tests/tokenizer/expected_output/*.txt`. It does not depend on SLY at runtime.
+
+`tokenize(source: string) -> Array[Token]` emits half-open UTF-8 byte spans (`start`, `end`), 1-based line numbers, and 1-based **byte** columns. Token kinds are documented at the top of `tokenizer.sirius`; negative kinds indicate a fatal lexical error and terminate the stream. Keywords remain ordinary `NAME` tokens for the future parser. NEWLINE/INDENT/DEDENT are explicit; blank/comment-only lines and bracketed continuations do not affect indentation. A final NEWLINE is synthesized when necessary.
+
+Bootstrap lexer scope: ASCII identifiers; UTF-8 allowed inside quoted strings and comments; decimal/scientific literals; quoted strings with escapes (but no multiline/triple-quoted strings yet); common punctuation and operators. Grammar validation and semantic diagnostics belong to the parser. `byte_at` and `slice` are sufficient; neither regex nor additional runtime features were needed. Numeric character tests are annotated with ASCII spellings; parenthesized expressions (including conditions and argument lists) may span lines and contain inline comments. This is covered by `tests/fixtures/37_multiline_parentheses.sirius` and `tests/tokenizer/fixtures/19_multiline_condition.sirius`.

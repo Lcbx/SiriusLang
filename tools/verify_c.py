@@ -10,13 +10,13 @@ CC = shutil.which("cc")
 if not CC:
     raise SystemExit("A C11 compiler (cc) is required")
 
-cases = sorted((ROOT / "tests" / "fixtures").glob("*.sirius"))
+cases = sorted((ROOT / "tests" / "expected_c").glob("*.c"))
 with tempfile.TemporaryDirectory() as build:
-    for fixture in cases:
-        stem = fixture.stem
-        source = ROOT / "tests" / "expected_c" / f"{stem}.c"
+    for source in cases:
+        stem = source.stem
+        fixture = ROOT / "tests" / "fixtures" / f"{stem}.sirius"
         stdout = ROOT / "tests" / "expected_output" / f"{stem}.txt"
-        if not source.is_file() or not stdout.is_file():
+        if not fixture.is_file() or not stdout.is_file():
             raise SystemExit(f"Missing expected C/output for {stem}")
         binary = Path(build) / stem
         command = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-I", str(ROOT / "include"), str(source), str(ROOT / "include" / "sirius_runtime.c"), "-lm", "-o", str(binary)]

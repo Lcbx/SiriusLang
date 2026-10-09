@@ -1,0 +1,23 @@
+def is_triple_operator(c: i64, n: i64, third: i64) -> bool
+	if (
+		(c == 42 and n == 42) or # **=
+		(c == 47 and n == 47) or # //=
+		(c == 60 and n == 60) or # <<=
+		(c == 62 and n == 62)    # >>=
+	) and third == 61
+		return true
+	return false
+
+def main() -> i64
+	let success = (
+		is_triple_operator(42, 42, 61) and
+		is_triple_operator(62, 62, 61)
+	)
+	print(success)
+	print(
+		is_triple_operator(
+			47, 47, 62
+		)
+	)
+	print(is_triple_operator(60, 60, 61))
+	return 0

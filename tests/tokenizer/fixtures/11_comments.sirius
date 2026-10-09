@@ -1,0 +1,5 @@
+ # comment with leading space
+# top-level
+foo # trailing
+	# ignored indentation
+bar
