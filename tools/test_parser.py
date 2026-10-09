@@ -48,7 +48,7 @@ def main() -> None:
 
 		# Syntax smoke tests on the stage-0 compiler's complete positive corpus.
 		programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
-		programs += [ROOT / 'src/tokenizer.sirius', ROOT / 'src/parser.sirius']
+		programs += [ROOT / 'src/tokenizer.sirius', ROOT / 'src/parser.sirius', ROOT / 'src/emit_c.sirius']
 		for case in programs:
 			result = subprocess.run([str(binary), str(case)], capture_output=True,
 				text=True, encoding='utf-8')

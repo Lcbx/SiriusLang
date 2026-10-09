@@ -1,0 +1,8 @@
+def equals(s: string) -> bool
+	return s == "é"
+
+def main() -> i64
+	let word: string = "é"
+	print(equals(word))
+	print("alpha" < "beta")
+	return 0

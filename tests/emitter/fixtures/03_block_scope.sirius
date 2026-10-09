@@ -1,0 +1,7 @@
+def main() -> i64
+	var total = 0
+	for i in 0..4
+		let twice = i * 2
+		total += twice
+	print(total)
+	return 0

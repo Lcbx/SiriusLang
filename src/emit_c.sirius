@@ -1,0 +1,599 @@
+# Minimal stage-1 semantic checker and C11 emitter.
+# Concatenate after tokenizer.sirius and parser.sirius until imports exist.
+# This deliberately rejects unsupported types and operations instead of emitting unsafe C.
+
+let TYPE_INVALID = 0
+let TYPE_I64 = 1
+let TYPE_F64 = 2
+let TYPE_BOOL = 3
+let TYPE_STRING = 4
+let TYPE_VOID = 5
+
+
+def ParameterInfo(name: string, kind: i64)
+	pub name
+	pub kind
+
+def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64)
+	pub name
+	pub kind
+	pub params
+	pub body
+
+def SymbolInfo(name: string, kind: i64, mutable: bool, depth: i64)
+	pub name
+	pub kind
+	pub mutable
+	pub depth
+
+def ConstantInfo(name: string, value: string)
+	pub name
+	pub value
+
+def EmitState(tree: ParseState)
+	pub tree
+	pub functions = Array[FunctionInfo]()
+	pub symbols = Array[SymbolInfo]()
+	pub constants = Array[ConstantInfo]()
+	pub lines = Array[string]()
+	pub indentation = 0
+	pub loop_depth = 0
+	pub scope_depth = 0
+	pub return_kind = TYPE_INVALID
+	pub function_name = ""
+	pub counter = 0
+	pub error = ""
+	pub error_line = 0
+
+def ExprCode(state: EmitState, text: string, kind: i64)
+	pub state
+	pub text
+	pub kind
+
+def CompileResult(code: string, error: string, line: i64)
+	pub code
+	pub error
+	pub line
+
+def ast_node(tree: ParseState, id: i64) -> Node
+	return tree.nodes[id?]!
+
+def ast_child(tree: ParseState, id: i64, offset: i64) -> i64
+	let entry = ast_node(tree, id)
+	return tree.edges[entry.first + offset?]!
+
+def ast_text(tree: ParseState, id: i64) -> string
+	return token_text(tree.source, tree.tokens[ast_node(tree, id).token?]!)
+
+def ast_line(tree: ParseState, id: i64) -> i64
+	return tree.tokens[ast_node(tree, id).token?]!.line
+
+def emit_error(state: EmitState, id: i64, message: string) -> EmitState
+	var result = state
+	if result.error == ""
+		result.error = message
+		result.error_line = ast_line(result.tree, id)
+	return result
+
+def type_name(kind: i64) -> string
+	if kind == TYPE_I64
+		return "i64"
+	if kind == TYPE_F64
+		return "f64"
+	if kind == TYPE_BOOL
+		return "bool"
+	if kind == TYPE_STRING
+		return "string"
+	if kind == TYPE_VOID
+		return "void"
+	return "unknown"
+
+def c_type(kind: i64) -> string
+	if kind == TYPE_I64
+		return "int64_t"
+	if kind == TYPE_F64
+		return "double"
+	if kind == TYPE_BOOL
+		return "bool"
+	if kind == TYPE_STRING
+		return "const char *"
+	if kind == TYPE_VOID
+		return "void"
+	return "INVALID_TYPE"
+
+def ast_type(tree: ParseState, id: i64) -> i64
+	let entry = ast_node(tree, id)
+	if entry.kind != NODE_TYPE or entry.count != 0
+		return TYPE_INVALID
+	let name = ast_text(tree, id)
+	if name == "i64"
+		return TYPE_I64
+	if name == "f64"
+		return TYPE_F64
+	if name == "bool"
+		return TYPE_BOOL
+	if name == "string"
+		return TYPE_STRING
+	return TYPE_INVALID
+
+def line(state: EmitState, text: string) -> EmitState
+	var result = state
+	var prefix = ""
+	for i in 0..state.indentation
+		prefix = prefix + "\t"
+	result.lines = result.lines.append(prefix + text)
+	return result
+
+def find_symbol(state: EmitState, name: string) -> i64
+	for i in 0..len(state.symbols)
+		let index = len(state.symbols) - 1 - i
+		if state.symbols[index?]!.name == name
+			return index
+	return -1
+
+def find_function(state: EmitState, name: string) -> i64
+	for i in 0..len(state.functions)
+		if state.functions[i?]!.name == name
+			return i
+	return -1
+
+def find_constant(state: EmitState, name: string) -> string
+	for item in state.constants
+		if item.name == name
+			return item.value
+	return ""
+
+def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: bool) -> EmitState
+	var result = state
+	if kind == TYPE_INVALID or kind == TYPE_VOID
+		return emit_error(result, id, "unsupported binding type")
+	result.symbols = result.symbols.append(SymbolInfo(name, kind, mutable, result.scope_depth))
+	return result
+
+def check_type(state: EmitState, id: i64, found: i64, expected: i64) -> EmitState
+	if found == expected
+		return state
+	return emit_error(state, id, "expected " + type_name(expected) + ", found " + type_name(found))
+
+# C does not sequence ordinary binary operands or function arguments.
+# Reject pairs of potentially effectful calls until MIR handles ordered temporaries.
+def has_effect(state: EmitState, id: i64, visited: Array[string]) -> bool
+	let entry = ast_node(state.tree, id)
+	if entry.kind == NODE_WHILE or entry.kind == NODE_FOR or entry.kind == NODE_RECUR
+		return true
+	if entry.kind == NODE_BINARY and (ast_text(state.tree, id) == "/" or ast_text(state.tree, id) == "%")
+		return true
+	if entry.kind == NODE_CALL
+		let callee = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, callee).kind != NODE_NAME
+			return true
+		let name = ast_text(state.tree, callee)
+		if name == "print"
+			return true
+		let index = find_function(state, name)
+		if index < 0
+			return true
+		var seen = false
+		for value in visited
+			if value == name
+				seen = true
+		if not seen
+			let info = state.functions[index?]!
+			if has_effect(state, info.body, visited.append(name))
+				return true
+	for i in 0..entry.count
+		if has_effect(state, ast_child(state.tree, id, i), visited)
+			return true
+	return false
+
+def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
+	return has_effect(state, a, Array[string]()) and has_effect(state, b, Array[string]())
+
+def emit_expr(state: EmitState, id: i64) -> ExprCode
+	if state.error != ""
+		return ExprCode(state, "", TYPE_INVALID)
+	let entry = ast_node(state.tree, id)
+	let value = ast_text(state.tree, id)
+	if entry.kind == NODE_INTEGER
+		return ExprCode(state, value, TYPE_I64)
+	if entry.kind == NODE_FLOAT
+		return ExprCode(state, value, TYPE_F64)
+	if entry.kind == NODE_BOOL
+		return ExprCode(state, value, TYPE_BOOL)
+	if entry.kind == NODE_STRING
+		return ExprCode(state, value, TYPE_STRING)
+	if entry.kind == NODE_NAME
+		let index = find_symbol(state, value)
+		if index >= 0
+			return ExprCode(state, "v_" + value, state.symbols[index?]!.kind)
+		let constant = find_constant(state, value)
+		if constant != ""
+			return ExprCode(state, constant, TYPE_I64)
+		return ExprCode(emit_error(state, id, "unknown name '" + value + "'"), "", TYPE_INVALID)
+	if entry.kind == NODE_UNARY
+		let arg = emit_expr(state, ast_child(state.tree, id, 0))
+		if value == "not"
+			return ExprCode(check_type(arg.state, id, arg.kind, TYPE_BOOL), "(!" + arg.text + ")", TYPE_BOOL)
+		if (value == "-" or value == "+") and (arg.kind == TYPE_I64 or arg.kind == TYPE_F64)
+			return ExprCode(arg.state, "(" + value + arg.text + ")", arg.kind)
+		return ExprCode(emit_error(arg.state, id, "unsupported unary operator '" + value + "'"), "", TYPE_INVALID)
+	if entry.kind == NODE_BINARY
+		let left_id = ast_child(state.tree, id, 0)
+		let right_id = ast_child(state.tree, id, 1)
+		if value != "and" and value != "or" and ambiguous_order(state, left_id, right_id)
+			return ExprCode(emit_error(state, id, "expression requires ordered call evaluation"), "", TYPE_INVALID)
+		let left = emit_expr(state, left_id)
+		let right = emit_expr(left.state, ast_child(state.tree, id, 1))
+		var next = right.state
+		if next.error != ""
+			return ExprCode(next, "", TYPE_INVALID)
+		if left.kind != right.kind
+			return ExprCode(emit_error(next, id, "binary operand types differ"), "", TYPE_INVALID)
+		var op = value
+		var kind = left.kind
+		if op == "and" or op == "or"
+			next = check_type(next, id, kind, TYPE_BOOL)
+			if op == "and"
+				op = "&&"
+			else
+				op = "||"
+		elif op == "==" or op == "!="
+			kind = TYPE_BOOL
+		elif op == "<" or op == "<=" or op == ">" or op == ">="
+			if left.kind != TYPE_I64 and left.kind != TYPE_F64 and left.kind != TYPE_STRING
+				next = emit_error(next, id, "comparison requires numeric or string operands")
+			kind = TYPE_BOOL
+		elif op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
+			if left.kind != TYPE_I64 and left.kind != TYPE_F64
+				next = emit_error(next, id, "arithmetic requires numeric operands")
+			if op == "%" and left.kind != TYPE_I64
+				next = emit_error(next, id, "remainder requires i64")
+		else
+			next = emit_error(next, id, "unsupported binary operator '" + value + "'")
+		if left.kind == TYPE_STRING and (op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=")
+			return ExprCode(next, "(strcmp(" + left.text + ", " + right.text + ") " + op + " 0)", TYPE_BOOL)
+		return ExprCode(next, "(" + left.text + " " + op + " " + right.text + ")", kind)
+	if entry.kind == NODE_CALL
+		let callee = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, callee).kind != NODE_NAME
+			return ExprCode(emit_error(state, id, "only named calls are supported"), "", TYPE_INVALID)
+		let name = ast_text(state.tree, callee)
+		var calls = 0
+		for i in 1..entry.count
+			if has_effect(state, ast_child(state.tree, id, i), Array[string]())
+				calls += 1
+		if calls > 1
+			return ExprCode(emit_error(state, id, "call requires ordered argument evaluation"), "", TYPE_INVALID)
+		var next = state
+		var arguments = Array[string]()
+		var arg_types = Array[i64]()
+		for i in 1..entry.count
+			let arg = emit_expr(next, ast_child(state.tree, id, i))
+			next = arg.state
+			arguments = arguments.append(arg.text)
+			arg_types = arg_types.append(arg.kind)
+		if next.error != ""
+			return ExprCode(next, "", TYPE_INVALID)
+		if name == "print"
+			if len(arguments) != 1
+				return ExprCode(emit_error(next, id, "print expects one argument"), "", TYPE_INVALID)
+			let value = arguments[0?]!
+			let kind = arg_types[0?]!
+			if kind == TYPE_I64
+				return ExprCode(next, "printf(\"%lld\\n\", (long long)(" + value + "))", TYPE_VOID)
+			if kind == TYPE_F64
+				return ExprCode(next, "printf(\"%.17g\\n\", " + value + ")", TYPE_VOID)
+			if kind == TYPE_BOOL
+				return ExprCode(next, "printf(\"%s\\n\", " + value + " ? \"true\" : \"false\")", TYPE_VOID)
+			if kind == TYPE_STRING
+				return ExprCode(next, "printf(\"%s\\n\", " + value + ")", TYPE_VOID)
+			return ExprCode(emit_error(next, id, "cannot print this type"), "", TYPE_INVALID)
+		let index = find_function(next, name)
+		if index < 0
+			return ExprCode(emit_error(next, id, "unknown function '" + name + "'"), "", TYPE_INVALID)
+		let function = next.functions[index?]!
+		if len(arguments) != len(function.params)
+			return ExprCode(emit_error(next, id, "argument count mismatch for '" + name + "'"), "", TYPE_INVALID)
+		for i in 0..len(arguments)
+			next = check_type(next, id, arg_types[i?]!, function.params[i?]!.kind)
+		return ExprCode(next, "s_" + name + "(" + ", ".join(arguments) + ")", function.kind)
+	return ExprCode(emit_error(state, id, "unsupported expression '" + node_kind_name(entry.kind) + "'"), "", TYPE_INVALID)
+
+# Detect a direct self-tail call anywhere in the function body.
+def contains_recur(tree: ParseState, id: i64) -> bool
+	let entry = ast_node(tree, id)
+	if entry.kind == NODE_RECUR
+		return true
+	for i in 0..entry.count
+		if contains_recur(tree, ast_child(tree, id, i))
+			return true
+	return false
+
+def emit_block(state: EmitState, id: i64) -> EmitState
+	let count = len(state.symbols)
+	var next = state
+	let block = ast_node(state.tree, id)
+	for i in 0..block.count
+		next = emit_statement(next, ast_child(next.tree, id, i))
+		if next.error != ""
+			return next
+	var restored = Array[SymbolInfo]()
+	for i in 0..count
+		restored = restored.append(next.symbols[i?]!)
+	next.symbols = restored
+	return next
+
+def emit_nested_block(state: EmitState, id: i64) -> EmitState
+	var next = line(state, "{")
+	next.indentation += 1
+	next.scope_depth += 1
+	next = emit_block(next, id)
+	next.scope_depth -= 1
+	next.indentation -= 1
+	return line(next, "}")
+
+def emit_statement(state: EmitState, id: i64) -> EmitState
+	if state.error != ""
+		return state
+	let item = ast_node(state.tree, id)
+	if item.kind == NODE_LET or item.kind == NODE_VAR
+		let name = ast_text(state.tree, id)
+		let previous = find_symbol(state, name)
+		if previous >= 0 and state.symbols[previous?]!.depth == state.scope_depth
+			return emit_error(state, id, "duplicate binding '" + name + "'")
+		var kind = TYPE_INVALID
+		var expr_id = -1
+		for i in 0..item.count
+			let child = ast_child(state.tree, id, i)
+			if ast_node(state.tree, child).kind == NODE_TYPE
+				kind = ast_type(state.tree, child)
+			else
+				expr_id = child
+		if expr_id < 0
+			return emit_error(state, id, "binding requires initializer")
+		let result = emit_expr(state, expr_id)
+		var next = result.state
+		if kind == TYPE_INVALID
+			kind = result.kind
+		next = check_type(next, id, result.kind, kind)
+		if next.error != ""
+			return next
+		var declaration = c_type(kind) + " v_" + name + " = " + result.text + ";"
+		if item.kind == NODE_LET
+			if kind == TYPE_STRING
+				declaration = "const char *const v_" + name + " = " + result.text + ";"
+			else
+				declaration = "const " + declaration
+		next = line(next, declaration)
+		return append_symbol(next, id, name, kind, item.kind == NODE_VAR)
+	if item.kind == NODE_ASSIGN
+		let lhs = ast_child(state.tree, id, 0)
+		let rhs = ast_child(state.tree, id, 1)
+		if ast_node(state.tree, lhs).kind != NODE_NAME
+			return emit_error(state, id, "only local-variable assignment is supported")
+		let name = ast_text(state.tree, lhs)
+		let index = find_symbol(state, name)
+		if index < 0
+			return emit_error(state, id, "unknown binding '" + name + "'")
+		let symbol = state.symbols[index?]!
+		if not symbol.mutable
+			return emit_error(state, id, "cannot assign immutable binding '" + name + "'")
+		let result = emit_expr(state, rhs)
+		let next = check_type(result.state, id, result.kind, symbol.kind)
+		return line(next, "v_" + name + " " + ast_text(state.tree, id) + " " + result.text + ";")
+	if item.kind == NODE_RETURN
+		if item.count == 0
+			if state.return_kind != TYPE_VOID
+				return emit_error(state, id, "non-void function must return a value")
+			return line(state, "return;")
+		let result = emit_expr(state, ast_child(state.tree, id, 0))
+		let next = check_type(result.state, id, result.kind, state.return_kind)
+		return line(next, "return " + result.text + ";")
+	if item.kind == NODE_RECUR
+		if item.count != 1
+			return emit_error(state, id, "recur expects a direct self-call")
+		let call = ast_child(state.tree, id, 0)
+		let entry = ast_node(state.tree, call)
+		if entry.kind != NODE_CALL or ast_node(state.tree, ast_child(state.tree, call, 0)).kind != NODE_NAME
+			return emit_error(state, id, "recur expects a direct self-call")
+		let name = ast_text(state.tree, ast_child(state.tree, call, 0))
+		if name != state.function_name
+			return emit_error(state, id, "recur must call the enclosing function")
+		let info = state.functions[find_function(state, name)?]!
+		if entry.count - 1 != len(info.params)
+			return emit_error(state, id, "recur argument count mismatch")
+		var next = state
+		let serial = next.counter
+		next.counter += 1
+		for i in 0..len(info.params)
+			let arg = emit_expr(next, ast_child(next.tree, call, i + 1))
+			next = check_type(arg.state, id, arg.kind, info.params[i?]!.kind)
+			if next.error != ""
+				return next
+			next = line(next, c_type(arg.kind) + " s_tail_" + str(serial) + "_" + str(i) + " = " + arg.text + ";")
+		for i in 0..len(info.params)
+			next = line(next, "v_" + info.params[i?]!.name + " = s_tail_" + str(serial) + "_" + str(i) + ";")
+		return line(next, "goto s_recur;")
+	if item.kind == NODE_EXPR
+		let result = emit_expr(state, ast_child(state.tree, id, 0))
+		if result.kind != TYPE_VOID
+			return emit_error(result.state, id, "expression statement must be effectful")
+		return line(result.state, result.text + ";")
+	if item.kind == NODE_IF
+		var next = state
+		for i in 0..item.count
+			let arm = ast_child(state.tree, id, i)
+			let branch = ast_node(state.tree, arm)
+			if branch.kind == NODE_ELSE
+				next = line(next, "else")
+				next = emit_nested_block(next, ast_child(next.tree, arm, 0))
+			else
+				let cond = emit_expr(next, ast_child(next.tree, arm, 0))
+				next = check_type(cond.state, arm, cond.kind, TYPE_BOOL)
+				var header = "if (" + cond.text + ")"
+				if i > 0
+					header = "else " + header
+				next = line(next, header)
+				next = emit_nested_block(next, ast_child(next.tree, arm, 1))
+		return next
+	if item.kind == NODE_WHILE
+		let cond = emit_expr(state, ast_child(state.tree, id, 0))
+		var next = check_type(cond.state, id, cond.kind, TYPE_BOOL)
+		next = line(next, "while (" + cond.text + ")")
+		next.loop_depth += 1
+		next = emit_nested_block(next, ast_child(next.tree, id, 1))
+		next.loop_depth -= 1
+		return next
+	if item.kind == NODE_FOR
+		let iterable = ast_child(state.tree, id, item.count - 2)
+		let body = ast_child(state.tree, id, item.count - 1)
+		if ast_node(state.tree, iterable).kind != NODE_BINARY or ast_text(state.tree, iterable) != ".."
+			return emit_error(state, id, "only half-open range loops are supported")
+		let from = emit_expr(state, ast_child(state.tree, iterable, 0))
+		let to = emit_expr(from.state, ast_child(state.tree, iterable, 1))
+		var next = check_type(to.state, id, from.kind, TYPE_I64)
+		next = check_type(next, id, to.kind, TYPE_I64)
+		let name = ast_text(next.tree, id)
+		let bound = "s_bound_" + str(next.counter)
+		next.counter += 1
+		next = line(next, "for (int64_t v_" + name + " = " + from.text + ", " + bound + " = " + to.text + "; v_" + name + " < " + bound + "; ++v_" + name + ")")
+		next.scope_depth += 1
+		next = append_symbol(next, id, name, TYPE_I64, false)
+		next.loop_depth += 1
+		next = emit_nested_block(next, body)
+		next.loop_depth -= 1
+		next.scope_depth -= 1
+		var restored = Array[SymbolInfo]()
+		for i in 0..len(state.symbols)
+			restored = restored.append(next.symbols[i?]!)
+		next.symbols = restored
+		return next
+	if item.kind == NODE_BREAK or item.kind == NODE_CONTINUE
+		if state.loop_depth == 0
+			return emit_error(state, id, "loop control outside loop")
+		if item.kind == NODE_BREAK
+			return line(state, "break;")
+		return line(state, "continue;")
+	return emit_error(state, id, "unsupported statement '" + node_kind_name(item.kind) + "'")
+
+def collect_function(state: EmitState, id: i64) -> EmitState
+	let entry = ast_node(state.tree, id)
+	let name = ast_text(state.tree, id)
+	if find_function(state, name) >= 0 or find_constant(state, name) != "" or name == "print"
+		return emit_error(state, id, "duplicate function '" + name + "'")
+	var params = Array[ParameterInfo]()
+	var result = TYPE_INVALID
+	for i in 0..entry.count - 1
+		let part = ast_child(state.tree, id, i)
+		let info = ast_node(state.tree, part)
+		if info.kind == NODE_PARAM
+			if info.count != 1 or ast_node(state.tree, ast_child(state.tree, part, 0)).kind != NODE_TYPE
+				return emit_error(state, part, "parameters require an explicit type")
+			let kind = ast_type(state.tree, ast_child(state.tree, part, 0))
+			if kind == TYPE_INVALID or kind == TYPE_VOID
+				return emit_error(state, part, "unsupported parameter type")
+			let parameter_name = ast_text(state.tree, part)
+			for previous in params
+				if previous.name == parameter_name
+					return emit_error(state, part, "duplicate parameter '" + parameter_name + "'")
+			params = params.append(ParameterInfo(parameter_name, kind))
+		elif info.kind == NODE_TYPE
+			result = ast_type(state.tree, part)
+	if result == TYPE_INVALID
+		return emit_error(state, id, "functions require a scalar return annotation")
+	var next = state
+	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1)))
+	return next
+
+def evaluate_constant(state: EmitState, id: i64) -> ExprCode
+	let item = ast_node(state.tree, id)
+	let value = ast_text(state.tree, id)
+	if item.kind == NODE_INTEGER
+		return ExprCode(state, value, TYPE_I64)
+	if item.kind == NODE_NAME
+		let found = find_constant(state, value)
+		if found != ""
+			return ExprCode(state, found, TYPE_I64)
+	if item.kind == NODE_UNARY and (value == "-" or value == "+")
+		let inner = evaluate_constant(state, ast_child(state.tree, id, 0))
+		return ExprCode(inner.state, "(" + value + inner.text + ")", TYPE_I64)
+	if item.kind == NODE_BINARY and (value == "+" or value == "-" or value == "*")
+		let left = evaluate_constant(state, ast_child(state.tree, id, 0))
+		let right = evaluate_constant(left.state, ast_child(state.tree, id, 1))
+		return ExprCode(right.state, "(" + left.text + " " + value + " " + right.text + ")", TYPE_I64)
+	return ExprCode(emit_error(state, id, "unsupported module constant initializer"), "", TYPE_INVALID)
+
+def collect_constant(state: EmitState, id: i64) -> EmitState
+	let entry = ast_node(state.tree, id)
+	let name = ast_text(state.tree, id)
+	if entry.kind != NODE_LET or entry.count < 1
+		return emit_error(state, id, "unsupported module statement")
+	if find_constant(state, name) != "" or find_function(state, name) >= 0
+		return emit_error(state, id, "duplicate module name")
+	if entry.count > 1 and ast_node(state.tree, ast_child(state.tree, id, 0)).kind == NODE_TYPE
+		if ast_type(state.tree, ast_child(state.tree, id, 0)) != TYPE_I64
+			return emit_error(state, id, "module constants must have type i64")
+	let initializer = ast_child(state.tree, id, entry.count - 1)
+	let result = evaluate_constant(state, initializer)
+	if result.state.error != ""
+		return result.state
+	var next = result.state
+	next.constants = next.constants.append(ConstantInfo(name, result.text))
+	return next
+
+def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
+	var next = state
+	next.symbols = Array[SymbolInfo]()
+	next.return_kind = info.kind
+	next.function_name = info.name
+	var args = Array[string]()
+	for param in info.params
+		args = args.append(c_type(param.kind) + " v_" + param.name)
+		next.symbols = next.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
+	next = line(next, c_type(info.kind) + " s_" + info.name + "(" + ", ".join(args) + ")")
+	next = line(next, "{")
+	next.indentation += 1
+	if contains_recur(next.tree, info.body)
+		next = line(next, "s_recur: ;")
+	next.scope_depth += 1
+	next = emit_block(next, info.body)
+	next.scope_depth -= 1
+	next.indentation -= 1
+	return line(next, "}")
+
+def compile_c(source: string) -> CompileResult
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		return CompileResult("", parsed.state.error, parsed.state.error_line)
+	var state = EmitState(parsed.state)
+	let root = ast_node(state.tree, parsed.node)
+	for i in 0..root.count
+		let id = ast_child(state.tree, parsed.node, i)
+		let item = ast_node(state.tree, id)
+		if item.kind == NODE_DEF
+			state = collect_function(state, id)
+		else
+			state = collect_constant(state, id)
+		if state.error != ""
+			return CompileResult("", state.error, state.error_line)
+	let main_index = find_function(state, "main")
+	if main_index < 0 or state.functions[main_index?]!.kind != TYPE_I64 or len(state.functions[main_index?]!.params) != 0
+		return CompileResult("", "expected def main() -> i64", 1)
+	state = line(state, "#include <stdint.h>")
+	state = line(state, "#include <stdbool.h>")
+	state = line(state, "#include <stdio.h>")
+	state = line(state, "#include <string.h>")
+	state = line(state, "")
+	for info in state.functions
+		var args = Array[string]()
+		for param in info.params
+			args = args.append(c_type(param.kind))
+		state = line(state, c_type(info.kind) + " s_" + info.name + "(" + ", ".join(args) + ");")
+	state = line(state, "")
+	for info in state.functions
+		state = emit_function(state, info)
+		if state.error != ""
+			return CompileResult("", state.error, state.error_line)
+		state = line(state, "")
+	state = line(state, "int main(void) { return (int)s_main(); }")
+	return CompileResult("\n".join(state.lines) + "\n", "", 0)

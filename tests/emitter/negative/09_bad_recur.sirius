@@ -1,0 +1,5 @@
+def other(x: i64) -> i64
+	return x
+
+def main() -> i64
+	recur other(1)

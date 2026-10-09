@@ -1,0 +1,6 @@
+def main() -> i64
+	print(multiply(3, 4))
+	return 0
+
+def multiply(x: i64, y: i64) -> i64
+	return x * y

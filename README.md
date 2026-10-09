@@ -16,7 +16,9 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 - `bootstrap_compiler/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
 - `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
 - `src/tokenizer.sirius` — Sirius-written byte-span lexer (ASCII identifiers, UTF-8 strings), indentation and lexical diagnostics.
-- `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics (no semantic analysis yet).
+- `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics.
+- `src/emit_c.sirius` — first Sirius-written scalar name/type checker and C11 emitter (limited subset; no ownership lowering yet).
+- `tests/emitter/`, `tools/test_emitter.py` — executable C-emission golden tests and expected compiler diagnostics.
 - `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer golden tests.
 - `tests/parser/{fixtures,expected_output}/`, `tests/parser/driver.sirius`, `tools/test_parser.py` — parser AST/diagnostic golden tests and syntax smoke tests.
 - `LANGUAGE_DESIGN.md` — current Sirius language design and agreed clarifications.
@@ -188,9 +190,10 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [x] Write and independently test a self-contained Sirius tokenizer, including indentation, bracket continuations and lexical diagnostics.
 - [x] Write the Sirius indentation-aware parser using token indices and an AST arena; validate all stage-0 positive syntax fixtures.
 - [x] Add stage-1 AST node/edge definitions and stable structural dump tests.
-- [ ] Resolve names, types and call targets against the AST, then implement a small stage-1 C emitter.
+- [x] Begin stage-1 semantic resolution and C11 emission: scalar types, calls, module constants, branches, loops and tail recursion (limited coverage; see below).
+- [ ] Generalize type resolution to records, collections, generics, constructors and ownership-aware operations.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
-- [ ] Compare stage-0 Python and stage-1 Sirius compilers on the shared golden/negative tests.
+- [ ] Expand stage-0/stage-1 equivalence beyond the five shared positive programs and dedicated stage-1 rejection tests.
 - [ ] Use stage-1 to compile its own source (stage-2); check that stage-2 compiles the same suite successfully.
 - [ ] Commit verified generated C bootstrap code and runtime; freeze Python bootstrap thereafter.
 
@@ -223,11 +226,21 @@ Bootstrap lexer scope: ASCII identifiers; UTF-8 allowed inside quoted strings an
 
 ## Stage-1 parser
 
-Run `python tools/test_parser.py` from the project root. The runner concatenates `src/tokenizer.sirius`, `src/parser.sirius` and its test driver (imports are still unavailable), builds with the Python stage-0 compiler and C11, then checks AST golden files and syntax-error diagnostics. It also smoke-tests parsing of the 37 existing positive language fixtures **and the tokenizer/parser's own Sirius sources**. This is syntax coverage only, not self-hosting or semantic conformance.
+Run `python tools/test_parser.py` from the project root. The runner concatenates `src/tokenizer.sirius`, `src/parser.sirius` and its test driver (imports are still unavailable), builds with the Python stage-0 compiler and C11, then checks AST golden files and syntax-error diagnostics. It also smoke-tests parsing of the existing positive language fixtures **and the tokenizer/parser's own Sirius sources**. This is syntax coverage only, not self-hosting or semantic conformance.
 
 `parse_module(source)` returns `ParseResult(state, node)`. `state.nodes` is an `Array[Node]` with `i64` kind IDs declared as module constants (`NODE_*`); `state.edges` is a flat array of child node IDs. Every `Node` stores `kind`, a token index, and a half-open span in the edge array (`first`, `count`). Names, literal text and source locations remain in the tokenizer's spans. Parse errors are returned as `state.error` and `state.error_line`. This avoids recursive managed record types and creates a stable representation for the upcoming name/type resolver and C emitter.
 
 The stage-1 parser covers functions, typed/default arguments, constructors/`pub`, blocks, `if/elif/else`, `while`, `for`, `match`, `let`/`var`, assignments, `return`/`recur`, record and array literals, unary/binary precedence, calls, fields, optional/checked indexing and lambda syntax. It does **not** yet perform semantic type checking, desugar constructors, resolve overloads, lower ownership, or emit C. Module/import syntax, advanced pattern matching and richer diagnostics remain to be implemented.
+
+## Stage-1 C emitter (in progress)
+
+Run `python tools/test_emitter.py` from the repository root. The runner combines `src/tokenizer.sirius`, `src/parser.sirius`, `src/emit_c.sirius` and `tests/emitter/driver.sirius`, compiles the combined source with Python stage-0, builds that output with C11, then compiles and executes the **C generated by the Sirius emitter**. This is separate from the tokenizer/parser AST tests and the Python compiler's conformance suite.
+
+The current `compile_c(source)` uses the indexed AST directly. It pre-collects function signatures, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`.
+
+The runner checks the first four independent language programs and the module-integer-constant program, additional focused emission fixtures, strict C11 compilation (`-Wall -Wextra -Werror -pedantic`), and dedicated rejection tests.
+
+**Important limitations:** This is a minimal semantic checker combined with a direct C emitter, **not** typed HIR/MIR and **not** self-hosting. It rejects unsupported syntax rather than guessing a lowering. Records, arrays, dictionaries, `Optional`, constructor definitions, generic specialization and ownership lowering still depend on Python stage-0. C operand/argument evaluation order is not generally guaranteed: until ordered temporary lowering is implemented, the stage-1 emitter rejects expressions with multiple potentially effectful calls. Current local effect detection is conservative but not a complete effect system. Integer overflow and module-constant overflow checking are not yet implemented in stage-1. The emitted C's `string` representation is limited to borrowed/literal strings; heap-managed string operations are not yet supported.
 
 ## Module integer constants (bootstrap subset)
 

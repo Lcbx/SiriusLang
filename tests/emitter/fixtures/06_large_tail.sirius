@@ -1,0 +1,8 @@
+def countdown(n: i64, acc: i64) -> i64
+	if n == 0
+		return acc
+	recur countdown(n - 1, acc + 1)
+
+def main() -> i64
+	print(countdown(100000, 0))
+	return 0

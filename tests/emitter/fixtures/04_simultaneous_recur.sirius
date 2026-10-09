@@ -1,0 +1,9 @@
+def swap_recur(a: i64, b: i64, n: i64) -> i64
+	if n == 0
+		return a * 10 + b
+	recur swap_recur(b, a, n - 1)
+
+def main() -> i64
+	print(swap_recur(1, 2, 1))
+	print(swap_recur(1, 2, 2))
+	return 0

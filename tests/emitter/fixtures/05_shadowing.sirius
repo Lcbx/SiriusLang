@@ -1,0 +1,7 @@
+def main() -> i64
+	let x = 10
+	if true
+		let x = 20
+		print(x)
+	print(x)
+	return 0
