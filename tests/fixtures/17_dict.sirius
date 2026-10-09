@@ -1,0 +1,10 @@
+# Dict constructor, .insert returns a new Dict, .get returns Optional
+def main() -> i64
+	var m = Dict[i64, i64]()
+	m = m.insert(2, 20)
+	let before = m
+	m = m.insert(2, 99)
+	print(before.get(2) or -1)
+	print(m.get(2) or -1)
+	print(m.get(8) or -1)
+	return 0

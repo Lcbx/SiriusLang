@@ -1,0 +1,12 @@
+def main() -> i64
+	var total = 0
+	for i in 0..8
+		if i == 2
+			continue
+		if i == 6
+			break
+		total += i
+	while total > 10
+		total -= 3
+	print(total)
+	return 0

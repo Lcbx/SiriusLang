@@ -1,0 +1,22 @@
+def Success(value: string)
+	pub value
+
+def Failure(code: i64)
+	pub code
+
+let Result = Success | Failure
+
+def describe(result: Result) -> string
+	match result
+		Success(value)
+			return value
+		Failure(code)
+			return "failed"
+
+def main() -> i64
+	let msg = "hello"
+	let success = Success(msg)
+	print(describe(success))
+	print(msg)
+	print(describe(Failure(2)))
+	return 0

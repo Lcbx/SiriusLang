@@ -1,0 +1,9 @@
+def positive_at(values: Array[i64, 1], index: i64) -> bool
+	let x = values[index?] else return false
+	return x > 0
+
+def main() -> i64
+	let a = [-3, 5]
+	print(positive_at(a, 1))
+	print(positive_at(a, 9))
+	return 0

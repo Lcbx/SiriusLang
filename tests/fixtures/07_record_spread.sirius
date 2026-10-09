@@ -1,0 +1,10 @@
+def main() -> i64
+	let p = {x = 1, y = 2}
+	let q = {
+		p.*
+		del y
+		x = 10
+		z = 5
+	}
+	print(q.x + q.z)
+	return 0

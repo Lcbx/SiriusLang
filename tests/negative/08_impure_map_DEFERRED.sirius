@@ -1,0 +1,8 @@
+def side_effect(x: i64) -> i64
+	print(x)
+	return x
+
+def main() -> i64
+	let a = [1, 2, 3]
+	let b = a.map(side_effect)
+	return 0

@@ -1,0 +1,450 @@
+# Sirius — Language Design
+
+> **Status:** Language target, not an inventory of implemented compiler features. The current Python bootstrap compiler implements a subset; see [README.md](README.md) for implementation status and roadmap.
+>
+> **Agreed clarifications:** Bootstrap compiler written in Python (rather than OCaml); dictionary type is `Dict` (not `Map`); records use lexicographically sorted field names for canonical layout; constructor-based union aliases and `match` use the syntax below. Python-style negative array indexing is a medium-priority future improvement.
+
+## 1. Core Philosophy
+
+A statically compiled, functional-first language combining Python-like syntax, local imperative control flow, immutable values, structural typing, and NumPy-like numerical computing.
+
+* **Immutable values:** Records and arrays have value semantics, with copy-on-write (CoW) for efficient updates.
+* **Local imperatives:** Mutable bindings and conventional loops express sequential algorithms and local state.
+* **Functional transformations:** Pure array operations express independent computations, eligible for fusion, SIMD, and parallelization.
+* **Static duck-typing:** Structural compatibility through compile-time specialization (monomorphization).
+* **Universal types:** Canonical descriptors support memory layout, introspection, and explicit dynamic typing.
+* **Acyclic memory:** No mutable shared objects or capturing closures; reference counting without tracing GC.
+
+**Guiding principle:** Minimize overlapping constructs. Functional operations transform collections; imperative control flow handles sequencing and state. Higher-level utilities should be expressible through simpler primitives.
+
+## 2. Syntax and Bindings
+
+Tab-based indentation, no colons or block delimiters.
+
+| Keyword | Meaning |
+| --- | --- |
+| `let` | Immutable binding |
+| `var` | Mutable binding |
+| `pub` | Publish a constructor field |
+| `export` | Expose a module definition |
+| `recur` | Guaranteed tail recursion |
+
+```python
+let x = 10
+var y = 20
+
+if x > 5
+	y += x
+
+for i in 0..10
+	y += i
+
+while y > 20
+	y -= 1
+```
+
+* Bindings have fixed static types.
+* Function parameters and loop variables are immutable.
+* `for` and `while` execute sequentially, supporting `break`, `continue`, and side effects.
+* `0..n` is half-open.
+* `and`, `or`, `not` short-circuit on scalar booleans.
+* Strict numeric typing: no implicit promotion; literals may adopt contextual types. Without context, integer literals default to `i64`, floating literals to `f64`.
+* Explicit conversions (`f32(x)`, `i64(x)`, etc.), with defined conversion and overflow semantics (details still to be specified).
+
+## 3. Immutable Values and Local Mutation
+
+Records and arrays are immutable values. Assignment through `var` replaces the value, potentially reusing uniquely owned storage.
+
+```python
+var point = {x = 10, y = 20}
+let original = point
+
+point.x += 5
+
+# point.x == 15
+# original.x == 10
+```
+
+**CoW:** Storage may be modified in place when exclusively owned and safe to overwrite; otherwise it is copied. Nested values support structural sharing.
+
+Record updates use spreading:
+
+```python
+let updated = {
+	point.*
+	del y
+	x = 30
+	z = 40
+}
+```
+
+Operations execute top-to-bottom; later fields override earlier ones. Record schemas are statically resolved. Canonical record layout orders fields lexicographically by name, independently of source order.
+
+Indexed assignment follows the same value semantics:
+
+```python
+var a = [1, 2, 3]
+a[1?]! = 10
+```
+
+Field and indexed assignments require a mutable root binding. They are equivalent to replacing the corresponding immutable value.
+
+## 4. Functions, Constructors, and Methods
+
+Functions have two mutually exclusive modes.
+
+**Evaluator:** Explicitly returns a value.
+
+```python
+def add(a, b)
+	return a + b
+```
+
+**Constructor:** Publishes fields into an implicit immutable record.
+
+```python
+def Point(x, y)
+	pub x
+	pub y
+	pub length = sqrt(x*x + y*y)
+```
+
+Constructor rules:
+
+* Fields must be initialized unconditionally.
+* Branches may override existing fields, not introduce new ones.
+* Constructors cannot return early or mix `pub` with `return expr`.
+* `pub x` publishes a binding and freezes ordinary assignment.
+* `pub x = expr` creates or overrides a published field.
+* `pub value.x` abbreviates `pub x = value.x`.
+
+**Methods:** Ordinary functions whose first parameter is named `this`, invoked with dot syntax.
+
+```python
+def move(this, dx, dy)
+	return {
+		this.*
+		x = this.x + dx
+		y = this.y + dy
+	}
+
+var p = Point(3.0, 4.0)
+p = p.move(1.0, 2.0)
+```
+
+`p.move(dx, dy)` statically resolves to `move(p, dx, dy)`, without virtual dispatch or receiver capture. Function-valued fields take precedence over extension methods.
+
+## 5. Static Typing and Descriptors
+
+Types are inferred; generic functions specialize for concrete argument types.
+
+```python
+def norm(p)
+	return sqrt(p.x*p.x + p.y*p.y)
+```
+
+Works with any compatible record containing `x` and `y`.
+
+* Structural compatibility is checked at compile time.
+* Structurally identical records share a canonical type and deterministic layout, with fields sorted by name.
+* Different record layouts receive separate specializations.
+* Generic specializations are cached by concrete type signature.
+* Optional annotations support recursion, interfaces, and numeric precision.
+* No general row-polymorphic solver or runtime structural lookup for static values.
+* Concrete function types depend on parameter types, return type, and effect guarantees, not implementation identity.
+
+### Universal descriptors
+
+Every type has a canonical descriptor containing:
+
+* Kind, size, alignment, and identity.
+* Record field names, types, and offsets.
+* Array element type and rank.
+* Type-specific memory-management and generic operations.
+
+```python
+let t = dtype(p)
+
+for field in t.fields
+	print(field.name, field.type)
+```
+
+Ordinary values carry no runtime type ID.
+
+### Dynamic typing
+
+Explicit `Any` values carry a descriptor and inline or boxed storage.
+
+```python
+let value: Any = p
+let x = value.get("x")  # Optional[Any]
+```
+
+Dynamic lookup and checked conversion are explicit. No runtime specialization is required.
+
+### Constructor-based tagged unions
+
+`let Result = Success | Failure` is a compile-time union type alias formed from constructor result types; `match` tests a runtime union tag and binds the published fields:
+
+```python
+def Success(value: i64)
+	pub value
+
+def Failure(code: i64)
+	pub code
+
+let Result = Success | Failure
+
+def unwrap(result: Result) -> i64
+	match result
+		Success(value)
+			return value
+		Failure(code)
+			return -code
+```
+
+**Current design choice:** Constructors produce structurally typed records. Union alternatives must therefore have distinct canonical record types; constructors with identical result shapes are not distinguishable alternatives. Nominal variant identity is not currently specified.
+
+## 6. Operators
+
+Operators resolve statically to functions, including generic implementations.
+
+```python
+def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
+	return {x = a.x + b.x, y = a.y + b.y}
+```
+
+* Arithmetic, comparison, indexing, and iteration support overloading.
+* Ambiguous matches are compile-time errors.
+* Imported overloads must be explicitly visible.
+* Compiler-recognized primitives support optimized numerical lowering.
+
+## 7. Arrays and Vectorization
+
+`Array[T, N]` is a homogeneous multidimensional standard-library type, inspired by Codon-NumPy. Element type `T` and rank `N` are static; shapes are dynamic.
+
+```python
+let x = [1.0, 2.0, 3.0]
+let y = x * 2.0 + 1.0
+let mask = y > 3.0
+let result = where(mask, y, 0.0)
+```
+
+### Storage
+
+* Dense contiguous row-major buffers with reference-counted CoW.
+* Rectangular multidimensional literals.
+* Arbitrary statically representable element types, including records.
+* `reshape` may share storage; transpose initially copies.
+* No arbitrary strided views or advanced indexing initially.
+
+### Broadcasting
+
+* Dimensions align from the right; dimensions must match or have size 1.
+* Scalars broadcast to compatible arrays.
+* Invalid shapes trigger runtime panics.
+* Matrix multiplication uses a separate operation.
+* `&`, `|`, `~` operate elementwise on boolean arrays.
+* Conditions require scalar booleans.
+
+### Numerical operations
+
+| Category | Functions |
+| --- | --- |
+| Elementwise | `abs`, `sqrt`, `exp`, `log`, `sin`, `cos` |
+| Selection | `where`, `minimum`, `maximum` |
+| Reductions | `sum`, `mean`, `min`, `max`, `any`, `all` |
+| Shape | `shape`, `reshape`, `transpose` |
+| Construction | `zeros`, `ones`, `full`, `arange`, `generate` |
+
+Functions accept compatible scalars or arrays. Reductions initially operate over all elements. Reduction order is preserved initially; parallel reductions require explicitly defined numerical semantics. `where` evaluates arguments eagerly.
+
+### Functional transformations
+
+The minimal collection API consists of:
+
+* `map`: Pure elementwise transformation, preserving array shape.
+* `filter`: Pure selection, initially 1D, preserving relative element order.
+* `generate`: Pure construction from indices and a statically ranked shape.
+
+```python
+let doubled = values.map(fn(x) x * 2)
+let positive = values.filter(fn(x) x > 0)
+let grid = generate((100, 100), fn(i, j) i*i + j*j)
+```
+
+Callbacks may execute in any order, sequentially, vectorized, fused, or in parallel. Results must preserve specified shape and ordering semantics.
+
+Callbacks must be pure:
+
+* Local variables and local mutation are permitted.
+* Inputs and explicit context are immutable.
+* I/O and externally observable mutation are forbidden.
+* Purity is checked transitively, including calls through function values.
+* Panics are permitted; when multiple elements fail, which failure is reported is unspecified.
+
+### Lambdas and context
+
+Functions and non-capturing lambdas are first-class values with concrete signatures. Compatible non-capturing functions can be stored as typed function pointers.
+
+**Capturing closures are not supported.** Higher-order functions accept optional explicit context arguments.
+
+```python
+let ctx = {scale = 3, offset = 2}
+let result = values.map(fn(x, ctx) x * ctx.scale + ctx.offset, ctx)
+```
+
+Module constants may be referenced without captures. Bound receiver objects are not implicit.
+
+### Indexing
+
+```python
+a[i]       # Statically proven in bounds
+a[i?]      # Optional[T]
+a[i?]!     # Runtime-checked; panics if invalid
+```
+
+Only straightforward static bounds checks are required. Multidimensional indexing uses `a[i, j]`; partial indexing produces lower-rank arrays.
+
+```python
+let value = a[i?] or 0
+let value = a[i?] else return false
+```
+
+`or` on `Optional` selects a fallback on absence, independent of truthiness. Indexed assignment uses the same checked syntax.
+
+## 8. Sequential Iteration and Recursion
+
+Conventional loops are the primary mechanism for sequential algorithms, aggregation, and effects.
+
+```python
+var total = 0
+for x in values
+	total += x
+```
+
+More elaborate functional utilities (`fold`, `reduce`, `scan`, `iterate`, `each`, etc.) can be implemented as ordinary library functions using loops.
+
+Ordinary recursion is supported. Direct self-tail recursion uses `recur`, guaranteed to lower to a loop.
+
+```python
+def factorial(n, acc = 1)
+	if n <= 1
+		return acc
+	recur factorial(n - 1, acc * n)
+```
+
+## 9. Strings
+
+Strings are immutable UTF-8 values with CoW storage.
+
+The standard library provides concatenation, comparison, searching, slicing, splitting, joining, replacement, and explicit formatting.
+
+Byte-oriented operations are distinct from Unicode-aware operations. Efficient string construction may use a standard-library builder backed by private mutable storage.
+
+## 10. Memory and Runtime
+
+* Acyclic managed values with non-atomic reference counting, initially single-threaded.
+* CoW, uniqueness checks, structural sharing, and compiler-managed buffer reuse.
+* Private mutable buffers for immutable-value construction.
+* Canonical type descriptors and optional boxing for `Any`.
+* Opaque handles for external resources.
+* `Optional[T]` for absence; panics for violated assertions.
+* Sequential execution of effectful operations.
+* Purity/effect analysis for functions and functional callbacks.
+* Explicit FFI access to native pointers, layouts, and ownership.
+
+### Array execution
+
+Numerical operations use compiler/runtime primitives rather than dynamic NumPy-like dispatch.
+
+* Specialized kernels by element type and rank.
+* Contiguous loops and broadcasting through zero strides.
+* Runtime shape validation.
+* Safe CoW reuse, including overlapping inputs.
+* Pure elementwise expressions eligible for fusion and parallel execution.
+* Initial SIMD through C compiler autovectorization.
+
+Fusion, scheduling, and reuse are optimizations, not observable semantics.
+
+## 11. Modules
+
+```python
+namespace Analytics.Pipeline
+
+import Math.Stats alias Stats
+
+export let DEFAULT_LIMIT = 100
+
+export def process(data)
+	return Stats.mean(data)
+```
+
+Static imports, private-by-default definitions, immutable module constants, and explicitly visible imported overloads. No general runtime module reflection.
+
+## 12. Compiler
+
+Self-hosted compiler targeting C through Zig's C toolchain, initially bootstrapped using **Python**.
+
+### Bootstrap strategy
+
+1. Define a minimal language subset sufficient to implement a compiler.
+2. Implement a small Python compiler for this subset.
+3. Implement a Sirius compiler in that subset; compile it using Python and establish self-hosting.
+4. Commit generated C bootstrap sources and the minimal native runtime.
+5. Extend the self-hosted compiler iteratively, regenerating bootstrap C as needed.
+
+The Python bootstrap is then frozen; subsequent development uses Sirius.
+
+### Initial language subset
+
+* Types: Scalars, strings, records, tagged unions, `Optional`, basic generics.
+* Control flow: `let`, `var`, conditionals, loops, recursion, returns, basic pattern matching.
+* Functions: Named functions, explicit signatures, non-capturing function values.
+* Collections: Dynamic 1D arrays, indexed access, hash maps (`Dict`).
+* Memory: Reference counting, immutable values, basic CoW.
+* Runtime: File I/O, diagnostics, minimal standard library.
+* Typing: Explicit annotations where needed; basic structural compatibility.
+
+**Implementation note:** The compiler-authoring subset needs generic 1D arrays and dictionaries, practical string/byte APIs, and command-line/file I/O before Sirius can conveniently host its own lexer, parser, and symbol tables. These are bootstrap subset improvements, not requirements to implement the full language first.
+
+## 13. Future Improvements
+
+### High priority
+
+* Array fusion, SIMD lowering, and parallel transformations.
+* Advanced functional-but-in-place (FBIP) reuse.
+* ARC and ownership optimization.
+* More precise purity/effect analysis.
+* Structured concurrency: `spawn`, `sync`, channels, cancellation.
+* Atomic RC for shared allocations and an M:N scheduler.
+* Advanced pattern matching and richer algebraic data types.
+
+### Medium priority
+
+* Strided views, slicing, and advanced indexing.
+* **Python-style negative array indexing** (`a[-1?]` accesses the final element), including checked reads and CoW writes.
+* Axis-specific reductions and richer linear algebra.
+* Richer reflection and serialization.
+* String builders and advanced Unicode operations.
+* Advanced static bounds analysis.
+* Mutual tail recursion and code deduplication.
+* Direct LLVM backend if beneficial.
+
+### Low priority / potentially unnecessary
+
+* Capturing closures.
+* Full row-polymorphic constraint solver.
+* Conditional constructor fields.
+* General automatic tail-call optimization.
+* Runtime code generation or specialization.
+* Mutable shared objects.
+* General exception unwinding.
+* Generalized NumPy ufunc dispatch.
+* User-level SIMD intrinsics.
+* GPU kernel compilation.
+* Arbitrary union types.
+
+**Language influences:** Python (syntax), NumPy (arrays), Codon (compiled numerics), Roc (immutable values and CoW), Koka (FBIP and ARC), Futhark (functional arrays), Zig (compiler implementation).
+
+**Guiding principle:** One immutable value model, complementary functional and imperative constructs, and compiler optimizations that preserve observable semantics.

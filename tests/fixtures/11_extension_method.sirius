@@ -1,0 +1,13 @@
+def move(this, dx: i64, dy: i64)
+	return {
+		this.*
+		x = this.x + dx
+		y = this.y + dy
+	}
+
+def main() -> i64
+	let p = {x = 2, y = 7}
+	let q = p.move(3, 4)
+	print(q.x)
+	print(q.y)
+	return 0

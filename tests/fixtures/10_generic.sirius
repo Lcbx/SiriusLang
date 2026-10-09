@@ -1,0 +1,7 @@
+def identity(x)
+	return x
+
+def main() -> i64
+	print(identity(9))
+	print(identity(true))
+	return 0

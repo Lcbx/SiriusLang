@@ -1,0 +1,7 @@
+# PROVISIONAL API: write_text/read_text, returning bool/Optional[string]
+def main() -> i64
+	let path = "example.txt"
+	print(write_text(path, "Hello, Sirius!"))
+	let content = read_text(path) or "missing"
+	print(content)
+	return 0

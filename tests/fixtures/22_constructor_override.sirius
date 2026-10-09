@@ -1,0 +1,13 @@
+def Choice(x: i64, flag: bool)
+	pub x
+	if flag
+		pub x = 10
+	pub y = x + 1
+
+def main() -> i64
+	let a = Choice(2, false)
+	let b = Choice(2, true)
+	print(a.x)
+	print(b.x)
+	print(b.y)
+	return 0

@@ -1,0 +1,7 @@
+def Wrapped(value)
+	pub value.x
+
+def main() -> i64
+	let p = Wrapped({x = 8, y = 9})
+	print(p.x)
+	return 0

@@ -1,0 +1,7 @@
+def main() -> i64
+	let a = "Sun"
+	let b = "rise"
+	let c = a + b
+	print(c)
+	print(a)
+	return 0

@@ -1,0 +1,10 @@
+{
+  "01_reassign_let": "E_IMMUTABLE_ASSIGN",
+  "02_numeric_mismatch": "E_NUMERIC_TYPE_MISMATCH",
+  "03_missing_field": "E_UNKNOWN_FIELD",
+  "04_mutate_parameter": "E_IMMUTABLE_PARAMETER",
+  "05_unproven_index": "E_INDEX_NOT_PROVEN_SAFE",
+  "06_conditional_pub": "E_UNCONDITIONAL_FIELD_REQUIRED",
+  "07_capturing_lambda": "E_CAPTURE_NOT_SUPPORTED",
+  "08_impure_map_DEFERRED": "E_PURITY_VIOLATION"
+}

@@ -1,0 +1,13 @@
+def expensive() -> bool
+	print(999)
+	return true
+
+def main() -> i64
+	let x = 7
+	if false and expensive()
+		print(111)
+	elif x >= 5 and x < 9
+		print(222)
+	else
+		print(333)
+	return 0

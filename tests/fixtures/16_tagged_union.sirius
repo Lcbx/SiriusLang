@@ -1,0 +1,19 @@
+def Success(value: i64)
+	pub value
+
+def Failure(code: i64)
+	pub code
+
+let Result = Success | Failure
+
+def unwrap(result: Result) -> i64
+	match result
+		Success(value)
+			return value
+		Failure(code)
+			return -code
+
+def main() -> i64
+	print(unwrap(Success(7)))
+	print(unwrap(Failure(2)))
+	return 0

@@ -1,0 +1,6 @@
+{
+  "01_checked_index": {
+    "exit": 1,
+    "stderr_contains": "Sirius panic: index out of bounds"
+  }
+}

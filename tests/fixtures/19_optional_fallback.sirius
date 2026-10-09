@@ -1,0 +1,9 @@
+def fallback() -> i64
+	print(999)
+	return -1
+
+def main() -> i64
+	let a = [7]
+	print(a[0?] or fallback())
+	print(a[9?] or fallback())
+	return 0

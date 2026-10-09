@@ -1,0 +1,9 @@
+def Point(x: f64, y: f64)
+	pub x
+	pub y
+	pub length = sqrt(x*x + y*y)
+
+def main() -> i64
+	let p = Point(3.0, 4.0)
+	print(p.length)
+	return 0

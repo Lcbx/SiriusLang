@@ -1,0 +1,10 @@
+def sum_xy(p)
+	return p.x + p.y
+
+def main() -> i64
+	let p = {x = 3, y = 4}
+	var q = p
+	q.x += 5
+	print(sum_xy(p))
+	print(sum_xy(q))
+	return 0

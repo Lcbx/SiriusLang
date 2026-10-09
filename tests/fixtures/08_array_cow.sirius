@@ -1,0 +1,8 @@
+def main() -> i64
+	var a = [10, 20, 30]
+	let original = a
+	a[1?]! = 99
+	print(a[1?] or -1)
+	print(original[1?] or -1)
+	print(a[9?] or -1)
+	return 0

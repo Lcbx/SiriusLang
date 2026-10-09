@@ -1,0 +1,4 @@
+def Something(flag: bool)
+	if flag
+		pub x = 3
+	pub y = 4

@@ -1,0 +1,10 @@
+def apply(x, operation)
+	return operation(x)
+
+def twice(x: i64) -> i64
+	return x * 2
+
+def main() -> i64
+	print(apply(7, twice))
+	print(apply(7, fn(x: i64) x + 3))
+	return 0

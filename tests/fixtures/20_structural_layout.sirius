@@ -1,0 +1,9 @@
+def combine(p)
+	return p.a * 10 + p.z
+
+def main() -> i64
+	let first = {z = 2, a = 1}
+	let second = {a = 3, z = 4}
+	print(combine(first))
+	print(combine(second))
+	return 0
