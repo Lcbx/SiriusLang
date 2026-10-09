@@ -8,5 +8,11 @@
   "07_capturing_lambda": "E_CAPTURE_NOT_SUPPORTED",
   "08_impure_map_DEFERRED": "E_PURITY_VIOLATION",
   "09_array_rank_constructor": "E_UNKNOWN_TYPE",
-  "10_array_rank_annotation": "E_UNKNOWN_TYPE"
+  "10_array_rank_annotation": "E_UNKNOWN_TYPE",
+  "11_module_constant_expression": "E_MODULE",
+  "12_module_duplicate": "E_MODULE",
+  "13_module_immutable": "E_IMMUTABLE_ASSIGN",
+  "14_module_forward_reference": "E_MODULE",
+  "15_module_integer_overflow": "E_MODULE",
+  "16_module_var": "E_MODULE"
 }

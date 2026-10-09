@@ -1,0 +1,5 @@
+let NODE = 1
+
+def main() -> i64
+	NODE = 2
+	return 0

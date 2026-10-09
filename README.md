@@ -89,6 +89,7 @@ python tools/test_compiler.py --command "python bootstrap_compiler/sirius.py" --
 
 - Tab-indented declarations, literals, operators, functions, branches, loops, and `recur`.
 - Static i64/f64/bool/string typing, inferred returns, basic generic monomorphization, function pointers and noncapturing lambdas.
+- Compile-time module-level `let` integer constants (`i64`), including references to earlier constants and `+`, `-`, `*`; no runtime storage. Local bindings may shadow constants. Union aliases remain supported.
 - Structural record interning with lexicographically sorted fields, record spreads/deletions, immutable constructor publication and conditional overrides.
 - Rank-1 `Array[T]` (equivalent to `Array[T,1]`) of scalar, string, record, union and nested-array elements; array literals, empty typed construction, `append`, `len`, indexed reads/updates, and sequential `for` iteration.
 - `Dict[K,V]` with `i64`/`string` keys and arbitrary supported value types; `insert`, `get` and `len`. Managed fields retain/drop correctly in CoW copies.
@@ -179,6 +180,7 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [x] File reading/writing, command-line arguments, `print` diagnostics (API remains provisional; richer error propagation is deferred).
 - [x] Test a small compiler-shaped workload (token record array, symbol dictionary, assembled C text), plus nested CoW and managed unions.
 - [x] Introduce an indexed AST arena and syntax diagnostics in Sirius; cross-file imports/compilation remain open.
+- [x] Implement module-scope integer `let` constants in Python stage-0 and use named integer token/AST kinds in the Sirius tokenizer and parser.
 - [ ] Freeze the minimal bootstrap subset once the Sirius compiler compiles its own replacement.
 
 ### 2. Rewrite compiler in Sirius (start as soon as phase 1 basics work)
@@ -215,7 +217,7 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 
 Run `python tools/test_tokenizer.py`. It concatenates `src/tokenizer.sirius` and `tests/tokenizer/driver.sirius` in a temporary file because module imports are not yet supported, then compiles that file using the Python bootstrap and checks the token streams against `tests/tokenizer/expected_output/*.txt`. It does not depend on SLY at runtime.
 
-`tokenize(source: string) -> Array[Token]` emits half-open UTF-8 byte spans (`start`, `end`), 1-based line numbers, and 1-based **byte** columns. Token kinds are documented at the top of `tokenizer.sirius`; negative kinds indicate a fatal lexical error and terminate the stream. Keywords remain ordinary `NAME` tokens for the future parser. NEWLINE/INDENT/DEDENT are explicit; blank/comment-only lines and bracketed continuations do not affect indentation. A final NEWLINE is synthesized when necessary.
+`tokenize(source: string) -> Array[Token]` emits half-open UTF-8 byte spans (`start`, `end`), 1-based line numbers, and 1-based **byte** columns. Token kinds are named by module constants (`TOKEN_*`) at the top of `tokenizer.sirius`; negative kinds indicate a fatal lexical error and terminate the stream. Keywords remain ordinary `NAME` tokens for the future parser. NEWLINE/INDENT/DEDENT are explicit; blank/comment-only lines and bracketed continuations do not affect indentation. A final NEWLINE is synthesized when necessary.
 
 Bootstrap lexer scope: ASCII identifiers; UTF-8 allowed inside quoted strings and comments; decimal/scientific literals; quoted strings with escapes (but no multiline/triple-quoted strings yet); common punctuation and operators. Grammar validation and semantic diagnostics belong to the parser. `byte_at` and `slice` are sufficient; neither regex nor additional runtime features were needed. Numeric character tests are annotated with ASCII spellings; parenthesized expressions (including conditions and argument lists) may span lines and contain inline comments. This is covered by `tests/fixtures/37_multiline_parentheses.sirius` and `tests/tokenizer/fixtures/19_multiline_condition.sirius`.
 
@@ -223,6 +225,18 @@ Bootstrap lexer scope: ASCII identifiers; UTF-8 allowed inside quoted strings an
 
 Run `python tools/test_parser.py` from the project root. The runner concatenates `src/tokenizer.sirius`, `src/parser.sirius` and its test driver (imports are still unavailable), builds with the Python stage-0 compiler and C11, then checks AST golden files and syntax-error diagnostics. It also smoke-tests parsing of the 37 existing positive language fixtures **and the tokenizer/parser's own Sirius sources**. This is syntax coverage only, not self-hosting or semantic conformance.
 
-`parse_module(source)` returns `ParseResult(state, node)`. `state.nodes` is an `Array[Node]`; `state.edges` is a flat array of child node IDs. Every `Node` stores `kind`, a token index, and a half-open span in the edge array (`first`, `count`). Names, literal text and source locations remain in the tokenizer's spans. Parse errors are returned as `state.error` and `state.error_line`. This avoids recursive managed record types and creates a stable representation for the upcoming name/type resolver and C emitter.
+`parse_module(source)` returns `ParseResult(state, node)`. `state.nodes` is an `Array[Node]` with `i64` kind IDs declared as module constants (`NODE_*`); `state.edges` is a flat array of child node IDs. Every `Node` stores `kind`, a token index, and a half-open span in the edge array (`first`, `count`). Names, literal text and source locations remain in the tokenizer's spans. Parse errors are returned as `state.error` and `state.error_line`. This avoids recursive managed record types and creates a stable representation for the upcoming name/type resolver and C emitter.
 
 The stage-1 parser covers functions, typed/default arguments, constructors/`pub`, blocks, `if/elif/else`, `while`, `for`, `match`, `let`/`var`, assignments, `return`/`recur`, record and array literals, unary/binary precedence, calls, fields, optional/checked indexing and lambda syntax. It does **not** yet perform semantic type checking, desugar constructors, resolve overloads, lower ownership, or emit C. Module/import syntax, advanced pattern matching and richer diagnostics remain to be implemented.
+
+## Module integer constants (bootstrap subset)
+
+Module-level `let` names may hold an `i64` compile-time constant (optionally annotated `: i64`).
+Supported initializers are integer literals, unary `+`/`-`, `+`/`-`/`*` expressions, and references to **earlier** integer constants.
+The bootstrap substitutes constant values directly during C generation; there is no global C variable or runtime initializer.
+Module `var`, forward references, non-constant initializers, overflow, and duplicate module names are rejected.
+Function-local declarations may shadow module constants, but assigning directly to a module constant is forbidden.
+Constructor-based tagged-union aliases (`let Result = Success | Failure`) retain their separate compile-time interpretation.
+Module-level record constants, function calls, general `comptime`, and module imports are not supported yet.
+
+The regression suite now includes `tests/fixtures/38_module_constants.sirius` and six additional module-constant diagnostics.

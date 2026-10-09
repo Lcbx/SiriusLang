@@ -1,0 +1,5 @@
+let SECOND = FIRST + 1
+let FIRST = 3
+
+def main() -> i64
+	return 0

@@ -1,7 +1,20 @@
 # Sirius stage-1 tokenizer. Byte offsets are half-open UTF-8 source spans.
-# Token kinds: 1 name, 2 integer, 3 float, 4 string, 5 operator,
-#              6 newline, 7 indent, 8 dedent, 9 EOF.
-# Negative kinds are lexical errors. The first error terminates tokenization.
+# The first lexical error terminates tokenization.
+# Module-level integers name the token kinds without a runtime enum type.
+let TOKEN_NAME = 1
+let TOKEN_INT = 2
+let TOKEN_FLOAT = 3
+let TOKEN_STRING = 4
+let TOKEN_OP = 5
+let TOKEN_NEWLINE = 6
+let TOKEN_INDENT = 7
+let TOKEN_DEDENT = 8
+let TOKEN_EOF = 9
+let TOKEN_INVALID_CHAR = -1
+let TOKEN_INVALID_INDENT = -2
+let TOKEN_UNCLOSED_STRING = -3
+let TOKEN_INVALID_BRACKET = -4
+let TOKEN_UNCLOSED_BRACKET = -5
 
 def Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
 	pub kind
@@ -14,33 +27,33 @@ def token_text(source: string, token: Token) -> string
 	return source.slice(token.start, token.end)
 
 def token_kind_name(kind: i64) -> string
-	if kind == 1
+	if kind == TOKEN_NAME
 		return "NAME"
-	if kind == 2
+	if kind == TOKEN_INT
 		return "INT"
-	if kind == 3
+	if kind == TOKEN_FLOAT
 		return "FLOAT"
-	if kind == 4
+	if kind == TOKEN_STRING
 		return "STRING"
-	if kind == 5
+	if kind == TOKEN_OP
 		return "OP"
-	if kind == 6
+	if kind == TOKEN_NEWLINE
 		return "NEWLINE"
-	if kind == 7
+	if kind == TOKEN_INDENT
 		return "INDENT"
-	if kind == 8
+	if kind == TOKEN_DEDENT
 		return "DEDENT"
-	if kind == 9
+	if kind == TOKEN_EOF
 		return "EOF"
-	if kind == -1
+	if kind == TOKEN_INVALID_CHAR
 		return "INVALID_CHAR"
-	if kind == -2
+	if kind == TOKEN_INVALID_INDENT
 		return "INVALID_INDENT"
-	if kind == -3
+	if kind == TOKEN_UNCLOSED_STRING
 		return "UNCLOSED_STRING"
-	if kind == -4
+	if kind == TOKEN_INVALID_BRACKET
 		return "INVALID_BRACKET"
-	if kind == -5
+	if kind == TOKEN_UNCLOSED_BRACKET
 		return "UNCLOSED_BRACKET"
 	return "UNKNOWN"
 
@@ -203,12 +216,12 @@ def tokenize(source: string) -> Array[Token]
 				first != -1      # EOF
 			)
 				if spaces or indent > level + 1
-					return tokens.append(Token(-2, pos, pos, line, column))
+					return tokens.append(Token(TOKEN_INVALID_INDENT, pos, pos, line, column))
 				if indent > level
-					tokens = tokens.append(Token(7, pos, pos, line, 1))
+					tokens = tokens.append(Token(TOKEN_INDENT, pos, pos, line, 1))
 					level += 1
 				while level > indent
-					tokens = tokens.append(Token(8, pos, pos, line, 1))
+					tokens = tokens.append(Token(TOKEN_DEDENT, pos, pos, line, 1))
 					level -= 1
 			line_start = false
 
@@ -220,7 +233,7 @@ def tokenize(source: string) -> Array[Token]
 			else
 				pos += 1
 			if depth == 0 and line_has_code
-				tokens = tokens.append(Token(6, start, pos, line, column))
+				tokens = tokens.append(Token(TOKEN_NEWLINE, start, pos, line, column))
 			line += 1
 			column = 1
 			line_start = true
@@ -238,25 +251,25 @@ def tokenize(source: string) -> Array[Token]
 
 		let start = pos
 		let start_column = column
-		var kind = 5
+		var kind = TOKEN_OP
 		var end = pos
 		if is_alpha(c)
-			kind = 1
+			kind = TOKEN_NAME
 			end = scan_identifier(source, pos)
 		elif is_digit(c) or (c == 46 and is_digit(peek(source, pos + 1))) # .
-			kind = 2
+			kind = TOKEN_INT
 			end = scan_number(source, pos)
 			if is_float(source, start, end)
-				kind = 3
+				kind = TOKEN_FLOAT
 		elif c == 34 or c == 39 # " '
-			kind = 4
+			kind = TOKEN_STRING
 			end = scan_string(source, pos)
 			if end < 0
-				return tokens.append(Token(-3, pos, pos + 1, line, column))
+				return tokens.append(Token(TOKEN_UNCLOSED_STRING, pos, pos + 1, line, column))
 		else
 			end = scan_operator(source, pos)
 			if end == pos
-				return tokens.append(Token(-1, pos, pos + 1, line, column))
+				return tokens.append(Token(TOKEN_INVALID_CHAR, pos, pos + 1, line, column))
 			if c == 40 or c == 91 or c == 123 # ( [ {
 				if depth == len(brackets)
 					brackets = brackets.append(c)
@@ -265,10 +278,10 @@ def tokenize(source: string) -> Array[Token]
 				depth += 1
 			elif c == 41 or c == 93 or c == 125 # ) ] }
 				if depth == 0
-					return tokens.append(Token(-4, pos, end, line, column))
+					return tokens.append(Token(TOKEN_INVALID_BRACKET, pos, end, line, column))
 				let opening = brackets[depth - 1?]!
 				if (c == 41 and opening != 40) or (c == 93 and opening != 91) or (c == 125 and opening != 123) # () [] {}
-					return tokens.append(Token(-4, pos, end, line, column))
+					return tokens.append(Token(TOKEN_INVALID_BRACKET, pos, end, line, column))
 				depth -= 1
 		tokens = tokens.append(Token(kind, start, end, line, start_column))
 		column += end - pos
@@ -276,10 +289,10 @@ def tokenize(source: string) -> Array[Token]
 		line_has_code = true
 
 	if depth != 0
-		return tokens.append(Token(-5, size, size, line, column))
+		return tokens.append(Token(TOKEN_UNCLOSED_BRACKET, size, size, line, column))
 	if line_has_code
-		tokens = tokens.append(Token(6, size, size, line, column))
+		tokens = tokens.append(Token(TOKEN_NEWLINE, size, size, line, column))
 	while level > 0
-		tokens = tokens.append(Token(8, size, size, line, 1))
+		tokens = tokens.append(Token(TOKEN_DEDENT, size, size, line, 1))
 		level -= 1
-	return tokens.append(Token(9, size, size, line, column))
+	return tokens.append(Token(TOKEN_EOF, size, size, line, column))

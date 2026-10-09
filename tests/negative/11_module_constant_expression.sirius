@@ -1,0 +1,4 @@
+let BAD = arguments()
+
+def main() -> i64
+	return 0

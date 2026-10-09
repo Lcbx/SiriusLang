@@ -165,11 +165,9 @@ class Compiler:
         self.instances: dict[tuple[str, tuple[T, ...]], Instance] = {}
         self.extra_functions: dict[str, Definition] = {}
         self.num_lambda = 0
+        self.constants: dict[str, int] = {}
         self.module_lets = [d for d in program if isinstance(d, Statement)]
-        for d in self.module_lets:
-            if d.kind != 'let' or d.args[0].kind != 'binary' or d.args[0].value != '|':
-                raise CompileError('E_MODULE', d.line, 'only union type aliases are supported at module scope')
-        self.prep_aliases()
+        self.prep_module()
 
     def error(self, code, line, message):
         raise CompileError(code, line, message)
@@ -247,33 +245,67 @@ class Compiler:
                 if inst.ret.kind == 'record': return inst.ret
         self.error('E_UNKNOWN_TYPE', 0, f'unsupported type {typ!r}')
 
-    def prep_aliases(self):
+    def constant_expr(self, e: Expr) -> int:
+        if e.kind == 'int':
+            value = int(e.value)
+        elif e.kind == 'name' and e.value in self.constants:
+            value = self.constants[e.value]
+        elif e.kind == 'unary' and e.value in ('+', '-'):
+            operand = self.constant_expr(e.args[0])
+            value = operand if e.value == '+' else -operand
+        elif e.kind == 'binary' and e.value in ('+', '-', '*'):
+            left = self.constant_expr(e.args[0])
+            right = self.constant_expr(e.args[1])
+            if e.value == '+': value = left + right
+            elif e.value == '-': value = left - right
+            else: value = left * right
+        else:
+            self.error('E_MODULE', e.line, 'module constant must be an integer constant expression')
+        if not -(1 << 63) <= value < (1 << 63):
+            self.error('E_MODULE', e.line, 'module integer constant outside i64 range')
+        return value
+
+    def prep_module(self):
+        for statement in self.module_lets:
+            if statement.kind != 'let':
+                self.error('E_MODULE', statement.line, 'module bindings must use let')
+            name, annotation = statement.value
+            if name in self.constants or name in self.aliases or name in self.defs:
+                self.error('E_MODULE', statement.line, f'duplicate module name {name!r}')
+            value = statement.args[0]
+            if value.kind == 'binary' and value.value == '|':
+                self.prep_union_alias(statement)
+            else:
+                if annotation is not None and (annotation.name != 'i64' or annotation.args):
+                    self.error('E_MODULE', statement.line, 'module integer constant requires i64 annotation')
+                self.constants[name] = self.constant_expr(value)
+
+    def prep_union_alias(self, statement: Statement):
         # Union aliases here are built from annotated constructor signatures.
         # This bootstrap phase intentionally excludes recursive union definitions.
-        for statement in self.module_lets:
-            name, annotation = statement.value
-            if annotation is not None:
-                self.error('E_MODULE', statement.line, 'union aliases cannot have value annotations')
-            def alternatives(e):
-                if e.kind == 'binary' and e.value == '|':
-                    return alternatives(e.args[0]) + alternatives(e.args[1])
-                if e.kind == 'name' and e.value in self.defs:
-                    return [e.value]
-                self.error('E_UNION_TYPE', e.line, 'union alternatives must be constructors')
-            variant_names = alternatives(statement.args[0])
-            variants = []
-            for ctor in variant_names:
-                d = self.defs[ctor]
-                params = tuple(self.resolve(ann) for _, ann in d.params)
-                if any(t is None for t in params):
-                    self.error('E_UNION_TYPE', d.line, 'union constructors need annotated parameters')
-                inst = self.specialize(ctor, params)
-                if inst.ret.kind != 'record':
-                    self.error('E_UNION_TYPE', d.line, 'union constructor must produce a record')
-                if inst.ret in [typ for _, typ in variants]:
-                    self.error('E_DUPLICATE_UNION_VARIANT', d.line, 'structurally identical variants cannot be distinguished')
-                variants.append((ctor, inst.ret))
-            self.aliases[name] = T('union', f'S_Union_{name}', variants=tuple(variants))
+        name, annotation = statement.value
+        if annotation is not None:
+            self.error('E_MODULE', statement.line, 'union aliases cannot have value annotations')
+        def alternatives(e):
+            if e.kind == 'binary' and e.value == '|':
+                return alternatives(e.args[0]) + alternatives(e.args[1])
+            if e.kind == 'name' and e.value in self.defs:
+                return [e.value]
+            self.error('E_UNION_TYPE', e.line, 'union alternatives must be constructors')
+        variant_names = alternatives(statement.args[0])
+        variants = []
+        for ctor in variant_names:
+            d = self.defs[ctor]
+            params = tuple(self.resolve(ann) for _, ann in d.params)
+            if any(t is None for t in params):
+                self.error('E_UNION_TYPE', d.line, 'union constructors need annotated parameters')
+            inst = self.specialize(ctor, params)
+            if inst.ret.kind != 'record':
+                self.error('E_UNION_TYPE', d.line, 'union constructor must produce a record')
+            if inst.ret in [typ for _, typ in variants]:
+                self.error('E_DUPLICATE_UNION_VARIANT', d.line, 'structurally identical variants cannot be distinguished')
+            variants.append((ctor, inst.ret))
+        self.aliases[name] = T('union', f'S_Union_{name}', variants=tuple(variants))
 
     def declaration(self, typ: T, name: str) -> str:
         if typ.kind == 'function':
@@ -388,6 +420,9 @@ class Compiler:
             if e.value in ctx.bindings:
                 b = ctx.lookup(e.value, e.line)
                 return Value(b.cname, b.typ)
+            if e.value in self.constants:
+                value = self.constants[e.value]
+                return Value(str(value) if value >= 0 else f'({value})', I64)
             if e.value in self.defs or e.value in self.extra_functions:
                 d = self.defs.get(e.value) or self.extra_functions[e.value]
                 if any(a is None for _, a in d.params) or d.returns is None:
@@ -724,6 +759,8 @@ class Compiler:
                 node = node.args[0]
             if node.kind != 'name':
                 self.error('E_ASSIGN_TARGET', s.line, 'assignment requires a variable root')
+            if node.value in self.constants and node.value not in ctx.bindings:
+                self.error('E_IMMUTABLE_ASSIGN', s.line, f'module constant {node.value} is immutable')
             b = ctx.lookup(node.value, s.line)
             if not b.mutable:
                 self.error(b.immutable_reason, s.line, f'{node.value} is immutable')

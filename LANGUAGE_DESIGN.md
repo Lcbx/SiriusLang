@@ -382,6 +382,8 @@ export def process(data)
 
 Static imports, private-by-default definitions, immutable module constants, and explicitly visible imported overloads. No general runtime module reflection.
 
+**Bootstrap implementation:** Module `let` currently accepts compile-time `i64` integer expressions (literals, prior constants, unary signs, `+`, `-`, `*`), with no runtime initialization. Record constants and general compile-time function evaluation are deferred.
+
 ## 12. Compiler
 
 Self-hosted compiler targeting C through Zig's C toolchain, initially bootstrapped using **Python**.

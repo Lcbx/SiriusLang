@@ -1,0 +1,17 @@
+# Module integers are resolved at compile time, not initialized at runtime.
+let KIND_NAME = 1
+let KIND_FLOAT: i64 = KIND_NAME + 2 * 3
+let OFFSET = -5
+
+def classify(kind: i64) -> i64
+	if kind == KIND_FLOAT
+		return KIND_FLOAT + OFFSET
+	return KIND_NAME
+
+def main() -> i64
+	print(classify(7))
+	print(classify(1))
+	let KIND_NAME = 20  # local shadowing does not change the module constant
+	print(KIND_NAME)
+	print(KIND_FLOAT)
+	return 0
