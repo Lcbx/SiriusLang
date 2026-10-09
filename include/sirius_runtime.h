@@ -43,6 +43,7 @@ S_Optional_string s_read_text(const S_String *path);
 bool s_write_text(const S_String *path, const S_String *text);
 
 S_String *s_string_from_utf8(const char *str);
+S_String *s_string_from_bytes(const char *bytes, size_t n);
 S_String *s_string_retain(S_String *str);
 void s_string_release(S_String *str);
 S_String *s_string_concat(const S_String *a, const S_String *b);

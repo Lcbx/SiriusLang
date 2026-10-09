@@ -381,7 +381,7 @@ S_Optional_i64 s_string_byte_at(const S_String *s,int64_t i) {
     if (i<0 || (uint64_t)i>=s->length) return (S_Optional_i64){false,0};
     return (S_Optional_i64){true,(unsigned char)s->data[i]};
 }
-static S_String *s_string_from_bytes(const char *bytes,size_t n) {
+S_String *s_string_from_bytes(const char *bytes,size_t n) {
     if (n > SIZE_MAX-sizeof(S_String)-1) s_panic("string too long");
     S_String *s=s_alloc(1,sizeof(*s)+n+1);
     s->refcount=1; s->length=n;

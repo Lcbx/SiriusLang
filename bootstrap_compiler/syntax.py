@@ -335,9 +335,11 @@ class Parser:
         elif v[0].isalpha() or v[0] == '_':
             if v == 'Array' and self.at('['):
                 self.pop('[')
-                elem = self.typeexpr(); self.pop(',')
-                rank = self.pop().value; self.pop(']')
-                if rank != '1': raise CompileError('E_UNKNOWN_TYPE', t.line, 'only rank-1 arrays available')
+                elem = self.typeexpr()
+                if self.accept(','):
+                    rank = self.pop().value
+                    if rank != '1': raise CompileError('E_UNKNOWN_TYPE', t.line, 'only rank-1 arrays available')
+                self.pop(']')
                 lhs = Expr('array_type', (elem, 1), (), t.line)
             elif v == 'Dict' and self.at('['):
                 self.pop('[')

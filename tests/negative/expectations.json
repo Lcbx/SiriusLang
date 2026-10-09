@@ -6,5 +6,7 @@
   "05_unproven_index": "E_INDEX_NOT_PROVEN_SAFE",
   "06_conditional_pub": "E_UNCONDITIONAL_FIELD_REQUIRED",
   "07_capturing_lambda": "E_CAPTURE_NOT_SUPPORTED",
-  "08_impure_map_DEFERRED": "E_PURITY_VIOLATION"
+  "08_impure_map_DEFERRED": "E_PURITY_VIOLATION",
+  "09_array_rank_constructor": "E_UNKNOWN_TYPE",
+  "10_array_rank_annotation": "E_UNKNOWN_TYPE"
 }

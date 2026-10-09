@@ -202,6 +202,13 @@ class Compiler:
         return result
 
     @staticmethod
+    def c_string_literal(value: str) -> str:
+        return '"' + ''.join(
+            chr(b) if 32 <= b <= 126 and b not in (34, 92) else f'\\{b:03o}'
+            for b in value.encode('utf-8')
+        ) + '"'
+
+    @staticmethod
     def type_suffix(t: T) -> str:
         return re.sub(r'[^A-Za-z0-9_]', '_', t.name)
 
@@ -226,7 +233,7 @@ class Compiler:
         table = {'i64': I64, 'f64': F64, 'bool': BOOL, 'string': STRING,
                  'void': VOID}
         if typ.name in table and not typ.args: return table[typ.name]
-        if typ.name == 'Array' and len(typ.args) == 2 and typ.args[1] == 1:
+        if typ.name == 'Array' and (len(typ.args) == 1 or (len(typ.args) == 2 and typ.args[1] == 1)):
             return self.array_type(self.resolve(typ.args[0]))
         if typ.name == 'Dict' and len(typ.args) == 2:
             return self.dict_type(self.resolve(typ.args[0]), self.resolve(typ.args[1]))
@@ -375,8 +382,8 @@ class Compiler:
         if k == 'float': return Value(e.value, F64)
         if k == 'bool': return Value('true' if e.value else 'false', BOOL)
         if k == 'string':
-            import json
-            return ctx.temp(f's_string_from_utf8({json.dumps(e.value)})', STRING)
+            literal = self.c_string_literal(e.value)
+            return ctx.temp(f's_string_from_bytes({literal}, sizeof({literal}) - 1)', STRING)
         if k == 'name':
             if e.value in ctx.bindings:
                 b = ctx.lookup(e.value, e.line)
@@ -436,7 +443,7 @@ class Compiler:
             self.error('E_UNSUPPORTED', e.line, f'operator {op} unsupported at runtime')
         if k == 'array':
             if not e.args:
-                self.error('E_ARRAY_TYPE', e.line, 'empty arrays need Array[T,1]()')
+                self.error('E_ARRAY_TYPE', e.line, 'empty arrays need Array[T]()')
             items = [ctx.snapshot(self.expr(ctx, x)) for x in e.args]
             elem = items[0].typ
             items = [self.cast(ctx, v, elem, e.line) for v in items]
@@ -554,7 +561,7 @@ class Compiler:
                         return Value(f'{call_name}({receiver.code}, {sub.code})', BOOL)
                     if method == 'join' and len(args) == 1:
                         if args[0].typ != self.array_type(STRING):
-                            self.error('E_TYPE_MISMATCH', e.line, 'join requires Array[string,1]')
+                            self.error('E_TYPE_MISMATCH', e.line, 'join requires Array[string]')
                         return ctx.temp(f's_string_join({receiver.code}, {args[0].code})', STRING)
                 if method == 'map' and receiver.typ.kind == 'array':
                     # Until map is implemented, reject it honestly as unsupported.

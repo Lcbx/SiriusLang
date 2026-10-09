@@ -221,7 +221,7 @@ def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
 
 ## 7. Arrays and Vectorization
 
-`Array[T, N]` is a homogeneous multidimensional standard-library type, inspired by Codon-NumPy. Element type `T` and rank `N` are static; shapes are dynamic.
+`Array[T, N]` is a homogeneous multidimensional standard-library type, inspired by Codon-NumPy. Element type `T` and rank `N` are static; shapes are dynamic. `Array[T]` is shorthand for `Array[T, 1]`.
 
 ```python
 let x = [1.0, 2.0, 3.0]
@@ -340,7 +340,7 @@ Strings are immutable UTF-8 values with CoW storage.
 
 The standard library provides concatenation, comparison, searching, slicing, splitting, joining, replacement, and explicit formatting.
 
-Byte-oriented operations are distinct from Unicode-aware operations. Efficient string construction may use a standard-library builder backed by private mutable storage.
+`byte_at(i)` returns `Optional[i64]` containing the unsigned UTF-8 byte at zero-based index `i` (`None` when out of bounds). Byte-oriented operations are distinct from Unicode-aware operations. Efficient string construction may use a standard-library builder backed by private mutable storage.
 
 ## 10. Memory and Runtime
 

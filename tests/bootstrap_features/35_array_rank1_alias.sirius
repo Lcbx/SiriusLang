@@ -1,0 +1,24 @@
+def count(values: Array[i64,1]) -> i64
+	return len(values)
+
+def first(values: Array[i64]) -> i64
+	return values[0?] or -1
+
+def Token(value: i64)
+	pub value
+
+def main() -> i64
+	var numbers: Array[i64] = Array[i64]()
+	numbers = numbers.append(3)
+	numbers = numbers.append(5)
+	let same: Array[i64,1] = numbers
+	print(count(numbers))
+	print(first(same))
+	var tokens = Array[Token]()
+	tokens = tokens.append(Token(7))
+	let named: Array[Token,1] = tokens
+	print(named[0?]!.value)
+	var nested = Array[Array[i64]]()
+	nested = nested.append(numbers)
+	print(nested[0?]![1?] or -1)
+	return 0

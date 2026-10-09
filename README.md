@@ -23,7 +23,7 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 
 ## Positive tests
 
-The original 24 independent reference cases remain unchanged. Additional compiler-only feature fixtures (`tests/bootstrap_features/25_*.sirius` through `34_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; and a miniature token/symbol-table/C-text workflow.
+The original 24 independent reference cases remain unchanged. Additional compiler-only feature fixtures (`tests/bootstrap_features/25_*.sirius` through `36_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; a miniature token/symbol-table/C-text workflow; the rank-1 array shorthand; and UTF-8 byte inspection.
 
 | File | Bootstrap behavior |
 | --- | --- |
@@ -87,9 +87,9 @@ python tools/test_compiler.py --command "python bootstrap_compiler/sirius.py" --
 - Tab-indented declarations, literals, operators, functions, branches, loops, and `recur`.
 - Static i64/f64/bool/string typing, inferred returns, basic generic monomorphization, function pointers and noncapturing lambdas.
 - Structural record interning with lexicographically sorted fields, record spreads/deletions, immutable constructor publication and conditional overrides.
-- Rank-1 `Array[T,1]` of scalar, string, record, union and nested-array elements; array literals, empty typed construction, `append`, `len`, indexed reads/updates, and sequential `for` iteration.
+- Rank-1 `Array[T]` (equivalent to `Array[T,1]`) of scalar, string, record, union and nested-array elements; array literals, empty typed construction, `append`, `len`, indexed reads/updates, and sequential `for` iteration.
 - `Dict[K,V]` with `i64`/`string` keys and arbitrary supported value types; `insert`, `get` and `len`. Managed fields retain/drop correctly in CoW copies.
-- UTF-8 immutable strings with byte length, byte inspection, slices, searching, prefix/suffix tests, lexical comparison, concatenation, `str(i64)`, and joining arrays of strings.
+- UTF-8 immutable strings with byte length, `byte_at(i) -> Optional[i64]` (unsigned byte, `None` out of bounds), slices, searching, prefix/suffix tests, lexical comparison, concatenation, `str(i64)`, and joining arrays of strings.
 - `arguments()` exposes command-line arguments as `Array[string,1]`; provisional `read_text` / `write_text` provide basic compiler I/O.
 - Local CoW update reuse (`a = a.append(...)`, `d = d.insert(...)`) transfers ownership directly, allowing amortized growth when the binding is unshared.
 - Optional fallback and `else return`, constructor-based structural tagged unions and basic exhaustive matching.
@@ -116,7 +116,7 @@ python tools/test_compiler.py --command "python bootstrap_compiler/sirius.py" --
 ## Compiler-authoring API additions
 
 ```python
-var tokens = Array[string,1]()  # typed empty array
+var tokens = Array[string]()  # equivalent to Array[string,1]()
 tokens = tokens.append("def")  # CoW; reuses uniquely owned storage
 let token = tokens[0?]!        # checked access
 
@@ -128,8 +128,9 @@ for token in tokens            # sequential; immutable loop binding
     print(token)
 
 let data = "hello".slice(0, 4)  # byte-oriented UTF-8 slice
+let byte = data.byte_at(0) or -1  # Optional[i64], no character decoding
 let location = data.find("ell") or -1
-let text = ", ".join(tokens)   # join Array[string,1]
+let text = ", ".join(tokens)   # join Array[string]
 let paths = arguments()          # program name plus CLI parameters
 ```
 
@@ -169,9 +170,9 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 
 ### 1. Make the subset practical for compiler authoring (Python stage-0)
 
-- [x] Generic `Array[T, 1]` supporting strings, records, unions and compiler data structures; allocation, length, append, checked/optional indexed access/update, and sequential iteration.
+- [x] Generic `Array[T]` / `Array[T,1]` supporting strings, records, unions and compiler data structures; allocation, length, append, checked/optional indexed access/update, and sequential iteration.
 - [x] Generic `Dict[K, V]` with `string`/`i64` keys and compiler data types as values, including CoW updates.
-- [x] UTF-8 string/byte inspection, comparison, slices, search, joining and text construction using arrays of strings (sufficient for an initial lexer/emitter).
+- [x] UTF-8 string/byte inspection (`byte_at`), comparison, slices, search, joining and text construction using arrays of strings (sufficient for an initial lexer/emitter).
 - [x] File reading/writing, command-line arguments, `print` diagnostics (API remains provisional; richer error propagation is deferred).
 - [x] Test a small compiler-shaped workload (token record array, symbol dictionary, assembled C text), plus nested CoW and managed unions.
 - [ ] Extend to an indexed AST arena and a realistic multi-file source/diagnostic workflow.
