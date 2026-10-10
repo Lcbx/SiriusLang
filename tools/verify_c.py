@@ -6,7 +6,7 @@ import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parent.parent
-CC = shutil.which("cc")
+CC = shutil.which("cc") or shutil.which("gcc")
 if not CC:
     raise SystemExit("A C11 compiler (cc) is required")
 

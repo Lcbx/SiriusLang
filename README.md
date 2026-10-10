@@ -1,6 +1,11 @@
-# Sirius bootstrap compiler — executable language examples
+# Sirius compiler — bootstrap and self-hosting work
 
-This repository now contains an **executable Python-to-C11 bootstrap compiler** as well as the original test-first specification. It uses the SLY lexer and dataclass syntax AST, specializes functions on concrete types, checks a bootstrap subset of static semantics, and generates ownership-aware C. The compiler is an experimental subset implementation, **not yet a self-hosting compiler** or a complete implementation of the language design.
+This repository contains two compilers:
+
+- **Python stage-0 (`bootstrap_compiler/`):** a working Sirius-to-C11 subset compiler, using SLY, a dataclass syntax AST, specialization, static checks, and ownership-aware C generation.
+- **Sirius stage-1 (`src/`):** a tokenizer, indexed-AST parser, and partial type checker/C11 emitter written in Sirius and currently built by stage-0.
+
+Stage-1 **does not yet compile its own source**. Its supported language subset is smaller than stage-0's; neither implementation is a complete implementation of `LANGUAGE_DESIGN.md`.
 
 ## Layout
 
@@ -28,7 +33,7 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 
 ## Positive tests
 
-The first 24 compiler fixtures have independent C reference programs. Additional compiler-only feature fixtures (`tests/fixtures/25_*.sirius` through `37_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; a miniature token/symbol-table/C-text workflow; the rank-1 array shorthand; and UTF-8 byte inspection.
+The first 24 compiler fixtures have independent C reference programs. The 14 additional stage-0 fixtures (`tests/fixtures/25_*.sirius` through `38_*.sirius`) cover string, record, nested and union arrays; dictionaries with managed values; collection iteration; CLI arguments; a miniature token/symbol-table/C-text workflow; the rank-1 array shorthand; UTF-8 byte inspection; multiline parenthesized expressions; and module integer constants.
 
 | File | Bootstrap behavior |
 | --- | --- |
@@ -67,7 +72,7 @@ The names of C symbols, byte layout of runtime headers, function specialization 
 python tools/verify_c.py
 ```
 
-This invokes `cc` with C11 and strict warnings, runs each program in a temporary directory, and checks stdout and one expected runtime panic. It exercises the reference C, **not** the future Sirius compiler.
+This invokes `cc` with C11 and strict warnings, runs the 24 reference programs in a temporary directory, and checks stdout and one expected runtime panic. It exercises the reference C, **not** either compiler's emitted C. Unlike `test_compiler.py` and `test_emitter.py`, `verify_c.py` currently requires an executable named `cc` on `PATH` (it does not fall back to `gcc`).
 
 ## Compile and run Sirius with Python
 
@@ -165,7 +170,7 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 
 ### 0. Test-first Python bootstrap
 
-- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 independent C references; 13 additional compiler-authored fixtures).
+- [x] Golden `.sirius` fixtures, independent C11 references and stdout expectations (24 independent C references; 14 additional stage-0 fixtures).
 - [x] Python SLY lexer, indentation-aware parser and syntax AST.
 - [x] Basic static type checking, concrete function specialization and C11 emission.
 - [x] Structural records with deterministic field order, constructors, unions, basic matching, function values.
@@ -197,7 +202,7 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [ ] Extend collections to arbitrary element types and `Dict[K,V]`, plus `Optional` and managed records; complete ownership handling for all control-flow exits.
 - [ ] Add richer constructors and remaining language features needed for self-hosting.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
-- [ ] Expand stage-0/stage-1 equivalence beyond the ten shared positive programs and dedicated stage-1 rejection tests.
+- [ ] Expand stage-0/stage-1 equivalence beyond the ten shared positive programs; the 23 stage-1-only positive programs and 23 diagnostic tests currently establish more focused coverage, not full semantic equivalence.
 - [ ] Use stage-1 to compile its own source (stage-2); check that stage-2 compiles the same suite successfully.
 - [ ] Commit verified generated C bootstrap code and runtime; freeze Python bootstrap thereafter.
 
@@ -261,7 +266,7 @@ Run `python tools/test_emitter.py` from the repository root. The runner combines
 
 The current `compile_c(source)` uses the indexed AST directly. It pre-collects function declarations, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed or call-site-specialized scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`. It additionally interns structural record types using lexicographically sorted fields, emits deterministic C structs and record-by-value operations, supports scalar/nested-POD record literals, direct field updates, record spread/delete/override, and direct `pub` constructors with typed parameters (including `sqrt(f64)`). Managed record fields and advanced publication/control flow are still rejected. Untyped evaluator parameters specialize by concrete argument types; return types can be inferred during each specialization. Functions are cached per concrete signature, with in-progress tracking to avoid unbounded recursive specialization. Managed strings and rank-1 `Array[i64]` are lowered using the C runtime, including retain/release on bindings, calls, returns and normal scope exit. Array updates use CoW; checked indexing panics on invalid positions, and `a = a.append(item)` can consume unique array storage. Only basic `main() -> i64` executables are emitted.
 
-The runner checks ten independent language programs, focused emitter fixtures (including generic returns, managed strings, array CoW/iteration and ownership transfer), strict C11 compilation (`-Wall -Wextra -Werror -pedantic`), and dedicated rejection tests. The generated programs now link with `include/sirius_runtime.c`.
+The runner checks **33 generated-C programs** (10 shared stage-0 language fixtures and 23 stage-1-specific emitter fixtures) and **23 expected diagnostic failures**, with strict C11 compilation (`-Wall -Wextra -Werror -pedantic`). Coverage includes generic returns, managed strings, array CoW/iteration and ownership transfer. The generated programs link with `include/sirius_runtime.c`. These passing tests do not establish complete ownership or language-spec conformance.
 
 **Important limitations:** This is a minimal semantic checker combined with a direct C emitter, **not** typed HIR/MIR and **not** self-hosting. It rejects unsupported syntax rather than guessing a lowering. Managed records, generic arrays beyond `Array[i64]`, dictionaries, `Optional`, advanced constructors and complete ownership lowering still depend on Python stage-0. C operand/argument evaluation order is not generally guaranteed: until ordered temporary lowering is implemented, the stage-1 emitter rejects expressions with multiple potentially effectful calls. Current local effect detection is conservative but not a complete effect system. Integer overflow and module-constant overflow checking are not yet implemented in stage-1. Strings now use reference-counted runtime values; byte indexing, slicing, file I/O and argument arrays are not yet lowered by stage-1. Builtin string literals currently use C `s_string_from_utf8`, which does not preserve embedded NUL bytes. Managed loop-control exits and `recur` are conservatively rejected where cleanup is not established.
 
