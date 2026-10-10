@@ -1,0 +1,12 @@
+def extended(values: Array[string]) -> Array[string]
+	var result = values
+	result = result.append("end")
+	return result
+
+def main() -> i64
+	let original = ["start"]
+	let modified = extended(original)
+	print(len(original))
+	print(len(modified))
+	print(modified[1?]!)
+	return 0

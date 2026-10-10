@@ -32,6 +32,7 @@ ERRORS = {
 	'21_generic_no_return': 'cannot infer function return type',
 	'22_immutable_array_update': 'indexed update requires a mutable local array',
 	'23_array_wrong_element': 'expected i64, found string',
+	'24_array_element_type': 'expected string, found i64',
 }
 
 

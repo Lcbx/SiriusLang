@@ -1,0 +1,14 @@
+def Token(kind: i64, start: i64)
+	pub kind
+	pub start
+
+def main() -> i64
+	var tokens = Array[Token]()
+	tokens = tokens.append(Token(3, 10))
+	tokens = tokens.append(Token(5, 20))
+	print(tokens[1?]!.kind)
+	print(len(tokens))
+	var words = Array[string]()
+	words = words.append("hello")
+	print(words[0?]!)
+	return 0

@@ -9,7 +9,38 @@ let TYPE_BOOL = 3
 let TYPE_STRING = 4
 let TYPE_VOID = 5
 let TYPE_ARRAY_I64 = 7
+let TYPE_ARRAY_STRING = 8
 let TYPE_RECORD_START = 100
+let TYPE_ARRAY_RECORD_START = 10000
+
+# The generic C runtime stores an element size and optional retain/drop callbacks.
+def array_element(kind: i64) -> i64
+	if kind == TYPE_ARRAY_I64
+		return TYPE_I64
+	if kind == TYPE_ARRAY_STRING
+		return TYPE_STRING
+	if kind >= TYPE_ARRAY_RECORD_START
+		return kind - TYPE_ARRAY_RECORD_START
+	return TYPE_INVALID
+
+def array_of(kind: i64) -> i64
+	if kind == TYPE_I64
+		return TYPE_ARRAY_I64
+	if kind == TYPE_STRING
+		return TYPE_ARRAY_STRING
+	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+		return TYPE_ARRAY_RECORD_START + kind
+	return TYPE_INVALID
+
+def managed(kind: i64) -> bool
+	return kind == TYPE_STRING or array_element(kind) != TYPE_INVALID
+
+def generic_array(kind: i64) -> bool
+	return kind == TYPE_ARRAY_STRING or kind >= TYPE_ARRAY_RECORD_START
+
+def array_helper(kind: i64) -> string
+	return "s_ga_" + str(kind)
+
 
 
 def ParameterInfo(name: string, kind: i64)
@@ -110,6 +141,10 @@ def type_name(kind: i64) -> string
 		return "void"
 	if kind == TYPE_ARRAY_I64
 		return "Array[i64]"
+	if kind == TYPE_ARRAY_STRING
+		return "Array[string]"
+	if kind >= TYPE_ARRAY_RECORD_START
+		return "Array[record]"
 	if kind >= TYPE_RECORD_START
 		return "record"
 	return "unknown"
@@ -127,6 +162,8 @@ def c_type(kind: i64) -> string
 		return "void"
 	if kind == TYPE_ARRAY_I64
 		return "S_Array_i64 *"
+	if generic_array(kind)
+		return "S_Array *"
 	if kind >= TYPE_RECORD_START
 		return "s_record_" + str(kind)
 	return "INVALID_TYPE"
@@ -137,10 +174,9 @@ def ast_type(tree: ParseState, id: i64) -> i64
 		return TYPE_INVALID
 	let name = ast_text(tree, id)
 	if name == "Array" and (entry.count == 1 or entry.count == 2)
-		if ast_type(tree, ast_child(tree, id, 0)) == TYPE_I64
-			if entry.count == 1 or ast_text(tree, ast_child(tree, id, 1)) == "1"
-				return TYPE_ARRAY_I64
-		return TYPE_INVALID
+		if entry.count == 2 and ast_text(tree, ast_child(tree, id, 1)) != "1"
+			return TYPE_INVALID
+		return array_of(ast_type(tree, ast_child(tree, id, 0)))
 	if entry.count != 0
 		return TYPE_INVALID
 	if name == "i64"
@@ -151,6 +187,45 @@ def ast_type(tree: ParseState, id: i64) -> i64
 		return TYPE_BOOL
 	if name == "string"
 		return TYPE_STRING
+	return TYPE_INVALID
+
+# Resolve constructor-produced record types in annotations after their definitions.
+def resolve_type(state: EmitState, id: i64) -> i64
+	let entry = ast_node(state.tree, id)
+	if entry.kind != NODE_TYPE
+		return TYPE_INVALID
+	if ast_text(state.tree, id) == "Array" and (entry.count == 1 or entry.count == 2)
+		if entry.count == 2 and ast_text(state.tree, ast_child(state.tree, id, 1)) != "1"
+			return TYPE_INVALID
+		return array_of(resolve_type(state, ast_child(state.tree, id, 0)))
+	let primitive = ast_type(state.tree, id)
+	if primitive != TYPE_INVALID
+		return primitive
+	if entry.count == 0
+		let index = find_function(state, ast_text(state.tree, id))
+		if index >= 0 and state.functions[index?]!.constructor
+			return state.functions[index?]!.kind
+	return TYPE_INVALID
+
+# Array[T]() is syntax for an empty array whose element type is T.
+def array_constructor_kind(state: EmitState, id: i64) -> i64
+	let index = ast_node(state.tree, id)
+	if index.kind != NODE_INDEX or index.count != 2
+		return TYPE_INVALID
+	let root = ast_child(state.tree, id, 0)
+	if ast_node(state.tree, root).kind != NODE_NAME or ast_text(state.tree, root) != "Array"
+		return TYPE_INVALID
+	let type_id = ast_child(state.tree, id, 1)
+	if ast_node(state.tree, type_id).kind != NODE_NAME
+		return TYPE_INVALID
+	let name = ast_text(state.tree, type_id)
+	if name == "string"
+		return TYPE_ARRAY_STRING
+	if name == "i64"
+		return TYPE_ARRAY_I64
+	let function = find_function(state, name)
+	if function >= 0 and state.functions[function?]!.constructor
+		return array_of(state.functions[function?]!.kind)
 	return TYPE_INVALID
 
 def line(state: EmitState, text: string) -> EmitState
@@ -203,7 +278,7 @@ def find_constant(state: EmitState, name: string) -> string
 # Record types are structural: compare field names and types in sorted order.
 # Only trivially-copyable records are lowered in this first increment.
 def record_field_index(state: EmitState, kind: i64, name: string) -> i64
-	if kind < TYPE_RECORD_START or kind - TYPE_RECORD_START >= len(state.records)
+	if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START or kind - TYPE_RECORD_START >= len(state.records)
 		return -1
 	let fields = state.records[kind - TYPE_RECORD_START?]!.fields
 	for i in 0..len(fields)
@@ -251,6 +326,57 @@ def record_declarations(state: EmitState) -> string
 			result = result + "\t" + c_type(field.kind) + " " + field.name + ";\n"
 		result = result + "} " + c_type(kind) + ";\n"
 	return result
+
+# Generic array helper functions are emitted after canonical record declarations.
+# Array operations consume an owned array and, where applicable, an owned element.
+def generic_array_declarations(state: EmitState) -> string
+	var output = ""
+	for i in 0..len(state.records) + 1
+		var element = TYPE_STRING
+		if i > 0
+			element = TYPE_RECORD_START + i - 1
+		let kind = array_of(element)
+		let type = c_type(element)
+		let prefix = array_helper(kind)
+		var copy = "NULL"
+		var drop = "NULL"
+		if element == TYPE_STRING
+			output = output + "static inline void " + prefix + "_copy(void *dst, const void *src) { *(S_String **)dst = s_string_retain(*(S_String *const *)src); }\n"
+			output = output + "static inline void " + prefix + "_drop(void *value) { s_string_release(*(S_String **)value); }\n"
+			copy = prefix + "_copy"
+			drop = prefix + "_drop"
+		output = output + "static inline S_Array *" + prefix + "_make_take(size_t count, " + type + " *items) {\n"
+		output = output + "\tS_Array *result = s_array_make(count, items, sizeof(" + type + "), " + copy + ", " + drop + ");\n"
+		if element == TYPE_STRING
+			output = output + "\tfor (size_t i = 0; i < count; ++i) s_string_release(items[i]);\n"
+		output = output + "\treturn result;\n}\n"
+		output = output + "static inline S_Array *" + prefix + "_append_take(S_Array *owned, " + type + " item) {\n"
+		output = output + "\tS_Array *result = s_array_append(owned, &item);\n"
+		if element == TYPE_STRING
+			output = output + "\ts_string_release(item);\n"
+		output = output + "\treturn result;\n}\n"
+		output = output + "static inline " + type + " " + prefix + "_get_checked_take(S_Array *owned, int64_t index) {\n"
+		output = output + "\t" + type + " const *p = (" + type + " const *)s_array_at(owned, index);\n"
+		output = output + "\tif (!p) s_panic(\"index out of bounds\");\n"
+		if element == TYPE_STRING
+			output = output + "\t" + type + " value = s_string_retain(*p);\n"
+		else
+			output = output + "\t" + type + " value = *p;\n"
+		output = output + "\ts_array_release(owned);\n\treturn value;\n}\n"
+		output = output + "static inline " + type + " " + prefix + "_get_borrow(const S_Array *array, int64_t index) {\n"
+		output = output + "\t" + type + " const *p = (" + type + " const *)s_array_at(array, index);\n"
+		output = output + "\tif (!p) s_panic(\"index out of bounds\");\n"
+		if element == TYPE_STRING
+			output = output + "\treturn s_string_retain(*p);\n}\n"
+		else
+			output = output + "\treturn *p;\n}\n"
+		output = output + "static inline void " + prefix + "_set_take(S_Array **owned, int64_t index, " + type + " item) {\n"
+		output = output + "\ts_array_set(owned, index, &item);\n"
+		if element == TYPE_STRING
+			output = output + "\ts_string_release(item);\n"
+		output = output + "}\n"
+	output = output + "static inline int64_t s_generic_array_length_take(S_Array *owned) { int64_t n = (int64_t)s_array_length(owned); s_array_release(owned); return n; }\n"
+	return output
 
 def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: bool) -> EmitState
 	var result = state
@@ -366,23 +492,38 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		var next = state
 		var items = Array[string]()
 		var effects = 0
+		var element_kind = TYPE_INVALID
 		for i in 0..entry.count
 			if has_effect(next, ast_child(state.tree, id, i), Array[string]())
 				effects += 1
 			let element = emit_expr(next, ast_child(state.tree, id, i))
-			next = check_type(element.state, id, element.kind, TYPE_I64)
+			next = element.state
+			if i == 0
+				element_kind = element.kind
+			else
+				next = check_type(next, id, element.kind, element_kind)
 			items = items.append(element.text)
 		if effects > 1
 			return ExprCode(emit_error(next, id, "array initializer requires ordered evaluation"), "", TYPE_INVALID)
-		return ExprCode(next, "s_array_i64_make(" + str(entry.count) + ", (int64_t[]){" + ", ".join(items) + "})", TYPE_ARRAY_I64)
+		let kind = array_of(element_kind)
+		if kind == TYPE_INVALID
+			return ExprCode(check_type(next, id, element_kind, TYPE_I64), "", TYPE_INVALID)
+		if kind == TYPE_ARRAY_I64
+			return ExprCode(next, "s_array_i64_make(" + str(entry.count) + ", (int64_t[]){" + ", ".join(items) + "})", kind)
+		return ExprCode(next, array_helper(kind) + "_make_take(" + str(entry.count) + ", (" + c_type(element_kind) + "[]){" + ", ".join(items) + "})", kind)
 	if entry.kind == NODE_CHECKED_INDEX
 		if entry.count != 2
 			return ExprCode(emit_error(state, id, "only rank-1 indexing is supported"), "", TYPE_INVALID)
 		let array = emit_expr(state, ast_child(state.tree, id, 0))
 		let index = emit_expr(array.state, ast_child(state.tree, id, 1))
-		var next = check_type(index.state, id, array.kind, TYPE_ARRAY_I64)
+		var next = index.state
+		let element = array_element(array.kind)
+		if element == TYPE_INVALID
+			return ExprCode(emit_error(next, id, "checked indexing requires an array"), "", TYPE_INVALID)
 		next = check_type(next, id, index.kind, TYPE_I64)
-		return ExprCode(next, "s_array_i64_get_checked_take(" + array.text + ", " + index.text + ")", TYPE_I64)
+		if array.kind == TYPE_ARRAY_I64
+			return ExprCode(next, "s_array_i64_get_checked_take(" + array.text + ", " + index.text + ")", TYPE_I64)
+		return ExprCode(next, array_helper(array.kind) + "_get_checked_take(" + array.text + ", " + index.text + ")", element)
 	if entry.kind == NODE_RECORD
 		var next = state
 		var fields = Array[RecordField]()
@@ -399,7 +540,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					return ExprCode(emit_error(next, field_id, "unknown spread source '" + name + "'"), "", TYPE_INVALID)
 				touches = touches + "(void)v_" + name + ", "
 				let kind = next.symbols[symbol?]!.kind
-				if kind < TYPE_RECORD_START
+				if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START
 					return ExprCode(emit_error(next, field_id, "record spread expects a record"), "", TYPE_INVALID)
 				for member in next.records[kind - TYPE_RECORD_START?]!.fields
 					var found = -1
@@ -435,7 +576,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					effects += 1
 				let result = emit_expr(next, value_id)
 				next = result.state
-				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or result.kind == TYPE_STRING or result.kind == TYPE_ARRAY_I64
+				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or managed(result.kind)
 					return ExprCode(emit_error(next, field_id, "record fields currently require unmanaged values"), "", TYPE_INVALID)
 				var found = -1
 				for j in 0..len(fields)
@@ -472,6 +613,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(state, "s_string_retain(v_" + value + ")", kind)
 			if kind == TYPE_ARRAY_I64
 				return ExprCode(state, "s_array_i64_retain(v_" + value + ")", kind)
+			if generic_array(kind)
+				return ExprCode(state, "s_array_retain(v_" + value + ")", kind)
 			return ExprCode(state, "v_" + value, kind)
 		let constant = find_constant(state, value)
 		if constant != ""
@@ -524,12 +667,24 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		return ExprCode(next, "(" + left.text + " " + op + " " + right.text + ")", kind)
 	if entry.kind == NODE_CALL
 		let callee = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, callee).kind == NODE_INDEX
+			let kind = array_constructor_kind(state, callee)
+			if kind == TYPE_INVALID or entry.count != 1
+				return ExprCode(emit_error(state, id, "unsupported array constructor"), "", TYPE_INVALID)
+			if kind == TYPE_ARRAY_I64
+				return ExprCode(state, "s_array_i64_make(0, NULL)", kind)
+			return ExprCode(state, array_helper(kind) + "_make_take(0, NULL)", kind)
 		if ast_node(state.tree, callee).kind == NODE_ATTR and ast_text(state.tree, callee) == "append" and entry.count == 2
 			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
 			let item = emit_expr(receiver.state, ast_child(state.tree, id, 1))
-			var next = check_type(item.state, id, receiver.kind, TYPE_ARRAY_I64)
-			next = check_type(next, id, item.kind, TYPE_I64)
-			return ExprCode(next, "s_array_i64_append_take(" + receiver.text + ", " + item.text + ")", TYPE_ARRAY_I64)
+			var next = item.state
+			let element = array_element(receiver.kind)
+			if element == TYPE_INVALID
+				return ExprCode(emit_error(next, id, "append requires an array"), "", TYPE_INVALID)
+			next = check_type(next, id, item.kind, element)
+			if receiver.kind == TYPE_ARRAY_I64
+				return ExprCode(next, "s_array_i64_append_take(" + receiver.text + ", " + item.text + ")", receiver.kind)
+			return ExprCode(next, array_helper(receiver.kind) + "_append_take(" + receiver.text + ", " + item.text + ")", receiver.kind)
 		if ast_node(state.tree, callee).kind != NODE_NAME
 			return ExprCode(emit_error(state, id, "only named calls are supported"), "", TYPE_INVALID)
 		let name = ast_text(state.tree, callee)
@@ -570,6 +725,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(next, "s_string_length_take(" + arguments[0?]! + ")", TYPE_I64)
 			if arg_types[0?]! == TYPE_ARRAY_I64
 				return ExprCode(next, "s_array_i64_length_take(" + arguments[0?]! + ")", TYPE_I64)
+			if generic_array(arg_types[0?]!)
+				return ExprCode(next, "s_generic_array_length_take(" + arguments[0?]! + ")", TYPE_I64)
 			return ExprCode(emit_error(next, id, "len expects a string or array"), "", TYPE_INVALID)
 		if name == "str"
 			if len(arguments) != 1 or arg_types[0?]! != TYPE_I64
@@ -621,6 +778,8 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 			next = line(next, "s_string_release(v_" + symbol.name + ");")
 		if symbol.kind == TYPE_ARRAY_I64
 			next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
+		if generic_array(symbol.kind)
+			next = line(next, "s_array_release(v_" + symbol.name + ");")
 	var restored = Array[SymbolInfo]()
 	for i in 0..count
 		restored = restored.append(next.symbols[i?]!)
@@ -650,7 +809,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		for i in 0..item.count
 			let child = ast_child(state.tree, id, i)
 			if ast_node(state.tree, child).kind == NODE_TYPE
-				kind = ast_type(state.tree, child)
+				kind = resolve_type(state, child)
 			else
 				expr_id = child
 		if expr_id < 0
@@ -663,7 +822,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		if next.error != ""
 			return next
 		var declaration = c_type(kind) + " v_" + name + " = " + result.text + ";"
-		if item.kind == NODE_LET and kind != TYPE_STRING and kind != TYPE_ARRAY_I64
+		if item.kind == NODE_LET and not managed(kind)
 			declaration = "const " + declaration
 		next = line(next, declaration)
 		return append_symbol(next, id, name, kind, item.kind == NODE_VAR)
@@ -679,13 +838,17 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			let symbol = find_symbol(state, name)
 			if symbol < 0 or not state.symbols[symbol?]!.mutable
 				return emit_error(state, id, "indexed update requires a mutable local array")
-			if state.symbols[symbol?]!.kind != TYPE_ARRAY_I64
+			let array_kind = state.symbols[symbol?]!.kind
+			let element_kind = array_element(array_kind)
+			if element_kind == TYPE_INVALID
 				return emit_error(state, id, "indexed update requires an array")
 			let index = emit_expr(state, ast_child(state.tree, target, 1))
 			let item_value = emit_expr(index.state, ast_child(state.tree, id, 1))
 			var next = check_type(item_value.state, id, index.kind, TYPE_I64)
-			next = check_type(next, id, item_value.kind, TYPE_I64)
-			return line(next, "s_array_i64_set(&v_" + name + ", " + index.text + ", " + item_value.text + ");")
+			next = check_type(next, id, item_value.kind, element_kind)
+			if array_kind == TYPE_ARRAY_I64
+				return line(next, "s_array_i64_set(&v_" + name + ", " + index.text + ", " + item_value.text + ");")
+			return line(next, array_helper(array_kind) + "_set_take(&v_" + name + ", " + index.text + ", " + item_value.text + ");")
 		if ast_node(state.tree, target).kind == NODE_ATTR
 			let root = ast_child(state.tree, target, 0)
 			if ast_node(state.tree, root).kind != NODE_NAME
@@ -716,7 +879,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		let symbol = state.symbols[index?]!
 		if not symbol.mutable
 			return emit_error(state, id, "cannot assign immutable binding '" + name + "'")
-		if symbol.kind == TYPE_ARRAY_I64 and ast_node(state.tree, rhs).kind == NODE_CALL
+		if array_element(symbol.kind) != TYPE_INVALID and ast_node(state.tree, rhs).kind == NODE_CALL
 			let call = ast_node(state.tree, rhs)
 			if call.count == 2
 				let method = ast_child(state.tree, rhs, 0)
@@ -724,24 +887,29 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 					let receiver = ast_child(state.tree, method, 0)
 					if ast_node(state.tree, receiver).kind == NODE_NAME and ast_text(state.tree, receiver) == name
 						let element = emit_expr(state, ast_child(state.tree, rhs, 1))
-						var next = check_type(element.state, id, element.kind, TYPE_I64)
+						var next = check_type(element.state, id, element.kind, array_element(symbol.kind))
 						if next.error != ""
 							return next
 						let serial = next.counter
 						next.counter += 1
 						let temp = "s_item_" + str(serial)
-						next = line(next, "int64_t " + temp + " = " + element.text + ";")
-						return line(next, "v_" + name + " = s_array_i64_append_take(v_" + name + ", " + temp + ");")
+						next = line(next, c_type(element.kind) + " " + temp + " = " + element.text + ";")
+						if symbol.kind == TYPE_ARRAY_I64
+							return line(next, "v_" + name + " = s_array_i64_append_take(v_" + name + ", " + temp + ");")
+						return line(next, "v_" + name + " = " + array_helper(symbol.kind) + "_append_take(v_" + name + ", " + temp + ");")
 		let result = emit_expr(state, rhs)
 		var next = check_type(result.state, id, result.kind, symbol.kind)
-		if symbol.kind == TYPE_ARRAY_I64
+		if array_element(symbol.kind) != TYPE_INVALID
 			if ast_text(state.tree, id) != "="
 				return emit_error(next, id, "unsupported array assignment")
 			let serial = next.counter
 			next.counter += 1
 			let temp = "s_value_" + str(serial)
-			next = line(next, "S_Array_i64 *" + temp + " = " + result.text + ";")
-			next = line(next, "s_array_i64_release(v_" + name + ");")
+			next = line(next, c_type(symbol.kind) + " " + temp + " = " + result.text + ";")
+			if symbol.kind == TYPE_ARRAY_I64
+				next = line(next, "s_array_i64_release(v_" + name + ");")
+			else
+				next = line(next, "s_array_release(v_" + name + ");")
 			return line(next, "v_" + name + " = " + temp + ";")
 		if symbol.kind == TYPE_STRING
 			let serial = next.counter
@@ -768,11 +936,11 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next.return_kind = result.kind
 		else
 			next = check_type(next, id, result.kind, next.return_kind)
-		var managed = false
+		var needs_cleanup = false
 		for symbol in next.symbols
-			if symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64
-				managed = true
-		if managed
+			if managed(symbol.kind)
+				needs_cleanup = true
+		if needs_cleanup
 			let serial = next.counter
 			next.counter += 1
 			let temp = "s_return_" + str(serial)
@@ -784,11 +952,13 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 					next = line(next, "s_string_release(v_" + symbol.name + ");")
 				if symbol.kind == TYPE_ARRAY_I64
 					next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
+				if generic_array(symbol.kind)
+					next = line(next, "s_array_release(v_" + symbol.name + ");")
 			return line(next, "return " + temp + ";")
 		return line(next, "return " + result.text + ";")
 	if item.kind == NODE_RECUR
 		for symbol in state.symbols
-			if symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64
+			if managed(symbol.kind)
 				return emit_error(state, id, "managed recur requires ownership lowering")
 		if item.count != 1
 			return emit_error(state, id, "recur expects a direct self-call")
@@ -849,9 +1019,10 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		let body = ast_child(state.tree, id, item.count - 1)
 		if ast_node(state.tree, iterable).kind != NODE_BINARY or ast_text(state.tree, iterable) != ".."
 			let source = emit_expr(state, iterable)
-			var next = check_type(source.state, id, source.kind, TYPE_ARRAY_I64)
-			if next.error != ""
-				return next
+			var next = source.state
+			let element_kind = array_element(source.kind)
+			if element_kind == TYPE_INVALID
+				return emit_error(next, id, "for expects an array or range")
 			let original = len(next.symbols)
 			let serial = next.counter
 			next.counter += 1
@@ -861,21 +1032,32 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next = line(next, "{")
 			next.indentation += 1
 			next.scope_depth += 1
-			next = line(next, "S_Array_i64 *v_" + iter + " = " + source.text + ";")
-			next = append_symbol(next, id, iter, TYPE_ARRAY_I64, false)
-			next = line(next, "for (int64_t " + index + " = 0; " + index + " < (int64_t)v_" + iter + "->length; ++" + index + ")")
+			next = line(next, c_type(source.kind) + " v_" + iter + " = " + source.text + ";")
+			next = append_symbol(next, id, iter, source.kind, false)
+			var length = "(int64_t)v_" + iter + "->length"
+			if generic_array(source.kind)
+				length = "(int64_t)s_array_length(v_" + iter + ")"
+			next = line(next, "for (int64_t " + index + " = 0; " + index + " < " + length + "; ++" + index + ")")
 			next = line(next, "{")
 			next.indentation += 1
 			next.scope_depth += 1
 			next.loop_depth += 1
-			next = line(next, "const int64_t v_" + name + " = s_array_i64_get_checked(v_" + iter + ", " + index + ");")
-			next = append_symbol(next, id, name, TYPE_I64, false)
+			var getter = "s_array_i64_get_checked(v_" + iter + ", " + index + ")"
+			if generic_array(source.kind)
+				getter = array_helper(source.kind) + "_get_borrow(v_" + iter + ", " + index + ")"
+			next = line(next, c_type(element_kind) + " v_" + name + " = " + getter + ";")
+			next = append_symbol(next, id, name, element_kind, false)
 			next = emit_block(next, body)
+			if element_kind == TYPE_STRING
+				next = line(next, "s_string_release(v_" + name + ");")
 			next.loop_depth -= 1
 			next.scope_depth -= 1
 			next.indentation -= 1
 			next = line(next, "}")
-			next = line(next, "s_array_i64_release(v_" + iter + ");")
+			if source.kind == TYPE_ARRAY_I64
+				next = line(next, "s_array_i64_release(v_" + iter + ");")
+			else
+				next = line(next, "s_array_release(v_" + iter + ");")
 			next.scope_depth -= 1
 			next.indentation -= 1
 			next = line(next, "}")
@@ -907,7 +1089,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		if state.loop_depth == 0
 			return emit_error(state, id, "loop control outside loop")
 		for symbol in state.symbols
-			if (symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64) and symbol.depth > 1
+			if managed(symbol.kind) and symbol.depth > 1
 				return emit_error(state, id, "managed loop exit requires ownership lowering")
 		if item.kind == NODE_BREAK
 			return line(state, "break;")
@@ -938,7 +1120,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 					return emit_error(state, part, "duplicate parameter '" + parameter_name + "'")
 			params = params.append(ParameterInfo(parameter_name, kind))
 		elif info.kind == NODE_TYPE
-			result = ast_type(state.tree, part)
+			result = resolve_type(state, part)
 	var next = state
 	var constructor = false
 	let body_id = ast_child(state.tree, id, entry.count - 1)
@@ -1130,6 +1312,7 @@ def compile_c(source: string) -> CompileResult
 		if i == 4
 			output = output + record_declarations(state)
 		if i == 5
+			output = output + generic_array_declarations(state)
 			output = output + declarations
 	output = output + definitions
 	return CompileResult(output, "", 0)
