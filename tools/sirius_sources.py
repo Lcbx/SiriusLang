@@ -5,6 +5,7 @@ ROOT = Path(__file__).resolve().parent.parent
 TOKENIZER_SOURCES = ('src/tokenizer.sirius',)
 PARSER_SOURCES = TOKENIZER_SOURCES + ('src/parser.sirius',)
 COMPILER_SOURCES = PARSER_SOURCES + (
+	'src/types.sirius',
 	'src/emit_c.sirius',
 	'tests/emitter/driver.sirius',
 )

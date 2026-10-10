@@ -1,8 +1,8 @@
 # Sirius compiler IR — target architecture
 
-**Status:** the active, self-hosted Sirius compiler (`src/`) currently performs semantic checks and direct C11 generation without a distinct typed HIR or CFG MIR. The Python bootstrap (`bootstrap_python/`) is frozen historical source. Self-hosting and a reproducible C fixed point **are already established**; this document describes the **next architecture**, not working IR. See [ROADMAP.md](ROADMAP.md), phases B–D, for incremental migration and ownership testing.
+**Status:** the active, self-hosted Sirius compiler (`src/`) currently performs semantic checks and direct C11 generation without a distinct typed HIR or CFG MIR. `src/types.sirius` now provides canonical semantic interning for primitive, record, array, dictionary and optional types; the emitter still consumes legacy integer kind encodings via a compatibility bridge. The Python bootstrap (`bootstrap_python/`) is frozen historical source. Self-hosting and a reproducible C fixed point **are already established**; this document describes the **next architecture**, not working IR. See [ROADMAP.md](ROADMAP.md), phases B–D, for incremental migration and ownership testing.
 
-The intended pipeline is **tokens → syntax AST → typed/specialized HIR → ownership-aware CFG MIR → C11**. `target_ir.py` contains illustrative Python dataclasses only. The current Sirius AST is an indexed arena (`Array[Node]` plus child edges), not the original Python syntax AST.
+The intended pipeline is **tokens → syntax AST → typed/specialized HIR → ownership-aware CFG MIR → C11**. The current type table is a semantic identity registry (dense `TypeId` indices, descriptor tags and child IDs); runtime size/alignment/field offsets and type-specific operations are deliberately not yet stored there. `target_ir.py` contains illustrative Python dataclasses only. The current Sirius AST is an indexed arena (`Array[Node]` plus child edges), not the original Python syntax AST.
 
 ## Syntax AST (already implemented in both compilers)
 

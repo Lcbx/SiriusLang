@@ -34,8 +34,8 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 
 | Priority | Debt | Evidence / risk | Recommended remedy |
 | --- | --- | --- | --- |
-| **P0** | Mixed typing, ownership and C emission | `src/emit_c.sirius` is ~1,800 lines; some complex `elif` optional fallbacks and expression forms are rejected | Introduce typed HIR then CFG MIR incrementally, retaining the C emitter as a temporary backend |
-| **P0** | Ad-hoc numeric type IDs | `TYPE_*` ranges and arithmetic type encodings restrict nesting/combinations and can become ambiguous | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
+| **P0** | Mixed typing, ownership and C emission | `src/emit_c.sirius` still combines several compiler stages; some complex `elif` optional fallbacks and expression forms are rejected | Introduce typed HIR then CFG MIR incrementally, retaining the C emitter as a temporary backend |
+| **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
 | **P1** | No module/import system | `src/` and its driver are concatenated in dependency order; collision and coupling risks increase with size | Split compiler components using an ordered build manifest now; later implement static `namespace`/`import` |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
@@ -68,7 +68,8 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 **Available then:** `Array[Record]`, `Dict[string,i64]`, generic calls, module integer constants, owned strings, and indexed AST arenas. No imports, runtime reflection, or recursive managed types are required.
 
 - [ ] Define HIR nodes in a **flat arena** (node IDs and child-edge indices), mirroring the current parser; use `i64` kind constants as temporary tags.
-- [ ] Replace encoded type-number arithmetic with interned `TypeId` descriptors for scalars, records, `Array`, `Dict`, `Optional`, functions and unions as they become supported. Canonicalize record fields in lexicographic order.
+- [x] Introduce a canonical `TypeTable` for primitive, record, `Array`, `Dict`, and `Optional` descriptors; intern by structure with sorted record fields. Register record and bound-value types through the compatibility bridge.
+- [ ] Migrate remaining legacy arithmetic type IDs, generic specialization signatures, field lookup and C layout generation to canonical `TypeId`s. Add function/union descriptors when those features are implemented.
 - [ ] Move lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. Preserve source spans.
 - [ ] Move generic monomorphization to an explicit cache keyed by definition ID and concrete `TypeId`s, tracking in-progress specializations.
 - [ ] Lower constructors into typed record-producing operations; make extension calls and built-in operations explicitly resolved.
@@ -134,7 +135,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 
 - **Self-hosting does not mean full semantics.** The current compiler is a bootstrap subset; modules, type descriptors, array broadcasting, vector operations, effect analysis, first-class function coverage, dynamic `Any` and parallel transforms remain outstanding.
 - **Effects/purity:** no general transitive effect checker yet. Do not expose an unrestricted parallelizable `map` that silently accepts side effects.
-- **Type identity:** current numeric ranges are not the canonical universal descriptors promised in the design; phase B must replace them without changing structural equality.
+- **Type identity:** semantic interning has begun in `src/types.sirius`, but legacy numeric kinds still drive code generation. Canonical runtime layout/introspection descriptors remain future work.
 - **Ownership:** manual emitter-level ARC is an implementation bridge, not a durable proof of value semantics; phases C/D address this.
 - **Backend:** C11 via `cc`/`gcc` is the current implementation. The design mentions Zig's C toolchain, which remains optional; portability should be measured rather than assumed.
 

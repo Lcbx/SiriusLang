@@ -1,5 +1,5 @@
 # Minimal stage-1 semantic checker and C11 emitter.
-# Concatenate after tokenizer.sirius and parser.sirius until imports exist.
+# Concatenate after tokenizer.sirius, parser.sirius and types.sirius until imports exist.
 # This deliberately rejects unsupported types and operations instead of emitting unsafe C.
 
 let TYPE_INVALID = 0
@@ -125,12 +125,9 @@ def ConstantInfo(name: string, value: string)
 	pub name
 	pub value
 
-def RecordField(name: string, kind: i64)
-	pub name
-	pub kind
-
-def RecordInfo(fields: Array[RecordField])
+def RecordInfo(fields: Array[RecordField], canonical: i64)
 	pub fields
+	pub canonical
 
 def EmitState(tree: ParseState)
 	pub tree
@@ -140,6 +137,7 @@ def EmitState(tree: ParseState)
 	pub symbols = Array[SymbolInfo]()
 	pub constants = Array[ConstantInfo]()
 	pub records = Array[RecordInfo]()
+	pub types = new_type_table()
 	pub dict_kinds = Array[i64]()
 	pub lines = Array[string]()
 	pub indentation = 0
@@ -382,8 +380,8 @@ def find_constant(state: EmitState, name: string) -> string
 			return item.value
 	return ""
 
-# Record types are structural: compare field names and types in sorted order.
-# Only trivially-copyable records are lowered in this first increment.
+# Record types are structural: intern fields by canonical name/type order.
+# Retain legacy C kind IDs until the remaining emitter is migrated.
 def record_field_index(state: EmitState, kind: i64, name: string) -> i64
 	if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START or kind - TYPE_RECORD_START >= len(state.records)
 		return -1
@@ -393,68 +391,92 @@ def record_field_index(state: EmitState, kind: i64, name: string) -> i64
 			return i
 	return -1
 
-def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
-	var result = Array[RecordField]()
-	for field in fields
-		var at = 0
-		while at < len(result) and result[at?]!.name < field.name
-			at += 1
-		var sorted = Array[RecordField]()
-		for i in 0..at
-			sorted = sorted.append(result[i?]!)
-		sorted = sorted.append(field)
-		for i in at..len(result)
-			sorted = sorted.append(result[i?]!)
-		result = sorted
-	return result
+
+# Translate legacy C-emitter kinds into canonical TypeIds. This boundary is
+# temporary: the remaining emitter will move to canonical IDs in later patches.
+def canonical_kind(table: TypeTable, records: Array[RecordInfo], kind: i64) -> InternedType
+	if kind >= TYPE_I64 and kind <= TYPE_VOID
+		return InternedType(table, kind)
+	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+		let index = kind - TYPE_RECORD_START
+		if index < len(records)
+			return InternedType(table, records[index?]!.canonical)
+		return InternedType(table, TYPE_INVALID)
+	if is_optional(kind)
+		let payload = canonical_kind(table, records, optional_value(kind))
+		return intern_optional_type(payload.table, payload.id)
+	if is_dict(kind)
+		let key = canonical_kind(table, records, dict_key(kind))
+		let value = canonical_kind(key.table, records, dict_value(kind))
+		return intern_dict_type(value.table, key.id, value.id)
+	let element = array_element(kind)
+	if element != TYPE_INVALID
+		let inner = canonical_kind(table, records, element)
+		return intern_array_type(inner.table, inner.id)
+	return InternedType(table, TYPE_INVALID)
 
 def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
 	let ordered = ordered_fields(fields)
-	for i in 0..len(state.records)
-		let previous = state.records[i?]!.fields
-		if len(previous) == len(ordered)
-			var equal = true
-			for j in 0..len(ordered)
-				if previous[j?]!.name != ordered[j?]!.name or previous[j?]!.kind != ordered[j?]!.kind
-					equal = false
-			if equal
-				return ExprCode(state, "", TYPE_RECORD_START + i)
 	var next = state
+	var canonical_fields = Array[RecordField]()
+	for field in ordered
+		let lookup = canonical_kind(next.types, next.records, field.kind)
+		if lookup.id == TYPE_INVALID
+			return ExprCode(next, "", TYPE_INVALID)
+		next.types = lookup.table
+		canonical_fields = canonical_fields.append(RecordField(field.name, lookup.id))
+	let entry = intern_record_type(next.types, canonical_fields)
+	next.types = entry.table
+	for i in 0..len(next.records)
+		if next.records[i?]!.canonical == entry.id
+			return ExprCode(next, "", TYPE_RECORD_START + i)
 	let kind = TYPE_RECORD_START + len(next.records)
-	next.records = next.records.append(RecordInfo(ordered))
+	next.records = next.records.append(RecordInfo(ordered, entry.id))
 	return ExprCode(next, "", kind)
 
 # Record helpers operate on owned values. Nested managed fields are retained and
 # released recursively; even POD records use these helpers for a uniform ABI.
-def record_copy(kind: i64, expr: string) -> string
+def retain_function(kind: i64) -> string
 	if kind == TYPE_STRING
-		return "s_string_retain(" + expr + ")"
-	if is_optional(kind) and managed(optional_value(kind))
-		return optional_helper(kind) + "_copy(" + expr + ")"
+		return "s_string_retain"
 	if kind == TYPE_ARRAY_I64
-		return "s_array_i64_retain(" + expr + ")"
+		return "s_array_i64_retain"
 	if generic_array(kind)
-		return "s_array_retain(" + expr + ")"
+		return "s_array_retain"
 	if is_dict(kind)
-		return "s_dict_retain(" + expr + ")"
+		return "s_dict_retain"
+	if is_optional(kind) and managed(optional_value(kind))
+		return optional_helper(kind) + "_copy"
 	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
-		return c_type(kind) + "_copy(" + expr + ")"
-	return expr
+		return c_type(kind) + "_copy"
+	return ""
+
+def release_function(kind: i64) -> string
+	if kind == TYPE_STRING
+		return "s_string_release"
+	if kind == TYPE_ARRAY_I64
+		return "s_array_i64_release"
+	if generic_array(kind)
+		return "s_array_release"
+	if is_dict(kind)
+		return "s_dict_release"
+	if is_optional(kind) and managed(optional_value(kind))
+		return optional_helper(kind) + "_drop"
+	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+		return c_type(kind) + "_drop"
+	return ""
+
+def record_copy(kind: i64, expr: string) -> string
+	let function = retain_function(kind)
+	if function == ""
+		return expr
+	return function + "(" + expr + ")"
 
 def record_drop(kind: i64, expr: string) -> string
-	if kind == TYPE_STRING
-		return "s_string_release(" + expr + ");"
-	if is_optional(kind) and managed(optional_value(kind))
-		return optional_helper(kind) + "_drop(" + expr + ");"
-	if kind == TYPE_ARRAY_I64
-		return "s_array_i64_release(" + expr + ");"
-	if generic_array(kind)
-		return "s_array_release(" + expr + ");"
-	if is_dict(kind)
-		return "s_dict_release(" + expr + ");"
-	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
-		return c_type(kind) + "_drop(" + expr + ");"
-	return ""
+	let function = release_function(kind)
+	if function == ""
+		return ""
+	return function + "(" + expr + ");"
 
 # Keep constructors of plain nested records available while managed publication
 # awaits explicit ownership transfer and parameter cleanup.
@@ -630,6 +652,10 @@ def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: b
 	var result = state
 	if kind == TYPE_INVALID or kind == TYPE_VOID
 		return emit_error(result, id, "unsupported binding type")
+	let canonical = canonical_kind(result.types, result.records, kind)
+	if canonical.id == TYPE_INVALID
+		return emit_error(result, id, "unsupported binding type")
+	result.types = canonical.table
 	result.symbols = result.symbols.append(SymbolInfo(name, kind, mutable, result.scope_depth))
 	return result
 

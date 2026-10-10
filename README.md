@@ -36,6 +36,7 @@ The update command compiles from the **existing** `bootstrap_c/compiler.c`, chec
 | `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 70 executable cases and 29 expected diagnostics |
 | `python tools/test_emitter.py` | Sirius-written emitter: 70 positive C executions, 29 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
+| `python tools/test_types.py` | Canonical type interning (records, nested containers, and type identity) |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
 | `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
 | `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
@@ -45,7 +46,7 @@ The counts describe the current fixtures, not full conformance. The active token
 ## Repository map
 
 ```text
-src/                  Sirius lexer, parser, and semantic checker/C emitter
+src/                  Sirius lexer, parser, canonical type table, and semantic checker/C emitter
 bootstrap_python/     Frozen historical Python bootstrap (not used by active builds)
 bootstrap_c/          Checked-in, reproducible generated compiler.c
 include/              Shared C11 runtime (ARC, CoW collections, strings, I/O)
@@ -63,7 +64,7 @@ Source modules in `src/` are currently **concatenated in a fixed order**, along 
 
 The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and constructors, managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
 
-The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. Type IDs are partly encoded using numeric ranges rather than fully interned canonical descriptors. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
+The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. The C emitter still uses legacy arithmetic type IDs internally, translated at a compatibility boundary; migrating the remaining type checks and generic cache is Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
 
 Other design features—including modules, general operator overloads, universal descriptors and `Any`, pure `map`/`filter`/`generate`, multidimensional arrays, SIMD and concurrency—remain unimplemented. Python-style negative array indices are explicitly deferred.
 
