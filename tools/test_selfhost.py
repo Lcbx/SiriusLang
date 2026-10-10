@@ -46,7 +46,7 @@ def main() -> None:
 		# Stage source is byte-oriented: normalize Windows checkout line endings.
 		source.write_bytes(b''.join((ROOT / part).read_bytes().replace(b'\r\n', b'\n') for part in SOURCES))
 		stage0_c = work / 'stage0_output.c'
-		execute([sys.executable, str(ROOT / 'bootstrap_compiler/sirius.py'),
+		execute([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'),
 			'compile', str(source), '-o', str(stage0_c)])
 		stage1 = work / ('stage1.exe' if sys.platform == 'win32' else 'stage1')
 		compile_c(cc, stage0_c, stage1)

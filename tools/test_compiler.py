@@ -1,7 +1,7 @@
 """End-to-end conformance runner for the Python Sirius->C bootstrap compiler.
 
 Contract: <compiler-command> compile <source.sirius> -o <output.c>
-Example: python tools/test_compiler.py --command 'python bootstrap_compiler/sirius.py'
+Example: python tools/test_compiler.py --command 'python bootstrap_python/sirius.py'
 
 Reference C is deliberately not used to judge emitted C syntax; the compiler's
 C is compiled and run and must match expected stdout instead.

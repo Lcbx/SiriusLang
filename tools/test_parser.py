@@ -27,7 +27,7 @@ def main() -> None:
 			encoding='utf-8')
 		c_source = work / 'parser.c'
 		binary = work / 'parser'
-		run([sys.executable, str(ROOT / 'bootstrap_compiler/sirius.py'), 'compile',
+		run([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile',
 			str(combined), '-o', str(c_source)])
 		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I',
 			str(ROOT / 'include'), str(c_source), str(ROOT / 'include/sirius_runtime.c'),

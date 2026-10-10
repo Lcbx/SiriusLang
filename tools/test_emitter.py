@@ -58,7 +58,7 @@ def main() -> None:
 		combined = work / 'stage1.sirius'
 		combined.write_text('\n'.join((ROOT / f).read_text(encoding='utf-8') for f in SOURCES), encoding='utf-8')
 		bootstrap_c = work / 'bootstrap.c'
-		execute([sys.executable, str(ROOT / 'bootstrap_compiler/sirius.py'), 'compile', str(combined), '-o', str(bootstrap_c)])
+		execute([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile', str(combined), '-o', str(bootstrap_c)])
 		binary = work / 'stage1'
 		execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
 			str(bootstrap_c), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(binary)])

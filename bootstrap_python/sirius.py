@@ -1,4 +1,4 @@
-"""Sirius bootstrap compiler CLI: python bootstrap_compiler/sirius.py compile input.sirius -o out.c"""
+"""Sirius bootstrap compiler CLI: python bootstrap_python/sirius.py compile input.sirius -o out.c"""
 from __future__ import annotations
 import argparse
 from pathlib import Path

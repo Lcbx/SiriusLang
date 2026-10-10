@@ -37,7 +37,7 @@ def main() -> None:
 			(ROOT / 'tests/tokenizer/driver.sirius').read_text(encoding='utf8'), encoding='utf8')
 		c_source = work / 'tokenizer.c'
 		binary = work / 'tokenizer'
-		run([sys.executable, str(ROOT / 'bootstrap_compiler/sirius.py'), 'compile', str(combined), '-o', str(c_source)])
+		run([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile', str(combined), '-o', str(c_source)])
 		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
 			str(c_source), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(binary)])
 

@@ -2,7 +2,7 @@
 
 This repository contains two compilers:
 
-- **Python stage-0 (`bootstrap_compiler/`):** a working Sirius-to-C11 subset compiler, using SLY, a dataclass syntax AST, specialization, static checks, and ownership-aware C generation.
+- **Python stage-0 (`bootstrap_python/`):** a working Sirius-to-C11 subset compiler, using SLY, a dataclass syntax AST, specialization, static checks, and ownership-aware C generation.
 - **Sirius stage-1 (`src/`):** a tokenizer, indexed-AST parser, and subset type checker/C11 emitter written in Sirius, now able to compile its own concatenated sources.
 
 **Minimal self-hosting is verified:** stage-1 compiles its own source to stage-2 C, and the stage-2 compiler produces byte-identical stage-3 C. This does **not** imply full parity with Python stage-0 or the complete language design.
@@ -16,10 +16,10 @@ This repository contains two compilers:
 - `tests/runtime_errors/` — checked failure examples with expected nonzero exit and panic message.
 - `tests/deferred/` — planned language features with illustrative source and expected output; not yet exercised by the runner.
 - `include/sirius_runtime.{h,c}` — C11 runtime with managed strings, generic 1D arrays and hash dictionaries (typed element callbacks), reference counting, CoW, and file I/O; retains the original i64-only APIs for independent C references.
-- `bootstrap_compiler/sirius.py` — actual CLI compiler entry point.
-- `bootstrap_compiler/syntax.py` — SLY lexer, explicit indentation tokens, dataclass AST, Pratt expression parser.
-- `bootstrap_compiler/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
-- `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
+- `bootstrap_python/sirius.py` — actual CLI compiler entry point.
+- `bootstrap_python/syntax.py` — SLY lexer, explicit indentation tokens, dataclass AST, Pratt expression parser.
+- `bootstrap_python/codegen.py` — specialization, semantic checks, managed lifetime tracking, C11 code generation.
+- `bootstrap_python/sly/` — vendored SLY source with its license (from the supplied archive).
 - `src/tokenizer.sirius` — Sirius-written byte-span lexer (ASCII identifiers, UTF-8 strings), indentation and lexical diagnostics.
 - `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics.
 - `src/emit_c.sirius` — Sirius-written type checker and C11 emitter, including specialization, managed record constructors, nested rank-1 arrays, dictionaries and partial ownership handling.
@@ -81,7 +81,7 @@ This invokes `cc` with C11 and strict warnings, runs the 24 reference programs i
 Run from this repository's root directory (requires Python 3.10+ and a C11 compiler):
 
 ```bash
-python bootstrap_compiler/sirius.py compile tests/fixtures/04_recursion.sirius -o /tmp/factorial.c
+python bootstrap_python/sirius.py compile tests/fixtures/04_recursion.sirius -o /tmp/factorial.c
 cc -std=c11 -I include /tmp/factorial.c include/sirius_runtime.c -lm -o /tmp/factorial
 /tmp/factorial
 ```
@@ -91,7 +91,7 @@ On Windows, use your available C compiler (Zig's `zig cc` is an option) rather t
 Run all compiler tests, including proposed file I/O, compiler errors, strict C warning checks, and the expected runtime panic:
 
 ```bash
-python tools/test_compiler.py --command "python bootstrap_compiler/sirius.py" --provisional --negatives --runtime-errors --strict-c
+python tools/test_compiler.py --command "python bootstrap_python/sirius.py" --provisional --negatives --runtime-errors --strict-c
 ```
 
 ### Implemented subset
