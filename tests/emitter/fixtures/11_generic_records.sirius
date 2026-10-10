@@ -1,0 +1,9 @@
+def sum_xy(point)
+	return point.x + point.y
+
+def main() -> i64
+	let p = {y = 3, x = 2}
+	let q = {x = 4, y = 5}
+	print(sum_xy(p))
+	print(sum_xy(q))
+	return 0

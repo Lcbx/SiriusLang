@@ -1,0 +1,6 @@
+def display(x)
+	print(x)
+
+def main() -> i64
+	display(5)
+	return 0

@@ -1,0 +1,8 @@
+def mirror(p)
+	return {x = p.y, y = p.x}
+
+def main() -> i64
+	let p = {y = 3, x = 2}
+	let q = mirror(p)
+	print(q.x * 10 + q.y)
+	return 0

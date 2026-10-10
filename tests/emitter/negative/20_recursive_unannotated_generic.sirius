@@ -1,0 +1,6 @@
+def circular(x)
+	return circular(x)
+
+def main() -> i64
+	print(circular(1))
+	return 0

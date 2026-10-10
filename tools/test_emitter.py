@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ('src/tokenizer.sirius', 'src/parser.sirius', 'src/emit_c.sirius', 'tests/emitter/driver.sirius')
-REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread')
+REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout')
 ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',
@@ -27,6 +27,9 @@ ERRORS = {
 	'16_constructor_override': 'constructor field overrides are not supported yet',
 	'17_constructor_order': 'constructor requires ordered field evaluation',
 	'18_empty_record': 'empty records are not supported yet',
+	'19_generic_wrong_annotation': 'expected i64, found bool',
+	'20_recursive_unannotated_generic': 'recursive generic call requires an explicit return type',
+	'21_generic_no_return': 'cannot infer function return type',
 }
 
 
@@ -73,7 +76,7 @@ def main() -> None:
 			generated.unlink(missing_ok=True)
 			result = execute([str(binary), str(source), str(generated)], check=False)
 			if result.returncode != 1 or ERRORS[source.stem] not in result.stdout or generated.exists():
-				raise AssertionError(f'{source.name}: unexpected result {result.returncode}, {result.stdout!r}')
+				raise AssertionError(f'{source.name}: unexpected result {result.returncode}, {result.stdout!r}, {result.stderr!r}')
 			print(f'PASS {source.name} (rejected)')
 		print(f'{len(positives)} generated C programs and {len(ERRORS)} diagnostics passed')
 

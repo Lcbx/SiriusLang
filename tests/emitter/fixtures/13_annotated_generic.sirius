@@ -1,0 +1,7 @@
+def add(x, y: i64) -> i64
+	return x + y
+
+def main() -> i64
+	print(add(2, 5))
+	print(add(3, 7))
+	return 0

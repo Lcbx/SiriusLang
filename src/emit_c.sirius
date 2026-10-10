@@ -15,12 +15,21 @@ def ParameterInfo(name: string, kind: i64)
 	pub name
 	pub kind
 
-def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool)
+def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool, symbol: string)
 	pub name
 	pub kind
 	pub params
 	pub body
 	pub constructor
+	pub symbol
+
+def InstanceInfo(name: string, kinds: Array[i64], kind: i64, symbol: string, code: string, status: i64)
+	pub name
+	pub kinds
+	pub kind
+	pub symbol
+	pub code
+	pub status
 
 def SymbolInfo(name: string, kind: i64, mutable: bool, depth: i64)
 	pub name
@@ -42,6 +51,8 @@ def RecordInfo(fields: Array[RecordField])
 def EmitState(tree: ParseState)
 	pub tree
 	pub functions = Array[FunctionInfo]()
+	pub instances = Array[InstanceInfo]()
+	pub active_params = Array[ParameterInfo]()
 	pub symbols = Array[SymbolInfo]()
 	pub constants = Array[ConstantInfo]()
 	pub records = Array[RecordInfo]()
@@ -151,6 +162,26 @@ def find_function(state: EmitState, name: string) -> i64
 			return i
 	return -1
 
+def is_generic(info: FunctionInfo) -> bool
+	if info.kind == TYPE_INVALID
+		return true
+	for param in info.params
+		if param.kind == TYPE_INVALID
+			return true
+	return false
+
+def find_instance(state: EmitState, name: string, kinds: Array[i64]) -> i64
+	for i in 0..len(state.instances)
+		let instance = state.instances[i?]!
+		if instance.name == name and len(instance.kinds) == len(kinds)
+			var equal = true
+			for j in 0..len(kinds)
+				if instance.kinds[j?]! != kinds[j?]!
+					equal = false
+			if equal
+				return i
+	return -1
+
 def find_constant(state: EmitState, name: string) -> string
 	for item in state.constants
 		if item.name == name
@@ -256,6 +287,53 @@ def has_effect(state: EmitState, id: i64, visited: Array[string]) -> bool
 
 def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
 	return has_effect(state, a, Array[string]()) and has_effect(state, b, Array[string]())
+
+# Compile each concrete generic call only once. The in-progress cache entry
+# prevents accidental infinite specialization of recursive generic functions.
+def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[i64], arguments: Array[string]) -> ExprCode
+	let existing = find_instance(state, info.name, kinds)
+	if existing >= 0
+		let instance = state.instances[existing?]!
+		if instance.kind == TYPE_INVALID
+			return ExprCode(emit_error(state, id, "recursive generic call requires an explicit return type"), "", TYPE_INVALID)
+		return ExprCode(state, instance.symbol + "(" + ", ".join(arguments) + ")", instance.kind)
+	var next = state
+	let index = len(next.instances)
+	let symbol = "s_" + info.name + "__" + str(index)
+	var params = Array[ParameterInfo]()
+	for i in 0..len(kinds)
+		params = params.append(ParameterInfo(info.params[i?]!.name, kinds[i?]!))
+	next.instances = next.instances.append(InstanceInfo(info.name, kinds, info.kind, symbol, "", 1))
+	let previous_lines = next.lines
+	let previous_symbols = next.symbols
+	let previous_indent = next.indentation
+	let previous_loop = next.loop_depth
+	let previous_scope = next.scope_depth
+	let previous_return = next.return_kind
+	let previous_name = next.function_name
+	let previous_params = next.active_params
+	next.lines = Array[string]()
+	next.indentation = 0
+	next.loop_depth = 0
+	next.scope_depth = 0
+	next = emit_function(next, FunctionInfo(info.name, info.kind, params, info.body, false, symbol))
+	var body = ""
+	for row in next.lines
+		body = body + row + "\n"
+	let result = next.return_kind
+	if next.error == ""
+		next.instances[index?]! = InstanceInfo(info.name, kinds, result, symbol, body, 2)
+	next.lines = previous_lines
+	next.symbols = previous_symbols
+	next.indentation = previous_indent
+	next.loop_depth = previous_loop
+	next.scope_depth = previous_scope
+	next.return_kind = previous_return
+	next.function_name = previous_name
+	next.active_params = previous_params
+	if next.error != ""
+		return ExprCode(next, "", TYPE_INVALID)
+	return ExprCode(next, symbol + "(" + ", ".join(arguments) + ")", result)
 
 def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if state.error != ""
@@ -449,8 +527,13 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		if len(arguments) != len(function.params)
 			return ExprCode(emit_error(next, id, "argument count mismatch for '" + name + "'"), "", TYPE_INVALID)
 		for i in 0..len(arguments)
-			next = check_type(next, id, arg_types[i?]!, function.params[i?]!.kind)
-		return ExprCode(next, "s_" + name + "(" + ", ".join(arguments) + ")", function.kind)
+			if function.params[i?]!.kind != TYPE_INVALID
+				next = check_type(next, id, arg_types[i?]!, function.params[i?]!.kind)
+		if next.error != ""
+			return ExprCode(next, "", TYPE_INVALID)
+		if is_generic(function)
+			return specialize_call(next, id, function, arg_types, arguments)
+		return ExprCode(next, function.symbol + "(" + ", ".join(arguments) + ")", function.kind)
 	return ExprCode(emit_error(state, id, "unsupported expression '" + node_kind_name(entry.kind) + "'"), "", TYPE_INVALID)
 
 # Detect a direct self-tail call anywhere in the function body.
@@ -561,7 +644,11 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				return emit_error(state, id, "non-void function must return a value")
 			return line(state, "return;")
 		let result = emit_expr(state, ast_child(state.tree, id, 0))
-		let next = check_type(result.state, id, result.kind, state.return_kind)
+		var next = result.state
+		if next.return_kind == TYPE_INVALID
+			next.return_kind = result.kind
+		else
+			next = check_type(next, id, result.kind, next.return_kind)
 		return line(next, "return " + result.text + ";")
 	if item.kind == NODE_RECUR
 		if item.count != 1
@@ -573,20 +660,20 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		let name = ast_text(state.tree, ast_child(state.tree, call, 0))
 		if name != state.function_name
 			return emit_error(state, id, "recur must call the enclosing function")
-		let info = state.functions[find_function(state, name)?]!
-		if entry.count - 1 != len(info.params)
+		let params = state.active_params
+		if entry.count - 1 != len(params)
 			return emit_error(state, id, "recur argument count mismatch")
 		var next = state
 		let serial = next.counter
 		next.counter += 1
-		for i in 0..len(info.params)
+		for i in 0..len(params)
 			let arg = emit_expr(next, ast_child(next.tree, call, i + 1))
-			next = check_type(arg.state, id, arg.kind, info.params[i?]!.kind)
+			next = check_type(arg.state, id, arg.kind, params[i?]!.kind)
 			if next.error != ""
 				return next
 			next = line(next, c_type(arg.kind) + " s_tail_" + str(serial) + "_" + str(i) + " = " + arg.text + ";")
-		for i in 0..len(info.params)
-			next = line(next, "v_" + info.params[i?]!.name + " = s_tail_" + str(serial) + "_" + str(i) + ";")
+		for i in 0..len(params)
+			next = line(next, "v_" + params[i?]!.name + " = s_tail_" + str(serial) + "_" + str(i) + ";")
 		return line(next, "goto s_recur;")
 	if item.kind == NODE_EXPR
 		let result = emit_expr(state, ast_child(state.tree, id, 0))
@@ -661,11 +748,13 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		let part = ast_child(state.tree, id, i)
 		let info = ast_node(state.tree, part)
 		if info.kind == NODE_PARAM
-			if info.count != 1 or ast_node(state.tree, ast_child(state.tree, part, 0)).kind != NODE_TYPE
-				return emit_error(state, part, "parameters require an explicit type")
-			let kind = ast_type(state.tree, ast_child(state.tree, part, 0))
-			if kind == TYPE_INVALID or kind == TYPE_VOID
-				return emit_error(state, part, "unsupported parameter type")
+			var kind = TYPE_INVALID
+			if info.count > 0
+				if info.count != 1 or ast_node(state.tree, ast_child(state.tree, part, 0)).kind != NODE_TYPE
+					return emit_error(state, part, "parameter defaults are not supported yet")
+				kind = ast_type(state.tree, ast_child(state.tree, part, 0))
+				if kind == TYPE_INVALID or kind == TYPE_VOID
+					return emit_error(state, part, "unsupported parameter type")
 			let parameter_name = ast_text(state.tree, part)
 			for previous in params
 				if previous.name == parameter_name
@@ -675,8 +764,16 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 			result = ast_type(state.tree, part)
 	var next = state
 	var constructor = false
+	let body_id = ast_child(state.tree, id, entry.count - 1)
+	let body = ast_node(state.tree, body_id)
 	if result == TYPE_INVALID
-		constructor = true
+		for i in 0..body.count
+			if ast_node(state.tree, ast_child(state.tree, body_id, i)).kind == NODE_PUB
+				constructor = true
+	if constructor
+		for param in params
+			if param.kind == TYPE_INVALID
+				return emit_error(state, id, "generic constructors are not supported yet")
 		let body_id = ast_child(state.tree, id, entry.count - 1)
 		let body = ast_node(state.tree, body_id)
 		var probe = state
@@ -721,7 +818,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		let record = intern_record(state, fields)
 		next = record.state
 		result = record.kind
-	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor))
+	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor, "s_" + name))
 	return next
 
 def evaluate_constant(state: EmitState, id: i64) -> ExprCode
@@ -765,11 +862,13 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 	next.symbols = Array[SymbolInfo]()
 	next.return_kind = info.kind
 	next.function_name = info.name
+	next.active_params = info.params
 	var args = Array[string]()
 	for param in info.params
 		args = args.append(c_type(param.kind) + " v_" + param.name)
 		next.symbols = next.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
-	next = line(next, c_type(info.kind) + " s_" + info.name + "(" + ", ".join(args) + ")")
+	let header = len(next.lines)
+	next = line(next, "")
 	next = line(next, "{")
 	next.indentation += 1
 	if contains_recur(next.tree, info.body)
@@ -796,6 +895,9 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 		next = emit_block(next, info.body)
 	next.scope_depth -= 1
 	next.indentation -= 1
+	if next.return_kind == TYPE_INVALID
+		return emit_error(next, info.body, "cannot infer function return type")
+	next.lines[header?]! = c_type(next.return_kind) + " " + info.symbol + "(" + ", ".join(args) + ")"
 	return line(next, "}")
 
 def compile_c(source: string) -> CompileResult
@@ -823,20 +925,33 @@ def compile_c(source: string) -> CompileResult
 	state = line(state, "#include <math.h>")
 	state = line(state, "")
 	for info in state.functions
-		var args = Array[string]()
-		for param in info.params
-			args = args.append(c_type(param.kind))
-		state = line(state, c_type(info.kind) + " s_" + info.name + "(" + ", ".join(args) + ");")
+		if not is_generic(info)
+			var args = Array[string]()
+			for param in info.params
+				args = args.append(c_type(param.kind))
+			state = line(state, c_type(info.kind) + " " + info.symbol + "(" + ", ".join(args) + ");")
 	state = line(state, "")
 	for info in state.functions
-		state = emit_function(state, info)
-		if state.error != ""
-			return CompileResult("", state.error, state.error_line)
-		state = line(state, "")
+		if not is_generic(info)
+			state = emit_function(state, info)
+			if state.error != ""
+				return CompileResult("", state.error, state.error_line)
+			state = line(state, "")
 	state = line(state, "int main(void) { return (int)s_main(); }")
+	var declarations = ""
+	var definitions = ""
+	for instance in state.instances
+		var args = Array[string]()
+		for kind in instance.kinds
+			args = args.append(c_type(kind))
+		declarations = declarations + c_type(instance.kind) + " " + instance.symbol + "(" + ", ".join(args) + ");\n"
+		definitions = definitions + instance.code + "\n"
 	var output = ""
 	for i in 0..len(state.lines)
 		output = output + state.lines[i?]! + "\n"
 		if i == 4
 			output = output + record_declarations(state)
+		if i == 5
+			output = output + declarations
+	output = output + definitions
 	return CompileResult(output, "", 0)

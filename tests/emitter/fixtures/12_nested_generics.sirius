@@ -1,0 +1,10 @@
+def twice(x)
+	return x + x
+
+def fourfold(x)
+	return twice(twice(x))
+
+def main() -> i64
+	print(fourfold(4))
+	print(twice(6))
+	return 0

@@ -1,0 +1,8 @@
+def decrement(n, acc: i64) -> i64
+	if n == 0
+		return acc
+	recur decrement(n - 1, acc + 1)
+
+def main() -> i64
+	print(decrement(5, 3))
+	return 0
