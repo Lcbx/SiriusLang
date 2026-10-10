@@ -1,0 +1,4 @@
+def main() -> i64
+	var a = [1, 2]
+	a = a.append("bad")
+	return 0

@@ -15,7 +15,7 @@ S_Array_i64 *s_array_i64_make(size_t n, const int64_t *values) {
     if (!a) s_panic("out of memory");
     a->refcount = 1;
     a->length = a->capacity = n;
-    if (n) memcpy(a->data, values, n * sizeof(int64_t));
+    if (n && values) memcpy(a->data, values, n * sizeof(int64_t));
     return a;
 }
 S_Array_i64 *s_array_i64_retain(S_Array_i64 *a) {
@@ -42,6 +42,38 @@ void s_array_i64_set(S_Array_i64 **a, int64_t i, int64_t value) {
         *a = replacement;
     }
     (*a)->data[i] = value;
+}
+S_Array_i64 *s_array_i64_append_take(S_Array_i64 *a, int64_t value) {
+    if (!a || a->length == SIZE_MAX) s_panic("array too large");
+    size_t n = a->length + 1;
+    if (n > (SIZE_MAX - sizeof(*a)) / sizeof(int64_t)) s_panic("array too large");
+    if (a->refcount != 1) {
+        S_Array_i64 *copy = s_array_i64_make(n, NULL);
+        memcpy(copy->data, a->data, a->length * sizeof(int64_t));
+        copy->length = a->length;
+        s_array_i64_release(a);
+        a = copy;
+    } else if (n > a->capacity) {
+        size_t capacity = a->capacity ? a->capacity : 1;
+        while (capacity < n && capacity <= (SIZE_MAX - sizeof(*a)) / sizeof(int64_t) / 2)
+            capacity *= 2;
+        if (capacity < n) capacity = n;
+        a = realloc(a, sizeof(*a) + capacity * sizeof(int64_t));
+        if (!a) s_panic("out of memory");
+        a->capacity = capacity;
+    }
+    a->data[a->length++] = value;
+    return a;
+}
+int64_t s_array_i64_length_take(S_Array_i64 *a) {
+    int64_t result = (int64_t)a->length;
+    s_array_i64_release(a);
+    return result;
+}
+int64_t s_array_i64_get_checked_take(S_Array_i64 *a, int64_t index) {
+    int64_t value = s_array_i64_get_checked(a, index);
+    s_array_i64_release(a);
+    return value;
 }
 S_String *s_string_from_utf8(const char *str) {
     size_t n = strlen(str);
@@ -70,6 +102,27 @@ S_String *s_string_concat(const S_String *a, const S_String *b) {
     memcpy(s->data + a->length, b->data, b->length);
     s->data[n] = '\0';
     return s;
+}
+S_String *s_string_concat_take(S_String *a, S_String *b) {
+    S_String *result = s_string_concat(a, b);
+    s_string_release(a);
+    s_string_release(b);
+    return result;
+}
+int s_string_compare_take(S_String *a, S_String *b) {
+    int result = s_string_compare(a, b);
+    s_string_release(a);
+    s_string_release(b);
+    return result;
+}
+int64_t s_string_length_take(S_String *s) {
+    int64_t result = (int64_t)s_string_length(s);
+    s_string_release(s);
+    return result;
+}
+void s_print_string_take(S_String *s) {
+    s_print_string(s);
+    s_string_release(s);
 }
 void s_print_string(const S_String *s) { fwrite(s->data, 1, s->length, stdout); putchar('\n'); }
 void s_print_i64(int64_t x) { printf("%" PRId64 "\n", x); }

@@ -12,7 +12,7 @@ ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',
 	'03_missing_name': "unknown name 'missing'",
-	'04_unsupported_array': "unsupported expression 'array'",
+	'04_unsupported_array': 'expected i64, found f64',
 	'05_ordered_evaluation': 'ordered call evaluation',
 	'06_loop_control': 'loop control outside loop',
 	'07_wrong_arguments': 'argument count mismatch',
@@ -30,6 +30,8 @@ ERRORS = {
 	'19_generic_wrong_annotation': 'expected i64, found bool',
 	'20_recursive_unannotated_generic': 'recursive generic call requires an explicit return type',
 	'21_generic_no_return': 'cannot infer function return type',
+	'22_immutable_array_update': 'indexed update requires a mutable local array',
+	'23_array_wrong_element': 'expected i64, found string',
 }
 
 
@@ -64,7 +66,7 @@ def main() -> None:
 			generated = work / f'generated_{index}.c'
 			execute([str(binary), str(input_file), str(generated)])
 			output_binary = work / f'program_{index}'
-			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', str(generated), '-lm', '-o', str(output_binary)])
+			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'), str(generated), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(output_binary)])
 			actual = execute([str(output_binary)])
 			wanted = expected.read_text(encoding='utf-8')
 			if actual.stdout != wanted:

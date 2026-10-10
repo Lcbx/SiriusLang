@@ -1,0 +1,13 @@
+def choose(value: string, flag: bool) -> string
+	let local = value + "-temp"
+	if flag
+		return value + "-yes"
+	return local
+
+def main() -> i64
+	var word = "base"
+	word = choose(word, false)
+	print(word)
+	word = choose(word, true)
+	print(word)
+	return 0

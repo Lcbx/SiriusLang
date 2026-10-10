@@ -1,0 +1,14 @@
+def make_word(prefix: string, count: i64) -> string
+	let ending = str(count)
+	return prefix + ending
+
+def main() -> i64
+	let a = "Sun"
+	let b = a
+	var c = make_word(b, 42)
+	c += "!"
+	print(c)
+	print(a)
+	print(len(c))
+	print(c > a)
+	return 0

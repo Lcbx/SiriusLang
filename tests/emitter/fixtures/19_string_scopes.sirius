@@ -1,0 +1,11 @@
+def main() -> i64
+	var result = ""
+	for i in 0..3
+		let piece = str(i)
+		result += piece
+	let untouched = result
+	if len(result) == 3
+		let inner = untouched + "!"
+		print(inner)
+	print(untouched)
+	return 0

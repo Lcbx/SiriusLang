@@ -29,6 +29,9 @@ void s_array_i64_release(S_Array_i64 *arr);
 S_Optional_i64 s_array_i64_get(const S_Array_i64 *arr, int64_t index);
 int64_t s_array_i64_get_checked(const S_Array_i64 *arr, int64_t index);
 void s_array_i64_set(S_Array_i64 **arr, int64_t index, int64_t value);
+S_Array_i64 *s_array_i64_append_take(S_Array_i64 *owned, int64_t item);
+int64_t s_array_i64_length_take(S_Array_i64 *owned);
+int64_t s_array_i64_get_checked_take(S_Array_i64 *owned, int64_t index);
 
 typedef struct { bool has_value; S_String *value; } S_Optional_string;
 
@@ -48,6 +51,10 @@ S_String *s_string_retain(S_String *str);
 void s_string_release(S_String *str);
 S_String *s_string_concat(const S_String *a, const S_String *b);
 void s_print_string(const S_String *str);
+S_String *s_string_concat_take(S_String *a, S_String *b);
+int s_string_compare_take(S_String *a, S_String *b);
+int64_t s_string_length_take(S_String *s);
+void s_print_string_take(S_String *s);
 void s_print_i64(int64_t v);
 void s_print_f64(double v);
 void s_print_bool(bool v);

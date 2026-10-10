@@ -8,6 +8,7 @@ let TYPE_F64 = 2
 let TYPE_BOOL = 3
 let TYPE_STRING = 4
 let TYPE_VOID = 5
+let TYPE_ARRAY_I64 = 7
 let TYPE_RECORD_START = 100
 
 
@@ -107,6 +108,8 @@ def type_name(kind: i64) -> string
 		return "string"
 	if kind == TYPE_VOID
 		return "void"
+	if kind == TYPE_ARRAY_I64
+		return "Array[i64]"
 	if kind >= TYPE_RECORD_START
 		return "record"
 	return "unknown"
@@ -119,18 +122,27 @@ def c_type(kind: i64) -> string
 	if kind == TYPE_BOOL
 		return "bool"
 	if kind == TYPE_STRING
-		return "const char *"
+		return "S_String *"
 	if kind == TYPE_VOID
 		return "void"
+	if kind == TYPE_ARRAY_I64
+		return "S_Array_i64 *"
 	if kind >= TYPE_RECORD_START
 		return "s_record_" + str(kind)
 	return "INVALID_TYPE"
 
 def ast_type(tree: ParseState, id: i64) -> i64
 	let entry = ast_node(tree, id)
-	if entry.kind != NODE_TYPE or entry.count != 0
+	if entry.kind != NODE_TYPE
 		return TYPE_INVALID
 	let name = ast_text(tree, id)
+	if name == "Array" and (entry.count == 1 or entry.count == 2)
+		if ast_type(tree, ast_child(tree, id, 0)) == TYPE_I64
+			if entry.count == 1 or ast_text(tree, ast_child(tree, id, 1)) == "1"
+				return TYPE_ARRAY_I64
+		return TYPE_INVALID
+	if entry.count != 0
+		return TYPE_INVALID
 	if name == "i64"
 		return TYPE_I64
 	if name == "f64"
@@ -347,7 +359,30 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_BOOL
 		return ExprCode(state, value, TYPE_BOOL)
 	if entry.kind == NODE_STRING
-		return ExprCode(state, value, TYPE_STRING)
+		return ExprCode(state, "s_string_from_utf8(" + value + ")", TYPE_STRING)
+	if entry.kind == NODE_ARRAY
+		if entry.count == 0
+			return ExprCode(state, "s_array_i64_make(0, NULL)", TYPE_ARRAY_I64)
+		var next = state
+		var items = Array[string]()
+		var effects = 0
+		for i in 0..entry.count
+			if has_effect(next, ast_child(state.tree, id, i), Array[string]())
+				effects += 1
+			let element = emit_expr(next, ast_child(state.tree, id, i))
+			next = check_type(element.state, id, element.kind, TYPE_I64)
+			items = items.append(element.text)
+		if effects > 1
+			return ExprCode(emit_error(next, id, "array initializer requires ordered evaluation"), "", TYPE_INVALID)
+		return ExprCode(next, "s_array_i64_make(" + str(entry.count) + ", (int64_t[]){" + ", ".join(items) + "})", TYPE_ARRAY_I64)
+	if entry.kind == NODE_CHECKED_INDEX
+		if entry.count != 2
+			return ExprCode(emit_error(state, id, "only rank-1 indexing is supported"), "", TYPE_INVALID)
+		let array = emit_expr(state, ast_child(state.tree, id, 0))
+		let index = emit_expr(array.state, ast_child(state.tree, id, 1))
+		var next = check_type(index.state, id, array.kind, TYPE_ARRAY_I64)
+		next = check_type(next, id, index.kind, TYPE_I64)
+		return ExprCode(next, "s_array_i64_get_checked_take(" + array.text + ", " + index.text + ")", TYPE_I64)
 	if entry.kind == NODE_RECORD
 		var next = state
 		var fields = Array[RecordField]()
@@ -400,7 +435,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					effects += 1
 				let result = emit_expr(next, value_id)
 				next = result.state
-				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or result.kind == TYPE_STRING
+				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or result.kind == TYPE_STRING or result.kind == TYPE_ARRAY_I64
 					return ExprCode(emit_error(next, field_id, "record fields currently require unmanaged values"), "", TYPE_INVALID)
 				var found = -1
 				for j in 0..len(fields)
@@ -432,7 +467,12 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_NAME
 		let index = find_symbol(state, value)
 		if index >= 0
-			return ExprCode(state, "v_" + value, state.symbols[index?]!.kind)
+			let kind = state.symbols[index?]!.kind
+			if kind == TYPE_STRING
+				return ExprCode(state, "s_string_retain(v_" + value + ")", kind)
+			if kind == TYPE_ARRAY_I64
+				return ExprCode(state, "s_array_i64_retain(v_" + value + ")", kind)
+			return ExprCode(state, "v_" + value, kind)
 		let constant = find_constant(state, value)
 		if constant != ""
 			return ExprCode(state, constant, TYPE_I64)
@@ -471,17 +511,25 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				next = emit_error(next, id, "comparison requires numeric or string operands")
 			kind = TYPE_BOOL
 		elif op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
-			if left.kind != TYPE_I64 and left.kind != TYPE_F64
+			if left.kind != TYPE_I64 and left.kind != TYPE_F64 and not (op == "+" and left.kind == TYPE_STRING)
 				next = emit_error(next, id, "arithmetic requires numeric operands")
 			if op == "%" and left.kind != TYPE_I64
 				next = emit_error(next, id, "remainder requires i64")
 		else
 			next = emit_error(next, id, "unsupported binary operator '" + value + "'")
+		if left.kind == TYPE_STRING and op == "+"
+			return ExprCode(next, "s_string_concat_take(" + left.text + ", " + right.text + ")", TYPE_STRING)
 		if left.kind == TYPE_STRING and (op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=")
-			return ExprCode(next, "(strcmp(" + left.text + ", " + right.text + ") " + op + " 0)", TYPE_BOOL)
+			return ExprCode(next, "(s_string_compare_take(" + left.text + ", " + right.text + ") " + op + " 0)", TYPE_BOOL)
 		return ExprCode(next, "(" + left.text + " " + op + " " + right.text + ")", kind)
 	if entry.kind == NODE_CALL
 		let callee = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, callee).kind == NODE_ATTR and ast_text(state.tree, callee) == "append" and entry.count == 2
+			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
+			let item = emit_expr(receiver.state, ast_child(state.tree, id, 1))
+			var next = check_type(item.state, id, receiver.kind, TYPE_ARRAY_I64)
+			next = check_type(next, id, item.kind, TYPE_I64)
+			return ExprCode(next, "s_array_i64_append_take(" + receiver.text + ", " + item.text + ")", TYPE_ARRAY_I64)
 		if ast_node(state.tree, callee).kind != NODE_NAME
 			return ExprCode(emit_error(state, id, "only named calls are supported"), "", TYPE_INVALID)
 		let name = ast_text(state.tree, callee)
@@ -513,8 +561,20 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			if kind == TYPE_BOOL
 				return ExprCode(next, "printf(\"%s\\n\", " + value + " ? \"true\" : \"false\")", TYPE_VOID)
 			if kind == TYPE_STRING
-				return ExprCode(next, "printf(\"%s\\n\", " + value + ")", TYPE_VOID)
+				return ExprCode(next, "s_print_string_take(" + value + ")", TYPE_VOID)
 			return ExprCode(emit_error(next, id, "cannot print this type"), "", TYPE_INVALID)
+		if name == "len"
+			if len(arguments) != 1
+				return ExprCode(emit_error(next, id, "len expects one argument"), "", TYPE_INVALID)
+			if arg_types[0?]! == TYPE_STRING
+				return ExprCode(next, "s_string_length_take(" + arguments[0?]! + ")", TYPE_I64)
+			if arg_types[0?]! == TYPE_ARRAY_I64
+				return ExprCode(next, "s_array_i64_length_take(" + arguments[0?]! + ")", TYPE_I64)
+			return ExprCode(emit_error(next, id, "len expects a string or array"), "", TYPE_INVALID)
+		if name == "str"
+			if len(arguments) != 1 or arg_types[0?]! != TYPE_I64
+				return ExprCode(emit_error(next, id, "str expects one i64 argument"), "", TYPE_INVALID)
+			return ExprCode(next, "s_string_from_i64(" + arguments[0?]! + ")", TYPE_STRING)
 		if name == "sqrt"
 			if len(arguments) != 1
 				return ExprCode(emit_error(next, id, "sqrt expects one argument"), "", TYPE_INVALID)
@@ -554,6 +614,13 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 		next = emit_statement(next, ast_child(next.tree, id, i))
 		if next.error != ""
 			return next
+	for i in count..len(next.symbols)
+		let index = len(next.symbols) + count - i - 1
+		let symbol = next.symbols[index?]!
+		if symbol.kind == TYPE_STRING
+			next = line(next, "s_string_release(v_" + symbol.name + ");")
+		if symbol.kind == TYPE_ARRAY_I64
+			next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
 	var restored = Array[SymbolInfo]()
 	for i in 0..count
 		restored = restored.append(next.symbols[i?]!)
@@ -596,15 +663,29 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		if next.error != ""
 			return next
 		var declaration = c_type(kind) + " v_" + name + " = " + result.text + ";"
-		if item.kind == NODE_LET
-			if kind == TYPE_STRING
-				declaration = "const char *const v_" + name + " = " + result.text + ";"
-			else
-				declaration = "const " + declaration
+		if item.kind == NODE_LET and kind != TYPE_STRING and kind != TYPE_ARRAY_I64
+			declaration = "const " + declaration
 		next = line(next, declaration)
 		return append_symbol(next, id, name, kind, item.kind == NODE_VAR)
 	if item.kind == NODE_ASSIGN
 		let target = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, target).kind == NODE_CHECKED_INDEX
+			if ast_node(state.tree, target).count != 2 or ast_text(state.tree, id) != "="
+				return emit_error(state, id, "unsupported indexed assignment")
+			let root = ast_child(state.tree, target, 0)
+			if ast_node(state.tree, root).kind != NODE_NAME
+				return emit_error(state, id, "indexed update requires a mutable local array")
+			let name = ast_text(state.tree, root)
+			let symbol = find_symbol(state, name)
+			if symbol < 0 or not state.symbols[symbol?]!.mutable
+				return emit_error(state, id, "indexed update requires a mutable local array")
+			if state.symbols[symbol?]!.kind != TYPE_ARRAY_I64
+				return emit_error(state, id, "indexed update requires an array")
+			let index = emit_expr(state, ast_child(state.tree, target, 1))
+			let item_value = emit_expr(index.state, ast_child(state.tree, id, 1))
+			var next = check_type(item_value.state, id, index.kind, TYPE_I64)
+			next = check_type(next, id, item_value.kind, TYPE_I64)
+			return line(next, "s_array_i64_set(&v_" + name + ", " + index.text + ", " + item_value.text + ");")
 		if ast_node(state.tree, target).kind == NODE_ATTR
 			let root = ast_child(state.tree, target, 0)
 			if ast_node(state.tree, root).kind != NODE_NAME
@@ -635,8 +716,46 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		let symbol = state.symbols[index?]!
 		if not symbol.mutable
 			return emit_error(state, id, "cannot assign immutable binding '" + name + "'")
+		if symbol.kind == TYPE_ARRAY_I64 and ast_node(state.tree, rhs).kind == NODE_CALL
+			let call = ast_node(state.tree, rhs)
+			if call.count == 2
+				let method = ast_child(state.tree, rhs, 0)
+				if ast_node(state.tree, method).kind == NODE_ATTR and ast_text(state.tree, method) == "append"
+					let receiver = ast_child(state.tree, method, 0)
+					if ast_node(state.tree, receiver).kind == NODE_NAME and ast_text(state.tree, receiver) == name
+						let element = emit_expr(state, ast_child(state.tree, rhs, 1))
+						var next = check_type(element.state, id, element.kind, TYPE_I64)
+						if next.error != ""
+							return next
+						let serial = next.counter
+						next.counter += 1
+						let temp = "s_item_" + str(serial)
+						next = line(next, "int64_t " + temp + " = " + element.text + ";")
+						return line(next, "v_" + name + " = s_array_i64_append_take(v_" + name + ", " + temp + ");")
 		let result = emit_expr(state, rhs)
-		let next = check_type(result.state, id, result.kind, symbol.kind)
+		var next = check_type(result.state, id, result.kind, symbol.kind)
+		if symbol.kind == TYPE_ARRAY_I64
+			if ast_text(state.tree, id) != "="
+				return emit_error(next, id, "unsupported array assignment")
+			let serial = next.counter
+			next.counter += 1
+			let temp = "s_value_" + str(serial)
+			next = line(next, "S_Array_i64 *" + temp + " = " + result.text + ";")
+			next = line(next, "s_array_i64_release(v_" + name + ");")
+			return line(next, "v_" + name + " = " + temp + ";")
+		if symbol.kind == TYPE_STRING
+			let serial = next.counter
+			next.counter += 1
+			let temp = "s_value_" + str(serial)
+			let operator = ast_text(state.tree, id)
+			if operator == "+="
+				next = line(next, "S_String *" + temp + " = s_string_concat_take(s_string_retain(v_" + name + "), " + result.text + ");")
+			elif operator == "="
+				next = line(next, "S_String *" + temp + " = " + result.text + ";")
+			else
+				return emit_error(next, id, "unsupported string assignment")
+			next = line(next, "s_string_release(v_" + name + ");")
+			return line(next, "v_" + name + " = " + temp + ";")
 		return line(next, "v_" + name + " " + ast_text(state.tree, id) + " " + result.text + ";")
 	if item.kind == NODE_RETURN
 		if item.count == 0
@@ -649,8 +768,28 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next.return_kind = result.kind
 		else
 			next = check_type(next, id, result.kind, next.return_kind)
+		var managed = false
+		for symbol in next.symbols
+			if symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64
+				managed = true
+		if managed
+			let serial = next.counter
+			next.counter += 1
+			let temp = "s_return_" + str(serial)
+			next = line(next, c_type(result.kind) + " " + temp + " = " + result.text + ";")
+			for i in 0..len(next.symbols)
+				let index = len(next.symbols) - i - 1
+				let symbol = next.symbols[index?]!
+				if symbol.kind == TYPE_STRING
+					next = line(next, "s_string_release(v_" + symbol.name + ");")
+				if symbol.kind == TYPE_ARRAY_I64
+					next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
+			return line(next, "return " + temp + ";")
 		return line(next, "return " + result.text + ";")
 	if item.kind == NODE_RECUR
+		for symbol in state.symbols
+			if symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64
+				return emit_error(state, id, "managed recur requires ownership lowering")
 		if item.count != 1
 			return emit_error(state, id, "recur expects a direct self-call")
 		let call = ast_child(state.tree, id, 0)
@@ -709,7 +848,42 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		let iterable = ast_child(state.tree, id, item.count - 2)
 		let body = ast_child(state.tree, id, item.count - 1)
 		if ast_node(state.tree, iterable).kind != NODE_BINARY or ast_text(state.tree, iterable) != ".."
-			return emit_error(state, id, "only half-open range loops are supported")
+			let source = emit_expr(state, iterable)
+			var next = check_type(source.state, id, source.kind, TYPE_ARRAY_I64)
+			if next.error != ""
+				return next
+			let original = len(next.symbols)
+			let serial = next.counter
+			next.counter += 1
+			let iter = "s_iter_" + str(serial)
+			let index = "s_index_" + str(serial)
+			let name = ast_text(next.tree, id)
+			next = line(next, "{")
+			next.indentation += 1
+			next.scope_depth += 1
+			next = line(next, "S_Array_i64 *v_" + iter + " = " + source.text + ";")
+			next = append_symbol(next, id, iter, TYPE_ARRAY_I64, false)
+			next = line(next, "for (int64_t " + index + " = 0; " + index + " < (int64_t)v_" + iter + "->length; ++" + index + ")")
+			next = line(next, "{")
+			next.indentation += 1
+			next.scope_depth += 1
+			next.loop_depth += 1
+			next = line(next, "const int64_t v_" + name + " = s_array_i64_get_checked(v_" + iter + ", " + index + ");")
+			next = append_symbol(next, id, name, TYPE_I64, false)
+			next = emit_block(next, body)
+			next.loop_depth -= 1
+			next.scope_depth -= 1
+			next.indentation -= 1
+			next = line(next, "}")
+			next = line(next, "s_array_i64_release(v_" + iter + ");")
+			next.scope_depth -= 1
+			next.indentation -= 1
+			next = line(next, "}")
+			var symbols = Array[SymbolInfo]()
+			for i in 0..original
+				symbols = symbols.append(next.symbols[i?]!)
+			next.symbols = symbols
+			return next
 		let from = emit_expr(state, ast_child(state.tree, iterable, 0))
 		let to = emit_expr(from.state, ast_child(state.tree, iterable, 1))
 		var next = check_type(to.state, id, from.kind, TYPE_I64)
@@ -732,6 +906,9 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 	if item.kind == NODE_BREAK or item.kind == NODE_CONTINUE
 		if state.loop_depth == 0
 			return emit_error(state, id, "loop control outside loop")
+		for symbol in state.symbols
+			if (symbol.kind == TYPE_STRING or symbol.kind == TYPE_ARRAY_I64) and symbol.depth > 1
+				return emit_error(state, id, "managed loop exit requires ownership lowering")
 		if item.kind == NODE_BREAK
 			return line(state, "break;")
 		return line(state, "continue;")
@@ -805,7 +982,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 				if probe.error != ""
 					return probe
 				kind = value.kind
-			if kind == TYPE_INVALID or kind == TYPE_VOID or kind == TYPE_STRING
+			if kind == TYPE_INVALID or kind == TYPE_VOID or kind == TYPE_STRING or kind == TYPE_ARRAY_I64
 				return emit_error(state, pub_id, "constructor fields currently require unmanaged values")
 			for previous in fields
 				if previous.name == field_name
@@ -923,6 +1100,7 @@ def compile_c(source: string) -> CompileResult
 	state = line(state, "#include <stdio.h>")
 	state = line(state, "#include <string.h>")
 	state = line(state, "#include <math.h>")
+	state = line(state, "#include \"sirius_runtime.h\"")
 	state = line(state, "")
 	for info in state.functions
 		if not is_generic(info)
