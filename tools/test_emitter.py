@@ -23,7 +23,7 @@ ERRORS = {
 	'12_record_immutable': 'cannot assign immutable',
 	'13_record_type_mismatch': 'expected i64, found bool',
 	'14_deleted_missing_field': "unknown deleted field 'y'",
-	'15_managed_record': 'record fields currently require unmanaged values',
+	'15_managed_record': 'invalid record field type',
 	'16_constructor_override': 'constructor field overrides are not supported yet',
 	'17_constructor_order': 'constructor requires ordered field evaluation',
 	'18_empty_record': 'empty records are not supported yet',

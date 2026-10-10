@@ -33,7 +33,7 @@ def array_of(kind: i64) -> i64
 	return TYPE_INVALID
 
 def managed(kind: i64) -> bool
-	return kind == TYPE_STRING or array_element(kind) != TYPE_INVALID
+	return kind == TYPE_STRING or array_element(kind) != TYPE_INVALID or (kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START)
 
 def generic_array(kind: i64) -> bool
 	return kind == TYPE_ARRAY_STRING or kind >= TYPE_ARRAY_RECORD_START
@@ -317,14 +317,64 @@ def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
 	next.records = next.records.append(RecordInfo(ordered))
 	return ExprCode(next, "", kind)
 
+# Record helpers operate on owned values. Nested managed fields are retained and
+# released recursively; even POD records use these helpers for a uniform ABI.
+def record_copy(kind: i64, expr: string) -> string
+	if kind == TYPE_STRING
+		return "s_string_retain(" + expr + ")"
+	if kind == TYPE_ARRAY_I64
+		return "s_array_i64_retain(" + expr + ")"
+	if generic_array(kind)
+		return "s_array_retain(" + expr + ")"
+	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+		return c_type(kind) + "_copy(" + expr + ")"
+	return expr
+
+def record_drop(kind: i64, expr: string) -> string
+	if kind == TYPE_STRING
+		return "s_string_release(" + expr + ");"
+	if kind == TYPE_ARRAY_I64
+		return "s_array_i64_release(" + expr + ");"
+	if generic_array(kind)
+		return "s_array_release(" + expr + ");"
+	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+		return c_type(kind) + "_drop(" + expr + ");"
+	return ""
+
+# Keep constructors of plain nested records available while managed publication
+# awaits explicit ownership transfer and parameter cleanup.
+def plain_record(state: EmitState, kind: i64) -> bool
+	if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START
+		return not managed(kind)
+	for field in state.records[kind - TYPE_RECORD_START?]!.fields
+		if not plain_record(state, field.kind)
+			return false
+	return true
+
 def record_declarations(state: EmitState) -> string
 	var result = ""
 	for i in 0..len(state.records)
 		let kind = TYPE_RECORD_START + i
+		let type = c_type(kind)
+		let fields = state.records[i?]!.fields
 		result = result + "typedef struct {\n"
-		for field in state.records[i?]!.fields
+		for field in fields
 			result = result + "\t" + c_type(field.kind) + " " + field.name + ";\n"
-		result = result + "} " + c_type(kind) + ";\n"
+		result = result + "} " + type + ";\n"
+		result = result + "static inline " + type + " " + type + "_copy(" + type + " value) {\n"
+		for field in fields
+			if managed(field.kind)
+				result = result + "\tvalue." + field.name + " = " + record_copy(field.kind, "value." + field.name) + ";\n"
+		result = result + "\treturn value;\n}\n"
+		result = result + "static inline void " + type + "_drop(" + type + " value) {\n"
+		for field in fields
+			if managed(field.kind)
+				result = result + "\t" + record_drop(field.kind, "value." + field.name) + "\n"
+		result = result + "\t(void)value;\n}\n"
+		for field in fields
+			result = result + "static inline " + c_type(field.kind) + " " + type + "_get_" + field.name + "_take(" + type + " owned) {\n"
+			result = result + "\t" + c_type(field.kind) + " field = " + record_copy(field.kind, "owned." + field.name) + ";\n"
+			result = result + "\t" + type + "_drop(owned);\n\treturn field;\n}\n"
 	return result
 
 # Generic array helper functions are emitted after canonical record declarations.
@@ -340,40 +390,34 @@ def generic_array_declarations(state: EmitState) -> string
 		let prefix = array_helper(kind)
 		var copy = "NULL"
 		var drop = "NULL"
-		if element == TYPE_STRING
-			output = output + "static inline void " + prefix + "_copy(void *dst, const void *src) { *(S_String **)dst = s_string_retain(*(S_String *const *)src); }\n"
-			output = output + "static inline void " + prefix + "_drop(void *value) { s_string_release(*(S_String **)value); }\n"
+		if managed(element)
+			output = output + "static inline void " + prefix + "_copy(void *dst, const void *src) { *(" + type + " *)dst = " + record_copy(element, "*(" + type + " const *)src") + "; }\n"
+			output = output + "static inline void " + prefix + "_drop(void *value) { " + record_drop(element, "*(" + type + " *)value") + " }\n"
 			copy = prefix + "_copy"
 			drop = prefix + "_drop"
 		output = output + "static inline S_Array *" + prefix + "_make_take(size_t count, " + type + " *items) {\n"
 		output = output + "\tS_Array *result = s_array_make(count, items, sizeof(" + type + "), " + copy + ", " + drop + ");\n"
-		if element == TYPE_STRING
-			output = output + "\tfor (size_t i = 0; i < count; ++i) s_string_release(items[i]);\n"
+		if managed(element)
+			output = output + "\tfor (size_t i = 0; i < count; ++i) " + record_drop(element, "items[i]") + "\n"
 		output = output + "\treturn result;\n}\n"
 		output = output + "static inline S_Array *" + prefix + "_append_take(S_Array *owned, " + type + " item) {\n"
 		output = output + "\tS_Array *result = s_array_append(owned, &item);\n"
-		if element == TYPE_STRING
-			output = output + "\ts_string_release(item);\n"
+		if managed(element)
+			output = output + "\t" + record_drop(element, "item") + "\n"
 		output = output + "\treturn result;\n}\n"
 		output = output + "static inline " + type + " " + prefix + "_get_checked_take(S_Array *owned, int64_t index) {\n"
 		output = output + "\t" + type + " const *p = (" + type + " const *)s_array_at(owned, index);\n"
 		output = output + "\tif (!p) s_panic(\"index out of bounds\");\n"
-		if element == TYPE_STRING
-			output = output + "\t" + type + " value = s_string_retain(*p);\n"
-		else
-			output = output + "\t" + type + " value = *p;\n"
+		output = output + "\t" + type + " value = " + record_copy(element, "*p") + ";\n"
 		output = output + "\ts_array_release(owned);\n\treturn value;\n}\n"
 		output = output + "static inline " + type + " " + prefix + "_get_borrow(const S_Array *array, int64_t index) {\n"
 		output = output + "\t" + type + " const *p = (" + type + " const *)s_array_at(array, index);\n"
 		output = output + "\tif (!p) s_panic(\"index out of bounds\");\n"
-		if element == TYPE_STRING
-			output = output + "\treturn s_string_retain(*p);\n}\n"
-		else
-			output = output + "\treturn *p;\n}\n"
+		output = output + "\treturn " + record_copy(element, "*p") + ";\n}\n"
 		output = output + "static inline void " + prefix + "_set_take(S_Array **owned, int64_t index, " + type + " item) {\n"
 		output = output + "\ts_array_set(owned, index, &item);\n"
-		if element == TYPE_STRING
-			output = output + "\ts_string_release(item);\n"
+		if managed(element)
+			output = output + "\t" + record_drop(element, "item") + "\n"
 		output = output + "}\n"
 	output = output + "static inline int64_t s_generic_array_length_take(S_Array *owned) { int64_t n = (int64_t)s_array_length(owned); s_array_release(owned); return n; }\n"
 	return output
@@ -547,7 +591,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					for j in 0..len(fields)
 						if fields[j?]!.name == member.name
 							found = j
-					let code = "." + member.name + " = v_" + name + "." + member.name
+					let code = "." + member.name + " = " + record_copy(member.kind, "v_" + name + "." + member.name)
 					if found >= 0
 						fields[found?]! = member
 						initializers[found?]! = code
@@ -576,8 +620,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					effects += 1
 				let result = emit_expr(next, value_id)
 				next = result.state
-				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or managed(result.kind)
-					return ExprCode(emit_error(next, field_id, "record fields currently require unmanaged values"), "", TYPE_INVALID)
+				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID
+					return ExprCode(emit_error(next, field_id, "invalid record field type"), "", TYPE_INVALID)
 				var found = -1
 				for j in 0..len(fields)
 					if fields[j?]!.name == name
@@ -604,7 +648,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		if index < 0
 			return ExprCode(emit_error(receiver.state, id, "unknown record field '" + value + "'"), "", TYPE_INVALID)
 		let field = receiver.state.records[receiver.kind - TYPE_RECORD_START?]!.fields[index?]!
-		return ExprCode(receiver.state, "(" + receiver.text + ")." + field.name, field.kind)
+		return ExprCode(receiver.state, c_type(receiver.kind) + "_get_" + field.name + "_take(" + receiver.text + ")", field.kind)
 	if entry.kind == NODE_NAME
 		let index = find_symbol(state, value)
 		if index >= 0
@@ -615,6 +659,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(state, "s_array_i64_retain(v_" + value + ")", kind)
 			if generic_array(kind)
 				return ExprCode(state, "s_array_retain(v_" + value + ")", kind)
+			if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
+				return ExprCode(state, record_copy(kind, "v_" + value), kind)
 			return ExprCode(state, "v_" + value, kind)
 		let constant = find_constant(state, value)
 		if constant != ""
@@ -780,6 +826,8 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 			next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
 		if generic_array(symbol.kind)
 			next = line(next, "s_array_release(v_" + symbol.name + ");")
+		if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
+			next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 	var restored = Array[SymbolInfo]()
 	for i in 0..count
 		restored = restored.append(next.symbols[i?]!)
@@ -866,8 +914,17 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				return emit_error(state, target, "unknown record field '" + field + "'")
 			let kind = state.records[symbol.kind - TYPE_RECORD_START?]!.fields[member?]!.kind
 			let result = emit_expr(state, ast_child(state.tree, id, 1))
-			let next = check_type(result.state, id, result.kind, kind)
-			return line(next, "v_" + name + "." + field + " " + ast_text(state.tree, id) + " " + result.text + ";")
+			var next = check_type(result.state, id, result.kind, kind)
+			let op = ast_text(state.tree, id)
+			if managed(kind)
+				if op != "="
+					return emit_error(next, id, "managed record field update requires =")
+				let temp = "s_field_" + str(next.counter)
+				next.counter += 1
+				next = line(next, c_type(kind) + " " + temp + " = " + result.text + ";")
+				next = line(next, record_drop(kind, "v_" + name + "." + field))
+				return line(next, "v_" + name + "." + field + " = " + temp + ";")
+			return line(next, "v_" + name + "." + field + " " + op + " " + result.text + ";")
 		let lhs = ast_child(state.tree, id, 0)
 		let rhs = ast_child(state.tree, id, 1)
 		if ast_node(state.tree, lhs).kind != NODE_NAME
@@ -910,6 +967,14 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				next = line(next, "s_array_i64_release(v_" + name + ");")
 			else
 				next = line(next, "s_array_release(v_" + name + ");")
+			return line(next, "v_" + name + " = " + temp + ";")
+		if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
+			if ast_text(state.tree, id) != "="
+				return emit_error(next, id, "unsupported record assignment")
+			let temp = "s_value_" + str(next.counter)
+			next.counter += 1
+			next = line(next, c_type(symbol.kind) + " " + temp + " = " + result.text + ";")
+			next = line(next, record_drop(symbol.kind, "v_" + name))
 			return line(next, "v_" + name + " = " + temp + ";")
 		if symbol.kind == TYPE_STRING
 			let serial = next.counter
@@ -954,6 +1019,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 					next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
 				if generic_array(symbol.kind)
 					next = line(next, "s_array_release(v_" + symbol.name + ");")
+				if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
+					next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 			return line(next, "return " + temp + ";")
 		return line(next, "return " + result.text + ";")
 	if item.kind == NODE_RECUR
@@ -1048,8 +1115,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next = line(next, c_type(element_kind) + " v_" + name + " = " + getter + ";")
 			next = append_symbol(next, id, name, element_kind, false)
 			next = emit_block(next, body)
-			if element_kind == TYPE_STRING
-				next = line(next, "s_string_release(v_" + name + ");")
+			if managed(element_kind)
+				next = line(next, record_drop(element_kind, "v_" + name))
 			next.loop_depth -= 1
 			next.scope_depth -= 1
 			next.indentation -= 1
@@ -1164,7 +1231,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 				if probe.error != ""
 					return probe
 				kind = value.kind
-			if kind == TYPE_INVALID or kind == TYPE_VOID or kind == TYPE_STRING or kind == TYPE_ARRAY_I64
+			if kind == TYPE_INVALID or kind == TYPE_VOID or not plain_record(probe, kind)
 				return emit_error(state, pub_id, "constructor fields currently require unmanaged values")
 			for previous in fields
 				if previous.name == field_name
@@ -1174,7 +1241,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 			return emit_error(state, id, "constructor must publish at least one field")
 		if effectful and body.count > 1
 			return emit_error(state, id, "constructor requires ordered field evaluation")
-		let record = intern_record(state, fields)
+		let record = intern_record(probe, fields)
 		next = record.state
 		result = record.kind
 	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor, "s_" + name))
@@ -1309,9 +1376,8 @@ def compile_c(source: string) -> CompileResult
 	var output = ""
 	for i in 0..len(state.lines)
 		output = output + state.lines[i?]! + "\n"
-		if i == 4
-			output = output + record_declarations(state)
 		if i == 5
+			output = output + record_declarations(state)
 			output = output + generic_array_declarations(state)
 			output = output + declarations
 	output = output + definitions

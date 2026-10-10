@@ -1,0 +1,9 @@
+def get_name(record) -> string
+	return record.details.name
+
+def main() -> i64
+	let original = {details = {name = "inner", number = 2}, age = 4}
+	let copy = {original.*, age = 6}
+	print(get_name(original))
+	print(copy.details.number)
+	return 0

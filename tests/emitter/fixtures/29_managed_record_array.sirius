@@ -1,0 +1,9 @@
+def main() -> i64
+	var records = [{name = "alpha", n = 1}, {n = 2, name = "beta"}]
+	let original = records
+	records[0?]! = {name = "gamma", n = 3}
+	print(original[0?]!.name)
+	print(records[0?]!.name)
+	for item in records
+		print(item.name)
+	return 0

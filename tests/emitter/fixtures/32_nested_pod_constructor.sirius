@@ -1,0 +1,7 @@
+def Outer()
+	pub inner = {x = 2, y = 3}
+
+def main() -> i64
+	let outer = Outer()
+	print(outer.inner.y)
+	return 0

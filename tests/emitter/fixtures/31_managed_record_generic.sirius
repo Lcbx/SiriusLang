@@ -1,0 +1,17 @@
+def get_label(p) -> string
+	return p.label
+
+def renamed(p, label: string)
+	var result = p
+	result.label = label
+	return result
+
+def main() -> i64
+	let original = {label = "old", details = {name = "inside"}}
+	let changed = renamed(original, "new")
+	let spread = {original.*, label = "other"}
+	print(get_label(original))
+	print(get_label(changed))
+	print(spread.label)
+	print(changed.details.name)
+	return 0

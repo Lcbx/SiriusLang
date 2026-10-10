@@ -1,0 +1,11 @@
+def main() -> i64
+	let original = {label = "first", scores = [10, 20]}
+	let alias = original
+	var changed = original
+	changed.label = "second"
+	changed.scores = changed.scores.append(30)
+	print(original.label)
+	print(alias.scores[1?]!)
+	print(changed.label)
+	print(changed.scores[2?]!)
+	return 0
