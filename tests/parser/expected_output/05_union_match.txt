@@ -1,34 +1,36 @@
 0 type i64 ->
 1 param value -> 0
-2 pub value ->
-3 block -> 2
-4 def Success -> 1 3
-5 type i64 ->
-6 param code -> 5
-7 pub code ->
-8 block -> 7
-9 def Failure -> 6 8
-10 name Success ->
-11 name Failure ->
-12 binary | -> 10 11
-13 let Result -> 12
-14 type Result ->
-15 param result -> 14
-16 type i64 ->
-17 name result ->
-18 binding ->
-19 name value ->
-20 return -> 19
-21 block -> 20
-22 case Success -> 18 21
-23 binding ->
-24 name code ->
-25 unary - -> 24
-26 return -> 25
-27 block -> 26
-28 case Failure -> 23 27
-29 match -> 17 22 28
-30 block -> 29
-31 def unwrap -> 15 16 30
-32 module -> 4 9 13 31
-ROOT 32
+2 block ->
+3 pub value ->
+4 block -> 3
+5 rec -> 1 4
+6 type i64 ->
+7 param code -> 6
+8 block ->
+9 pub code ->
+10 block -> 9
+11 rec -> 7 10
+12 name Success ->
+13 name Failure ->
+14 binary | -> 12 13
+15 let Result -> 14
+16 type Result ->
+17 param result -> 16
+18 type i64 ->
+19 name result ->
+20 binding ->
+21 name value ->
+22 return -> 21
+23 block -> 22
+24 case Success -> 20 23
+25 binding ->
+26 name code ->
+27 unary - -> 26
+28 return -> 27
+29 block -> 28
+30 case Failure -> 25 29
+31 match -> 19 24 30
+32 block -> 31
+33 def unwrap -> 17 18 32
+34 module -> 5 11 15 33
+ROOT 34

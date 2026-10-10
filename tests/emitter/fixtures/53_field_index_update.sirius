@@ -1,5 +1,4 @@
-def Store(values: Array[i64])
-	pub values
+rec Store(values: Array[i64])
 
 def main() -> i64
 	var store = Store([1, 2])

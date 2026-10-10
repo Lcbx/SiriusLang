@@ -6,7 +6,7 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 
 - **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap_c/compiler.c`. The emitter still combines semantic analysis and C11 generation.
 - **Historical bootstrap:** `bootstrap_python/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (70 positives and 29 diagnostics). See `tools/test_selfhost.py`.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (73 positives and 30 diagnostics). See `tools/test_selfhost.py`.
 - **Coverage:** 70 emitter executions (13 original language cases + 57 emitter-specific fixtures), 29 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work

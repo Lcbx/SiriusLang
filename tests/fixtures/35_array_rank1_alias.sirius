@@ -4,8 +4,7 @@ def count(values: Array[i64,1]) -> i64
 def first(values: Array[i64]) -> i64
 	return values[0?] or -1
 
-def Token(value: i64)
-	pub value
+rec Token(value: i64)
 
 def main() -> i64
 	var numbers: Array[i64] = Array[i64]()

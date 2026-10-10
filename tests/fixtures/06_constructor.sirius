@@ -1,6 +1,4 @@
-def Point(x: f64, y: f64)
-	pub x
-	pub y
+rec Point(x: f64, y: f64)
 	pub length = sqrt(x*x + y*y)
 
 def main() -> i64

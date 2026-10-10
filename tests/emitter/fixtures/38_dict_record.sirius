@@ -1,6 +1,4 @@
-def Pair(code: i64, value: i64)
-	pub code
-	pub value
+rec Pair(code: i64, value: i64)
 
 def main() -> i64
 	var entries = Dict[string, Pair]()

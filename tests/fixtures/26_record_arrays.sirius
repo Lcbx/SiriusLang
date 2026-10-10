@@ -1,6 +1,4 @@
-def Person(name: string, age: i64)
-	pub name
-	pub age
+rec Person(name: string, age: i64)
 
 def main() -> i64
 	var people = [Person("Ada", 7)]

@@ -33,8 +33,8 @@ The update command compiles from the **existing** `bootstrap_c/compiler.c`, chec
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 70 executable cases and 29 expected diagnostics |
-| `python tools/test_emitter.py` | Sirius-written emitter: 70 positive C executions, 29 expected diagnostics |
+| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 73 executable cases and 30 expected diagnostics |
+| `python tools/test_emitter.py` | Sirius-written emitter: 73 positive C executions, 30 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
@@ -62,7 +62,7 @@ Source modules in `src/` are currently **concatenated in a fixed order**, along 
 
 ## Current scope and limitations
 
-The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
+The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published; `def` constructors rejected), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
 
 The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. Generic specialization caches, bound symbols and record-field lookup now use canonical `TypeId`s. Legacy arithmetic type IDs are still used for C-facing type checks, ABI layout and helper generation; finishing that migration remains Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
 

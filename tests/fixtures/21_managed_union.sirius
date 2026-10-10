@@ -1,8 +1,6 @@
-def Success(value: string)
-	pub value
+rec Success(value: string)
 
-def Failure(code: i64)
-	pub code
+rec Failure(code: i64)
 
 let Result = Success | Failure
 

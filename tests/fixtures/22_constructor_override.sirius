@@ -1,5 +1,4 @@
-def Choice(x: i64, flag: bool)
-	pub x
+rec Choice(x: i64, flag: bool)
 	if flag
 		pub x = 10
 	pub y = x + 1

@@ -1,4 +1,4 @@
-def Outer()
+rec Outer()
 	pub inner = {x = 2, y = 3}
 
 def main() -> i64

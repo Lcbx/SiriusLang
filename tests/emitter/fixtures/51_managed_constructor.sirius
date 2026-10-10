@@ -2,7 +2,7 @@ def label(name: string) -> string
 	print(name)
 	return name
 
-def Item(name: string)
+rec Item(name: string)
 	pub name = label(name)
 	pub versions = Array[string]()
 

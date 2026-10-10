@@ -1,0 +1,5 @@
+def Legacy(value: i64)
+	pub value
+
+def main() -> i64
+	return 0

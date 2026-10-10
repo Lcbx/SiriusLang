@@ -1,4 +1,4 @@
-def Wrapped(value)
+rec Wrapped(value)
 	pub value.x
 
 def main() -> i64

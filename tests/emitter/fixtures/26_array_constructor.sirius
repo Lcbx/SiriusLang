@@ -1,6 +1,4 @@
-def Token(kind: i64, start: i64)
-	pub kind
-	pub start
+rec Token(kind: i64, start: i64)
 
 def main() -> i64
 	var tokens = Array[Token]()

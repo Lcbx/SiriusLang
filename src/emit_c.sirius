@@ -1659,10 +1659,10 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 	var constructor = entry.kind == NODE_REC
 	let body_id = ast_child(state.tree, id, entry.count - 1)
 	let body = ast_node(state.tree, body_id)
-	if result == TYPE_INVALID
+	if entry.kind == NODE_DEF
 		for i in 0..body.count
 			if ast_node(state.tree, ast_child(state.tree, body_id, i)).kind == NODE_PUB
-				constructor = true
+				return emit_error(state, id, "def constructors are no longer supported; use rec")
 	if constructor
 		for param in params
 			if param.kind == TYPE_INVALID

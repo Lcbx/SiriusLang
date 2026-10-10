@@ -109,7 +109,7 @@ rec Point(x, y)
 
 A parameter-only constructor needs no body: `rec Pair(x: i64, y: i64)`.
 
-For this transition, existing `def` constructors remain accepted but are deprecated in favor of `rec`.
+`def` is reserved for evaluators; constructors must use `rec`.
 
 Constructor rules:
 
