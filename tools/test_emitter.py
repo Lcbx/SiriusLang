@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Compile and test the Sirius emitter using the committed C bootstrap."""
 from pathlib import Path
 import shutil

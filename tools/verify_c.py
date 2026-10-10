@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Compile/run all expected C examples as a semantic reference (not Sirius compiler tests)."""
 from pathlib import Path
 import subprocess

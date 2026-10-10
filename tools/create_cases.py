@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Author golden fixtures. All indented Sirius code is normalized to tabs."""
 from pathlib import Path
 from textwrap import dedent

@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Compile the Sirius tokenizer using the committed C bootstrap; check golden tokens."""
 from pathlib import Path
 import shutil

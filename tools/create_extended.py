@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Additional valid fixtures and explicitly provisional syntax for unfinished design."""
 from pathlib import Path
 from textwrap import dedent

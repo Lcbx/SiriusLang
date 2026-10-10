@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Compile the Sirius parser using the committed C bootstrap; check AST cases."""
 from pathlib import Path
 import shutil

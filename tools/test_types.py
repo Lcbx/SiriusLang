@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Test the Sirius canonical type table using only the committed C bootstrap."""
 from pathlib import Path
 import re

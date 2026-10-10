@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Shared runtime and diagnostic cases for Sirius-written compiler generations."""
 from pathlib import Path
 import subprocess

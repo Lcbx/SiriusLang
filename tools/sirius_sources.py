@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Ordered Sirius sources used by the C-only development and test tools."""
 from pathlib import Path
 

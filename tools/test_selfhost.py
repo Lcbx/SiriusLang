@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """Verify or regenerate the Sirius compiler using only the committed C bootstrap."""
 import argparse
 from itertools import zip_longest

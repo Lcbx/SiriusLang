@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 """End-to-end conformance runner for the Python Sirius->C bootstrap compiler.
 
 Contract: <compiler-command> compile <source.sirius> -o <output.c>
