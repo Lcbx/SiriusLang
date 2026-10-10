@@ -1,0 +1,7 @@
+def main() -> i64
+	let p = {position = {x = 2, y = 3}, visible = true}
+	var q = {visible = false, position = {y = 4, x = 5}}
+	q = p
+	print(q.position.x + q.position.y)
+	print(q.visible)
+	return 0

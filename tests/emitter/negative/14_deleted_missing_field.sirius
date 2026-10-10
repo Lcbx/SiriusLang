@@ -1,0 +1,5 @@
+def main() -> i64
+	let p = {x = 2}
+	let q = {p.*, del y}
+	print(q.x)
+	return 0

@@ -1,0 +1,4 @@
+def main() -> i64
+	let p = {x = 2}
+	print(p.y)
+	return 0

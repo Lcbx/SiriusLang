@@ -8,17 +8,19 @@ let TYPE_F64 = 2
 let TYPE_BOOL = 3
 let TYPE_STRING = 4
 let TYPE_VOID = 5
+let TYPE_RECORD_START = 100
 
 
 def ParameterInfo(name: string, kind: i64)
 	pub name
 	pub kind
 
-def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64)
+def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool)
 	pub name
 	pub kind
 	pub params
 	pub body
+	pub constructor
 
 def SymbolInfo(name: string, kind: i64, mutable: bool, depth: i64)
 	pub name
@@ -30,11 +32,19 @@ def ConstantInfo(name: string, value: string)
 	pub name
 	pub value
 
+def RecordField(name: string, kind: i64)
+	pub name
+	pub kind
+
+def RecordInfo(fields: Array[RecordField])
+	pub fields
+
 def EmitState(tree: ParseState)
 	pub tree
 	pub functions = Array[FunctionInfo]()
 	pub symbols = Array[SymbolInfo]()
 	pub constants = Array[ConstantInfo]()
+	pub records = Array[RecordInfo]()
 	pub lines = Array[string]()
 	pub indentation = 0
 	pub loop_depth = 0
@@ -86,6 +96,8 @@ def type_name(kind: i64) -> string
 		return "string"
 	if kind == TYPE_VOID
 		return "void"
+	if kind >= TYPE_RECORD_START
+		return "record"
 	return "unknown"
 
 def c_type(kind: i64) -> string
@@ -99,6 +111,8 @@ def c_type(kind: i64) -> string
 		return "const char *"
 	if kind == TYPE_VOID
 		return "void"
+	if kind >= TYPE_RECORD_START
+		return "s_record_" + str(kind)
 	return "INVALID_TYPE"
 
 def ast_type(tree: ParseState, id: i64) -> i64
@@ -143,6 +157,58 @@ def find_constant(state: EmitState, name: string) -> string
 			return item.value
 	return ""
 
+# Record types are structural: compare field names and types in sorted order.
+# Only trivially-copyable records are lowered in this first increment.
+def record_field_index(state: EmitState, kind: i64, name: string) -> i64
+	if kind < TYPE_RECORD_START or kind - TYPE_RECORD_START >= len(state.records)
+		return -1
+	let fields = state.records[kind - TYPE_RECORD_START?]!.fields
+	for i in 0..len(fields)
+		if fields[i?]!.name == name
+			return i
+	return -1
+
+def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
+	var result = Array[RecordField]()
+	for field in fields
+		var at = 0
+		while at < len(result) and result[at?]!.name < field.name
+			at += 1
+		var sorted = Array[RecordField]()
+		for i in 0..at
+			sorted = sorted.append(result[i?]!)
+		sorted = sorted.append(field)
+		for i in at..len(result)
+			sorted = sorted.append(result[i?]!)
+		result = sorted
+	return result
+
+def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
+	let ordered = ordered_fields(fields)
+	for i in 0..len(state.records)
+		let previous = state.records[i?]!.fields
+		if len(previous) == len(ordered)
+			var equal = true
+			for j in 0..len(ordered)
+				if previous[j?]!.name != ordered[j?]!.name or previous[j?]!.kind != ordered[j?]!.kind
+					equal = false
+			if equal
+				return ExprCode(state, "", TYPE_RECORD_START + i)
+	var next = state
+	let kind = TYPE_RECORD_START + len(next.records)
+	next.records = next.records.append(RecordInfo(ordered))
+	return ExprCode(next, "", kind)
+
+def record_declarations(state: EmitState) -> string
+	var result = ""
+	for i in 0..len(state.records)
+		let kind = TYPE_RECORD_START + i
+		result = result + "typedef struct {\n"
+		for field in state.records[i?]!.fields
+			result = result + "\t" + c_type(field.kind) + " " + field.name + ";\n"
+		result = result + "} " + c_type(kind) + ";\n"
+	return result
+
 def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: bool) -> EmitState
 	var result = state
 	if kind == TYPE_INVALID or kind == TYPE_VOID
@@ -170,6 +236,8 @@ def has_effect(state: EmitState, id: i64, visited: Array[string]) -> bool
 		let name = ast_text(state.tree, callee)
 		if name == "print"
 			return true
+		if name == "sqrt"
+			return false
 		let index = find_function(state, name)
 		if index < 0
 			return true
@@ -202,6 +270,87 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		return ExprCode(state, value, TYPE_BOOL)
 	if entry.kind == NODE_STRING
 		return ExprCode(state, value, TYPE_STRING)
+	if entry.kind == NODE_RECORD
+		var next = state
+		var fields = Array[RecordField]()
+		var initializers = Array[string]()
+		var effects = 0
+		var touches = ""
+		for i in 0..entry.count
+			let field_id = ast_child(state.tree, id, i)
+			let field = ast_node(state.tree, field_id)
+			if field.kind == NODE_SPREAD
+				let name = ast_text(state.tree, field_id)
+				let symbol = find_symbol(next, name)
+				if symbol < 0
+					return ExprCode(emit_error(next, field_id, "unknown spread source '" + name + "'"), "", TYPE_INVALID)
+				touches = touches + "(void)v_" + name + ", "
+				let kind = next.symbols[symbol?]!.kind
+				if kind < TYPE_RECORD_START
+					return ExprCode(emit_error(next, field_id, "record spread expects a record"), "", TYPE_INVALID)
+				for member in next.records[kind - TYPE_RECORD_START?]!.fields
+					var found = -1
+					for j in 0..len(fields)
+						if fields[j?]!.name == member.name
+							found = j
+					let code = "." + member.name + " = v_" + name + "." + member.name
+					if found >= 0
+						fields[found?]! = member
+						initializers[found?]! = code
+					else
+						fields = fields.append(member)
+						initializers = initializers.append(code)
+			elif field.kind == NODE_DELETE
+				let name = ast_text(state.tree, field_id)
+				var found = false
+				var kept = Array[RecordField]()
+				var values = Array[string]()
+				for j in 0..len(fields)
+					if fields[j?]!.name == name
+						found = true
+					else
+						kept = kept.append(fields[j?]!)
+						values = values.append(initializers[j?]!)
+				if not found
+					return ExprCode(emit_error(next, field_id, "unknown deleted field '" + name + "'"), "", TYPE_INVALID)
+				fields = kept
+				initializers = values
+			elif field.kind == NODE_FIELD
+				let name = ast_text(state.tree, field_id)
+				let value_id = ast_child(state.tree, field_id, 0)
+				if has_effect(next, value_id, Array[string]())
+					effects += 1
+				let result = emit_expr(next, value_id)
+				next = result.state
+				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID or result.kind == TYPE_STRING
+					return ExprCode(emit_error(next, field_id, "record fields currently require unmanaged values"), "", TYPE_INVALID)
+				var found = -1
+				for j in 0..len(fields)
+					if fields[j?]!.name == name
+						found = j
+				let member = RecordField(name, result.kind)
+				let code = "." + name + " = " + result.text
+				if found >= 0
+					fields[found?]! = member
+					initializers[found?]! = code
+				else
+					fields = fields.append(member)
+					initializers = initializers.append(code)
+			else
+				return ExprCode(emit_error(next, field_id, "invalid record field"), "", TYPE_INVALID)
+		if effects > 0 and entry.count > 1
+			return ExprCode(emit_error(next, id, "record initializer requires ordered evaluation"), "", TYPE_INVALID)
+		if len(fields) == 0
+			return ExprCode(emit_error(next, id, "empty records are not supported yet"), "", TYPE_INVALID)
+		let record = intern_record(next, fields)
+		return ExprCode(record.state, "(" + touches + "((" + c_type(record.kind) + "){ " + ", ".join(initializers) + " }))", record.kind)
+	if entry.kind == NODE_ATTR
+		let receiver = emit_expr(state, ast_child(state.tree, id, 0))
+		let index = record_field_index(receiver.state, receiver.kind, value)
+		if index < 0
+			return ExprCode(emit_error(receiver.state, id, "unknown record field '" + value + "'"), "", TYPE_INVALID)
+		let field = receiver.state.records[receiver.kind - TYPE_RECORD_START?]!.fields[index?]!
+		return ExprCode(receiver.state, "(" + receiver.text + ")." + field.name, field.kind)
 	if entry.kind == NODE_NAME
 		let index = find_symbol(state, value)
 		if index >= 0
@@ -288,6 +437,11 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			if kind == TYPE_STRING
 				return ExprCode(next, "printf(\"%s\\n\", " + value + ")", TYPE_VOID)
 			return ExprCode(emit_error(next, id, "cannot print this type"), "", TYPE_INVALID)
+		if name == "sqrt"
+			if len(arguments) != 1
+				return ExprCode(emit_error(next, id, "sqrt expects one argument"), "", TYPE_INVALID)
+			next = check_type(next, id, arg_types[0?]!, TYPE_F64)
+			return ExprCode(next, "sqrt(" + arguments[0?]! + ")", TYPE_F64)
 		let index = find_function(next, name)
 		if index < 0
 			return ExprCode(emit_error(next, id, "unknown function '" + name + "'"), "", TYPE_INVALID)
@@ -367,6 +521,26 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		next = line(next, declaration)
 		return append_symbol(next, id, name, kind, item.kind == NODE_VAR)
 	if item.kind == NODE_ASSIGN
+		let target = ast_child(state.tree, id, 0)
+		if ast_node(state.tree, target).kind == NODE_ATTR
+			let root = ast_child(state.tree, target, 0)
+			if ast_node(state.tree, root).kind != NODE_NAME
+				return emit_error(state, id, "record update requires a local root binding")
+			let name = ast_text(state.tree, root)
+			let index = find_symbol(state, name)
+			if index < 0
+				return emit_error(state, id, "unknown binding '" + name + "'")
+			let symbol = state.symbols[index?]!
+			if not symbol.mutable
+				return emit_error(state, id, "cannot assign immutable binding '" + name + "'")
+			let field = ast_text(state.tree, target)
+			let member = record_field_index(state, symbol.kind, field)
+			if member < 0
+				return emit_error(state, target, "unknown record field '" + field + "'")
+			let kind = state.records[symbol.kind - TYPE_RECORD_START?]!.fields[member?]!.kind
+			let result = emit_expr(state, ast_child(state.tree, id, 1))
+			let next = check_type(result.state, id, result.kind, kind)
+			return line(next, "v_" + name + "." + field + " " + ast_text(state.tree, id) + " " + result.text + ";")
 		let lhs = ast_child(state.tree, id, 0)
 		let rhs = ast_child(state.tree, id, 1)
 		if ast_node(state.tree, lhs).kind != NODE_NAME
@@ -499,10 +673,55 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 			params = params.append(ParameterInfo(parameter_name, kind))
 		elif info.kind == NODE_TYPE
 			result = ast_type(state.tree, part)
-	if result == TYPE_INVALID
-		return emit_error(state, id, "functions require a scalar return annotation")
 	var next = state
-	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1)))
+	var constructor = false
+	if result == TYPE_INVALID
+		constructor = true
+		let body_id = ast_child(state.tree, id, entry.count - 1)
+		let body = ast_node(state.tree, body_id)
+		var probe = state
+		probe.symbols = Array[SymbolInfo]()
+		var fields = Array[RecordField]()
+		var effectful = false
+		for param in params
+			probe.symbols = probe.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
+		for i in 0..body.count
+			let pub_id = ast_child(state.tree, body_id, i)
+			let pub = ast_node(state.tree, pub_id)
+			if pub.kind != NODE_PUB
+				return emit_error(state, pub_id, "constructors currently require direct pub statements")
+			var field_name = ast_text(state.tree, pub_id)
+			var kind = TYPE_INVALID
+			if pub.count == 0
+				let symbol = find_symbol(probe, field_name)
+				if symbol < 0
+					return emit_error(state, pub_id, "unknown published binding '" + field_name + "'")
+				kind = probe.symbols[symbol?]!.kind
+			else
+				let value_id = ast_child(state.tree, pub_id, 0)
+				if has_effect(probe, value_id, Array[string]())
+					effectful = true
+				if ast_node(state.tree, value_id).kind == NODE_ATTR
+					field_name = ast_text(state.tree, value_id)
+				let value = emit_expr(probe, value_id)
+				probe = value.state
+				if probe.error != ""
+					return probe
+				kind = value.kind
+			if kind == TYPE_INVALID or kind == TYPE_VOID or kind == TYPE_STRING
+				return emit_error(state, pub_id, "constructor fields currently require unmanaged values")
+			for previous in fields
+				if previous.name == field_name
+					return emit_error(state, pub_id, "constructor field overrides are not supported yet")
+			fields = fields.append(RecordField(field_name, kind))
+		if len(fields) == 0
+			return emit_error(state, id, "constructor must publish at least one field")
+		if effectful and body.count > 1
+			return emit_error(state, id, "constructor requires ordered field evaluation")
+		let record = intern_record(state, fields)
+		next = record.state
+		result = record.kind
+	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor))
 	return next
 
 def evaluate_constant(state: EmitState, id: i64) -> ExprCode
@@ -556,7 +775,25 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 	if contains_recur(next.tree, info.body)
 		next = line(next, "s_recur: ;")
 	next.scope_depth += 1
-	next = emit_block(next, info.body)
+	if info.constructor
+		let body = ast_node(next.tree, info.body)
+		var values = Array[string]()
+		for i in 0..body.count
+			let pub_id = ast_child(next.tree, info.body, i)
+			let pub = ast_node(next.tree, pub_id)
+			var name = ast_text(next.tree, pub_id)
+			var expression = "v_" + name
+			if pub.count == 1
+				let value_id = ast_child(next.tree, pub_id, 0)
+				if ast_node(next.tree, value_id).kind == NODE_ATTR
+					name = ast_text(next.tree, value_id)
+				let value = emit_expr(next, value_id)
+				next = value.state
+				expression = value.text
+			values = values.append("." + name + " = " + expression)
+		next = line(next, "return ((" + c_type(info.kind) + "){ " + ", ".join(values) + " });")
+	else
+		next = emit_block(next, info.body)
 	next.scope_depth -= 1
 	next.indentation -= 1
 	return line(next, "}")
@@ -583,6 +820,7 @@ def compile_c(source: string) -> CompileResult
 	state = line(state, "#include <stdbool.h>")
 	state = line(state, "#include <stdio.h>")
 	state = line(state, "#include <string.h>")
+	state = line(state, "#include <math.h>")
 	state = line(state, "")
 	for info in state.functions
 		var args = Array[string]()
@@ -596,4 +834,9 @@ def compile_c(source: string) -> CompileResult
 			return CompileResult("", state.error, state.error_line)
 		state = line(state, "")
 	state = line(state, "int main(void) { return (int)s_main(); }")
-	return CompileResult("\n".join(state.lines) + "\n", "", 0)
+	var output = ""
+	for i in 0..len(state.lines)
+		output = output + state.lines[i?]! + "\n"
+		if i == 4
+			output = output + record_declarations(state)
+	return CompileResult(output, "", 0)

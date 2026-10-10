@@ -1,0 +1,4 @@
+def main() -> i64
+	let p = {x = 2}
+	p.x = 4
+	return 0

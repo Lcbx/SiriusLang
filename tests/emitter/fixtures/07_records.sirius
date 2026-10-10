@@ -1,0 +1,9 @@
+def main() -> i64
+	let a = {y = 2, x = 1}
+	let b = {x = 4, y = 3}
+	var c = a
+	c.x += 10
+	print(a.x + a.y)
+	print(b.x + b.y)
+	print(c.x + c.y)
+	return 0

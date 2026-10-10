@@ -1,0 +1,12 @@
+def main() -> i64
+	let a = {x = 1, y = 2}
+	let b = {
+		a.*
+		del y
+		x = 10
+		z = 5
+	}
+	let c = {z = 5, x = 10}
+	print(b.x + b.z)
+	print(c.x + c.z)
+	return 0

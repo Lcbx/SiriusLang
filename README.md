@@ -17,7 +17,7 @@ This repository now contains an **executable Python-to-C11 bootstrap compiler** 
 - `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
 - `src/tokenizer.sirius` — Sirius-written byte-span lexer (ASCII identifiers, UTF-8 strings), indentation and lexical diagnostics.
 - `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics.
-- `src/emit_c.sirius` — first Sirius-written scalar name/type checker and C11 emitter (limited subset; no ownership lowering yet).
+- `src/emit_c.sirius` — Sirius-written scalar/POD-record type checker and C11 emitter, including basic constructors (limited subset; no managed ownership lowering yet).
 - `tests/emitter/`, `tools/test_emitter.py` — executable C-emission golden tests and expected compiler diagnostics.
 - `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer golden tests.
 - `tests/parser/{fixtures,expected_output}/`, `tests/parser/driver.sirius`, `tools/test_parser.py` — parser AST/diagnostic golden tests and syntax smoke tests.
@@ -191,9 +191,10 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [x] Write the Sirius indentation-aware parser using token indices and an AST arena; validate all stage-0 positive syntax fixtures.
 - [x] Add stage-1 AST node/edge definitions and stable structural dump tests.
 - [x] Begin stage-1 semantic resolution and C11 emission: scalar types, calls, module constants, branches, loops and tail recursion (limited coverage; see below).
-- [ ] Generalize type resolution to records, collections, generics, constructors and ownership-aware operations.
+- [x] Add canonical POD-record interning, field access and updates, spread/delete/override, nested record layouts and basic `pub` constructors to the Sirius emitter.
+- [ ] Add structural parameter typing, generic specialization, more complete constructors, managed collections, and ownership-aware operations.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
-- [ ] Expand stage-0/stage-1 equivalence beyond the five shared positive programs and dedicated stage-1 rejection tests.
+- [ ] Expand stage-0/stage-1 equivalence beyond the seven shared positive programs and dedicated stage-1 rejection tests.
 - [ ] Use stage-1 to compile its own source (stage-2); check that stage-2 compiles the same suite successfully.
 - [ ] Commit verified generated C bootstrap code and runtime; freeze Python bootstrap thereafter.
 
@@ -232,11 +233,26 @@ Run `python tools/test_parser.py` from the project root. The runner concatenates
 
 The stage-1 parser covers functions, typed/default arguments, constructors/`pub`, blocks, `if/elif/else`, `while`, `for`, `match`, `let`/`var`, assignments, `return`/`recur`, record and array literals, unary/binary precedence, calls, fields, optional/checked indexing and lambda syntax. It does **not** yet perform semantic type checking, desugar constructors, resolve overloads, lower ownership, or emit C. Module/import syntax, advanced pattern matching and richer diagnostics remain to be implemented.
 
+## Stage-1 gap audit and next implementation steps
+
+The Python stage-0 already compiles the compiler's own Sirius sources. The gap is in stage-1 semantics and lowering, **not** stage-0 language support. The stage-1 lexer and AST parser are reusable; `emit_c.sirius` still mixes resolution and direct C emission and accepts only a restricted executable subset.
+
+- [x] Name resolution, typed scalar function calls, local binding checks, control flow, module integer constants, and direct self-tail recursion.
+- [x] **This increment:** canonical structural POD-record descriptors, by-value C structs, field reads/writes, spread/delete/override, nested records, and basic scalar `pub` constructors.
+- [ ] Resolve missing parameter/return annotations and monomorphize generic calls. First target: `05_records.sirius`, `10_generic.sirius`, then `20_structural_layout.sirius`.
+- [ ] Add managed `string` operations, generic rank-1 `Array[T]` and `Dict[K,V]`, and their indexing/iteration/CoW operations; keep explicit allocation and ownership rules. These are essential for compiling `src/tokenizer.sirius` and `src/parser.sirius`.
+- [ ] Support richer constructors, tagged unions, optional values, methods, non-capturing function values and source-level callbacks needed by stage-1 itself.
+- [ ] Lower effects and collection lifetimes into ordered C temporaries and explicit retain/release/CoW actions before permitting effectful record initializers, multiple effectful arguments, and managed updates. The current emitter explicitly rejects constructs it cannot lower safely.
+- [ ] Compile the concatenated Sirius compiler sources with stage-1 (stage-2), compare output and diagnostics against stage-0, and retain reproducible bootstrap C sources.
+- [ ] After self-hosting, split semantic analysis from C emission into typed HIR and ownership-aware CFG MIR.
+
+**Current record limitations:** Only unmanaged fields (`i64`, `f64`, `bool`, recursively POD records) are accepted. Constructor bodies must contain direct `pub` statements without overrides or branches. Generic parameter inference, effectful initializer ordering, string-valued records, and full constructor publication remain unimplemented. These restrictions are intentional diagnostics, not claims of full language compatibility.
+
 ## Stage-1 C emitter (in progress)
 
 Run `python tools/test_emitter.py` from the repository root. The runner combines `src/tokenizer.sirius`, `src/parser.sirius`, `src/emit_c.sirius` and `tests/emitter/driver.sirius`, compiles the combined source with Python stage-0, builds that output with C11, then compiles and executes the **C generated by the Sirius emitter**. This is separate from the tokenizer/parser AST tests and the Python compiler's conformance suite.
 
-The current `compile_c(source)` uses the indexed AST directly. It pre-collects function signatures, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`.
+The current `compile_c(source)` uses the indexed AST directly. It pre-collects function signatures, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`. It additionally interns structural record types using lexicographically sorted fields, emits deterministic C structs and record-by-value operations, supports scalar/nested-POD record literals, direct field updates, record spread/delete/override, and direct `pub` constructors with typed parameters (including `sqrt(f64)`). Managed record fields and advanced publication/control flow are still rejected. Only basic `main() -> i64` executables are emitted.
 
 The runner checks the first four independent language programs and the module-integer-constant program, additional focused emission fixtures, strict C11 compilation (`-Wall -Wextra -Werror -pedantic`), and dedicated rejection tests.
 

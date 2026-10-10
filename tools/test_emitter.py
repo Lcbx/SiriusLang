@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ('src/tokenizer.sirius', 'src/parser.sirius', 'src/emit_c.sirius', 'tests/emitter/driver.sirius')
-REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants')
+REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread')
 ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',
@@ -19,6 +19,14 @@ ERRORS = {
 	'08_constant_forward': 'unsupported module constant initializer',
 	'09_bad_recur': 'recur must call the enclosing function',
 	'10_duplicate_param': 'duplicate parameter',
+	'11_missing_record_field': "unknown record field 'y'",
+	'12_record_immutable': 'cannot assign immutable',
+	'13_record_type_mismatch': 'expected i64, found bool',
+	'14_deleted_missing_field': "unknown deleted field 'y'",
+	'15_managed_record': 'record fields currently require unmanaged values',
+	'16_constructor_override': 'constructor field overrides are not supported yet',
+	'17_constructor_order': 'constructor requires ordered field evaluation',
+	'18_empty_record': 'empty records are not supported yet',
 }
 
 
@@ -53,7 +61,7 @@ def main() -> None:
 			generated = work / f'generated_{index}.c'
 			execute([str(binary), str(input_file), str(generated)])
 			output_binary = work / f'program_{index}'
-			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', str(generated), '-o', str(output_binary)])
+			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', str(generated), '-lm', '-o', str(output_binary)])
 			actual = execute([str(output_binary)])
 			wanted = expected.read_text(encoding='utf-8')
 			if actual.stdout != wanted:
