@@ -101,8 +101,6 @@ rec FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i6
 
 rec InstanceInfo(name: string, kinds: Array[i64], type_ids: Array[i64], kind: i64, symbol: string, code: string, status: i64)
 
-rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
-
 rec ConstantInfo(name: string, value: string)
 
 rec RecordInfo(fields: Array[RecordField], canonical: i64)
@@ -115,6 +113,7 @@ rec EmitState(tree: ParseState)
 	pub constants = Array[ConstantInfo]()
 	pub records = Array[RecordInfo]()
 	pub types = new_type_table()
+	pub hir = Array[HirNode]()
 	pub dict_kinds = Array[i64]()
 	pub lines = Array[string]()
 	pub indentation = 0
@@ -313,11 +312,7 @@ def line(state: EmitState, text: string) -> EmitState
 	return result
 
 def find_symbol(state: EmitState, name: string) -> i64
-	for i in 0..len(state.symbols)
-		let index = len(state.symbols) - 1 - i
-		if state.symbols[index?]!.name == name
-			return index
-	return -1
+	return resolve_hir_name(state.symbols, name).field_index
 
 def find_function(state: EmitState, name: string) -> i64
 	for i in 0..len(state.functions)
@@ -697,9 +692,15 @@ def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: b
 	return result
 
 def check_type(state: EmitState, id: i64, found: i64, expected: i64) -> EmitState
-	if found == expected
+	if found == expected and found != TYPE_INVALID
 		return state
-	return emit_error(state, id, "expected " + type_name(expected) + ", found " + type_name(found))
+	let left = canonical_kind(state.types, state.records, found)
+	let right = canonical_kind(left.table, state.records, expected)
+	var next = state
+	next.types = right.table
+	if hir_types_equal(left.id, right.id)
+		return next
+	return emit_error(next, id, "expected " + type_name(expected) + ", found " + type_name(found))
 
 # C does not sequence ordinary binary operands or function arguments.
 # Reject pairs of potentially effectful calls until MIR handles ordered temporaries.
@@ -812,14 +813,13 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		return ExprCode(state, "", TYPE_INVALID)
 	let entry = ast_node(state.tree, id)
 	let value = ast_text(state.tree, id)
-	if entry.kind == NODE_INTEGER
-		return ExprCode(state, value, TYPE_I64)
-	if entry.kind == NODE_FLOAT
-		return ExprCode(state, value, TYPE_F64)
-	if entry.kind == NODE_BOOL
-		return ExprCode(state, value, TYPE_BOOL)
-	if entry.kind == NODE_STRING
-		return ExprCode(state, "s_string_from_bytes(" + value + ", sizeof(" + value + ") - 1)", TYPE_STRING)
+	let literal = resolve_hir_literal(entry.kind)
+	if literal != TYPE_TAG_INVALID
+		var next = state
+		next.hir = next.hir.append(HirNode(id, HIR_LITERAL, literal, -1))
+		if literal == TYPE_TAG_STRING
+			return ExprCode(next, "s_string_from_bytes(" + value + ", sizeof(" + value + ") - 1)", TYPE_STRING)
+		return ExprCode(next, value, literal)
 	if entry.kind == NODE_ARRAY
 		if entry.count == 0
 			return ExprCode(state, "s_array_i64_make(0, NULL)", TYPE_ARRAY_I64)
@@ -934,39 +934,41 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		return ExprCode(record.state, "(" + touches + "((" + c_type(record.kind) + "){ " + ", ".join(initializers) + " }))", record.kind)
 	if entry.kind == NODE_ATTR
 		let receiver = emit_expr(state, ast_child(state.tree, id, 0))
-		let index = record_field_index(receiver.state, receiver.kind, value)
-		if index < 0
-			return ExprCode(emit_error(receiver.state, id, "unknown record field '" + value + "'"), "", TYPE_INVALID)
-		let field = receiver.state.records[receiver.kind - TYPE_RECORD_START?]!.fields[index?]!
-		return ExprCode(receiver.state, c_type(receiver.kind) + "_get_" + field.name + "_take(" + receiver.text + ")", field.kind)
+		let owner = canonical_kind(receiver.state.types, receiver.state.records, receiver.kind)
+		let resolved = resolve_hir_field(owner.table, owner.id, value)
+		var next = receiver.state
+		next.types = owner.table
+		if resolved.error != ""
+			return ExprCode(emit_error(next, id, resolved.error), "", TYPE_INVALID)
+		let field = next.records[receiver.kind - TYPE_RECORD_START?]!.fields[resolved.field_index?]!
+		next.hir = next.hir.append(HirNode(id, HIR_FIELD, resolved.type_id, resolved.field_index))
+		return ExprCode(next, c_type(receiver.kind) + "_get_" + field.name + "_take(" + receiver.text + ")", field.kind)
 	if entry.kind == NODE_NAME
-		let index = find_symbol(state, value)
-		if index >= 0
-			let kind = state.symbols[index?]!.kind
-			if is_optional(kind)
-				return ExprCode(state, record_copy(kind, "v_" + value), kind)
-			if kind == TYPE_STRING
-				return ExprCode(state, "s_string_retain(v_" + value + ")", kind)
-			if kind == TYPE_ARRAY_I64
-				return ExprCode(state, "s_array_i64_retain(v_" + value + ")", kind)
-			if generic_array(kind)
-				return ExprCode(state, "s_array_retain(v_" + value + ")", kind)
-			if is_dict(kind)
-				return ExprCode(state, "s_dict_retain(v_" + value + ")", kind)
-			if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
-				return ExprCode(state, record_copy(kind, "v_" + value), kind)
-			return ExprCode(state, "v_" + value, kind)
+		let binding = resolve_hir_name(state.symbols, value)
+		if binding.field_index >= 0
+			var next = state
+			next.hir = next.hir.append(HirNode(id, HIR_NAME, binding.type_id, binding.field_index))
+			let kind = next.symbols[binding.field_index?]!.kind
+			let copied = record_copy(kind, "v_" + value)
+			return ExprCode(next, copied, kind)
 		let constant = find_constant(state, value)
 		if constant != ""
 			return ExprCode(state, constant, TYPE_I64)
 		return ExprCode(emit_error(state, id, "unknown name '" + value + "'"), "", TYPE_INVALID)
 	if entry.kind == NODE_UNARY
 		let arg = emit_expr(state, ast_child(state.tree, id, 0))
+		let type_id = canonical_kind(arg.state.types, arg.state.records, arg.kind)
+		let resolved = resolve_hir_unary(type_id.table, type_id.id, value)
+		var next = arg.state
+		next.types = type_id.table
+		if resolved.error != ""
+			if value == "not"
+				return ExprCode(check_type(next, id, arg.kind, TYPE_BOOL), "", TYPE_INVALID)
+			return ExprCode(emit_error(next, id, resolved.error), "", TYPE_INVALID)
+		next.hir = next.hir.append(HirNode(id, HIR_UNARY, resolved.type_id, -1))
 		if value == "not"
-			return ExprCode(check_type(arg.state, id, arg.kind, TYPE_BOOL), "(!" + arg.text + ")", TYPE_BOOL)
-		if (value == "-" or value == "+") and (arg.kind == TYPE_I64 or arg.kind == TYPE_F64)
-			return ExprCode(arg.state, "(" + value + arg.text + ")", arg.kind)
-		return ExprCode(emit_error(arg.state, id, "unsupported unary operator '" + value + "'"), "", TYPE_INVALID)
+			return ExprCode(next, "(!" + arg.text + ")", TYPE_BOOL)
+		return ExprCode(next, "(" + value + arg.text + ")", arg.kind)
 	if entry.kind == NODE_BINARY
 		let left_id = ast_child(state.tree, id, 0)
 		let right_id = ast_child(state.tree, id, 1)
@@ -1029,29 +1031,21 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		var next = right.state
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
-		if left.kind != right.kind
-			return ExprCode(emit_error(next, id, "binary operand types differ"), "", TYPE_INVALID)
+		let left_type = canonical_kind(next.types, next.records, left.kind)
+		let right_type = canonical_kind(left_type.table, next.records, right.kind)
+		let resolved = resolve_hir_binary(right_type.table, left_type.id, right_type.id, value)
+		next.types = right_type.table
+		if resolved.error != ""
+			return ExprCode(emit_error(next, id, resolved.error), "", TYPE_INVALID)
+		next.hir = next.hir.append(HirNode(id, HIR_BINARY, resolved.type_id, -1))
 		var op = value
 		var kind = left.kind
-		if op == "and" or op == "or"
-			next = check_type(next, id, kind, TYPE_BOOL)
-			if op == "and"
-				op = "&&"
-			else
-				op = "||"
-		elif op == "==" or op == "!="
+		if resolved.type_id == TYPE_TAG_BOOL
 			kind = TYPE_BOOL
-		elif op == "<" or op == "<=" or op == ">" or op == ">="
-			if left.kind != TYPE_I64 and left.kind != TYPE_F64 and left.kind != TYPE_STRING
-				next = emit_error(next, id, "comparison requires numeric or string operands")
-			kind = TYPE_BOOL
-		elif op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
-			if left.kind != TYPE_I64 and left.kind != TYPE_F64 and not (op == "+" and left.kind == TYPE_STRING)
-				next = emit_error(next, id, "arithmetic requires numeric operands")
-			if op == "%" and left.kind != TYPE_I64
-				next = emit_error(next, id, "remainder requires i64")
-		else
-			next = emit_error(next, id, "unsupported binary operator '" + value + "'")
+		if op == "and"
+			op = "&&"
+		elif op == "or"
+			op = "||"
 		if left.kind == TYPE_STRING and op == "+"
 			return ExprCode(next, "s_string_concat_take(" + left.text + ", " + right.text + ")", TYPE_STRING)
 		if left.kind == TYPE_STRING and (op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">=")

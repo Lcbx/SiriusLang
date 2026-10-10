@@ -67,15 +67,15 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 **Available then:** `Array[Record]`, `Dict[string,i64]`, generic calls, module integer constants, owned strings, and indexed AST arenas. No imports, runtime reflection, or recursive managed types are required.
 
-- [ ] Define HIR nodes in a **flat arena** (node IDs and child-edge indices), mirroring the current parser; use `i64` kind constants as temporary tags.
+- [x] Begin a typed HIR arena with AST source-node IDs, canonical `TypeId`s and resolved field/binding indices (`src/hir.sirius`). This covers basic expressions only; the separate full-program HIR pass is still pending.
 - [x] Introduce a canonical `TypeTable` for primitive, record, `Array`, `Dict`, and `Optional` descriptors; intern by structure with sorted record fields. Register record and bound-value types through the compatibility bridge.
 - [ ] Complete the migration from legacy arithmetic type IDs to canonical `TypeId`s. **Done:** generic specialization cache keys, binding metadata and record-field name lookup now use canonical IDs. **Done in part:** C record-field layout and managed helper selection now derive from canonical descriptor tags and fields. **Remaining:** C naming still uses legacy kinds, as do static type checks and some expression-level ownership operations. Add function/union descriptors when implemented.
-- [ ] Move lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. Preserve source spans.
+- [ ] Move all lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. **Started:** name lookup, record fields, primitive literals, unary/binary operations and assignment compatibility use C-independent HIR resolvers; calls, collections, constructors, control flow and lifetime rules still need conversion. HIR nodes preserve syntax AST IDs for source spans.
 - [ ] Move generic monomorphization to an explicit cache keyed by definition ID and concrete `TypeId`s, tracking in-progress specializations.
 - [ ] Lower constructors into typed record-producing operations; make extension calls and built-in operations explicitly resolved.
 - [ ] Temporarily generate C from typed HIR through a compatibility layer; do not require a finished MIR to land this phase.
 
-**Done when:** existing emitter tests and bootstrap fixed point pass with semantic checks independent of C text generation. The type table has no reserved numeric ranges or arithmetically encoded nested type combinations.
+**Done when:** existing emitter tests and bootstrap fixed point pass with semantic checks independent of C text generation. All semantic resolution uses interned type IDs, rather than reserved numeric ranges or arithmetically encoded nested type combinations. Current HIR is an incremental bridge, not yet a complete semantic pass.
 
 ### Phase C — Introduce CFG MIR and deterministic evaluation
 

@@ -28,7 +28,7 @@ def main() -> None:
 		execute(base + [str(ROOT / 'bootstrap_c/compiler.c'), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(seed)])
 		for name, sources, expected in (
 			('canonical', ('src/types.sirius', 'tests/types/driver.sirius'), 'PASS canonical type descriptors\n'),
-			('emitter', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/emit_c.sirius', 'tests/types/emitter_driver.sirius'), 'PASS canonical emitter types\n'),
+			('emitter', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/emit_c.sirius', 'tests/types/emitter_driver.sirius'), 'PASS canonical emitter types\n'),
 		):
 			source = work / f'{name}.sirius'
 			source.write_bytes(combined_sources(sources))
@@ -40,6 +40,16 @@ def main() -> None:
 			if output != expected:
 				raise AssertionError(f'Unexpected {name} output: {output!r}')
 			print(f'PASS {name} type table')
+		# The new HIR checks are independently exercised without the C emitter.
+		source = work / 'hir.sirius'
+		source.write_bytes(combined_sources(('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'tests/types/hir_driver.sirius')))
+		generated = work / 'hir.c'
+		execute([str(seed), str(source), str(generated)])
+		binary = work / ('hir.exe' if sys.platform == 'win32' else 'hir')
+		execute(base + [str(generated), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(binary)])
+		if execute([str(binary)]) != 'PASS typed HIR resolution\n':
+			raise AssertionError('Typed HIR resolution failed')
+		print('PASS typed HIR resolution')
 		# Structurally identical records must share one generic specialization.
 		source = ROOT / 'tests/emitter/fixtures/11_generic_records.sirius'
 		generated = work / 'generic_record.c'

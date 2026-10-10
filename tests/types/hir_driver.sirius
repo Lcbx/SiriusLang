@@ -1,0 +1,41 @@
+# These tests do not depend on the C emitter's legacy type ranges.
+def main() -> i64
+	var table = new_type_table()
+	let left = intern_record_type(table, [RecordField("z", TYPE_TAG_I64), RecordField("name", TYPE_TAG_STRING)])
+	table = left.table
+	let same = intern_record_type(table, [RecordField("name", TYPE_TAG_STRING), RecordField("z", TYPE_TAG_I64)])
+	if left.id != same.id
+		return 1
+	let field = resolve_hir_field(same.table, same.id, "name")
+	if field.type_id != TYPE_TAG_STRING or field.field_index != 0
+		return 2
+	if resolve_hir_field(same.table, same.id, "missing").error == ""
+		return 3
+	let numeric = resolve_hir_binary(table, TYPE_TAG_I64, TYPE_TAG_I64, "+")
+	if numeric.error != "" or numeric.type_id != TYPE_TAG_I64
+		return 4
+	let comparison = resolve_hir_binary(table, TYPE_TAG_I64, TYPE_TAG_I64, "<")
+	if comparison.error != "" or comparison.type_id != TYPE_TAG_BOOL
+		return 5
+	if resolve_hir_binary(table, TYPE_TAG_I64, TYPE_TAG_STRING, "+").error == ""
+		return 6
+	if resolve_hir_binary(table, TYPE_TAG_STRING, TYPE_TAG_STRING, "*").error == ""
+		return 7
+	var names = Array[SymbolInfo]()
+	names = names.append(SymbolInfo("value", 1, TYPE_TAG_I64, true, 0))
+	names = names.append(SymbolInfo("value", 4, TYPE_TAG_STRING, false, 1))
+	let symbol = resolve_hir_name(names, "value")
+	if symbol.field_index != 1 or symbol.type_id != TYPE_TAG_STRING
+		return 8
+	if resolve_hir_name(names, "missing").error == ""
+		return 9
+	if not hir_types_equal(TYPE_TAG_I64, TYPE_TAG_I64) or hir_types_equal(TYPE_TAG_I64, TYPE_TAG_STRING)
+		return 10
+	if resolve_hir_literal(NODE_STRING) != TYPE_TAG_STRING or resolve_hir_literal(NODE_INTEGER) != TYPE_TAG_I64
+		return 11
+	if resolve_hir_unary(table, TYPE_TAG_BOOL, "not").type_id != TYPE_TAG_BOOL
+		return 12
+	if resolve_hir_unary(table, TYPE_TAG_STRING, "-").error == ""
+		return 13
+	print("PASS typed HIR resolution")
+	return 0

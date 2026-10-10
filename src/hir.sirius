@@ -1,0 +1,88 @@
+# First typed HIR operations. Source indexes refer to the syntax AST arena;
+# type_id is always an interned semantic TypeId, never a legacy C kind.
+# Semantic resolution is independent of C syntax and runtime helper names.
+
+let HIR_FIELD = 1
+let HIR_BINARY = 2
+let HIR_NAME = 3
+let HIR_LITERAL = 4
+let HIR_UNARY = 5
+
+rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)
+
+rec HirResolution(type_id: i64, field_index: i64, error: string)
+
+# Bindings belong to semantic resolution; the C backend merely retains their
+# temporary legacy ABI kind until the rest of emission moves to HIR.
+rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
+
+def resolve_hir_name(symbols: Array[SymbolInfo], name: string) -> HirResolution
+	for i in 0..len(symbols)
+		let index = len(symbols) - 1 - i
+		let symbol = symbols[index?]!
+		if symbol.name == name
+			return HirResolution(symbol.type_id, index, "")
+	return HirResolution(TYPE_TAG_INVALID, -1, "unknown name '" + name + "'")
+
+def hir_types_equal(left: i64, right: i64) -> bool
+	return left == right and left != TYPE_TAG_INVALID
+
+def resolve_hir_field(types: TypeTable, owner: i64, name: string) -> HirResolution
+	if owner < 0 or owner >= len(types.entries)
+		return HirResolution(TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
+	let descriptor = types.entries[owner?]!
+	if descriptor.tag == TYPE_TAG_RECORD
+		for i in 0..len(descriptor.fields)
+			let field = descriptor.fields[i?]!
+			if field.name == name
+				return HirResolution(field.kind, i, "")
+	return HirResolution(TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
+
+# Binary operations are checked on semantic type identities. The returned
+# type is already canonical, so the C emitter does not reimplement these rules.
+def resolve_hir_binary(types: TypeTable, left: i64, right: i64, op: string) -> HirResolution
+	if left != right
+		return HirResolution(TYPE_TAG_INVALID, -1, "binary operand types differ")
+	if left < 0 or left >= len(types.entries)
+		return HirResolution(TYPE_TAG_INVALID, -1, "unknown binary operand type")
+	let tag = types.entries[left?]!.tag
+	if op == "and" or op == "or"
+		if tag != TYPE_TAG_BOOL
+			return HirResolution(TYPE_TAG_INVALID, -1, "logical operator requires bool")
+		return HirResolution(TYPE_TAG_BOOL, -1, "")
+	if op == "==" or op == "!="
+		return HirResolution(TYPE_TAG_BOOL, -1, "")
+	if op == "<" or op == "<=" or op == ">" or op == ">="
+		if tag != TYPE_TAG_I64 and tag != TYPE_TAG_F64 and tag != TYPE_TAG_STRING
+			return HirResolution(TYPE_TAG_INVALID, -1, "comparison requires numeric or string operands")
+		return HirResolution(TYPE_TAG_BOOL, -1, "")
+	if op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
+		if tag != TYPE_TAG_I64 and tag != TYPE_TAG_F64 and not (op == "+" and tag == TYPE_TAG_STRING)
+			return HirResolution(TYPE_TAG_INVALID, -1, "arithmetic requires numeric operands")
+		if op == "%" and tag != TYPE_TAG_I64
+			return HirResolution(TYPE_TAG_INVALID, -1, "remainder requires i64")
+		return HirResolution(left, -1, "")
+	return HirResolution(TYPE_TAG_INVALID, -1, "unsupported binary operator '" + op + "'")
+
+# Literal classification and unary operand validation are compiler semantics,
+# independent of how the eventual backend materializes the value.
+def resolve_hir_literal(node_kind: i64) -> i64
+	if node_kind == NODE_INTEGER
+		return TYPE_TAG_I64
+	if node_kind == NODE_FLOAT
+		return TYPE_TAG_F64
+	if node_kind == NODE_BOOL
+		return TYPE_TAG_BOOL
+	if node_kind == NODE_STRING
+		return TYPE_TAG_STRING
+	return TYPE_TAG_INVALID
+
+def resolve_hir_unary(types: TypeTable, operand: i64, op: string) -> HirResolution
+	if operand < 0 or operand >= len(types.entries)
+		return HirResolution(TYPE_TAG_INVALID, -1, "invalid unary operand")
+	let tag = types.entries[operand?]!.tag
+	if op == "not" and tag == TYPE_TAG_BOOL
+		return HirResolution(TYPE_TAG_BOOL, -1, "")
+	if (op == "-" or op == "+") and (tag == TYPE_TAG_I64 or tag == TYPE_TAG_F64)
+		return HirResolution(operand, -1, "")
+	return HirResolution(TYPE_TAG_INVALID, -1, "unsupported unary operator '" + op + "'")
