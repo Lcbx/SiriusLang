@@ -1,4 +1,4 @@
-"""Compile the stage-1 Sirius tokenizer with a temporary driver, then check golden token streams."""
+"""Compile the Sirius tokenizer using the committed C bootstrap; check golden tokens."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -36,8 +36,11 @@ def main() -> None:
 		combined.write_text((ROOT / 'src/tokenizer.sirius').read_text(encoding='utf8') + '\n' +
 			(ROOT / 'tests/tokenizer/driver.sirius').read_text(encoding='utf8'), encoding='utf8')
 		c_source = work / 'tokenizer.c'
-		binary = work / 'tokenizer'
-		run([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile', str(combined), '-o', str(c_source)])
+		binary = work / ('tokenizer.exe' if sys.platform == 'win32' else 'tokenizer')
+		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
+		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
+			str(ROOT / 'bootstrap_c/compiler.c'), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(seed)])
+		run([str(seed), str(combined), str(c_source)])
 		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
 			str(c_source), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(binary)])
 

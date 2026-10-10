@@ -1,15 +1,12 @@
-> **Implementation status (2026-10-09):** `bootstrap_python/syntax.py` implements a syntax AST and `bootstrap_python/codegen.py` currently performs type resolution, specialization, managed lifetime tracking, and direct C emission together. The typed HIR/MIR dataclasses in `target_ir.py` are a **target architecture**, not the representation currently emitted or consumed by the running compiler. The updated roadmap prioritizes making the Python subset sufficient for compiler authoring, then writing a small self-hosting compiler in Sirius. Typed HIR and CFG MIR should be introduced in that Sirius compiler, instead of implementing the full pipeline twice; retain the 24 independent C reference cases and the additional compiler-authoring tests throughout. As of this revision generic typed arrays/dictionaries, string inspection, CLI arguments and ownership callbacks are implemented in the direct Python-to-C backend; a typed HIR/CFG MIR is still deferred until Sirius self-hosting.
+# Sirius compiler IR — target architecture
 
-# Inferred IR for the Sirius bootstrap compiler
+**Status:** the active, self-hosted Sirius compiler (`src/`) currently performs semantic checks and direct C11 generation without a distinct typed HIR or CFG MIR. The Python bootstrap (`bootstrap_python/`) is frozen historical source. Self-hosting and a reproducible C fixed point **are already established**; this document describes the **next architecture**, not working IR. See [ROADMAP.md](ROADMAP.md), phases B–D, for incremental migration and ownership testing.
 
-Use **tokens -> AST -> typed/specialized HIR -> explicit-control-flow MIR -> C**.
-`target_ir.py` defines proposed Python `dataclass` representations for HIR and MIR. It is a structural design, not a working compiler.
+The intended pipeline is **tokens → syntax AST → typed/specialized HIR → ownership-aware CFG MIR → C11**. `target_ir.py` contains illustrative Python dataclasses only. The current Sirius AST is an indexed arena (`Array[Node]` plus child edges), not the original Python syntax AST.
 
-## Syntax AST (implemented in Python; to reimplement and extend in Sirius)
+## Syntax AST (already implemented in both compilers)
 
-Keep syntax faithfully: indentation-sensitive blocks, declarations (`let`, `var`), constructors (`pub`), record spreads/deletions, loops, `match`, indexing modes, and source spans. AST expressions do **not** generate C or infer their own types. Maintain a `SourceSpan` for every parsed declaration, expression, and statement.
-
-Implement a real expression precedence hierarchy; `and`/`or` must short-circuit, and binary operators must respect precedence and associativity.
+Both parsers preserve indentation-sensitive blocks, declarations (`let`, `var`), constructors (`pub`), record operations, loops, `match`, indexing modes, and source positions. The Sirius parser uses source byte spans and flat node/edge arrays; future HIR must retain those spans for diagnostics. Expression precedence and short-circuit behavior are semantic obligations, not properties of C emission.
 
 ## Typed HIR
 
@@ -118,8 +115,6 @@ missing: return false
 has_value: x = optional.value
 ```
 
-## Why avoid emitting C while parsing?
+## Rationale for separating lowering from parsing
 
-The uploaded GDScript `Parser.py` uses generator-based expression type inference and writes via `self.out` during parsing. That was workable for a transpiler, but Sirius requires global decisions about specialization, purity, shared ownership, field layout, and CFG exits. Mixing these with token consumption would make correct CoW and lifetime insertion unnecessarily hard.
-
-The existing SLY-based `Tokenizer.py` is a useful reference, especially newline/tab handling. It should not be reused unchanged: Sirius needs `..`, `?`, `!`, `pub`, `recur`, explicit operator precedence, and properly distinguished INDENT/DEDENT tokens. This also provides clean, localized syntax diagnostics.
+The earlier GDScript-to-C++ transpiler combined parsing, inference and emission. Sirius now has separate tokenizer and parser implementations, but still mixes semantic checks and textual C emission in `src/emit_c.sirius`. The goal is not to rewrite parsing again: introduce the HIR/MIR stages between the already working indexed AST and a smaller C backend so ownership and evaluation order are explicit.

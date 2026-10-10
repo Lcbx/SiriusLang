@@ -1,4 +1,4 @@
-"""Compile the Sirius-written parser and compare its AST/diagnostics with golden cases."""
+"""Compile the Sirius parser using the committed C bootstrap; check AST cases."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -26,9 +26,11 @@ def main() -> None:
 			'src/tokenizer.sirius', 'src/parser.sirius', 'tests/parser/driver.sirius')),
 			encoding='utf-8')
 		c_source = work / 'parser.c'
-		binary = work / 'parser'
-		run([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile',
-			str(combined), '-o', str(c_source)])
+		binary = work / ('parser.exe' if sys.platform == 'win32' else 'parser')
+		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
+		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
+			str(ROOT / 'bootstrap_c/compiler.c'), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(seed)])
+		run([str(seed), str(combined), str(c_source)])
 		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I',
 			str(ROOT / 'include'), str(c_source), str(ROOT / 'include/sirius_runtime.c'),
 			'-lm', '-o', str(binary)])

@@ -1,4 +1,4 @@
-"""Compile the Sirius stage-1 emitter through the Python bootstrap; execute emitted C."""
+"""Compile and test the Sirius emitter using the committed C bootstrap."""
 from pathlib import Path
 import shutil
 import subprocess
@@ -58,8 +58,11 @@ def main() -> None:
 		combined = work / 'stage1.sirius'
 		combined.write_text('\n'.join((ROOT / f).read_text(encoding='utf-8') for f in SOURCES), encoding='utf-8')
 		bootstrap_c = work / 'bootstrap.c'
-		execute([sys.executable, str(ROOT / 'bootstrap_python/sirius.py'), 'compile', str(combined), '-o', str(bootstrap_c)])
-		binary = work / 'stage1'
+		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
+		execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
+			str(ROOT / 'bootstrap_c/compiler.c'), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(seed)])
+		execute([str(seed), str(combined), str(bootstrap_c)])
+		binary = work / ('stage1.exe' if sys.platform == 'win32' else 'stage1')
 		execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
 			str(bootstrap_c), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(binary)])
 
@@ -72,7 +75,7 @@ def main() -> None:
 			input_file.write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
 			generated = work / f'generated_{index}.c'
 			execute([str(binary), str(input_file), str(generated)])
-			output_binary = work / f'program_{index}'
+			output_binary = work / (f'program_{index}.exe' if sys.platform == 'win32' else f'program_{index}')
 			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'), str(generated), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(output_binary)])
 			args = [str(output_binary)]
 			if source.stem == '48_file_io':

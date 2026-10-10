@@ -1,7 +1,7 @@
 # Concatenate after src/tokenizer.sirius and src/parser.sirius.
 def main() -> i64
 	let args = arguments()
-	let source = read_text(args[1?] or "") or ""
+	let source = read_text(args[1?]!) or ""
 	let result = parse_module(source)
 	if result.state.error != ""
 		print("ERROR " + str(result.state.error_line) + ": " + result.state.error)
