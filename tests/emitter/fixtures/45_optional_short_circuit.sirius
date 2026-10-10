@@ -1,0 +1,15 @@
+def missing() -> i64
+	print(71)
+	return 0
+
+def main() -> i64
+	let table = Dict[i64, i64]()
+	if false and (table.get(1) or missing()) == 0
+		print(99)
+	else
+		print(1)
+	var n = 0
+	while n < 2 and (table.get(1) or missing()) == 0
+		n += 1
+	print(n)
+	return 0

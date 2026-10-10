@@ -34,7 +34,8 @@ ERRORS = {
 	'23_array_wrong_element': 'expected i64, found string',
 	'24_array_element_type': 'expected string, found i64',
 	'25_dict_wrong_value': 'expected string, found i64',
-	'26_optional_eager_fallback': 'optional fallback requires a simple expression',
+	'26_optional_wrong_fallback': 'expected string, found i64',
+	'27_optional_elif': 'optional fallback in elif requires CFG lowering',
 }
 
 
@@ -76,7 +77,10 @@ def main() -> None:
 				raise AssertionError(f'{source.name}: {actual.stdout!r} != {wanted!r}')
 			print(f'PASS {source.name}')
 
-		for source in sorted((ROOT / 'tests/emitter/negative').glob('*.sirius')):
+		negatives = sorted((ROOT / 'tests/emitter/negative').glob('*.sirius'))
+		if {source.stem for source in negatives} != set(ERRORS):
+			raise AssertionError('negative test fixtures and expected diagnostics differ')
+		for source in negatives:
 			generated = work / 'should_not_exist.c'
 			generated.unlink(missing_ok=True)
 			result = execute([str(binary), str(source), str(generated)], check=False)

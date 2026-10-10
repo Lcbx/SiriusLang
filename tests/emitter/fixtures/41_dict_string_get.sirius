@@ -1,0 +1,16 @@
+def fallback() -> string
+	print("missing")
+	return "unknown"
+
+def main() -> i64
+	var table = Dict[string, string]()
+	table = table.insert("first", "hello")
+	let snapshot = table
+	table = table.insert("first", "updated")
+	let a = snapshot.get("first") or fallback()
+	let b = table.get("first") or fallback()
+	let c = table.get("absent") or fallback()
+	print(a)
+	print(b)
+	print(c)
+	return 0

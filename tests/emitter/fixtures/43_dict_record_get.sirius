@@ -1,0 +1,13 @@
+def Point(x: i64, y: i64)
+	pub x
+	pub y
+
+def main() -> i64
+	var d = Dict[string, Point]()
+	d = d.insert("p", Point(3, 4))
+	let snapshot = d
+	let p = d.get("p") or Point(0, 0)
+	let q = snapshot.get("other") or Point(8, 9)
+	print(p.x)
+	print(q.y)
+	return 0

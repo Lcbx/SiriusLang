@@ -15,6 +15,27 @@ let TYPE_ARRAY_RECORD_START = 10000
 let TYPE_DICT_START = 1000000
 let TYPE_DICT_END = 2000000
 let TYPE_OPTIONAL_I64 = 6
+let TYPE_OPTIONAL_START = 2000000
+
+def is_optional(kind: i64) -> bool
+	return kind == TYPE_OPTIONAL_I64 or (kind >= TYPE_OPTIONAL_START and kind < TYPE_OPTIONAL_START + TYPE_DICT_END)
+
+def optional_value(kind: i64) -> i64
+	if kind == TYPE_OPTIONAL_I64
+		return TYPE_I64
+	if is_optional(kind)
+		return kind - TYPE_OPTIONAL_START
+	return TYPE_INVALID
+
+def optional_of(kind: i64) -> i64
+	if kind == TYPE_I64
+		return TYPE_OPTIONAL_I64
+	if kind == TYPE_INVALID or kind == TYPE_VOID or is_optional(kind)
+		return TYPE_INVALID
+	return TYPE_OPTIONAL_START + kind
+
+def optional_helper(kind: i64) -> string
+	return "s_optional_" + str(optional_value(kind))
 
 def is_dict(kind: i64) -> bool
 	return kind >= TYPE_DICT_START and kind < TYPE_DICT_END
@@ -64,7 +85,7 @@ def array_of(kind: i64) -> i64
 	return TYPE_INVALID
 
 def managed(kind: i64) -> bool
-	return kind == TYPE_STRING or is_dict(kind) or array_element(kind) != TYPE_INVALID or (kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START)
+	return kind == TYPE_STRING or is_dict(kind) or array_element(kind) != TYPE_INVALID or (kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START) or (is_optional(kind) and managed(optional_value(kind)))
 
 def generic_array(kind: i64) -> bool
 	return kind == TYPE_ARRAY_STRING or (kind >= TYPE_ARRAY_RECORD_START and kind < TYPE_DICT_START)
@@ -171,8 +192,8 @@ def type_name(kind: i64) -> string
 		return "string"
 	if kind == TYPE_VOID
 		return "void"
-	if kind == TYPE_OPTIONAL_I64
-		return "Optional[i64]"
+	if is_optional(kind)
+		return "Optional[" + type_name(optional_value(kind)) + "]"
 	if is_dict(kind)
 		return "Dict[" + type_name(dict_key(kind)) + "," + type_name(dict_value(kind)) + "]"
 	if kind == TYPE_ARRAY_I64
@@ -198,6 +219,8 @@ def c_type(kind: i64) -> string
 		return "void"
 	if kind == TYPE_OPTIONAL_I64
 		return "S_Optional_i64"
+	if is_optional(kind)
+		return optional_helper(kind)
 	if is_dict(kind)
 		return "S_Dict *"
 	if kind == TYPE_ARRAY_I64
@@ -403,6 +426,8 @@ def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
 def record_copy(kind: i64, expr: string) -> string
 	if kind == TYPE_STRING
 		return "s_string_retain(" + expr + ")"
+	if is_optional(kind) and managed(optional_value(kind))
+		return optional_helper(kind) + "_copy(" + expr + ")"
 	if kind == TYPE_ARRAY_I64
 		return "s_array_i64_retain(" + expr + ")"
 	if generic_array(kind)
@@ -416,6 +441,8 @@ def record_copy(kind: i64, expr: string) -> string
 def record_drop(kind: i64, expr: string) -> string
 	if kind == TYPE_STRING
 		return "s_string_release(" + expr + ");"
+	if is_optional(kind) and managed(optional_value(kind))
+		return optional_helper(kind) + "_drop(" + expr + ");"
 	if kind == TYPE_ARRAY_I64
 		return "s_array_i64_release(" + expr + ");"
 	if generic_array(kind)
@@ -461,6 +488,32 @@ def record_declarations(state: EmitState) -> string
 			result = result + "\t" + c_type(field.kind) + " field = " + record_copy(field.kind, "owned." + field.name) + ";\n"
 			result = result + "\t" + type + "_drop(owned);\n\treturn field;\n}\n"
 	return result
+
+# An Optional owns its payload when present. Dict.get copies the payload before
+# releasing the dictionary, so the caller receives an independently owned value.
+def optional_declarations(state: EmitState) -> string
+	var output = ""
+	var seen = Array[i64]()
+	for dict_kind in state.dict_kinds
+		let value = dict_value(dict_kind)
+		if value == TYPE_I64
+			continue
+		var duplicate = false
+		for previous in seen
+			if previous == value
+				duplicate = true
+		if duplicate
+			continue
+		seen = seen.append(value)
+		let kind = optional_of(value)
+		let name = optional_helper(kind)
+		output = output + "typedef struct { bool has_value; " + c_type(value) + " value; } " + name + ";\n"
+		if managed(value)
+			output = output + "static inline " + name + " " + name + "_copy(" + name + " owned) {\n"
+			output = output + "\tif (owned.has_value) owned.value = " + record_copy(value, "owned.value") + ";\n\treturn owned;\n}\n"
+			output = output + "static inline void " + name + "_drop(" + name + " owned) {\n"
+			output = output + "\tif (owned.has_value) " + record_drop(value, "owned.value") + "\n}\n"
+	return output
 
 # Generic array helper functions are emitted after canonical record declarations.
 # Array operations consume an owned array and, where applicable, an owned element.
@@ -552,16 +605,16 @@ def dict_declarations(state: EmitState) -> string
 		if managed(value)
 			output = output + "\t" + record_drop(value, "value") + "\n"
 		output = output + "\treturn result;\n}\n"
-		if value == TYPE_I64
-			output = output + "static inline S_Optional_i64 " + prefix + "_get_take(S_Dict *owned, " + key_type + " key) {\n"
-			output = output + "\tconst int64_t *value = (const int64_t *)s_dict_get(owned, &key);\n"
-			output = output + "\tS_Optional_i64 result = value ? (S_Optional_i64){true, *value} : (S_Optional_i64){false, 0};\n"
-			output = output + "\ts_dict_release(owned);\n"
-			if managed(key)
-				output = output + "\t" + record_drop(key, "key") + "\n"
-			output = output + "\treturn result;\n}\n"
+		let option_type = c_type(optional_of(value))
+		output = output + "static inline " + option_type + " " + prefix + "_get_take(S_Dict *owned, " + key_type + " key) {\n"
+		output = output + "\t" + val_type + " const *item = (" + val_type + " const *)s_dict_get(owned, &key);\n"
+		output = output + "\t" + option_type + " result = {0};\n"
+		output = output + "\tif (item) { result.has_value = true; result.value = " + record_copy(value, "*item") + "; }\n"
+		output = output + "\ts_dict_release(owned);\n"
+		if managed(key)
+			output = output + "\t" + record_drop(key, "key") + "\n"
+		output = output + "\treturn result;\n}\n"
 	output = output + "static inline int64_t s_dict_length_take(S_Dict *owned) { int64_t n = (int64_t)s_dict_length(owned); s_dict_release(owned); return n; }\n"
-	output = output + "static inline int64_t s_opt_i64_or(S_Optional_i64 value, int64_t fallback) { return value.has_value ? value.value : fallback; }\n"
 	return output
 
 def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: bool) -> EmitState
@@ -609,16 +662,22 @@ def has_effect(state: EmitState, id: i64, visited: Array[string]) -> bool
 			return true
 	return false
 
-# Until conditional-expression lowering exists, eager fallback evaluation is
-# safe only for expressions that cannot call functions or panic.
-def simple_fallback(state: EmitState, id: i64) -> bool
-	let item = ast_node(state.tree, id)
-	if item.kind == NODE_INTEGER or item.kind == NODE_NAME
-		return true
-	if item.kind == NODE_UNARY
-		let op = ast_text(state.tree, id)
-		if op == "-" or op == "+"
-			return simple_fallback(state, ast_child(state.tree, id, 0))
+def uses_optional_fallback(state: EmitState, id: i64) -> bool
+	let entry = ast_node(state.tree, id)
+	if entry.kind == NODE_BINARY and ast_text(state.tree, id) == "or"
+		let left = ast_child(state.tree, id, 0)
+		let leaf = ast_node(state.tree, left)
+		if leaf.kind == NODE_NAME
+			let index = find_symbol(state, ast_text(state.tree, left))
+			if index >= 0 and is_optional(state.symbols[index?]!.kind)
+				return true
+		if leaf.kind == NODE_CALL
+			let call = ast_child(state.tree, left, 0)
+			if ast_node(state.tree, call).kind == NODE_ATTR and ast_text(state.tree, call) == "get"
+				return true
+	for i in 0..entry.count
+		if uses_optional_fallback(state, ast_child(state.tree, id, i))
+			return true
 	return false
 
 def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
@@ -807,6 +866,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		let index = find_symbol(state, value)
 		if index >= 0
 			let kind = state.symbols[index?]!.kind
+			if is_optional(kind)
+				return ExprCode(state, record_copy(kind, "v_" + value), kind)
 			if kind == TYPE_STRING
 				return ExprCode(state, "s_string_retain(v_" + value + ")", kind)
 			if kind == TYPE_ARRAY_I64
@@ -835,15 +896,51 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		if value != "and" and value != "or" and ambiguous_order(state, left_id, right_id)
 			return ExprCode(emit_error(state, id, "expression requires ordered call evaluation"), "", TYPE_INVALID)
 		let left = emit_expr(state, left_id)
-		let right = emit_expr(left.state, ast_child(state.tree, id, 1))
+		if (value == "and" or value == "or") and left.kind == TYPE_BOOL and uses_optional_fallback(state, right_id)
+			var next = left.state
+			let temp = "s_bool_" + str(next.counter)
+			next.counter += 1
+			next = line(next, "bool " + temp + " = " + left.text + ";")
+			var test = temp
+			if value == "or"
+				test = "!" + temp
+			next = line(next, "if (" + test + ") {")
+			next.indentation += 1
+			let right = emit_expr(next, right_id)
+			next = check_type(right.state, id, right.kind, TYPE_BOOL)
+			if next.error != ""
+				return ExprCode(next, "", TYPE_INVALID)
+			next = line(next, temp + " = " + right.text + ";")
+			next.indentation -= 1
+			next = line(next, "}")
+			return ExprCode(next, temp, TYPE_BOOL)
+		if value == "or" and is_optional(left.kind)
+			let kind = optional_value(left.kind)
+			var next = left.state
+			let number = next.counter
+			next.counter += 1
+			let option = "s_option_" + str(number)
+			let result = "s_fallback_" + str(number)
+			next = line(next, c_type(left.kind) + " " + option + " = " + left.text + ";")
+			next = line(next, c_type(kind) + " " + result + ";")
+			next = line(next, "if (" + option + ".has_value) {")
+			next.indentation += 1
+			next = line(next, result + " = " + option + ".value;")
+			next.indentation -= 1
+			next = line(next, "} else {")
+			next.indentation += 1
+			let right = emit_expr(next, right_id)
+			next = check_type(right.state, id, right.kind, kind)
+			if next.error != ""
+				return ExprCode(next, "", TYPE_INVALID)
+			next = line(next, result + " = " + right.text + ";")
+			next.indentation -= 1
+			next = line(next, "}")
+			return ExprCode(next, result, kind)
+		let right = emit_expr(left.state, right_id)
 		var next = right.state
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
-		if value == "or" and left.kind == TYPE_OPTIONAL_I64
-			next = check_type(next, id, right.kind, TYPE_I64)
-			if not simple_fallback(state, right_id)
-				next = emit_error(next, id, "optional fallback requires a simple expression")
-			return ExprCode(next, "s_opt_i64_or(" + left.text + ", " + right.text + ")", TYPE_I64)
 		if left.kind != right.kind
 			return ExprCode(emit_error(next, id, "binary operand types differ"), "", TYPE_INVALID)
 		var op = value
@@ -897,9 +994,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			let key = emit_expr(next, ast_child(state.tree, id, 1))
 			next = check_type(key.state, id, key.kind, dict_key(receiver.kind))
 			if method == "get"
-				if dict_value(receiver.kind) != TYPE_I64
-					return ExprCode(emit_error(next, id, "dictionary get currently requires i64 values"), "", TYPE_INVALID)
-				return ExprCode(next, dict_helper(receiver.kind) + "_get_take(" + receiver.text + ", " + key.text + ")", TYPE_OPTIONAL_I64)
+				return ExprCode(next, dict_helper(receiver.kind) + "_get_take(" + receiver.text + ", " + key.text + ")", optional_of(dict_value(receiver.kind)))
 			let value = emit_expr(next, ast_child(state.tree, id, 2))
 			next = check_type(value.state, id, value.kind, dict_value(receiver.kind))
 			return ExprCode(next, dict_helper(receiver.kind) + "_insert_take(" + receiver.text + ", " + key.text + ", " + value.text + ")", receiver.kind)
@@ -1005,6 +1100,8 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 	for i in count..len(next.symbols)
 		let index = len(next.symbols) + count - i - 1
 		let symbol = next.symbols[index?]!
+		if is_optional(symbol.kind) and managed(symbol.kind)
+			next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 		if symbol.kind == TYPE_STRING
 			next = line(next, "s_string_release(v_" + symbol.name + ");")
 		if symbol.kind == TYPE_ARRAY_I64
@@ -1191,6 +1288,15 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next = line(next, c_type(symbol.kind) + " " + temp + " = " + result.text + ";")
 			next = line(next, record_drop(symbol.kind, "v_" + name))
 			return line(next, "v_" + name + " = " + temp + ";")
+		if is_optional(symbol.kind)
+			if ast_text(state.tree, id) != "="
+				return emit_error(next, id, "unsupported optional assignment")
+			let temp = "s_value_" + str(next.counter)
+			next.counter += 1
+			next = line(next, c_type(symbol.kind) + " " + temp + " = " + result.text + ";")
+			if managed(symbol.kind)
+				next = line(next, record_drop(symbol.kind, "v_" + name))
+			return line(next, "v_" + name + " = " + temp + ";")
 		if symbol.kind == TYPE_STRING
 			let serial = next.counter
 			next.counter += 1
@@ -1228,6 +1334,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			for i in 0..len(next.symbols)
 				let index = len(next.symbols) - i - 1
 				let symbol = next.symbols[index?]!
+				if is_optional(symbol.kind) and managed(symbol.kind)
+					next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 				if symbol.kind == TYPE_STRING
 					next = line(next, "s_string_release(v_" + symbol.name + ");")
 				if symbol.kind == TYPE_ARRAY_I64
@@ -1282,6 +1390,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				next = line(next, "else")
 				next = emit_nested_block(next, ast_child(next.tree, arm, 0))
 			else
+				if i > 0 and uses_optional_fallback(next, ast_child(next.tree, arm, 0))
+					return emit_error(next, arm, "optional fallback in elif requires CFG lowering")
 				let cond = emit_expr(next, ast_child(next.tree, arm, 0))
 				next = check_type(cond.state, arm, cond.kind, TYPE_BOOL)
 				var header = "if (" + cond.text + ")"
@@ -1291,13 +1401,18 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				next = emit_nested_block(next, ast_child(next.tree, arm, 1))
 		return next
 	if item.kind == NODE_WHILE
-		let cond = emit_expr(state, ast_child(state.tree, id, 0))
-		var next = check_type(cond.state, id, cond.kind, TYPE_BOOL)
-		next = line(next, "while (" + cond.text + ")")
+		var next = line(state, "while (true) {")
+		next.indentation += 1
+		next.scope_depth += 1
 		next.loop_depth += 1
-		next = emit_nested_block(next, ast_child(next.tree, id, 1))
+		let cond = emit_expr(next, ast_child(next.tree, id, 0))
+		next = check_type(cond.state, id, cond.kind, TYPE_BOOL)
+		next = line(next, "if (!(" + cond.text + ")) break;")
+		next = emit_block(next, ast_child(next.tree, id, 1))
 		next.loop_depth -= 1
-		return next
+		next.scope_depth -= 1
+		next.indentation -= 1
+		return line(next, "}")
 	if item.kind == NODE_FOR
 		let iterable = ast_child(state.tree, id, item.count - 2)
 		let body = ast_child(state.tree, id, item.count - 1)
@@ -1595,6 +1710,7 @@ def compile_c(source: string) -> CompileResult
 		output = output + state.lines[i?]! + "\n"
 		if i == 5
 			output = output + record_declarations(state)
+			output = output + optional_declarations(state)
 			output = output + generic_array_declarations(state)
 			output = output + dict_declarations(state)
 			output = output + declarations

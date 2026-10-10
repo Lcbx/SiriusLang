@@ -1,0 +1,13 @@
+def default_list() -> Array[string]
+	print("default")
+	return ["fallback"]
+
+def main() -> i64
+	var d = Dict[i64, Array[string]]()
+	d = d.insert(1, ["one", "two"])
+	let alias = d
+	let present = d.get(1) or default_list()
+	let missing = alias.get(2) or default_list()
+	print(present[0?]!)
+	print(missing[0?]!)
+	return 0

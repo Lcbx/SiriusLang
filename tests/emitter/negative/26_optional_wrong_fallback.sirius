@@ -1,0 +1,4 @@
+def main() -> i64
+	let table = Dict[i64, string]()
+	let value = table.get(1) or 7
+	return 0

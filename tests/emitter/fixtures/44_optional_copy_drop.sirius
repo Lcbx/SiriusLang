@@ -1,0 +1,9 @@
+def main() -> i64
+	var d = Dict[i64, string]()
+	d = d.insert(1, "original")
+	let a = d.get(1)
+	let b = a
+	d = d.insert(1, "changed")
+	print(b or "missing")
+	print(a or "missing")
+	return 0
