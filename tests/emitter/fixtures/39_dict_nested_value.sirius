@@ -1,0 +1,8 @@
+def main() -> i64
+	var values = Dict[string, Array[string]]()
+	values = values.insert("colors", ["red", "blue"])
+	let previous = values
+	values = values.insert("colors", ["green"])
+	print(len(previous))
+	print(len(values))
+	return 0

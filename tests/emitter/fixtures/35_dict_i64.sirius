@@ -1,0 +1,10 @@
+def main() -> i64
+	var table = Dict[i64, i64]()
+	table = table.insert(4, 40)
+	let snapshot = table
+	table = table.insert(4, 90)
+	print(snapshot.get(4) or -1)
+	print(table.get(4) or -1)
+	print(table.get(7) or -1)
+	print(len(table))
+	return 0

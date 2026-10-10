@@ -1,0 +1,5 @@
+def main() -> i64
+	let table = Dict[i64, i64]()
+	let a = [10]
+	print(table.get(1) or a[2?]!)
+	return 0

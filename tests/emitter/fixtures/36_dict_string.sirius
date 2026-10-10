@@ -1,0 +1,8 @@
+def main() -> i64
+	var table = Dict[string, string]()
+	table = table.insert("key", "value")
+	let previous = table
+	table = table.insert("key", "different")
+	print(len(previous))
+	print(len(table))
+	return 0

@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ('src/tokenizer.sirius', 'src/parser.sirius', 'src/emit_c.sirius', 'tests/emitter/driver.sirius')
-REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout')
+REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
 ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',
@@ -33,6 +33,8 @@ ERRORS = {
 	'22_immutable_array_update': 'indexed update requires a mutable local array',
 	'23_array_wrong_element': 'expected i64, found string',
 	'24_array_element_type': 'expected string, found i64',
+	'25_dict_wrong_value': 'expected string, found i64',
+	'26_optional_eager_fallback': 'optional fallback requires a simple expression',
 }
 
 

@@ -1,0 +1,12 @@
+def Pair(code: i64, value: i64)
+	pub code
+	pub value
+
+def main() -> i64
+	var entries = Dict[string, Pair]()
+	entries = entries.insert("first", Pair(1, 2))
+	let snapshot = entries
+	entries = entries.insert("first", Pair(3, 4))
+	print(len(snapshot))
+	print(len(entries))
+	return 0

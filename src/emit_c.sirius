@@ -12,6 +12,35 @@ let TYPE_ARRAY_I64 = 7
 let TYPE_ARRAY_STRING = 8
 let TYPE_RECORD_START = 100
 let TYPE_ARRAY_RECORD_START = 10000
+let TYPE_DICT_START = 1000000
+let TYPE_DICT_END = 2000000
+let TYPE_OPTIONAL_I64 = 6
+
+def is_dict(kind: i64) -> bool
+	return kind >= TYPE_DICT_START and kind < TYPE_DICT_END
+
+def dict_of(key: i64, value: i64) -> i64
+	if (key != TYPE_I64 and key != TYPE_STRING) or value == TYPE_INVALID or value == TYPE_VOID or value == TYPE_OPTIONAL_I64 or value >= 100000
+		return TYPE_INVALID
+	if key == TYPE_STRING
+		return TYPE_DICT_START + 2 * value + 1
+	return TYPE_DICT_START + 2 * value
+
+def dict_value(kind: i64) -> i64
+	if not is_dict(kind)
+		return TYPE_INVALID
+	return (kind - TYPE_DICT_START) / 2
+
+def dict_key(kind: i64) -> i64
+	if not is_dict(kind)
+		return TYPE_INVALID
+	if (kind - TYPE_DICT_START) % 2 == 1
+		return TYPE_STRING
+	return TYPE_I64
+
+def dict_helper(kind: i64) -> string
+	return "s_d_" + str(kind)
+
 
 # The generic C runtime stores an element size and optional retain/drop callbacks.
 def array_element(kind: i64) -> i64
@@ -19,7 +48,7 @@ def array_element(kind: i64) -> i64
 		return TYPE_I64
 	if kind == TYPE_ARRAY_STRING
 		return TYPE_STRING
-	if kind >= TYPE_ARRAY_RECORD_START
+	if kind >= TYPE_ARRAY_RECORD_START and kind < TYPE_DICT_START
 		return kind - TYPE_ARRAY_RECORD_START
 	return TYPE_INVALID
 
@@ -30,13 +59,15 @@ def array_of(kind: i64) -> i64
 		return TYPE_ARRAY_STRING
 	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
 		return TYPE_ARRAY_RECORD_START + kind
+	if kind == TYPE_ARRAY_I64 or kind == TYPE_ARRAY_STRING or (kind >= TYPE_ARRAY_RECORD_START and kind < TYPE_DICT_START)
+		return TYPE_ARRAY_RECORD_START + kind
 	return TYPE_INVALID
 
 def managed(kind: i64) -> bool
-	return kind == TYPE_STRING or array_element(kind) != TYPE_INVALID or (kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START)
+	return kind == TYPE_STRING or is_dict(kind) or array_element(kind) != TYPE_INVALID or (kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START)
 
 def generic_array(kind: i64) -> bool
-	return kind == TYPE_ARRAY_STRING or kind >= TYPE_ARRAY_RECORD_START
+	return kind == TYPE_ARRAY_STRING or (kind >= TYPE_ARRAY_RECORD_START and kind < TYPE_DICT_START)
 
 def array_helper(kind: i64) -> string
 	return "s_ga_" + str(kind)
@@ -88,6 +119,7 @@ def EmitState(tree: ParseState)
 	pub symbols = Array[SymbolInfo]()
 	pub constants = Array[ConstantInfo]()
 	pub records = Array[RecordInfo]()
+	pub dict_kinds = Array[i64]()
 	pub lines = Array[string]()
 	pub indentation = 0
 	pub loop_depth = 0
@@ -139,6 +171,10 @@ def type_name(kind: i64) -> string
 		return "string"
 	if kind == TYPE_VOID
 		return "void"
+	if kind == TYPE_OPTIONAL_I64
+		return "Optional[i64]"
+	if is_dict(kind)
+		return "Dict[" + type_name(dict_key(kind)) + "," + type_name(dict_value(kind)) + "]"
 	if kind == TYPE_ARRAY_I64
 		return "Array[i64]"
 	if kind == TYPE_ARRAY_STRING
@@ -160,6 +196,10 @@ def c_type(kind: i64) -> string
 		return "S_String *"
 	if kind == TYPE_VOID
 		return "void"
+	if kind == TYPE_OPTIONAL_I64
+		return "S_Optional_i64"
+	if is_dict(kind)
+		return "S_Dict *"
 	if kind == TYPE_ARRAY_I64
 		return "S_Array_i64 *"
 	if generic_array(kind)
@@ -173,6 +213,8 @@ def ast_type(tree: ParseState, id: i64) -> i64
 	if entry.kind != NODE_TYPE
 		return TYPE_INVALID
 	let name = ast_text(tree, id)
+	if name == "Dict" and entry.count == 2
+		return dict_of(ast_type(tree, ast_child(tree, id, 0)), ast_type(tree, ast_child(tree, id, 1)))
 	if name == "Array" and (entry.count == 1 or entry.count == 2)
 		if entry.count == 2 and ast_text(tree, ast_child(tree, id, 1)) != "1"
 			return TYPE_INVALID
@@ -194,6 +236,8 @@ def resolve_type(state: EmitState, id: i64) -> i64
 	let entry = ast_node(state.tree, id)
 	if entry.kind != NODE_TYPE
 		return TYPE_INVALID
+	if ast_text(state.tree, id) == "Dict" and entry.count == 2
+		return dict_of(resolve_type(state, ast_child(state.tree, id, 0)), resolve_type(state, ast_child(state.tree, id, 1)))
 	if ast_text(state.tree, id) == "Array" and (entry.count == 1 or entry.count == 2)
 		if entry.count == 2 and ast_text(state.tree, ast_child(state.tree, id, 1)) != "1"
 			return TYPE_INVALID
@@ -216,6 +260,8 @@ def array_constructor_kind(state: EmitState, id: i64) -> i64
 	if ast_node(state.tree, root).kind != NODE_NAME or ast_text(state.tree, root) != "Array"
 		return TYPE_INVALID
 	let type_id = ast_child(state.tree, id, 1)
+	if ast_node(state.tree, type_id).kind == NODE_INDEX
+		return array_of(array_constructor_kind(state, type_id))
 	if ast_node(state.tree, type_id).kind != NODE_NAME
 		return TYPE_INVALID
 	let name = ast_text(state.tree, type_id)
@@ -227,6 +273,41 @@ def array_constructor_kind(state: EmitState, id: i64) -> i64
 	if function >= 0 and state.functions[function?]!.constructor
 		return array_of(state.functions[function?]!.kind)
 	return TYPE_INVALID
+
+def dict_constructor_kind(state: EmitState, id: i64) -> i64
+	let node = ast_node(state.tree, id)
+	if node.kind != NODE_INDEX or node.count != 3
+		return TYPE_INVALID
+	let root = ast_child(state.tree, id, 0)
+	if ast_node(state.tree, root).kind != NODE_NAME or ast_text(state.tree, root) != "Dict"
+		return TYPE_INVALID
+	let key = ast_text(state.tree, ast_child(state.tree, id, 1))
+	let value_id = ast_child(state.tree, id, 2)
+	let value = ast_text(state.tree, value_id)
+	var key_kind = TYPE_INVALID
+	var value_kind = TYPE_INVALID
+	if key == "i64"
+		key_kind = TYPE_I64
+	if key == "string"
+		key_kind = TYPE_STRING
+	if value == "i64"
+		value_kind = TYPE_I64
+	if value == "string"
+		value_kind = TYPE_STRING
+	if ast_node(state.tree, value_id).kind == NODE_INDEX
+		value_kind = array_constructor_kind(state, value_id)
+	let function = find_function(state, value)
+	if function >= 0 and state.functions[function?]!.constructor
+		value_kind = state.functions[function?]!.kind
+	return dict_of(key_kind, value_kind)
+
+def register_dict(state: EmitState, kind: i64) -> EmitState
+	var next = state
+	for existing in next.dict_kinds
+		if existing == kind
+			return next
+	next.dict_kinds = next.dict_kinds.append(kind)
+	return next
 
 def line(state: EmitState, text: string) -> EmitState
 	var result = state
@@ -326,6 +407,8 @@ def record_copy(kind: i64, expr: string) -> string
 		return "s_array_i64_retain(" + expr + ")"
 	if generic_array(kind)
 		return "s_array_retain(" + expr + ")"
+	if is_dict(kind)
+		return "s_dict_retain(" + expr + ")"
 	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
 		return c_type(kind) + "_copy(" + expr + ")"
 	return expr
@@ -337,6 +420,8 @@ def record_drop(kind: i64, expr: string) -> string
 		return "s_array_i64_release(" + expr + ");"
 	if generic_array(kind)
 		return "s_array_release(" + expr + ");"
+	if is_dict(kind)
+		return "s_dict_release(" + expr + ");"
 	if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
 		return c_type(kind) + "_drop(" + expr + ");"
 	return ""
@@ -381,10 +466,24 @@ def record_declarations(state: EmitState) -> string
 # Array operations consume an owned array and, where applicable, an owned element.
 def generic_array_declarations(state: EmitState) -> string
 	var output = ""
-	for i in 0..len(state.records) + 1
-		var element = TYPE_STRING
-		if i > 0
-			element = TYPE_RECORD_START + i - 1
+	var elements = Array[i64]()
+	elements = elements.append(TYPE_STRING)
+	for i in 0..len(state.records)
+		elements = elements.append(TYPE_RECORD_START + i)
+	# Nested array callbacks retain and release the inner array handles.
+	var frontier = Array[i64]()
+	frontier = frontier.append(TYPE_ARRAY_I64)
+	frontier = frontier.append(TYPE_ARRAY_STRING)
+	for i in 0..len(state.records)
+		frontier = frontier.append(array_of(TYPE_RECORD_START + i))
+	# Two levels cover rank-1 arrays nested in arrays, including record elements.
+	for depth in 0..2
+		var next_frontier = Array[i64]()
+		for item in frontier
+			elements = elements.append(item)
+			next_frontier = next_frontier.append(array_of(item))
+		frontier = next_frontier
+	for element in elements
 		let kind = array_of(element)
 		let type = c_type(element)
 		let prefix = array_helper(kind)
@@ -420,6 +519,49 @@ def generic_array_declarations(state: EmitState) -> string
 			output = output + "\t" + record_drop(element, "item") + "\n"
 		output = output + "}\n"
 	output = output + "static inline int64_t s_generic_array_length_take(S_Array *owned) { int64_t n = (int64_t)s_array_length(owned); s_array_release(owned); return n; }\n"
+	return output
+
+# Dictionaries take owned keys and values, just like the array helpers.
+def dict_declarations(state: EmitState) -> string
+	var output = ""
+	for kind in state.dict_kinds
+		let key = dict_key(kind)
+		let value = dict_value(kind)
+		let prefix = dict_helper(kind)
+		let key_type = c_type(key)
+		let val_type = c_type(value)
+		var key_copy = "NULL"
+		var key_drop = "NULL"
+		var val_copy = "NULL"
+		var val_drop = "NULL"
+		var hash = "s_hash_i64_key"
+		var eq = "s_eq_i64_key"
+		if key == TYPE_STRING
+			key_copy = array_helper(TYPE_ARRAY_STRING) + "_copy"
+			key_drop = array_helper(TYPE_ARRAY_STRING) + "_drop"
+			hash = "s_hash_string_key"
+			eq = "s_eq_string_key"
+		if managed(value)
+			val_copy = array_helper(array_of(value)) + "_copy"
+			val_drop = array_helper(array_of(value)) + "_drop"
+		output = output + "static inline S_Dict *" + prefix + "_make(void) { return s_dict_new(sizeof(" + key_type + "), sizeof(" + val_type + "), " + key_copy + ", " + key_drop + ", " + val_copy + ", " + val_drop + ", " + hash + ", " + eq + "); }\n"
+		output = output + "static inline S_Dict *" + prefix + "_insert_take(S_Dict *owned, " + key_type + " key, " + val_type + " value) {\n"
+		output = output + "\tS_Dict *result = s_dict_insert(owned, &key, &value);\n"
+		if managed(key)
+			output = output + "\t" + record_drop(key, "key") + "\n"
+		if managed(value)
+			output = output + "\t" + record_drop(value, "value") + "\n"
+		output = output + "\treturn result;\n}\n"
+		if value == TYPE_I64
+			output = output + "static inline S_Optional_i64 " + prefix + "_get_take(S_Dict *owned, " + key_type + " key) {\n"
+			output = output + "\tconst int64_t *value = (const int64_t *)s_dict_get(owned, &key);\n"
+			output = output + "\tS_Optional_i64 result = value ? (S_Optional_i64){true, *value} : (S_Optional_i64){false, 0};\n"
+			output = output + "\ts_dict_release(owned);\n"
+			if managed(key)
+				output = output + "\t" + record_drop(key, "key") + "\n"
+			output = output + "\treturn result;\n}\n"
+	output = output + "static inline int64_t s_dict_length_take(S_Dict *owned) { int64_t n = (int64_t)s_dict_length(owned); s_dict_release(owned); return n; }\n"
+	output = output + "static inline int64_t s_opt_i64_or(S_Optional_i64 value, int64_t fallback) { return value.has_value ? value.value : fallback; }\n"
 	return output
 
 def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: bool) -> EmitState
@@ -465,6 +607,18 @@ def has_effect(state: EmitState, id: i64, visited: Array[string]) -> bool
 	for i in 0..entry.count
 		if has_effect(state, ast_child(state.tree, id, i), visited)
 			return true
+	return false
+
+# Until conditional-expression lowering exists, eager fallback evaluation is
+# safe only for expressions that cannot call functions or panic.
+def simple_fallback(state: EmitState, id: i64) -> bool
+	let item = ast_node(state.tree, id)
+	if item.kind == NODE_INTEGER or item.kind == NODE_NAME
+		return true
+	if item.kind == NODE_UNARY
+		let op = ast_text(state.tree, id)
+		if op == "-" or op == "+"
+			return simple_fallback(state, ast_child(state.tree, id, 0))
 	return false
 
 def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
@@ -659,6 +813,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(state, "s_array_i64_retain(v_" + value + ")", kind)
 			if generic_array(kind)
 				return ExprCode(state, "s_array_retain(v_" + value + ")", kind)
+			if is_dict(kind)
+				return ExprCode(state, "s_dict_retain(v_" + value + ")", kind)
 			if kind >= TYPE_RECORD_START and kind < TYPE_ARRAY_RECORD_START
 				return ExprCode(state, record_copy(kind, "v_" + value), kind)
 			return ExprCode(state, "v_" + value, kind)
@@ -683,6 +839,11 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		var next = right.state
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
+		if value == "or" and left.kind == TYPE_OPTIONAL_I64
+			next = check_type(next, id, right.kind, TYPE_I64)
+			if not simple_fallback(state, right_id)
+				next = emit_error(next, id, "optional fallback requires a simple expression")
+			return ExprCode(next, "s_opt_i64_or(" + left.text + ", " + right.text + ")", TYPE_I64)
 		if left.kind != right.kind
 			return ExprCode(emit_error(next, id, "binary operand types differ"), "", TYPE_INVALID)
 		var op = value
@@ -714,12 +875,34 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_CALL
 		let callee = ast_child(state.tree, id, 0)
 		if ast_node(state.tree, callee).kind == NODE_INDEX
+			let dict_kind = dict_constructor_kind(state, callee)
+			if dict_kind != TYPE_INVALID
+				if entry.count != 1
+					return ExprCode(emit_error(state, id, "dictionary constructor takes no arguments"), "", TYPE_INVALID)
+				return ExprCode(register_dict(state, dict_kind), dict_helper(dict_kind) + "_make()", dict_kind)
 			let kind = array_constructor_kind(state, callee)
 			if kind == TYPE_INVALID or entry.count != 1
 				return ExprCode(emit_error(state, id, "unsupported array constructor"), "", TYPE_INVALID)
 			if kind == TYPE_ARRAY_I64
 				return ExprCode(state, "s_array_i64_make(0, NULL)", kind)
 			return ExprCode(state, array_helper(kind) + "_make_take(0, NULL)", kind)
+		if ast_node(state.tree, callee).kind == NODE_ATTR and (ast_text(state.tree, callee) == "insert" or ast_text(state.tree, callee) == "get")
+			let method = ast_text(state.tree, callee)
+			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
+			if not is_dict(receiver.kind)
+				return ExprCode(emit_error(receiver.state, id, "dictionary method requires Dict"), "", TYPE_INVALID)
+			var next = register_dict(receiver.state, receiver.kind)
+			if (method == "insert" and entry.count != 3) or (method == "get" and entry.count != 2)
+				return ExprCode(emit_error(next, id, "dictionary method argument count mismatch"), "", TYPE_INVALID)
+			let key = emit_expr(next, ast_child(state.tree, id, 1))
+			next = check_type(key.state, id, key.kind, dict_key(receiver.kind))
+			if method == "get"
+				if dict_value(receiver.kind) != TYPE_I64
+					return ExprCode(emit_error(next, id, "dictionary get currently requires i64 values"), "", TYPE_INVALID)
+				return ExprCode(next, dict_helper(receiver.kind) + "_get_take(" + receiver.text + ", " + key.text + ")", TYPE_OPTIONAL_I64)
+			let value = emit_expr(next, ast_child(state.tree, id, 2))
+			next = check_type(value.state, id, value.kind, dict_value(receiver.kind))
+			return ExprCode(next, dict_helper(receiver.kind) + "_insert_take(" + receiver.text + ", " + key.text + ", " + value.text + ")", receiver.kind)
 		if ast_node(state.tree, callee).kind == NODE_ATTR and ast_text(state.tree, callee) == "append" and entry.count == 2
 			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
 			let item = emit_expr(receiver.state, ast_child(state.tree, id, 1))
@@ -773,6 +956,8 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(next, "s_array_i64_length_take(" + arguments[0?]! + ")", TYPE_I64)
 			if generic_array(arg_types[0?]!)
 				return ExprCode(next, "s_generic_array_length_take(" + arguments[0?]! + ")", TYPE_I64)
+			if is_dict(arg_types[0?]!)
+				return ExprCode(next, "s_dict_length_take(" + arguments[0?]! + ")", TYPE_I64)
 			return ExprCode(emit_error(next, id, "len expects a string or array"), "", TYPE_INVALID)
 		if name == "str"
 			if len(arguments) != 1 or arg_types[0?]! != TYPE_I64
@@ -826,6 +1011,8 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 			next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
 		if generic_array(symbol.kind)
 			next = line(next, "s_array_release(v_" + symbol.name + ");")
+		if is_dict(symbol.kind)
+			next = line(next, "s_dict_release(v_" + symbol.name + ");")
 		if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
 			next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 	var restored = Array[SymbolInfo]()
@@ -954,6 +1141,26 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 						if symbol.kind == TYPE_ARRAY_I64
 							return line(next, "v_" + name + " = s_array_i64_append_take(v_" + name + ", " + temp + ");")
 						return line(next, "v_" + name + " = " + array_helper(symbol.kind) + "_append_take(v_" + name + ", " + temp + ");")
+		if is_dict(symbol.kind) and ast_node(state.tree, rhs).kind == NODE_CALL
+			let call = ast_node(state.tree, rhs)
+			if call.count == 3
+				let method = ast_child(state.tree, rhs, 0)
+				if ast_node(state.tree, method).kind == NODE_ATTR and ast_text(state.tree, method) == "insert"
+					let receiver = ast_child(state.tree, method, 0)
+					if ast_node(state.tree, receiver).kind == NODE_NAME and ast_text(state.tree, receiver) == name
+						let key = emit_expr(state, ast_child(state.tree, rhs, 1))
+						let value = emit_expr(key.state, ast_child(state.tree, rhs, 2))
+						var next = check_type(value.state, id, key.kind, dict_key(symbol.kind))
+						next = check_type(next, id, value.kind, dict_value(symbol.kind))
+						if next.error != ""
+							return next
+						let serial = next.counter
+						next.counter += 1
+						let k = "s_key_" + str(serial)
+						let v = "s_value_" + str(serial)
+						next = line(next, c_type(key.kind) + " " + k + " = " + key.text + ";")
+						next = line(next, c_type(value.kind) + " " + v + " = " + value.text + ";")
+						return line(next, "v_" + name + " = " + dict_helper(symbol.kind) + "_insert_take(v_" + name + ", " + k + ", " + v + ");")
 		let result = emit_expr(state, rhs)
 		var next = check_type(result.state, id, result.kind, symbol.kind)
 		if array_element(symbol.kind) != TYPE_INVALID
@@ -967,6 +1174,14 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 				next = line(next, "s_array_i64_release(v_" + name + ");")
 			else
 				next = line(next, "s_array_release(v_" + name + ");")
+			return line(next, "v_" + name + " = " + temp + ";")
+		if is_dict(symbol.kind)
+			if ast_text(state.tree, id) != "="
+				return emit_error(next, id, "unsupported dictionary assignment")
+			let temp = "s_value_" + str(next.counter)
+			next.counter += 1
+			next = line(next, c_type(symbol.kind) + " " + temp + " = " + result.text + ";")
+			next = line(next, "s_dict_release(v_" + name + ");")
 			return line(next, "v_" + name + " = " + temp + ";")
 		if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
 			if ast_text(state.tree, id) != "="
@@ -1019,6 +1234,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 					next = line(next, "s_array_i64_release(v_" + symbol.name + ");")
 				if generic_array(symbol.kind)
 					next = line(next, "s_array_release(v_" + symbol.name + ");")
+				if is_dict(symbol.kind)
+					next = line(next, "s_dict_release(v_" + symbol.name + ");")
 				if symbol.kind >= TYPE_RECORD_START and symbol.kind < TYPE_ARRAY_RECORD_START
 					next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 			return line(next, "return " + temp + ";")
@@ -1379,6 +1596,7 @@ def compile_c(source: string) -> CompileResult
 		if i == 5
 			output = output + record_declarations(state)
 			output = output + generic_array_declarations(state)
+			output = output + dict_declarations(state)
 			output = output + declarations
 	output = output + definitions
 	return CompileResult(output, "", 0)
