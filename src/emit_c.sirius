@@ -219,6 +219,8 @@ def c_type(kind: i64) -> string
 		return "void"
 	if kind == TYPE_OPTIONAL_I64
 		return "S_Optional_i64"
+	if is_optional(kind) and optional_value(kind) == TYPE_STRING
+		return "S_Optional_string"
 	if is_optional(kind)
 		return optional_helper(kind)
 	if is_dict(kind)
@@ -494,8 +496,11 @@ def record_declarations(state: EmitState) -> string
 def optional_declarations(state: EmitState) -> string
 	var output = ""
 	var seen = Array[i64]()
+	var values = Array[i64]()
+	values = values.append(TYPE_STRING)
 	for dict_kind in state.dict_kinds
-		let value = dict_value(dict_kind)
+		values = values.append(dict_value(dict_kind))
+	for value in values
 		if value == TYPE_I64
 			continue
 		var duplicate = false
@@ -507,7 +512,10 @@ def optional_declarations(state: EmitState) -> string
 		seen = seen.append(value)
 		let kind = optional_of(value)
 		let name = optional_helper(kind)
-		output = output + "typedef struct { bool has_value; " + c_type(value) + " value; } " + name + ";\n"
+		if value == TYPE_STRING
+			output = output + "typedef S_Optional_string " + name + ";\n"
+		else
+			output = output + "typedef struct { bool has_value; " + c_type(value) + " value; } " + name + ";\n"
 		if managed(value)
 			output = output + "static inline " + name + " " + name + "_copy(" + name + " owned) {\n"
 			output = output + "\tif (owned.has_value) owned.value = " + record_copy(value, "owned.value") + ";\n\treturn owned;\n}\n"
@@ -742,7 +750,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_BOOL
 		return ExprCode(state, value, TYPE_BOOL)
 	if entry.kind == NODE_STRING
-		return ExprCode(state, "s_string_from_utf8(" + value + ")", TYPE_STRING)
+		return ExprCode(state, "s_string_from_bytes(" + value + ", sizeof(" + value + ") - 1)", TYPE_STRING)
 	if entry.kind == NODE_ARRAY
 		if entry.count == 0
 			return ExprCode(state, "s_array_i64_make(0, NULL)", TYPE_ARRAY_I64)
@@ -983,6 +991,49 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			if kind == TYPE_ARRAY_I64
 				return ExprCode(state, "s_array_i64_make(0, NULL)", kind)
 			return ExprCode(state, array_helper(kind) + "_make_take(0, NULL)", kind)
+		if ast_node(state.tree, callee).kind == NODE_ATTR
+			let method = ast_text(state.tree, callee)
+			if method == "byte_at" or method == "slice" or method == "find" or method == "starts_with" or method == "ends_with" or method == "join"
+				let owner_id = ast_child(state.tree, callee, 0)
+				var effects = 0
+				if has_effect(state, owner_id, Array[string]())
+					effects += 1
+				for i in 1..entry.count
+					if has_effect(state, ast_child(state.tree, id, i), Array[string]())
+						effects += 1
+				if effects > 1
+					return ExprCode(emit_error(state, id, "string method requires ordered argument evaluation"), "", TYPE_INVALID)
+				let receiver = emit_expr(state, owner_id)
+				var next = check_type(receiver.state, id, receiver.kind, TYPE_STRING)
+				var args = Array[string]()
+				var kinds = Array[i64]()
+				for i in 1..entry.count
+					let item = emit_expr(next, ast_child(state.tree, id, i))
+					next = item.state
+					args = args.append(item.text)
+					kinds = kinds.append(item.kind)
+				var required = 1
+				var argument_kind = TYPE_STRING
+				var result_kind = TYPE_BOOL
+				if method == "byte_at"
+					argument_kind = TYPE_I64
+					result_kind = TYPE_OPTIONAL_I64
+				elif method == "slice"
+					required = 2
+					argument_kind = TYPE_I64
+					result_kind = TYPE_STRING
+				elif method == "find"
+					result_kind = TYPE_OPTIONAL_I64
+				elif method == "join"
+					argument_kind = TYPE_ARRAY_STRING
+					result_kind = TYPE_STRING
+				if len(args) != required
+					return ExprCode(emit_error(next, id, "string method argument count mismatch"), "", TYPE_INVALID)
+				for kind in kinds
+					next = check_type(next, id, kind, argument_kind)
+				if next.error != ""
+					return ExprCode(next, "", TYPE_INVALID)
+				return ExprCode(next, "s_string_" + method + "_take(" + receiver.text + ", " + ", ".join(args) + ")", result_kind)
 		if ast_node(state.tree, callee).kind == NODE_ATTR and (ast_text(state.tree, callee) == "insert" or ast_text(state.tree, callee) == "get")
 			let method = ast_text(state.tree, callee)
 			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
@@ -1028,6 +1079,21 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			arg_types = arg_types.append(arg.kind)
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
+		if name == "arguments"
+			if len(arguments) != 0
+				return ExprCode(emit_error(next, id, "arguments expects no arguments"), "", TYPE_INVALID)
+			return ExprCode(next, "s_arguments()", TYPE_ARRAY_STRING)
+		if name == "read_text"
+			if len(arguments) != 1
+				return ExprCode(emit_error(next, id, "read_text expects one string argument"), "", TYPE_INVALID)
+			next = check_type(next, id, arg_types[0?]!, TYPE_STRING)
+			return ExprCode(next, "s_read_text_take(" + arguments[0?]! + ")", optional_of(TYPE_STRING))
+		if name == "write_text"
+			if len(arguments) != 2
+				return ExprCode(emit_error(next, id, "write_text expects two string arguments"), "", TYPE_INVALID)
+			next = check_type(next, id, arg_types[0?]!, TYPE_STRING)
+			next = check_type(next, id, arg_types[1?]!, TYPE_STRING)
+			return ExprCode(next, "s_write_text_take(" + ", ".join(arguments) + ")", TYPE_BOOL)
 		if name == "print"
 			if len(arguments) != 1
 				return ExprCode(emit_error(next, id, "print expects one argument"), "", TYPE_INVALID)
@@ -1696,7 +1762,7 @@ def compile_c(source: string) -> CompileResult
 			if state.error != ""
 				return CompileResult("", state.error, state.error_line)
 			state = line(state, "")
-	state = line(state, "int main(void) { return (int)s_main(); }")
+	state = line(state, "int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)s_main(); }")
 	var declarations = ""
 	var definitions = ""
 	for instance in state.instances

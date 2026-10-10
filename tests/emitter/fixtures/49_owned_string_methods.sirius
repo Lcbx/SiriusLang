@@ -1,0 +1,8 @@
+def get() -> string
+	return "abc"
+
+def main() -> i64
+	print(get().slice(1, 3))
+	print(get().find("b") or -1)
+	print(".".join(["one", "two"]))
+	return 0

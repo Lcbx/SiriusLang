@@ -505,3 +505,50 @@ void s_set_arguments(int argc,char **argv) {
     }
 }
 S_Array *s_arguments(void) { return s_array_retain(s_cli_args); }
+
+/* The emitter passes owned values. Public primitive functions above borrow. */
+S_Optional_i64 s_string_byte_at_take(S_String *s, int64_t index) {
+    S_Optional_i64 result = s_string_byte_at(s, index);
+    s_string_release(s);
+    return result;
+}
+S_String *s_string_slice_take(S_String *s, int64_t start, int64_t end) {
+    S_String *result = s_string_slice(s, start, end);
+    s_string_release(s);
+    return result;
+}
+S_Optional_i64 s_string_find_take(S_String *s, S_String *needle) {
+    S_Optional_i64 result = s_string_find(s, needle);
+    s_string_release(s);
+    s_string_release(needle);
+    return result;
+}
+bool s_string_starts_with_take(S_String *s, S_String *prefix) {
+    bool result = s_string_starts_with(s, prefix);
+    s_string_release(s);
+    s_string_release(prefix);
+    return result;
+}
+bool s_string_ends_with_take(S_String *s, S_String *suffix) {
+    bool result = s_string_ends_with(s, suffix);
+    s_string_release(s);
+    s_string_release(suffix);
+    return result;
+}
+S_String *s_string_join_take(S_String *separator, S_Array *parts) {
+    S_String *result = s_string_join(separator, parts);
+    s_string_release(separator);
+    s_array_release(parts);
+    return result;
+}
+S_Optional_string s_read_text_take(S_String *path) {
+    S_Optional_string result = s_read_text(path);
+    s_string_release(path);
+    return result;
+}
+bool s_write_text_take(S_String *path, S_String *text) {
+    bool result = s_write_text(path, text);
+    s_string_release(path);
+    s_string_release(text);
+    return result;
+}

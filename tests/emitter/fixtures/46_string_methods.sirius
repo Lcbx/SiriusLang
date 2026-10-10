@@ -1,0 +1,11 @@
+def main() -> i64
+	let text = "héllo world"
+	print(len(text))
+	print(text.byte_at(1) or -1)
+	print(text.slice(0, 3))
+	print(text.find("world") or -1)
+	print(text.find("missing") or -1)
+	print(text.starts_with("hé"))
+	print(text.ends_with("world"))
+	print("-".join(["a", "é", "c"]))
+	return 0

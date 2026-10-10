@@ -7,7 +7,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parent.parent
 SOURCES = ('src/tokenizer.sirius', 'src/parser.sirius', 'src/emit_c.sirius', 'tests/emitter/driver.sirius')
-REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
+REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '29_strings_and_arguments', '36_string_byte_at', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
 ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',
@@ -36,6 +36,11 @@ ERRORS = {
 	'25_dict_wrong_value': 'expected string, found i64',
 	'26_optional_wrong_fallback': 'expected string, found i64',
 	'27_optional_elif': 'optional fallback in elif requires CFG lowering',
+	'28_string_method_wrong_type': 'expected i64, found string',
+	'29_write_text_wrong_type': 'expected string, found i64',
+	'30_string_join_wrong_type': 'expected Array[string], found Array[i64]',
+	'31_string_slice_bad_arity': 'string method argument count mismatch',
+
 }
 
 
@@ -71,7 +76,10 @@ def main() -> None:
 			execute([str(binary), str(input_file), str(generated)])
 			output_binary = work / f'program_{index}'
 			execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'), str(generated), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(output_binary)])
-			actual = execute([str(output_binary)])
+			args = [str(output_binary)]
+			if source.stem == '48_file_io':
+				args.append(str(work / 'stage1_file_roundtrip.txt'))
+			actual = execute(args)
 			wanted = expected.read_text(encoding='utf-8')
 			if actual.stdout != wanted:
 				raise AssertionError(f'{source.name}: {actual.stdout!r} != {wanted!r}')

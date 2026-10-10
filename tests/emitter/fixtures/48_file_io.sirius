@@ -1,0 +1,8 @@
+def main() -> i64
+	let args = arguments()
+	let path = args[1?]!
+	print(write_text(path, "hello\né"))
+	let content = read_text(path) or "missing"
+	print(content)
+	print(read_text(path + ".missing") or "absent")
+	return 0

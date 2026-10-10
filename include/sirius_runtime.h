@@ -96,6 +96,15 @@ bool s_string_starts_with(const S_String *s, const S_String *prefix);
 bool s_string_ends_with(const S_String *s, const S_String *suffix);
 S_String *s_string_from_i64(int64_t value);
 S_String *s_string_join(const S_String *separator, const S_Array *parts);
+/* Take ownership of arguments passed by the Sirius C emitter. */
+S_Optional_i64 s_string_byte_at_take(S_String *s, int64_t index);
+S_String *s_string_slice_take(S_String *s, int64_t start, int64_t end);
+S_Optional_i64 s_string_find_take(S_String *s, S_String *needle);
+bool s_string_starts_with_take(S_String *s, S_String *prefix);
+bool s_string_ends_with_take(S_String *s, S_String *suffix);
+S_String *s_string_join_take(S_String *separator, S_Array *parts);
+S_Optional_string s_read_text_take(S_String *path);
+bool s_write_text_take(S_String *path, S_String *text);
 void s_set_arguments(int argc, char **argv);
 S_Array *s_arguments(void);
 
