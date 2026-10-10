@@ -6,3 +6,5 @@ tests/tokenizer/fixtures/18_cr.sirius -text
 # Parser golden fixtures are also byte/line-position sensitive.
 tests/parser/fixtures/*.sirius text eol=lf
 tests/parser/expected_output/*.txt text eol=lf
+# Generated bootstrap C must have stable bytes on all platforms.
+bootstrap_c/compiler.c text eol=lf

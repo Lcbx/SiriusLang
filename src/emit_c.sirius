@@ -144,6 +144,7 @@ def EmitState(tree: ParseState)
 	pub lines = Array[string]()
 	pub indentation = 0
 	pub loop_depth = 0
+	pub loop_scope = 0
 	pub scope_depth = 0
 	pub return_kind = TYPE_INVALID
 	pub function_name = ""
@@ -711,6 +712,7 @@ def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[
 	let previous_symbols = next.symbols
 	let previous_indent = next.indentation
 	let previous_loop = next.loop_depth
+	let previous_loop_scope = next.loop_scope
 	let previous_scope = next.scope_depth
 	let previous_return = next.return_kind
 	let previous_name = next.function_name
@@ -718,6 +720,7 @@ def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[
 	next.lines = Array[string]()
 	next.indentation = 0
 	next.loop_depth = 0
+	next.loop_scope = 0
 	next.scope_depth = 0
 	next = emit_function(next, FunctionInfo(info.name, info.kind, params, info.body, false, symbol))
 	var body = ""
@@ -730,6 +733,7 @@ def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[
 	next.symbols = previous_symbols
 	next.indentation = previous_indent
 	next.loop_depth = previous_loop
+	next.loop_scope = previous_loop_scope
 	next.scope_depth = previous_scope
 	next.return_kind = previous_return
 	next.function_name = previous_name
@@ -901,9 +905,14 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_BINARY
 		let left_id = ast_child(state.tree, id, 0)
 		let right_id = ast_child(state.tree, id, 1)
-		if value != "and" and value != "or" and ambiguous_order(state, left_id, right_id)
-			return ExprCode(emit_error(state, id, "expression requires ordered call evaluation"), "", TYPE_INVALID)
-		let left = emit_expr(state, left_id)
+		let needs_order = value != "and" and value != "or" and ambiguous_order(state, left_id, right_id)
+		var left = emit_expr(state, left_id)
+		if needs_order
+			var ordered = left.state
+			let name = "s_left_" + str(ordered.counter)
+			ordered.counter += 1
+			ordered = line(ordered, c_type(left.kind) + " " + name + " = " + left.text + ";")
+			left = ExprCode(ordered, name, left.kind)
 		if (value == "and" or value == "or") and left.kind == TYPE_BOOL and uses_optional_fallback(state, right_id)
 			var next = left.state
 			let temp = "s_bool_" + str(next.counter)
@@ -945,7 +954,13 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			next.indentation -= 1
 			next = line(next, "}")
 			return ExprCode(next, result, kind)
-		let right = emit_expr(left.state, right_id)
+		var right = emit_expr(left.state, right_id)
+		if needs_order
+			var ordered = right.state
+			let name = "s_right_" + str(ordered.counter)
+			ordered.counter += 1
+			ordered = line(ordered, c_type(right.kind) + " " + name + " = " + right.text + ";")
+			right = ExprCode(ordered, name, right.kind)
 		var next = right.state
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
@@ -1046,9 +1061,9 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 			next = check_type(key.state, id, key.kind, dict_key(receiver.kind))
 			if method == "get"
 				return ExprCode(next, dict_helper(receiver.kind) + "_get_take(" + receiver.text + ", " + key.text + ")", optional_of(dict_value(receiver.kind)))
-			let value = emit_expr(next, ast_child(state.tree, id, 2))
-			next = check_type(value.state, id, value.kind, dict_value(receiver.kind))
-			return ExprCode(next, dict_helper(receiver.kind) + "_insert_take(" + receiver.text + ", " + key.text + ", " + value.text + ")", receiver.kind)
+			let item_value = emit_expr(next, ast_child(state.tree, id, 2))
+			next = check_type(item_value.state, id, item_value.kind, dict_value(receiver.kind))
+			return ExprCode(next, dict_helper(receiver.kind) + "_insert_take(" + receiver.text + ", " + key.text + ", " + item_value.text + ")", receiver.kind)
 		if ast_node(state.tree, callee).kind == NODE_ATTR and ast_text(state.tree, callee) == "append" and entry.count == 2
 			let receiver = emit_expr(state, ast_child(state.tree, callee, 0))
 			let item = emit_expr(receiver.state, ast_child(state.tree, id, 1))
@@ -1067,15 +1082,19 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		for i in 1..entry.count
 			if has_effect(state, ast_child(state.tree, id, i), Array[string]())
 				calls += 1
-		if calls > 1
-			return ExprCode(emit_error(state, id, "call requires ordered argument evaluation"), "", TYPE_INVALID)
 		var next = state
 		var arguments = Array[string]()
 		var arg_types = Array[i64]()
 		for i in 1..entry.count
 			let arg = emit_expr(next, ast_child(state.tree, id, i))
 			next = arg.state
-			arguments = arguments.append(arg.text)
+			var expression = arg.text
+			if calls > 1 and arg.kind != TYPE_INVALID and arg.kind != TYPE_VOID
+				let temporary = "s_arg_" + str(next.counter)
+				next.counter += 1
+				next = line(next, c_type(arg.kind) + " " + temporary + " = " + arg.text + ";")
+				expression = temporary
+			arguments = arguments.append(expression)
 			arg_types = arg_types.append(arg.kind)
 		if next.error != ""
 			return ExprCode(next, "", TYPE_INVALID)
@@ -1097,16 +1116,16 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 		if name == "print"
 			if len(arguments) != 1
 				return ExprCode(emit_error(next, id, "print expects one argument"), "", TYPE_INVALID)
-			let value = arguments[0?]!
+			let printed_arg = arguments[0?]!
 			let kind = arg_types[0?]!
 			if kind == TYPE_I64
-				return ExprCode(next, "printf(\"%lld\\n\", (long long)(" + value + "))", TYPE_VOID)
+				return ExprCode(next, "printf(\"%lld\\n\", (long long)(" + printed_arg + "))", TYPE_VOID)
 			if kind == TYPE_F64
-				return ExprCode(next, "printf(\"%.17g\\n\", " + value + ")", TYPE_VOID)
+				return ExprCode(next, "printf(\"%.17g\\n\", " + printed_arg + ")", TYPE_VOID)
 			if kind == TYPE_BOOL
-				return ExprCode(next, "printf(\"%s\\n\", " + value + " ? \"true\" : \"false\")", TYPE_VOID)
+				return ExprCode(next, "printf(\"%s\\n\", " + printed_arg + " ? \"true\" : \"false\")", TYPE_VOID)
 			if kind == TYPE_STRING
-				return ExprCode(next, "s_print_string_take(" + value + ")", TYPE_VOID)
+				return ExprCode(next, "s_print_string_take(" + printed_arg + ")", TYPE_VOID)
 			return ExprCode(emit_error(next, id, "cannot print this type"), "", TYPE_INVALID)
 		if name == "len"
 			if len(arguments) != 1
@@ -1230,6 +1249,30 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			if ast_node(state.tree, target).count != 2 or ast_text(state.tree, id) != "="
 				return emit_error(state, id, "unsupported indexed assignment")
 			let root = ast_child(state.tree, target, 0)
+			if ast_node(state.tree, root).kind == NODE_ATTR
+				let owner_id = ast_child(state.tree, root, 0)
+				if ast_node(state.tree, owner_id).kind != NODE_NAME
+					return emit_error(state, id, "indexed update requires a mutable local array")
+				let owner = ast_text(state.tree, owner_id)
+				let owner_index = find_symbol(state, owner)
+				if owner_index < 0 or not state.symbols[owner_index?]!.mutable
+					return emit_error(state, id, "indexed update requires a mutable local array")
+				let field_name = ast_text(state.tree, root)
+				let field_index = record_field_index(state, state.symbols[owner_index?]!.kind, field_name)
+				if field_index < 0
+					return emit_error(state, id, "indexed update requires an array field")
+				let array_kind = state.records[state.symbols[owner_index?]!.kind - TYPE_RECORD_START?]!.fields[field_index?]!.kind
+				let element_kind = array_element(array_kind)
+				if element_kind == TYPE_INVALID
+					return emit_error(state, id, "indexed update requires an array")
+				let index = emit_expr(state, ast_child(state.tree, target, 1))
+				let item_value = emit_expr(index.state, ast_child(state.tree, id, 1))
+				var next = check_type(item_value.state, id, index.kind, TYPE_I64)
+				next = check_type(next, id, item_value.kind, element_kind)
+				let pointer = "&v_" + owner + "." + field_name
+				if array_kind == TYPE_ARRAY_I64
+					return line(next, "s_array_i64_set(" + pointer + ", " + index.text + ", " + item_value.text + ");")
+				return line(next, array_helper(array_kind) + "_set_take(" + pointer + ", " + index.text + ", " + item_value.text + ");")
 			if ast_node(state.tree, root).kind != NODE_NAME
 				return emit_error(state, id, "indexed update requires a mutable local array")
 			let name = ast_text(state.tree, root)
@@ -1471,11 +1514,14 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		next.indentation += 1
 		next.scope_depth += 1
 		next.loop_depth += 1
+		let previous_loop_scope = next.loop_scope
+		next.loop_scope = next.scope_depth
 		let cond = emit_expr(next, ast_child(next.tree, id, 0))
 		next = check_type(cond.state, id, cond.kind, TYPE_BOOL)
 		next = line(next, "if (!(" + cond.text + ")) break;")
 		next = emit_block(next, ast_child(next.tree, id, 1))
 		next.loop_depth -= 1
+		next.loop_scope = previous_loop_scope
 		next.scope_depth -= 1
 		next.indentation -= 1
 		return line(next, "}")
@@ -1507,6 +1553,8 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			next.indentation += 1
 			next.scope_depth += 1
 			next.loop_depth += 1
+			let previous_loop_scope = next.loop_scope
+			next.loop_scope = next.scope_depth
 			var getter = "s_array_i64_get_checked(v_" + iter + ", " + index + ")"
 			if generic_array(source.kind)
 				getter = array_helper(source.kind) + "_get_borrow(v_" + iter + ", " + index + ")"
@@ -1516,6 +1564,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			if managed(element_kind)
 				next = line(next, record_drop(element_kind, "v_" + name))
 			next.loop_depth -= 1
+			next.loop_scope = previous_loop_scope
 			next.scope_depth -= 1
 			next.indentation -= 1
 			next = line(next, "}")
@@ -1542,7 +1591,10 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		next.scope_depth += 1
 		next = append_symbol(next, id, name, TYPE_I64, false)
 		next.loop_depth += 1
+		let previous_loop_scope = next.loop_scope
+		next.loop_scope = next.scope_depth + 1
 		next = emit_nested_block(next, body)
+		next.loop_scope = previous_loop_scope
 		next.loop_depth -= 1
 		next.scope_depth -= 1
 		var restored = Array[SymbolInfo]()
@@ -1553,12 +1605,14 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 	if item.kind == NODE_BREAK or item.kind == NODE_CONTINUE
 		if state.loop_depth == 0
 			return emit_error(state, id, "loop control outside loop")
-		for symbol in state.symbols
-			if managed(symbol.kind) and symbol.depth > 1
-				return emit_error(state, id, "managed loop exit requires ownership lowering")
+		var next = state
+		for i in 0..len(next.symbols)
+			let symbol = next.symbols[len(next.symbols) - 1 - i?]!
+			if symbol.depth >= next.loop_scope and managed(symbol.kind)
+				next = line(next, record_drop(symbol.kind, "v_" + symbol.name))
 		if item.kind == NODE_BREAK
-			return line(state, "break;")
-		return line(state, "continue;")
+			return line(next, "break;")
+		return line(next, "continue;")
 	return emit_error(state, id, "unsupported statement '" + node_kind_name(item.kind) + "'")
 
 def collect_function(state: EmitState, id: i64) -> EmitState
@@ -1576,7 +1630,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 			if info.count > 0
 				if info.count != 1 or ast_node(state.tree, ast_child(state.tree, part, 0)).kind != NODE_TYPE
 					return emit_error(state, part, "parameter defaults are not supported yet")
-				kind = ast_type(state.tree, ast_child(state.tree, part, 0))
+				kind = resolve_type(state, ast_child(state.tree, part, 0))
 				if kind == TYPE_INVALID or kind == TYPE_VOID
 					return emit_error(state, part, "unsupported parameter type")
 			let parameter_name = ast_text(state.tree, part)
@@ -1603,7 +1657,6 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		var probe = state
 		probe.symbols = Array[SymbolInfo]()
 		var fields = Array[RecordField]()
-		var effectful = false
 		for param in params
 			probe.symbols = probe.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
 		for i in 0..body.count
@@ -1620,8 +1673,6 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 				kind = probe.symbols[symbol?]!.kind
 			else
 				let value_id = ast_child(state.tree, pub_id, 0)
-				if has_effect(probe, value_id, Array[string]())
-					effectful = true
 				if ast_node(state.tree, value_id).kind == NODE_ATTR
 					field_name = ast_text(state.tree, value_id)
 				let value = emit_expr(probe, value_id)
@@ -1629,7 +1680,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 				if probe.error != ""
 					return probe
 				kind = value.kind
-			if kind == TYPE_INVALID or kind == TYPE_VOID or not plain_record(probe, kind)
+			if kind == TYPE_INVALID or kind == TYPE_VOID
 				return emit_error(state, pub_id, "constructor fields currently require unmanaged values")
 			for previous in fields
 				if previous.name == field_name
@@ -1637,8 +1688,6 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 			fields = fields.append(RecordField(field_name, kind))
 		if len(fields) == 0
 			return emit_error(state, id, "constructor must publish at least one field")
-		if effectful and body.count > 1
-			return emit_error(state, id, "constructor requires ordered field evaluation")
 		let record = intern_record(probe, fields)
 		next = record.state
 		result = record.kind
@@ -1700,7 +1749,9 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 	next.scope_depth += 1
 	if info.constructor
 		let body = ast_node(next.tree, info.body)
-		var values = Array[string]()
+		let output = "s_constructor_result"
+		next = line(next, c_type(info.kind) + " " + output + " = {0};")
+		var transferred = Array[string]()
 		for i in 0..body.count
 			let pub_id = ast_child(next.tree, info.body, i)
 			let pub = ast_node(next.tree, pub_id)
@@ -1713,8 +1764,17 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 				let value = emit_expr(next, value_id)
 				next = value.state
 				expression = value.text
-			values = values.append("." + name + " = " + expression)
-		next = line(next, "return ((" + c_type(info.kind) + "){ " + ", ".join(values) + " });")
+			else
+				transferred = transferred.append(name)
+			next = line(next, output + "." + name + " = " + expression + ";")
+		for param in info.params
+			var kept = false
+			for name in transferred
+				if name == param.name
+					kept = true
+			if not kept and managed(param.kind)
+				next = line(next, record_drop(param.kind, "v_" + param.name))
+		next = line(next, "return " + output + ";")
 	else
 		next = emit_block(next, info.body)
 	next.scope_depth -= 1

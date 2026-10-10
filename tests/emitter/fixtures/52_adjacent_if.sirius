@@ -1,0 +1,6 @@
+def main() -> i64
+	if true
+		print(1)
+	if true
+		print(2)
+	return 0

@@ -497,7 +497,9 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_DEF, name, args)
 	if op == "if"
 		var arms = Array[i64]()
-		while next.error == "" and (is_token(next, "if") or is_token(next, "elif"))
+		var first_arm = true
+		while next.error == "" and ((first_arm and is_token(next, "if")) or (not first_arm and is_token(next, "elif")))
+			first_arm = false
 			let position = next.index
 			next.index += 1
 			let cond = parse_expr(next, 0)

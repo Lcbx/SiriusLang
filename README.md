@@ -3,9 +3,9 @@
 This repository contains two compilers:
 
 - **Python stage-0 (`bootstrap_compiler/`):** a working Sirius-to-C11 subset compiler, using SLY, a dataclass syntax AST, specialization, static checks, and ownership-aware C generation.
-- **Sirius stage-1 (`src/`):** a tokenizer, indexed-AST parser, and partial type checker/C11 emitter written in Sirius and currently built by stage-0.
+- **Sirius stage-1 (`src/`):** a tokenizer, indexed-AST parser, and subset type checker/C11 emitter written in Sirius, now able to compile its own concatenated sources.
 
-Stage-1 **does not yet compile its own source**. Its supported language subset is smaller than stage-0's; neither implementation is a complete implementation of `LANGUAGE_DESIGN.md`.
+**Minimal self-hosting is verified:** stage-1 compiles its own source to stage-2 C, and the stage-2 compiler produces byte-identical stage-3 C. This does **not** imply full parity with Python stage-0 or the complete language design.
 
 ## Layout
 
@@ -22,8 +22,10 @@ Stage-1 **does not yet compile its own source**. Its supported language subset i
 - `bootstrap_compiler/sly/` — vendored SLY source with its license (from the supplied archive).
 - `src/tokenizer.sirius` — Sirius-written byte-span lexer (ASCII identifiers, UTF-8 strings), indentation and lexical diagnostics.
 - `src/parser.sirius` — Sirius-written recursive-descent/precedence parser with an indexed AST arena and syntax diagnostics.
-- `src/emit_c.sirius` — Sirius-written type checker and C11 emitter, including specialization, structural records with managed fields, managed strings, nested rank-1 arrays, and partial generic `Dict[K,V]` lowering (partial ownership handling).
+- `src/emit_c.sirius` — Sirius-written type checker and C11 emitter, including specialization, managed record constructors, nested rank-1 arrays, dictionaries and partial ownership handling.
 - `tests/emitter/`, `tools/test_emitter.py` — executable C-emission golden tests and expected compiler diagnostics.
+- `bootstrap_c/compiler.c` — verified generated C bootstrap source; builds the Sirius compiler without Python.
+- `tools/test_selfhost.py` — stage-0 → stage-1 → stage-2 → stage-3 reproducibility and executable smoke tests.
 - `tests/tokenizer/{fixtures,expected_output}/`, `tests/tokenizer/driver.sirius`, `tools/test_tokenizer.py` — tokenizer golden tests.
 - `tests/parser/{fixtures,expected_output}/`, `tests/parser/driver.sirius`, `tools/test_parser.py` — parser AST/diagnostic golden tests and syntax smoke tests.
 - `LANGUAGE_DESIGN.md` — current Sirius language design and agreed clarifications.
@@ -203,12 +205,14 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [x] Add compiler-generated retain/drop/copy for managed record fields, nested records and arrays of managed records, with CoW and aliasing regressions.
 - [x] Add nested arrays and initial typed dictionaries with CoW insert/length and integer optional lookup.
 - [x] Extend `Dict.get` to supported value types, with owned typed `Optional` results and branch-lowered lazy `or` fallbacks.
-- [ ] Add richer managed constructors and ownership handling on all control-flow exits.
-- [ ] Add richer constructors and remaining language features needed for self-hosting.
+- [x] Implement managed direct-`pub` constructors and element mutation through mutable record fields; test CoW and ownership.
+- [x] Resolve constructor-defined parameter types, evaluate effectful binary/named-call operands left to right, and clean managed locals on tested loop exits.
+- [ ] Extend these semantics to all expression forms and control-flow exits.
 - [ ] Implement only the Sirius features needed by this compiler first; continue to use Python solely as the stage-0 bootstrap.
-- [ ] Expand stage-0/stage-1 equivalence beyond the thirteen shared positive programs; the 49 stage-1-only positive programs and 31 diagnostic tests establish focused coverage, not full semantic equivalence.
+- [ ] Expand stage-0/stage-1 equivalence beyond the thirteen shared positive programs; the 54 stage-1-only positive programs and 29 diagnostic tests establish focused coverage, not full semantic equivalence.
 - [ ] Use stage-1 to compile its own source (stage-2); check that stage-2 compiles the same suite successfully.
-- [ ] Commit verified generated C bootstrap code and runtime; freeze Python bootstrap thereafter.
+- [x] Check in verified generated C bootstrap sources (`bootstrap_c/compiler.c`) and retain the C runtime.
+- [ ] Freeze the Python bootstrap after portability and broader equivalence checks.
 
 ### 3. Improve the self-hosted compiler architecture (in Sirius, not twice)
 
@@ -228,6 +232,30 @@ This checklist separates **implemented bootstrap capabilities** from **features 
 - [ ] Deferred medium-priority negative array indexing (`tests/deferred/25_negative_indexing.sirius`).
 
 **Strategy:** Do not first port the Python compiler's mixed analysis/emission code wholesale, and do not implement a full typed HIR + CFG MIR in both languages. Extend Python just enough to compile a *small new compiler written in Sirius*, reach self-hosting, and then develop the durable IR architecture in Sirius. The present `target_ir.py` is a design reference rather than mandatory Python implementation work.
+
+## Verify self-hosting
+
+Run from the project root:
+
+```bash
+python tools/test_selfhost.py
+```
+
+This constructs one source file from `src/tokenizer.sirius`, `src/parser.sirius`, `src/emit_c.sirius`, and `tests/emitter/driver.sirius` (module imports are still missing). It uses Python stage-0 **only to seed stage-1**, then checks:
+
+1. Stage-1 generates stage-2 C and builds a native stage-2 compiler.
+2. Stage-2 regenerates stage-3 C **byte-for-byte identical** to stage-2 C.
+3. This fixed-point C also matches the checked-in `bootstrap_c/compiler.c`.
+4. The native stage-3 compiler builds and runs 16 representative Sirius programs.
+
+To build the checked-in self-hosted compiler **without Python**:
+
+```bash
+cc -std=c11 -I include bootstrap_c/compiler.c include/sirius_runtime.c -lm -o sirius
+./sirius tests/fixtures/01_scalars.sirius generated.c
+```
+
+Replace `cc` with `gcc` if necessary; on Windows, use an appropriate `.exe` output name. This is the minimal self-hosting milestone, not proof of full language conformance or ownership safety for every program. Continue running the tokenizer, parser, emitter, stage-0 and sanitizer tests while extending the compiler.
 
 ## Stage-1 tokenizer
 
@@ -262,22 +290,23 @@ The Python stage-0 already compiles the compiler's own Sirius sources. The gap i
 - [x] Lower lazy `Optional or fallback` into explicit C branches; retain/drop managed optional payloads on tested bindings and exits.
 - [x] Add byte-oriented string operations (`byte_at`, `slice`, `find`, `starts_with`, `ends_with`, `join`), compile-time byte-accurate C string literals, file I/O and `arguments()` using the existing runtime.
 - [ ] Add nested dictionary types, optional indexing/early-return operations, and union arrays, following the existing stage-0 API.
-- [ ] Support richer constructors, tagged unions, optional values, methods, non-capturing function values and source-level callbacks needed by stage-1 itself.
-- [ ] Finish ordered evaluation and cleanup across all branches/loops/recur/early exits. Current managed local/parameter returns and normal lexical scopes are handled; managed `recur` and some loop-control exits are deliberately rejected.
-- [ ] Compile the concatenated Sirius compiler sources with stage-1 (stage-2), compare output and diagnostics against stage-0, and retain reproducible bootstrap C sources.
+- [ ] Support constructor overrides/branching, tagged unions, optional indexing, `else return`, methods, and non-capturing function values beyond the self-hosting subset.
+- [ ] Generalize ordered lowering to array/record initializers and string methods; complete cleanup for managed `recur`, unusual aliasing and all control-flow paths.
+- [x] Compile concatenated Sirius sources through stage-1/stage-2, assert byte-identical stage-2/stage-3 C and retain generated bootstrap C.
+- [ ] Broaden diagnostic equivalence, sanitizer coverage and stage-3 fixture tests.
 - [ ] After self-hosting, split semantic analysis from C emission into typed HIR and ownership-aware CFG MIR.
 
-**Current limitations:** Managed strings, rank-1 scalar/record arrays, and records containing strings, arrays or nested records work in the tested ownership paths. Constructor bodies must contain direct `pub` statements without overrides or branches; managed constructor fields and untyped constructor parameters remain unsupported. Generic functions are monomorphized when called, and unannotated recursive generic returns need explicit return types. Complete return-path checking, general left-to-right initializer evaluation and full constructor publication are still missing. These restrictions are intentional diagnostics, not claims of full language compatibility.
+**Current limitations:** Managed strings, rank-1 scalar/record arrays, and records containing strings, arrays or nested records work in the tested ownership paths. Constructor bodies must contain direct `pub` statements without overrides or branches; managed fields are supported, but untyped constructor parameters remain unsupported. Generic functions are monomorphized when called, and unannotated recursive generic returns need explicit return types. Complete return-path checking, general left-to-right initializer evaluation and full constructor publication are still missing. These restrictions are intentional diagnostics, not claims of full language compatibility.
 
 ## Stage-1 C emitter (in progress)
 
 Run `python tools/test_emitter.py` from the repository root. The runner combines `src/tokenizer.sirius`, `src/parser.sirius`, `src/emit_c.sirius` and `tests/emitter/driver.sirius`, compiles the combined source with Python stage-0, builds that output with C11, then compiles and executes the **C generated by the Sirius emitter**. This is separate from the tokenizer/parser AST tests and the Python compiler's conformance suite.
 
-The current `compile_c(source)` uses the indexed AST directly. It pre-collects function declarations, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed or call-site-specialized scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`. It additionally interns structural record types using lexicographically sorted fields, emits deterministic C structs and record-by-value operations, supports scalar/nested-POD record literals, direct field updates, record spread/delete/override, and direct `pub` constructors with typed parameters (including `sqrt(f64)`). Managed record fields now use generated recursive copy/drop and taking field-access helpers. Arrays of managed records use those callbacks for CoW, indexing, iteration and release. Basic constructors remain restricted to unmanaged fields, including nested plain records; advanced publication/control flow is still rejected. Untyped evaluator parameters specialize by concrete argument types; return types can be inferred during each specialization. Functions are cached per concrete signature, with in-progress tracking to avoid unbounded recursive specialization. Managed strings and rank-1 `Array[i64]`/`Array[string]` and POD-record arrays are lowered using the C runtime, including retain/release on bindings, calls, returns and normal scope exit. Array updates use CoW; checked indexing panics on invalid positions, and `a = a.append(item)` can consume unique array storage. Nested arrays use the existing generic runtime and element retain/drop callbacks. `Dict[K,V]` uses the generic hash table runtime with typed copy/drop, supports `i64` or `string` keys, `insert`, `len`, and owned `Optional[V]` lookup for supported value types; self-`insert` consumes the old uniquely owned dictionary. String methods now lower using ownership-consuming wrappers; `read_text(path)` returns `Optional[string]`, `write_text(path, text)` returns `bool`, and `arguments()` returns `Array[string]`. The C entrypoint forwards its `argc`/`argv` to the runtime. String literals are emitted with explicit byte length so embedded NULs are preserved. Only basic `main() -> i64` executables are emitted.
+The current `compile_c(source)` uses the indexed AST directly. It pre-collects function declarations, resolves scalar local bindings and call targets, checks basic types and mutability, resolves module `i64` constants, and emits C11 for explicitly typed or call-site-specialized scalar functions (`i64`, `f64`, `bool`, and limited `string`), `print`, `if`/`elif`/`else`, `while`, half-open range `for`, `break`/`continue`, ordinary recursive calls and direct self-`recur`. `recur` arguments are evaluated into distinct C temporaries before updating parameters and jumping back to the function entry, preserving simultaneous replacement. The `main() -> i64` entry point is wrapped with a conforming C `main`. It additionally interns structural record types using lexicographically sorted fields, emits deterministic C structs and record-by-value operations, supports scalar/nested-POD record literals, direct field updates, record spread/delete/override, and direct `pub` constructors with typed parameters (including `sqrt(f64)`). Managed record fields now use generated recursive copy/drop and taking field-access helpers. Arrays of managed records use those callbacks for CoW, indexing, iteration and release. Direct-`pub` constructors support managed fields with sequential initialization; advanced publication/control flow is still rejected. Untyped evaluator parameters specialize by concrete argument types; return types can be inferred during each specialization. Functions are cached per concrete signature, with in-progress tracking to avoid unbounded recursive specialization. Managed strings and rank-1 `Array[i64]`/`Array[string]` and POD-record arrays are lowered using the C runtime, including retain/release on bindings, calls, returns and normal scope exit. Array updates use CoW; checked indexing panics on invalid positions, and `a = a.append(item)` can consume unique array storage. Nested arrays use the existing generic runtime and element retain/drop callbacks. `Dict[K,V]` uses the generic hash table runtime with typed copy/drop, supports `i64` or `string` keys, `insert`, `len`, and owned `Optional[V]` lookup for supported value types; self-`insert` consumes the old uniquely owned dictionary. String methods now lower using ownership-consuming wrappers; `read_text(path)` returns `Optional[string]`, `write_text(path, text)` returns `bool`, and `arguments()` returns `Array[string]`. The C entrypoint forwards its `argc`/`argv` to the runtime. String literals are emitted with explicit byte length so embedded NULs are preserved. Only basic `main() -> i64` executables are emitted.
 
-The runner checks **62 generated-C programs** (13 shared stage-0 language fixtures and 49 stage-1-specific emitter fixtures) and **31 expected diagnostic failures**, with strict C11 compilation (`-Wall -Wextra -Werror -pedantic`). Coverage includes generic returns, managed strings, record field aliasing and replacement, nested arrays, dictionary CoW, array CoW/iteration and ownership transfer. The generated programs link with `include/sirius_runtime.c`. These passing tests do not establish complete ownership or language-spec conformance.
+The runner checks **67 generated-C programs** (13 shared stage-0 language fixtures and 54 stage-1-specific emitter fixtures) and **29 expected diagnostic failures**, with strict C11 compilation (`-Wall -Wextra -Werror -pedantic`). Coverage includes generic returns, managed strings, record field aliasing and replacement, nested arrays, dictionary CoW, array CoW/iteration and ownership transfer. The generated programs link with `include/sirius_runtime.c`. These passing tests do not establish complete ownership or language-spec conformance.
 
-**Important limitations:** This is a minimal semantic checker combined with a direct C emitter, **not** typed HIR/MIR and **not** self-hosting. It rejects unsupported syntax rather than guessing a lowering. Nested arrays are supported to the currently generated helper depth, but tagged unions, optional indexing, `else return`, managed-field constructors and complete ownership lowering still depend on Python stage-0. `Dict.get` produces an owned typed optional and `Optional or fallback` evaluates its fallback only on absence, including when the fallback calls a function. This is statement-based lowering, not a general expression IR. Complex `elif` conditions containing optional fallbacks are rejected pending CFG lowering; more context-dependent cases still need tests. In particular, managed loop-control exits and `recur` remain restricted. C operand/argument evaluation order is not generally guaranteed: until ordered temporary lowering is implemented, the stage-1 emitter rejects expressions with multiple potentially effectful calls. Current local effect detection is conservative but not a complete effect system. Integer overflow and module-constant overflow checking are not yet implemented in stage-1. Strings use reference-counted runtime values, including byte indexing, slicing, searching and file/argument operations. String method calls with multiple potentially effectful arguments remain rejected until general ordered lowering exists. String literals use `s_string_from_bytes` with explicit length, preserving embedded NUL bytes. Managed loop-control exits and `recur` are conservatively rejected where cleanup is not established.
+**Important limitations:** Self-hosting is verified for this compiler subset, but this is still a combined semantic checker and direct C emitter, **not** typed HIR/MIR. It rejects unsupported constructs rather than inventing a lowering. Constructor branching/overrides, tagged unions, optional array indexing, `else return`, managed `recur`, and full static effect checking remain unfinished. Ordered C temporaries are generated for multiple effectful binary/named-call operands, but not all nested array/record/string-method expressions. Managed loop exits and sequential constructor field initialization are supported in tested cases; complete cleanup and shadowed-local binding correctness need broader validation. Complex `elif` conditions containing optional fallbacks remain rejected pending CFG lowering. Integer overflow checks and full language conformance remain future work.
 
 ## Module integer constants (bootstrap subset)
 

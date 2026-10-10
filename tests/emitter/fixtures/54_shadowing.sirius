@@ -1,0 +1,7 @@
+def main() -> i64
+	let value = "outer"
+	if true
+		let value = "inner"
+		print(value)
+	print(value)
+	return 0

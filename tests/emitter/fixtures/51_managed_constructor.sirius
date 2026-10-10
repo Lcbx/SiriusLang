@@ -1,0 +1,14 @@
+def label(name: string) -> string
+	print(name)
+	return name
+
+def Item(name: string)
+	pub name = label(name)
+	pub versions = Array[string]()
+
+def main() -> i64
+	var item = Item("Sirius")
+	item.versions = item.versions.append("v1")
+	print(item.name)
+	print(item.versions[0?]!)
+	return 0
