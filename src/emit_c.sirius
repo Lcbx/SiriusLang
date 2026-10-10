@@ -421,8 +421,37 @@ def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
 	next.records = next.records.append(RecordInfo(ordered, entry.id))
 	return ExprCode(next, "", kind)
 
-# Record helpers operate on owned values. Nested managed fields are retained and
-# released recursively; even POD records use these helpers for a uniform ABI.
+# C ABI metadata is derived from an interned semantic descriptor. Legacy kinds
+# only select the temporary C symbol names; they do not decide the type's shape
+# or ownership operations. This bridge can disappear once every user of c_type
+# accepts a TypeId directly.
+rec CTypeABI(type_id: i64, c_name: string, copy: string, drop: string)
+
+def c_abi(state: EmitState, kind: i64) -> CTypeABI
+	let interned = canonical_kind(state.types, state.records, kind)
+	let id = interned.id
+	if id == TYPE_INVALID
+		return CTypeABI(id, "INVALID_TYPE", "", "")
+	let descriptor = interned.table.entries[id?]!
+	let name = c_type(kind)
+	if descriptor.tag == TYPE_TAG_STRING
+		return CTypeABI(id, name, "s_string_retain", "s_string_release")
+	if descriptor.tag == TYPE_TAG_RECORD
+		return CTypeABI(id, name, name + "_copy", name + "_drop")
+	if descriptor.tag == TYPE_TAG_ARRAY
+		if descriptor.first == TYPE_TAG_I64
+			return CTypeABI(id, name, "s_array_i64_retain", "s_array_i64_release")
+		return CTypeABI(id, name, "s_array_retain", "s_array_release")
+	if descriptor.tag == TYPE_TAG_DICT
+		return CTypeABI(id, name, "s_dict_retain", "s_dict_release")
+	if descriptor.tag == TYPE_TAG_OPTIONAL
+		let payload = interned.table.entries[descriptor.first?]!
+		if payload.tag == TYPE_TAG_STRING or payload.tag == TYPE_TAG_RECORD or payload.tag == TYPE_TAG_ARRAY or payload.tag == TYPE_TAG_DICT or payload.tag == TYPE_TAG_OPTIONAL
+			let helper = optional_helper(kind)
+			return CTypeABI(id, name, helper + "_copy", helper + "_drop")
+	return CTypeABI(id, name, "", "")
+
+# Legacy wrappers remain for expression lowering until typed HIR replaces kinds.
 def retain_function(kind: i64) -> string
 	if kind == TYPE_STRING
 		return "s_string_retain"
@@ -453,6 +482,20 @@ def release_function(kind: i64) -> string
 		return c_type(kind) + "_drop"
 	return ""
 
+# A canonical descriptor supplies field identities. Legacy field kinds are
+# looked up at the same sorted positions only for their current C ABI names.
+rec CFieldABI(name: string, type_id: i64, abi: CTypeABI)
+
+def record_c_fields(state: EmitState, record_index: i64) -> Array[CFieldABI]
+	let record = state.records[record_index?]!
+	let canonical = state.types.entries[record.canonical?]!.fields
+	var result = Array[CFieldABI]()
+	for i in 0..len(canonical)
+		let field = canonical[i?]!
+		let legacy = record.fields[i?]!
+		result = result.append(CFieldABI(field.name, field.kind, c_abi(state, legacy.kind)))
+	return result
+
 def record_copy(kind: i64, expr: string) -> string
 	let function = retain_function(kind)
 	if function == ""
@@ -479,25 +522,28 @@ def record_declarations(state: EmitState) -> string
 	var result = ""
 	for i in 0..len(state.records)
 		let kind = TYPE_RECORD_START + i
-		let type = c_type(kind)
-		let fields = state.records[i?]!.fields
+		let type = c_abi(state, kind).c_name
+		let fields = record_c_fields(state, i)
 		result = result + "typedef struct {\n"
 		for field in fields
-			result = result + "\t" + c_type(field.kind) + " " + field.name + ";\n"
+			result = result + "\t" + field.abi.c_name + " " + field.name + ";\n"
 		result = result + "} " + type + ";\n"
 		result = result + "static inline " + type + " " + type + "_copy(" + type + " value) {\n"
 		for field in fields
-			if managed(field.kind)
-				result = result + "\tvalue." + field.name + " = " + record_copy(field.kind, "value." + field.name) + ";\n"
+			if field.abi.copy != ""
+				result = result + "\tvalue." + field.name + " = " + field.abi.copy + "(value." + field.name + ");\n"
 		result = result + "\treturn value;\n}\n"
 		result = result + "static inline void " + type + "_drop(" + type + " value) {\n"
 		for field in fields
-			if managed(field.kind)
-				result = result + "\t" + record_drop(field.kind, "value." + field.name) + "\n"
+			if field.abi.drop != ""
+				result = result + "\t" + field.abi.drop + "(value." + field.name + ");\n"
 		result = result + "\t(void)value;\n}\n"
 		for field in fields
-			result = result + "static inline " + c_type(field.kind) + " " + type + "_get_" + field.name + "_take(" + type + " owned) {\n"
-			result = result + "\t" + c_type(field.kind) + " field = " + record_copy(field.kind, "owned." + field.name) + ";\n"
+			result = result + "static inline " + field.abi.c_name + " " + type + "_get_" + field.name + "_take(" + type + " owned) {\n"
+			var copied = "owned." + field.name
+			if field.abi.copy != ""
+				copied = field.abi.copy + "(" + copied + ")"
+			result = result + "\t" + field.abi.c_name + " field = " + copied + ";\n"
 			result = result + "\t" + type + "_drop(owned);\n\treturn field;\n}\n"
 	return result
 
@@ -526,7 +572,8 @@ def optional_declarations(state: EmitState) -> string
 			output = output + "typedef S_Optional_string " + name + ";\n"
 		else
 			output = output + "typedef struct { bool has_value; " + c_type(value) + " value; } " + name + ";\n"
-		if managed(value)
+		let abi = c_abi(state, value)
+		if abi.copy != ""
 			output = output + "static inline " + name + " " + name + "_copy(" + name + " owned) {\n"
 			output = output + "\tif (owned.has_value) owned.value = " + record_copy(value, "owned.value") + ";\n\treturn owned;\n}\n"
 			output = output + "static inline void " + name + "_drop(" + name + " owned) {\n"
@@ -556,23 +603,24 @@ def generic_array_declarations(state: EmitState) -> string
 		frontier = next_frontier
 	for element in elements
 		let kind = array_of(element)
-		let type = c_type(element)
+		let abi = c_abi(state, element)
+		let type = abi.c_name
 		let prefix = array_helper(kind)
 		var copy = "NULL"
 		var drop = "NULL"
-		if managed(element)
+		if abi.copy != ""
 			output = output + "static inline void " + prefix + "_copy(void *dst, const void *src) { *(" + type + " *)dst = " + record_copy(element, "*(" + type + " const *)src") + "; }\n"
 			output = output + "static inline void " + prefix + "_drop(void *value) { " + record_drop(element, "*(" + type + " *)value") + " }\n"
 			copy = prefix + "_copy"
 			drop = prefix + "_drop"
 		output = output + "static inline S_Array *" + prefix + "_make_take(size_t count, " + type + " *items) {\n"
 		output = output + "\tS_Array *result = s_array_make(count, items, sizeof(" + type + "), " + copy + ", " + drop + ");\n"
-		if managed(element)
+		if abi.copy != ""
 			output = output + "\tfor (size_t i = 0; i < count; ++i) " + record_drop(element, "items[i]") + "\n"
 		output = output + "\treturn result;\n}\n"
 		output = output + "static inline S_Array *" + prefix + "_append_take(S_Array *owned, " + type + " item) {\n"
 		output = output + "\tS_Array *result = s_array_append(owned, &item);\n"
-		if managed(element)
+		if abi.copy != ""
 			output = output + "\t" + record_drop(element, "item") + "\n"
 		output = output + "\treturn result;\n}\n"
 		output = output + "static inline " + type + " " + prefix + "_get_checked_take(S_Array *owned, int64_t index) {\n"
@@ -586,7 +634,7 @@ def generic_array_declarations(state: EmitState) -> string
 		output = output + "\treturn " + record_copy(element, "*p") + ";\n}\n"
 		output = output + "static inline void " + prefix + "_set_take(S_Array **owned, int64_t index, " + type + " item) {\n"
 		output = output + "\ts_array_set(owned, index, &item);\n"
-		if managed(element)
+		if abi.copy != ""
 			output = output + "\t" + record_drop(element, "item") + "\n"
 		output = output + "}\n"
 	output = output + "static inline int64_t s_generic_array_length_take(S_Array *owned) { int64_t n = (int64_t)s_array_length(owned); s_array_release(owned); return n; }\n"
@@ -599,8 +647,10 @@ def dict_declarations(state: EmitState) -> string
 		let key = dict_key(kind)
 		let value = dict_value(kind)
 		let prefix = dict_helper(kind)
-		let key_type = c_type(key)
-		let val_type = c_type(value)
+		let key_abi = c_abi(state, key)
+		let value_abi = c_abi(state, value)
+		let key_type = key_abi.c_name
+		let val_type = value_abi.c_name
 		var key_copy = "NULL"
 		var key_drop = "NULL"
 		var val_copy = "NULL"
@@ -612,15 +662,15 @@ def dict_declarations(state: EmitState) -> string
 			key_drop = array_helper(TYPE_ARRAY_STRING) + "_drop"
 			hash = "s_hash_string_key"
 			eq = "s_eq_string_key"
-		if managed(value)
+		if value_abi.copy != ""
 			val_copy = array_helper(array_of(value)) + "_copy"
 			val_drop = array_helper(array_of(value)) + "_drop"
 		output = output + "static inline S_Dict *" + prefix + "_make(void) { return s_dict_new(sizeof(" + key_type + "), sizeof(" + val_type + "), " + key_copy + ", " + key_drop + ", " + val_copy + ", " + val_drop + ", " + hash + ", " + eq + "); }\n"
 		output = output + "static inline S_Dict *" + prefix + "_insert_take(S_Dict *owned, " + key_type + " key, " + val_type + " value) {\n"
 		output = output + "\tS_Dict *result = s_dict_insert(owned, &key, &value);\n"
-		if managed(key)
+		if key_abi.copy != ""
 			output = output + "\t" + record_drop(key, "key") + "\n"
-		if managed(value)
+		if value_abi.copy != ""
 			output = output + "\t" + record_drop(value, "value") + "\n"
 		output = output + "\treturn result;\n}\n"
 		let option_type = c_type(optional_of(value))
@@ -629,7 +679,7 @@ def dict_declarations(state: EmitState) -> string
 		output = output + "\t" + option_type + " result = {0};\n"
 		output = output + "\tif (item) { result.has_value = true; result.value = " + record_copy(value, "*item") + "; }\n"
 		output = output + "\ts_dict_release(owned);\n"
-		if managed(key)
+		if key_abi.copy != ""
 			output = output + "\t" + record_drop(key, "key") + "\n"
 		output = output + "\treturn result;\n}\n"
 	output = output + "static inline int64_t s_dict_length_take(S_Dict *owned) { int64_t n = (int64_t)s_dict_length(owned); s_dict_release(owned); return n; }\n"
