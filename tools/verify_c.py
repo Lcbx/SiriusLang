@@ -1,47 +1,67 @@
 #!/usr/bin/env python
-"""Compile/run all expected C examples as a semantic reference (not Sirius compiler tests)."""
+"""Compile/run independent C references; not Sirius compiler tests."""
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+import json
 from pathlib import Path
 import subprocess
-import tempfile
-import shutil
 import sys
+import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent
-CC = shutil.which("cc") or shutil.which("gcc")
-if not CC:
-    raise SystemExit("A C11 compiler (cc) is required")
+from sirius_sources import ROOT
+from test_build import BuildCache, C_FLAGS, execute, options, require_cc, validate_jobs
 
-cases = sorted((ROOT / "tests" / "expected_c").glob("*.c"))
-with tempfile.TemporaryDirectory() as build:
-    for source in cases:
-        stem = source.stem
-        fixture = ROOT / "tests" / "fixtures" / f"{stem}.sirius"
-        stdout = ROOT / "tests" / "expected_output" / f"{stem}.txt"
-        if not fixture.is_file() or not stdout.is_file():
-            raise SystemExit(f"Missing expected C/output for {stem}")
-        binary = Path(build) / stem
-        command = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-I", str(ROOT / "include"), str(source), str(ROOT / "include" / "sirius_runtime.c"), "-lm", "-o", str(binary)]
-        result = subprocess.run(command, text=True, capture_output=True)
-        if result.returncode:
-            sys.stderr.write(result.stderr)
-            raise SystemExit(f"C compilation failed: {stem}")
-        result = subprocess.run([str(binary)], text=True, capture_output=True, cwd=build)
-        expected = stdout.read_text()
-        if result.returncode or result.stdout != expected:
-            raise SystemExit(f"FAILED {stem}: exit={result.returncode} stdout={result.stdout!r}, expected={expected!r}, stderr={result.stderr!r}")
-        print(f"PASS {stem}")
-print(f"Verified {len(cases)} C reference examples")
 
-import json
-for stem, expected in json.loads((ROOT / 'tests' / 'runtime_errors' / 'expectations.json').read_text()).items():
-    with tempfile.TemporaryDirectory() as work:
-        binary = Path(work) / stem
-        command = [CC, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
-                   str(ROOT / 'tests' / 'runtime_errors' / f'{stem}.c'), str(ROOT / 'include' / 'sirius_runtime.c'), '-lm', '-o', str(binary)]
-        result = subprocess.run(command, capture_output=True, text=True)
-        if result.returncode:
-            raise SystemExit(f'Runtime error fixture compilation failed: {result.stderr}')
-        result = subprocess.run([str(binary)], capture_output=True, text=True, cwd=work)
-        if result.returncode != expected['exit'] or expected['stderr_contains'] not in result.stderr:
-            raise SystemExit(f'Runtime failure mismatch {stem}: {result}')
-        print(f'PASS {stem} (expected runtime panic)')
+def main() -> None:
+	parser = argparse.ArgumentParser(description=__doc__)
+	options(parser)
+	args = parser.parse_args()
+	cache = BuildCache(require_cc(), rebuild=args.rebuild)
+	runtime = cache.runtime()
+	cases = sorted((ROOT / 'tests/expected_c').glob('*.c'))
+	if not cases:
+		raise AssertionError('No expected C references found')
+
+	with tempfile.TemporaryDirectory() as tmp:
+		work = Path(tmp)
+		def check(item: tuple[int, Path]) -> str:
+			index, source = item
+			stem = source.stem
+			fixture = ROOT / 'tests/fixtures' / f'{stem}.sirius'
+			stdout = ROOT / 'tests/expected_output' / f'{stem}.txt'
+			if not fixture.is_file() or not stdout.is_file():
+				raise AssertionError(f'Missing expected C/output for {stem}')
+			folder = work / f'case_{index}'
+			folder.mkdir()
+			binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
+			execute([cache.cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
+				'-lm', '-o', str(binary)])
+			result = subprocess.run([str(binary)], text=True, encoding='utf-8', capture_output=True, cwd=folder)
+			expected = stdout.read_text(encoding='utf-8')
+			if result.returncode or result.stdout != expected:
+				raise AssertionError(f'FAILED {stem}: exit={result.returncode} stdout={result.stdout!r}, expected={expected!r}, stderr={result.stderr!r}')
+			return f'PASS {stem}'
+
+		def panic(item: tuple[int, tuple[str, dict]]) -> str:
+			index, (stem, expected) = item
+			folder = work / f'panic_{index}'
+			folder.mkdir()
+			binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
+			execute([cache.cc, *C_FLAGS, '-I', str(ROOT / 'include'),
+				str(ROOT / 'tests/runtime_errors' / f'{stem}.c'), str(runtime), '-lm', '-o', str(binary)])
+			result = subprocess.run([str(binary)], capture_output=True, text=True, encoding='utf-8', cwd=folder)
+			if result.returncode != expected['exit'] or expected['stderr_contains'] not in result.stderr:
+				raise AssertionError(f'Runtime failure mismatch {stem}: {result}')
+			return f'PASS {stem} (expected runtime panic)'
+
+		errors = json.loads((ROOT / 'tests/runtime_errors/expectations.json').read_text(encoding='utf-8'))
+		with ThreadPoolExecutor(max_workers=validate_jobs(args.jobs)) as pool:
+			for message in pool.map(check, enumerate(cases)):
+				print(message)
+			for message in pool.map(panic, enumerate(errors.items())):
+				print(message)
+	print(f'Verified {len(cases)} C reference examples')
+
+
+if __name__ == '__main__':
+	main()

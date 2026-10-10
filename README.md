@@ -31,6 +31,29 @@ The update command compiles from the **existing** `bootstrap_c/compiler.c`, chec
 
 ## Tests
 
+Test runners use `-O0` for disposable C binaries and compile the runtime once
+per input fingerprint. The shared compiled bootstrap, runtime object, and Sirius
+test drivers are cached in Git-ignored `.build/cache/`. A change to Sirius/C
+sources, runtime headers, compiler flags, or the selected C compiler automatically
+produces a new cache entry; GCC does not perform this invalidation itself.
+
+Individual fixtures run concurrently using Python threads to launch independent
+C compilers and executables. All active runners accept `--jobs N` (default up to
+4; use `--jobs 1` to debug) and `--rebuild` to discard cached build artifacts.
+The historical Python compiler test runner accepts these options too.
+
+```sh
+python tools/test_emitter.py --jobs 4
+python tools/test_parser.py --jobs 4
+python tools/test_selfhost.py --jobs 1
+python tools/test_emitter.py --rebuild
+```
+
+Self-hosting still **generates each compiler generation afresh** for its
+fixed-point check. Only the seed compiler and shared C runtime are cached.
+Fixture outputs remain in isolated temporary directories, not in `.build/`.
+
+
 | Command | What it checks |
 | --- | --- |
 | `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 73 executable cases and 30 expected diagnostics |

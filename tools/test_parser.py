@@ -1,61 +1,51 @@
 #!/usr/bin/env python
-"""Compile the Sirius parser using the committed C bootstrap; check AST cases."""
+"""Compile the Sirius parser using the C bootstrap; check AST cases."""
+import argparse
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-import shutil
 import subprocess
-import sys
 import tempfile
 
-from sirius_sources import ROOT, PARSER_SOURCES, combined_sources
-
-
-def run(command: list[str]) -> None:
-	result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
-	if result.returncode:
-		raise SystemExit(f'FAILED: {" ".join(command)}\n{result.stdout}{result.stderr}')
+from sirius_sources import ROOT, PARSER_SOURCES
+from test_build import BuildCache, options, require_cc, validate_jobs
 
 
 def main() -> None:
-	cc = shutil.which('cc') or shutil.which('gcc')
-	if not cc:
-		raise SystemExit('A C11 compiler (cc or gcc) is required')
+	parser = argparse.ArgumentParser(description=__doc__)
+	options(parser)
+	args = parser.parse_args()
+	cache = BuildCache(require_cc(), rebuild=args.rebuild)
+	binary = cache.sirius('parser', PARSER_SOURCES + ('tests/parser/driver.sirius',))
+	cases = sorted((ROOT / 'tests/parser/fixtures').glob('*.sirius'))
+	if not cases:
+		raise SystemExit('No parser test fixtures found')
+	programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
+	programs += [ROOT / 'src/tokenizer.sirius', ROOT / 'src/parser.sirius', ROOT / 'src/emit_c.sirius']
 
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
-		combined = work / 'parser_test.sirius'
-		combined.write_bytes(combined_sources(PARSER_SOURCES + ('tests/parser/driver.sirius',)))
-		c_source = work / 'parser.c'
-		binary = work / ('parser.exe' if sys.platform == 'win32' else 'parser')
-		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
-		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I', str(ROOT / 'include'),
-			str(ROOT / 'bootstrap_c/compiler.c'), str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(seed)])
-		run([str(seed), str(combined), str(c_source)])
-		run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic', '-I',
-			str(ROOT / 'include'), str(c_source), str(ROOT / 'include/sirius_runtime.c'),
-			'-lm', '-o', str(binary)])
-
-		cases = sorted((ROOT / 'tests/parser/fixtures').glob('*.sirius'))
-		if not cases:
-			raise SystemExit('No parser test fixtures found')
-		for case in cases:
-			fixture = work / case.name
+		def golden(item: tuple[int, Path]) -> str:
+			index, case = item
+			fixture = work / f'fixture_{index}.sirius'
 			fixture.write_bytes(case.read_bytes().replace(b'\r\n', b'\n'))
 			result = subprocess.run([str(binary), str(fixture)], capture_output=True,
 				text=True, encoding='utf-8')
 			expected = (ROOT / 'tests/parser/expected_output' / (case.stem + '.txt')).read_text(encoding='utf-8')
 			if result.returncode or result.stdout != expected:
-				raise SystemExit(f'FAIL {case.name}: actual={result.stdout!r}, expected={expected!r}, stderr={result.stderr!r}')
-			print(f'PASS {case.name}')
+				raise AssertionError(f'FAIL {case.name}: actual={result.stdout!r}, expected={expected!r}, stderr={result.stderr!r}')
+			return f'PASS {case.name}'
 
-		# Syntax smoke tests on the stage-0 compiler's complete positive corpus.
-		programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
-		programs += [ROOT / 'src/tokenizer.sirius', ROOT / 'src/parser.sirius', ROOT / 'src/emit_c.sirius']
-		for case in programs:
+		def smoke(case: Path) -> None:
 			result = subprocess.run([str(binary), str(case)], capture_output=True,
 				text=True, encoding='utf-8')
 			if result.returncode or not result.stdout.strip().splitlines()[-1].startswith('ROOT '):
-				raise SystemExit(f'FAIL parser smoke {case.name}: {result.stdout!r}\n{result.stderr}')
-		print(f'{len(cases)} parser golden cases and {len(programs)} syntax smoke tests passed')
+				raise AssertionError(f'FAIL parser smoke {case.name}: {result.stdout!r}\n{result.stderr}')
+
+		with ThreadPoolExecutor(max_workers=validate_jobs(args.jobs)) as pool:
+			for message in pool.map(golden, enumerate(cases)):
+				print(message)
+			list(pool.map(smoke, programs))
+	print(f'{len(cases)} parser golden cases and {len(programs)} syntax smoke tests passed')
 
 
 if __name__ == '__main__':

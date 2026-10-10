@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 """Shared runtime and diagnostic cases for Sirius-written compiler generations."""
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import sys
+
+from test_build import BuildCache, C_FLAGS, execute, validate_jobs
 
 from sirius_sources import ROOT
 
@@ -43,47 +46,57 @@ ERRORS = {
 
 
 
-def check_cases(cc: str, compiler: Path, work: Path) -> tuple[int, int]:
-	"""Compile, run, and compare every supported positive/negative emitter case."""
+def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
+	runtime: Path | None = None) -> tuple[int, int]:
+	"""Test independent cases concurrently, reporting in deterministic fixture order."""
+	jobs = validate_jobs(jobs)
 	positives = [(ROOT / 'tests/fixtures' / (name + '.sirius'),
 		ROOT / 'tests/expected_output' / (name + '.txt')) for name in REFERENCE]
 	positives += [(src, ROOT / 'tests/emitter/expected_output' / (src.stem + '.txt'))
 		for src in sorted((ROOT / 'tests/emitter/fixtures').glob('*.sirius'))]
 	if not positives:
 		raise AssertionError('No positive emitter cases found')
-	for index, (source, expected) in enumerate(positives):
-		input_file = work / f'input_{index}.sirius'
+	runtime = runtime or BuildCache(cc).runtime()
+
+	def positive(item: tuple[int, tuple[Path, Path]]) -> str:
+		index, (source, expected) = item
+		folder = work / f'positive_{index}'
+		folder.mkdir()
+		input_file = folder / 'input.sirius'
 		input_file.write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
-		generated = work / f'generated_{index}.c'
-		result = subprocess.run([str(compiler), str(input_file), str(generated)],
-			capture_output=True, text=True, encoding='utf-8')
-		if result.returncode:
-			raise AssertionError(f'{source.name}: compile failed: {result.stdout}{result.stderr}')
-		output_binary = work / (f'program_{index}.exe' if sys.platform == 'win32' else f'program_{index}')
-		result = subprocess.run([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
-			'-I', str(ROOT / 'include'), str(generated), str(ROOT / 'include/sirius_runtime.c'),
-			'-lm', '-o', str(output_binary)], capture_output=True, text=True, encoding='utf-8')
-		if result.returncode:
-			raise AssertionError(f'{source.name}: C compilation failed: {result.stdout}{result.stderr}')
+		generated = folder / 'generated.c'
+		execute([str(compiler), str(input_file), str(generated)])
+		output_binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
+		execute([cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
+			'-lm', '-o', str(output_binary)])
 		args = [str(output_binary)]
 		if source.stem == '48_file_io':
-			args.append(str(work / 'stage1_file_roundtrip.txt'))
+			args.append(str(folder / 'stage1_file_roundtrip.txt'))
 		result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
 		wanted = expected.read_text(encoding='utf-8')
 		if result.returncode or result.stdout != wanted:
 			raise AssertionError(f'{source.name}: exit={result.returncode}, output={result.stdout!r} != {wanted!r}; {result.stderr}')
-		print(f'PASS {source.name}')
+		return f'PASS {source.name}'
 
 	negatives = sorted((ROOT / 'tests/emitter/negative').glob('*.sirius'))
 	if {source.stem for source in negatives} != set(ERRORS):
 		raise AssertionError('negative test fixtures and expected diagnostics differ')
-	for source in negatives:
-		generated = work / 'should_not_exist.c'
-		generated.unlink(missing_ok=True)
+
+	def negative(item: tuple[int, Path]) -> str:
+		index, source = item
+		folder = work / f'negative_{index}'
+		folder.mkdir()
+		generated = folder / 'should_not_exist.c'
 		result = subprocess.run([str(compiler), str(source), str(generated)],
 			capture_output=True, text=True, encoding='utf-8')
 		if result.returncode != 1 or ERRORS[source.stem] not in result.stdout or generated.exists():
 			raise AssertionError(f'{source.name}: unexpected result {result.returncode}, {result.stdout!r}, {result.stderr!r}')
-		print(f'PASS {source.name} (rejected)')
+		return f'PASS {source.name} (rejected)'
+
+	with ThreadPoolExecutor(max_workers=jobs) as pool:
+		for message in pool.map(positive, enumerate(positives)):
+			print(message)
+		for message in pool.map(negative, enumerate(negatives)):
+			print(message)
 	print(f'{len(positives)} generated C programs and {len(negatives)} diagnostics passed')
 	return len(positives), len(negatives)

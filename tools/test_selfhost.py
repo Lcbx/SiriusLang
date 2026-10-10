@@ -3,12 +3,12 @@
 import argparse
 from itertools import zip_longest
 from pathlib import Path
-import shutil
 import subprocess
 import sys
 import tempfile
 
 from emitter_cases import check_cases
+from test_build import BuildCache, C_FLAGS, options, require_cc, validate_jobs
 from sirius_sources import ROOT, COMPILER_SOURCES, combined_sources
 
 
@@ -19,10 +19,9 @@ def execute(args: list[str]) -> subprocess.CompletedProcess[str]:
 	return result
 
 
-def compile_c(cc: str, source: Path, output: Path) -> None:
-	execute([cc, '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
-		'-I', str(ROOT / 'include'), str(source),
-		str(ROOT / 'include/sirius_runtime.c'), '-lm', '-o', str(output)])
+def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
+	execute([cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(source),
+		str(runtime), '-lm', '-o', str(output)])
 
 
 def canonical_bytes(path: Path) -> bytes:
@@ -49,10 +48,10 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--update-bootstrap', action='store_true',
 		help='replace bootstrap_c/compiler.c after fixed-point and executable checks')
+	options(parser)
 	args = parser.parse_args()
-	cc = shutil.which('cc') or shutil.which('gcc')
-	if cc is None:
-		raise SystemExit('A C11 compiler (cc or gcc) is required')
+	cc = require_cc()
+	cache = BuildCache(cc, rebuild=args.rebuild)
 	committed = ROOT / 'bootstrap_c/compiler.c'
 	with tempfile.TemporaryDirectory() as temporary:
 		work = Path(temporary)
@@ -60,8 +59,7 @@ def main() -> None:
 		# Byte-oriented source spans must not depend on Windows checkout line endings.
 		source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
 
-		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
-		compile_c(cc, committed, seed)
+		seed = cache.seed()
 		previous_c = None
 		current = seed
 		fixed_c = None
@@ -77,14 +75,14 @@ def main() -> None:
 				print(f'PASS C bootstrap fixed point at generation {generation}')
 				break
 			binary = work / (f'generation_{generation}.exe' if sys.platform == 'win32' else f'generation_{generation}')
-			compile_c(cc, generated, binary)
+			compile_c(cc, generated, binary, cache.runtime())
 			previous_c = generated
 			current = binary
 		if fixed_c is None or fixed_binary is None:
 			raise AssertionError('Compiler C did not reach a fixed point in 8 generations')
 
 		# The generated compiler has been tested, not merely text-compared.
-		check_cases(cc, fixed_binary, work)
+		check_cases(cc, fixed_binary, work, jobs=validate_jobs(args.jobs), runtime=cache.runtime())
 		generated_c = fixed_c.read_bytes()
 		if args.update_bootstrap:
 			committed.write_bytes(generated_c)
