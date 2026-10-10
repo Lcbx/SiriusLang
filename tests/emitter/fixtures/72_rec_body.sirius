@@ -1,0 +1,9 @@
+rec Label(name: string, count: i64)
+	pub display = name + str(count)
+
+def main() -> i64
+	let value = Label("item", 3)
+	print(value.name)
+	print(value.count)
+	print(value.display)
+	return 0

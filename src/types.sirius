@@ -13,22 +13,13 @@ let TYPE_TAG_ARRAY = 7
 let TYPE_TAG_DICT = 8
 let TYPE_TAG_OPTIONAL = 9
 
-def RecordField(name: string, kind: i64)
-	pub name
-	pub kind
+rec RecordField(name: string, kind: i64)
 
-def TypeDescriptor(tag: i64, first: i64, second: i64, fields: Array[RecordField])
-	pub tag
-	pub first
-	pub second
-	pub fields
+rec TypeDescriptor(tag: i64, first: i64, second: i64, fields: Array[RecordField])
 
-def TypeTable(entries: Array[TypeDescriptor])
-	pub entries
+rec TypeTable(entries: Array[TypeDescriptor])
 
-def InternedType(table: TypeTable, id: i64)
-	pub table
-	pub id
+rec InternedType(table: TypeTable, id: i64)
 
 def new_type_table() -> TypeTable
 	var entries = Array[TypeDescriptor]()

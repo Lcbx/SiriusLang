@@ -1,0 +1,8 @@
+rec Sized(width: i64, height: i64)
+	pub height = width * height
+
+def main() -> i64
+	let value = Sized(4, 5)
+	print(value.width)
+	print(value.height)
+	return 0

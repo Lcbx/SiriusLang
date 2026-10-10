@@ -100,14 +100,16 @@ def add(a, b)
 	return a + b
 ```
 
-**Constructor:** Publishes fields into an implicit immutable record.
+**Constructor:** `rec` automatically publishes its parameters into an immutable structural record. An optional body adds computed fields or overrides parameters.
 
 ```python
-def Point(x, y)
-	pub x
-	pub y
+rec Point(x, y)
 	pub length = sqrt(x*x + y*y)
 ```
+
+A parameter-only constructor needs no body: `rec Pair(x: i64, y: i64)`.
+
+For this transition, existing `def` constructors remain accepted but are deprecated in favor of `rec`.
 
 Constructor rules:
 
@@ -115,7 +117,7 @@ Constructor rules:
 * Branches may override existing fields, not introduce new ones.
 * Constructors cannot return early or mix `pub` with `return expr`.
 * `pub x` publishes a binding and freezes ordinary assignment.
-* `pub x = expr` creates or overrides a published field.
+* `pub x = expr` creates or overrides a published field (including an implicit `rec` field).
 * `pub value.x` abbreviates `pub x = value.x`.
 
 **Methods:** Ordinary functions whose first parameter is named `this`, invoked with dot syntax.

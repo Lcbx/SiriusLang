@@ -95,44 +95,19 @@ def array_helper(kind: i64) -> string
 
 
 
-def ParameterInfo(name: string, kind: i64)
-	pub name
-	pub kind
+rec ParameterInfo(name: string, kind: i64)
 
-def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool, symbol: string)
-	pub name
-	pub kind
-	pub params
-	pub body
-	pub constructor
-	pub symbol
+rec FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool, symbol: string)
 
-def InstanceInfo(name: string, kinds: Array[i64], type_ids: Array[i64], kind: i64, symbol: string, code: string, status: i64)
-	pub name
-	pub kinds
-	pub type_ids
-	pub kind
-	pub symbol
-	pub code
-	pub status
+rec InstanceInfo(name: string, kinds: Array[i64], type_ids: Array[i64], kind: i64, symbol: string, code: string, status: i64)
 
-def SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
-	pub name
-	pub kind
-	pub type_id
-	pub mutable
-	pub depth
+rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
 
-def ConstantInfo(name: string, value: string)
-	pub name
-	pub value
+rec ConstantInfo(name: string, value: string)
 
-def RecordInfo(fields: Array[RecordField], canonical: i64)
-	pub fields
-	pub canonical
+rec RecordInfo(fields: Array[RecordField], canonical: i64)
 
-def EmitState(tree: ParseState)
-	pub tree
+rec EmitState(tree: ParseState)
 	pub functions = Array[FunctionInfo]()
 	pub instances = Array[InstanceInfo]()
 	pub active_params = Array[ParameterInfo]()
@@ -152,15 +127,9 @@ def EmitState(tree: ParseState)
 	pub error = ""
 	pub error_line = 0
 
-def ExprCode(state: EmitState, text: string, kind: i64)
-	pub state
-	pub text
-	pub kind
+rec ExprCode(state: EmitState, text: string, kind: i64)
 
-def CompileResult(code: string, error: string, line: i64)
-	pub code
-	pub error
-	pub line
+rec CompileResult(code: string, error: string, line: i64)
 
 def ast_node(tree: ParseState, id: i64) -> Node
 	return tree.nodes[id?]!
@@ -420,9 +389,7 @@ def canonical_kind(table: TypeTable, records: Array[RecordInfo], kind: i64) -> I
 		return intern_array_type(inner.table, inner.id)
 	return InternedType(table, TYPE_INVALID)
 
-def InternedSignature(table: TypeTable, ids: Array[i64])
-	pub table
-	pub ids
+rec InternedSignature(table: TypeTable, ids: Array[i64])
 
 # Resolve the entire signature against one table, including container/record
 # types encountered for the first time at a generic call.
@@ -1689,7 +1656,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		elif info.kind == NODE_TYPE
 			result = resolve_type(state, part)
 	var next = state
-	var constructor = false
+	var constructor = entry.kind == NODE_REC
 	let body_id = ast_child(state.tree, id, entry.count - 1)
 	let body = ast_node(state.tree, body_id)
 	if result == TYPE_INVALID
@@ -1841,7 +1808,7 @@ def compile_c(source: string) -> CompileResult
 	for i in 0..root.count
 		let id = ast_child(state.tree, parsed.node, i)
 		let item = ast_node(state.tree, id)
-		if item.kind == NODE_DEF
+		if item.kind == NODE_DEF or item.kind == NODE_REC
 			state = collect_function(state, id)
 		else
 			state = collect_constant(state, id)

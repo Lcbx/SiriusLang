@@ -16,12 +16,7 @@ let TOKEN_UNCLOSED_STRING = -3
 let TOKEN_INVALID_BRACKET = -4
 let TOKEN_UNCLOSED_BRACKET = -5
 
-def Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
-	pub kind
-	pub start
-	pub end
-	pub line
-	pub column
+rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
 
 def token_text(source: string, token: Token) -> string
 	return source.slice(token.start, token.end)

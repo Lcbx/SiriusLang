@@ -44,6 +44,7 @@ let NODE_TYPE = 38
 let NODE_UNARY = 39
 let NODE_VAR = 40
 let NODE_WHILE = 41
+let NODE_REC = 42
 
 def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -112,6 +113,8 @@ def node_kind_name(kind: i64) -> string
 		return "pub"
 	if kind == NODE_RECORD
 		return "record"
+	if kind == NODE_REC
+		return "rec"
 	if kind == NODE_RECUR
 		return "recur"
 	if kind == NODE_RETURN
@@ -130,24 +133,16 @@ def node_kind_name(kind: i64) -> string
 		return "while"
 	return "unknown"
 
-def Node(kind: i64, token: i64, first: i64, count: i64)
-	pub kind
-	pub token
-	pub first
-	pub count
+rec Node(kind: i64, token: i64, first: i64, count: i64)
 
-def ParseState(source: string, tokens: Array[Token])
-	pub source
-	pub tokens
+rec ParseState(source: string, tokens: Array[Token])
 	pub nodes = Array[Node]()
 	pub edges = Array[i64]()
 	pub index = 0
 	pub error = ""
 	pub error_line = 0
 
-def ParseResult(state: ParseState, node: i64)
-	pub state
-	pub node
+rec ParseResult(state: ParseState, node: i64)
 
 def current(p: ParseState) -> Token
 	return p.tokens[p.index?]!
@@ -466,12 +461,46 @@ def parse_block(p: ParseState) -> ParseResult
 		next = expect_kind(next, TOKEN_DEDENT, "dedent")
 	return append_node(next, NODE_BLOCK, token, items)
 
+# A rec implicitly publishes its parameters. Explicit pub declarations replace
+# the corresponding implicit field; other pub declarations add new fields.
+def rec_body(p: ParseState, params: Array[i64]) -> ParseResult
+	var body = ParseResult(p, -1)
+	if kind_is(p, TOKEN_NEWLINE)
+		var next = expect_kind(p, TOKEN_NEWLINE, "newline")
+		if kind_is(next, TOKEN_INDENT)
+			body = parse_block(p)
+		else
+			body = append_node(next, NODE_BLOCK, p.index, Array[i64]())
+	else
+		return ParseResult(fail(p, "expected newline after rec parameters"), -1)
+	if body.state.error != ""
+		return body
+	var next = body.state
+	var statements = Array[i64]()
+	let block = next.nodes[body.node?]!
+	for param in params
+		let entry = next.nodes[param?]!
+		let name = token_text(next.source, next.tokens[entry.token?]!)
+		var explicit = false
+		for i in 0..block.count
+			let child = next.edges[block.first + i?]!
+			let published = next.nodes[child?]!
+			if published.kind == NODE_PUB and token_text(next.source, next.tokens[published.token?]!) == name
+				explicit = true
+		if not explicit
+			let node = leaf(next, NODE_PUB, entry.token)
+			next = node.state
+			statements = statements.append(node.node)
+	for i in 0..block.count
+		statements = statements.append(next.edges[block.first + i?]!)
+	return append_node(next, NODE_BLOCK, block.token, statements)
+
 def parse_statement(p: ParseState) -> ParseResult
 	let token = p.index
 	let op = word(p)
 	var next = p
-	if op == "def"
-		next = expect(next, "def")
+	if op == "def" or op == "rec"
+		next.index += 1
 		let name = next.index
 		next = expect_kind(next, TOKEN_NAME, "function name")
 		next = expect(next, "(")
@@ -486,14 +515,20 @@ def parse_statement(p: ParseState) -> ParseResult
 				break
 			next = expect(next, ",")
 		next = expect(next, ")")
-		if next.error == "" and is_token(next, "->")
+		if op == "def" and next.error == "" and is_token(next, "->")
 			next = expect(next, "->")
 			let typ = parse_type(next)
 			next = typ.state
 			args = args.append(typ.node)
-		let body = parse_block(next)
+		var body = ParseResult(next, -1)
+		if op == "rec"
+			body = rec_body(next, args)
+		else
+			body = parse_block(next)
 		next = body.state
 		args = args.append(body.node)
+		if op == "rec"
+			return append_node(next, NODE_REC, name, args)
 		return append_node(next, NODE_DEF, name, args)
 	if op == "if"
 		var arms = Array[i64]()
