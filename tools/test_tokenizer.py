@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent
+from sirius_sources import ROOT, TOKENIZER_SOURCES, combined_sources
 
 
 def run(command: list[str]) -> None:
@@ -33,8 +33,7 @@ def main() -> None:
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		combined = work / 'tokenizer_test.sirius'
-		combined.write_text((ROOT / 'src/tokenizer.sirius').read_text(encoding='utf8') + '\n' +
-			(ROOT / 'tests/tokenizer/driver.sirius').read_text(encoding='utf8'), encoding='utf8')
+		combined.write_bytes(combined_sources(TOKENIZER_SOURCES + ('tests/tokenizer/driver.sirius',)))
 		c_source = work / 'tokenizer.c'
 		binary = work / ('tokenizer.exe' if sys.platform == 'win32' else 'tokenizer')
 		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')

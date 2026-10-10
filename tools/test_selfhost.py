@@ -7,22 +7,8 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent
-SOURCES = (
-	'src/tokenizer.sirius',
-	'src/parser.sirius',
-	'src/emit_c.sirius',
-	'tests/emitter/driver.sirius',
-)
-REFERENCES = (
-	'01_scalars', '02_branches', '03_loops', '04_recursion',
-	'06_constructor', '07_record_spread', '10_generic', '17_dict',
-	'20_structural_layout', '29_strings_and_arguments', '36_string_byte_at',
-)
-EMITTER_CASES = (
-	'50_ordered_calls', '51_managed_constructor', '52_adjacent_if',
-	'53_field_index_update', '54_shadowing',
-)
+from emitter_cases import check_cases
+from sirius_sources import ROOT, COMPILER_SOURCES, combined_sources
 
 
 def execute(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -41,22 +27,6 @@ def compile_c(cc: str, source: Path, output: Path) -> None:
 def canonical_bytes(path: Path) -> bytes:
 	return path.read_bytes().replace(b'\r\n', b'\n')
 
-
-def check_programs(cc: str, compiler: Path, work: Path) -> None:
-	for stem in REFERENCES + EMITTER_CASES:
-		folder = ROOT / ('tests' if stem in REFERENCES else 'tests/emitter')
-		input_file = folder / 'fixtures' / f'{stem}.sirius'
-		normalized = work / f'{stem}.sirius'
-		normalized.write_bytes(canonical_bytes(input_file))
-		generated = work / f'{stem}.c'
-		execute([str(compiler), str(normalized), str(generated)])
-		binary = work / (f'{stem}.exe' if sys.platform == 'win32' else stem)
-		compile_c(cc, generated, binary)
-		output = execute([str(binary)]).stdout
-		expected = (folder / 'expected_output' / f'{stem}.txt').read_text(encoding='utf-8')
-		if output != expected:
-			raise AssertionError(f'{stem}: expected {expected!r}, got {output!r}')
-		print(f'PASS compiler {stem}')
 
 
 def check_committed(committed: Path, generated: bytes) -> None:
@@ -87,7 +57,7 @@ def main() -> None:
 		work = Path(temporary)
 		source = work / 'compiler.sirius'
 		# Byte-oriented source spans must not depend on Windows checkout line endings.
-		source.write_bytes(b''.join(canonical_bytes(ROOT / part) for part in SOURCES))
+		source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
 
 		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')
 		compile_c(cc, committed, seed)
@@ -113,8 +83,7 @@ def main() -> None:
 			raise AssertionError('Compiler C did not reach a fixed point in 8 generations')
 
 		# The generated compiler has been tested, not merely text-compared.
-		check_programs(cc, fixed_binary, work)
-		print(f'{len(REFERENCES) + len(EMITTER_CASES)} executable checks passed')
+		check_cases(cc, fixed_binary, work)
 		generated_c = fixed_c.read_bytes()
 		if args.update_bootstrap:
 			committed.write_bytes(generated_c)

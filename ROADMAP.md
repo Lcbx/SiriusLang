@@ -6,8 +6,8 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 
 - **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap_c/compiler.c`. The emitter still combines semantic analysis and C11 generation.
 - **Historical bootstrap:** `bootstrap_python/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs 16 executable checks. See `tools/test_selfhost.py`.
-- **Coverage:** 67 emitter executions (13 original language cases + 54 emitter-specific fixtures), 29 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (70 positives and 29 diagnostics). See `tools/test_selfhost.py`.
+- **Coverage:** 70 emitter executions (13 original language cases + 57 emitter-specific fixtures), 29 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work
 
@@ -30,7 +30,7 @@ When the new compiler adds syntax or semantics that the previous seed cannot com
 
 The Python scripts under `tools/` are test/build orchestration and remain permitted; **`bootstrap_python/` itself is archival**.
 
-## 2. Technical and organizational debt
+## 3. Technical and organizational debt
 
 | Priority | Debt | Evidence / risk | Recommended remedy |
 | --- | --- | --- | --- |
@@ -39,7 +39,7 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
 | **P1** | No module/import system | `src/` and its driver are concatenated in dependency order; collision and coupling risks increase with size | Split compiler components using an ordered build manifest now; later implement static `namespace`/`import` |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
-| **P1** | Testing is broad but uneven | 16 fixed-point smoke programs versus 67 emitter cases; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
+| **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
 | **P2** | Runtime/C backend coupling | C-specific ownership helpers and runtime wrappers are exposed in emission logic | Backend-neutral MIR ownership operations, then a narrow C11 backend/runtime ABI |
 | **P2** | Incomplete numeric and effects policy | Overflow/conversion details, transitive purity, and order-sensitive operations are not fully settled | Decide observable semantics before implementing optimizations or parallel transforms |
@@ -47,18 +47,19 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 
 Do **not** attempt to solve all of these in one refactor. Each phase below should leave the compiler self-hosting and regression tests runnable.
 
-## 3. Implementation order
+## 4. Implementation order
 
 ### Phase A — Stabilize the bootstrap and test boundary
 
 **Available now:** Python test runners, C11, Sirius scalar/record/array/dictionary support, byte-oriented strings, the existing indexed AST and self-hosted emitter.
 
-- [ ] Centralize the ordered `src/` source manifest used by tokenizer/parser/emitter/self-host runners. Avoid repeatedly specifying different concatenation lists.
+- [x] Centralize the ordered `src/` source manifest in `tools/sirius_sources.py`, retaining byte-exact historical concatenation for the bootstrap fixed point.
 - [x] Run tokenizer, parser, emitter and self-hosting tests using the committed C bootstrap; keep Python-stage-0 tests explicitly archival.
-- [ ] Compare observable output, exit codes and diagnostic categories across compiler generations when changing semantics.
-- [ ] Expand the fixed-point compiler smoke coverage from 16 toward the 67 emitter-positive cases, excluding fixtures only with documented reasons.
+- [x] Share expected output, exit codes and diagnostic substrings for the stage-1 and fixed-point compiler suites.
+- [ ] Compare output/diagnostics between successive compiler generations for new language semantics.
+- [x] Run the complete 70-positive/29-negative emitter suite against the fixed-point compiler using `tools/emitter_cases.py`.
 - [ ] Add sanitizer builds (ASan/UBSan where supported) and Windows GCC checks. The C-bootstrap fixed-point/currentness check is already implemented in `tools/test_selfhost.py`.
-- [ ] Add regression cases for nested managed locals on `return`, `break`, `continue`, `recur`, short-circuit branches, and conditional failure paths.
+- [ ] Extend ownership regression coverage to managed `recur`, nested short-circuit branches, and conditional failures. Three new focused cases cover managed `return`, `break`, and `continue` (55–57); these also passed UBSan.
 
 **Done when:** the committed C bootstrap alone (plus a native C compiler) is sufficient to build the active compiler and run its full supported-subset tests on development platforms. No Sirius language additions needed.
 
@@ -125,7 +126,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 These are **language-completeness goals**, not prerequisites for preserving the existing self-hosting milestone.
 
-## 4. Consistency with the language design
+## 5. Consistency with the language design
 
 **Aligned:** statically compiled C target; tab-indented syntax; imperative loops and functional-first API direction; structural records with deterministic, lexicographically sorted fields; immutable value semantics with CoW; simple noncapturing functions; generics via specialization; byte-oriented tokenizer; explicit `Optional`; constructor-based union distinction by structural result type; single-threaded ARC bootstrap; generated C retained for independent builds.
 
@@ -139,7 +140,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 
 **Semantics still needing decisions/tests:** numeric overflow, integer division and explicit conversions; descriptor identity/layout stability across independently compiled modules; file I/O error representation (`read_text`/`write_text` are provisional); static bounds proofs; exact permitted FFI effects; how structurally identical constructor results should behave as union alternatives (current choice: they are not distinguishable). These should be resolved before optimizing or exposing them as stable user-facing contracts.
 
-## 5. Documentation responsibilities
+## 6. Documentation responsibilities
 
 - [README.md](README.md): how to build/test, what works, where to look next.
 - [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md): the intended public language, independent of backend shortcuts.

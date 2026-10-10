@@ -1,0 +1,9 @@
+def main() -> i64
+	var total = 0
+	for i in 0..4
+		let payload = {name = "loop", values = [1, 2]}
+		if i == 1
+			continue
+		total += len(payload.values)
+	print(total)
+	return 0

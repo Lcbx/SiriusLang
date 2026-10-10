@@ -1,0 +1,11 @@
+def choose(flag: bool) -> string
+	let outer = "outside"
+	if flag
+		let nested = {name = "inside", values = [10, 20]}
+		return nested.name
+	return outer
+
+def main() -> i64
+	print(choose(true))
+	print(choose(false))
+	return 0

@@ -5,7 +5,7 @@ import subprocess
 import sys
 import tempfile
 
-ROOT = Path(__file__).resolve().parent.parent
+from sirius_sources import ROOT, PARSER_SOURCES, combined_sources
 
 
 def run(command: list[str]) -> None:
@@ -22,9 +22,7 @@ def main() -> None:
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		combined = work / 'parser_test.sirius'
-		combined.write_text('\n'.join((ROOT / name).read_text(encoding='utf-8') for name in (
-			'src/tokenizer.sirius', 'src/parser.sirius', 'tests/parser/driver.sirius')),
-			encoding='utf-8')
+		combined.write_bytes(combined_sources(PARSER_SOURCES + ('tests/parser/driver.sirius',)))
 		c_source = work / 'parser.c'
 		binary = work / ('parser.exe' if sys.platform == 'win32' else 'parser')
 		seed = work / ('seed.exe' if sys.platform == 'win32' else 'seed')

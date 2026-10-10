@@ -33,11 +33,11 @@ The update command compiles from the **existing** `bootstrap_c/compiler.c`, chec
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 16 executable smoke cases |
-| `python tools/test_emitter.py` | Sirius-written emitter: 67 positive C executions, 29 expected diagnostics |
+| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 70 executable cases and 29 expected diagnostics |
+| `python tools/test_emitter.py` | Sirius-written emitter: 70 positive C executions, 29 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
-| `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and smoke checks |
+| `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
 | `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
 
 The counts describe the current fixtures, not full conformance. The active tokenizer, parser, emitter and bootstrap tests use **only the committed C compiler** as their compiler seed. Python orchestrates tests but does not compile Sirius. The historical `bootstrap_python/` tests may still be run manually for archival comparison.
@@ -57,7 +57,7 @@ ROADMAP.md            Technical debt, design assessment, staged implementation p
 target_ir.py          Illustrative Python IR dataclasses; not used by the compiler
 ```
 
-Source modules in `src/` are currently **concatenated in a fixed order**, along with `tests/emitter/driver.sirius`, to build the compiler. Sirius imports are not implemented yet. `tools/test_selfhost.py` documents and verifies the C-only compilation sequence.
+Source modules in `src/` are currently **concatenated in a fixed order**, along with `tests/emitter/driver.sirius` using `tools/sirius_sources.py`, to build the compiler. Sirius imports are not implemented yet. `tools/sirius_sources.py` centralizes the ordered source manifest; `tools/emitter_cases.py` contains the shared stage-1/fixed-point regression inventory.
 
 ## Current scope and limitations
 
