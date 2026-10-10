@@ -107,17 +107,19 @@ def FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i6
 	pub constructor
 	pub symbol
 
-def InstanceInfo(name: string, kinds: Array[i64], kind: i64, symbol: string, code: string, status: i64)
+def InstanceInfo(name: string, kinds: Array[i64], type_ids: Array[i64], kind: i64, symbol: string, code: string, status: i64)
 	pub name
 	pub kinds
+	pub type_ids
 	pub kind
 	pub symbol
 	pub code
 	pub status
 
-def SymbolInfo(name: string, kind: i64, mutable: bool, depth: i64)
+def SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
 	pub name
 	pub kind
+	pub type_id
 	pub mutable
 	pub depth
 
@@ -362,13 +364,15 @@ def is_generic(info: FunctionInfo) -> bool
 			return true
 	return false
 
-def find_instance(state: EmitState, name: string, kinds: Array[i64]) -> i64
+# Specializations are identified by canonical semantic types. Legacy kinds are
+# retained only to name their C parameter and result representations.
+def find_instance(state: EmitState, name: string, type_ids: Array[i64]) -> i64
 	for i in 0..len(state.instances)
 		let instance = state.instances[i?]!
-		if instance.name == name and len(instance.kinds) == len(kinds)
+		if instance.name == name and len(instance.type_ids) == len(type_ids)
 			var equal = true
-			for j in 0..len(kinds)
-				if instance.kinds[j?]! != kinds[j?]!
+			for j in 0..len(type_ids)
+				if instance.type_ids[j?]! != type_ids[j?]!
 					equal = false
 			if equal
 				return i
@@ -385,7 +389,8 @@ def find_constant(state: EmitState, name: string) -> string
 def record_field_index(state: EmitState, kind: i64, name: string) -> i64
 	if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START or kind - TYPE_RECORD_START >= len(state.records)
 		return -1
-	let fields = state.records[kind - TYPE_RECORD_START?]!.fields
+	let canonical = state.records[kind - TYPE_RECORD_START?]!.canonical
+	let fields = state.types.entries[canonical?]!.fields
 	for i in 0..len(fields)
 		if fields[i?]!.name == name
 			return i
@@ -414,6 +419,21 @@ def canonical_kind(table: TypeTable, records: Array[RecordInfo], kind: i64) -> I
 		let inner = canonical_kind(table, records, element)
 		return intern_array_type(inner.table, inner.id)
 	return InternedType(table, TYPE_INVALID)
+
+def InternedSignature(table: TypeTable, ids: Array[i64])
+	pub table
+	pub ids
+
+# Resolve the entire signature against one table, including container/record
+# types encountered for the first time at a generic call.
+def canonical_signature(state: EmitState, kinds: Array[i64]) -> InternedSignature
+	var table = state.types
+	var ids = Array[i64]()
+	for kind in kinds
+		let entry = canonical_kind(table, state.records, kind)
+		table = entry.table
+		ids = ids.append(entry.id)
+	return InternedSignature(table, ids)
 
 def intern_record(state: EmitState, fields: Array[RecordField]) -> ExprCode
 	let ordered = ordered_fields(fields)
@@ -656,7 +676,7 @@ def append_symbol(state: EmitState, id: i64, name: string, kind: i64, mutable: b
 	if canonical.id == TYPE_INVALID
 		return emit_error(result, id, "unsupported binding type")
 	result.types = canonical.table
-	result.symbols = result.symbols.append(SymbolInfo(name, kind, mutable, result.scope_depth))
+	result.symbols = result.symbols.append(SymbolInfo(name, kind, canonical.id, mutable, result.scope_depth))
 	return result
 
 def check_type(state: EmitState, id: i64, found: i64, expected: i64) -> EmitState
@@ -721,19 +741,21 @@ def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
 # Compile each concrete generic call only once. The in-progress cache entry
 # prevents accidental infinite specialization of recursive generic functions.
 def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[i64], arguments: Array[string]) -> ExprCode
-	let existing = find_instance(state, info.name, kinds)
-	if existing >= 0
-		let instance = state.instances[existing?]!
-		if instance.kind == TYPE_INVALID
-			return ExprCode(emit_error(state, id, "recursive generic call requires an explicit return type"), "", TYPE_INVALID)
-		return ExprCode(state, instance.symbol + "(" + ", ".join(arguments) + ")", instance.kind)
+	let signature = canonical_signature(state, kinds)
 	var next = state
+	next.types = signature.table
+	let existing = find_instance(next, info.name, signature.ids)
+	if existing >= 0
+		let instance = next.instances[existing?]!
+		if instance.kind == TYPE_INVALID
+			return ExprCode(emit_error(next, id, "recursive generic call requires an explicit return type"), "", TYPE_INVALID)
+		return ExprCode(next, instance.symbol + "(" + ", ".join(arguments) + ")", instance.kind)
 	let index = len(next.instances)
 	let symbol = "s_" + info.name + "__" + str(index)
 	var params = Array[ParameterInfo]()
 	for i in 0..len(kinds)
 		params = params.append(ParameterInfo(info.params[i?]!.name, kinds[i?]!))
-	next.instances = next.instances.append(InstanceInfo(info.name, kinds, info.kind, symbol, "", 1))
+	next.instances = next.instances.append(InstanceInfo(info.name, kinds, signature.ids, info.kind, symbol, "", 1))
 	let previous_lines = next.lines
 	let previous_symbols = next.symbols
 	let previous_indent = next.indentation
@@ -754,7 +776,7 @@ def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[
 		body = body + row + "\n"
 	let result = next.return_kind
 	if next.error == ""
-		next.instances[index?]! = InstanceInfo(info.name, kinds, result, symbol, body, 2)
+		next.instances[index?]! = InstanceInfo(info.name, kinds, signature.ids, result, symbol, body, 2)
 	next.lines = previous_lines
 	next.symbols = previous_symbols
 	next.indentation = previous_indent
@@ -1684,7 +1706,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		probe.symbols = Array[SymbolInfo]()
 		var fields = Array[RecordField]()
 		for param in params
-			probe.symbols = probe.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
+			probe = append_symbol(probe, id, param.name, param.kind, false)
 		for i in 0..body.count
 			let pub_id = ast_child(state.tree, body_id, i)
 			let pub = ast_node(state.tree, pub_id)
@@ -1765,7 +1787,7 @@ def emit_function(state: EmitState, info: FunctionInfo) -> EmitState
 	var args = Array[string]()
 	for param in info.params
 		args = args.append(c_type(param.kind) + " v_" + param.name)
-		next.symbols = next.symbols.append(SymbolInfo(param.name, param.kind, false, 0))
+		next = append_symbol(next, info.body, param.name, param.kind, false)
 	let header = len(next.lines)
 	next = line(next, "")
 	next = line(next, "{")

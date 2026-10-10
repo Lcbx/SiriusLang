@@ -69,7 +69,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Define HIR nodes in a **flat arena** (node IDs and child-edge indices), mirroring the current parser; use `i64` kind constants as temporary tags.
 - [x] Introduce a canonical `TypeTable` for primitive, record, `Array`, `Dict`, and `Optional` descriptors; intern by structure with sorted record fields. Register record and bound-value types through the compatibility bridge.
-- [ ] Migrate remaining legacy arithmetic type IDs, generic specialization signatures, field lookup and C layout generation to canonical `TypeId`s. Add function/union descriptors when those features are implemented.
+- [ ] Complete the migration from legacy arithmetic type IDs to canonical `TypeId`s. **Done:** generic specialization cache keys, binding metadata and record-field name lookup now use canonical IDs. **Remaining:** static type checking, C ABI/layout and helper generation. Add function/union descriptors when implemented.
 - [ ] Move lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. Preserve source spans.
 - [ ] Move generic monomorphization to an explicit cache keyed by definition ID and concrete `TypeId`s, tracking in-progress specializations.
 - [ ] Lower constructors into typed record-producing operations; make extension calls and built-in operations explicitly resolved.

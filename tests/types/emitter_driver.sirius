@@ -1,0 +1,33 @@
+# Exercise the canonical TypeId bridge inside the still-compatible C emitter.
+def main() -> i64
+	let parsed = parse_module("def main() -> i64\n\treturn 0\n")
+	var state = EmitState(parsed.state)
+	let first = intern_record(state, [RecordField("z", TYPE_I64), RecordField("a", TYPE_STRING)])
+	state = first.state
+	let second = intern_record(state, [RecordField("a", TYPE_STRING), RecordField("z", TYPE_I64)])
+	state = second.state
+	if first.kind != second.kind
+		return 1
+	if record_field_index(state, first.kind, "a") != 0 or record_field_index(state, first.kind, "z") != 1
+		return 2
+
+	let kinds = [array_of(first.kind), optional_of(first.kind), dict_of(TYPE_STRING, first.kind)]
+	let one = canonical_signature(state, kinds)
+	state.types = one.table
+	let two = canonical_signature(state, kinds)
+	if len(one.ids) != len(two.ids) or len(one.table.entries) != len(two.table.entries)
+		return 3
+	for i in 0..len(one.ids)
+		if one.ids[i?]! != two.ids[i?]!
+			return 4
+
+	state = append_symbol(state, parsed.node, "result", kinds[0?]!, true)
+	if state.error != "" or state.symbols[0?]!.type_id != one.ids[0?]!
+		return 5
+
+	# Cache lookup must depend on semantic TypeIds, not the C-facing kinds.
+	state.instances = state.instances.append(InstanceInfo("typed", [TYPE_BOOL], one.ids, TYPE_I64, "s_example", "", 2))
+	if find_instance(state, "typed", two.ids) != 0
+		return 6
+	print("PASS canonical emitter types")
+	return 0

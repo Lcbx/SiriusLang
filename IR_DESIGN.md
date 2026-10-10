@@ -118,3 +118,8 @@ has_value: x = optional.value
 ## Rationale for separating lowering from parsing
 
 The earlier GDScript-to-C++ transpiler combined parsing, inference and emission. Sirius now has separate tokenizer and parser implementations, but still mixes semantic checks and textual C emission in `src/emit_c.sirius`. The goal is not to rewrite parsing again: introduce the HIR/MIR stages between the already working indexed AST and a smaller C backend so ownership and evaluation order are explicit.
+
+
+## Phase B migration status
+
+Generic specialization lookup, symbol binding metadata and structural record-field lookup now use canonical `TypeId`s. The C backend still accepts legacy kind numbers for layout and generated helper naming. Full HIR and MIR remain future work.
