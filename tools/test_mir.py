@@ -2,7 +2,7 @@
 """Compile and run the MIR interpreter written in Sirius against hand-built MIR."""
 import argparse
 
-from test_build import BuildCache, execute, options, require_cc
+from test_build import BuildCache, check_sirius_driver, options, require_cc
 
 
 def main() -> None:
@@ -10,15 +10,12 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	binary = cache.sirius('mir', (
+	output = check_sirius_driver(cache, 'mir', (
 		'src/types.sirius',
 		'src/mir.sirius',
 		'src/mir_interpreter.sirius',
 		'tests/mir/driver.sirius',
-	))
-	output = execute([str(binary)]).stdout
-	if output != '42\nPASS Sirius MIR interpreter\n':
-		raise AssertionError(f'Unexpected MIR output: {output!r}')
+	), '42\nPASS Sirius MIR interpreter\n')
 	print(output, end='')
 
 

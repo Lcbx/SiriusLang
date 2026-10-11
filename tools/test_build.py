@@ -14,7 +14,7 @@ import sys
 import tempfile
 from typing import Callable
 
-from sirius_sources import ROOT, combined_sources
+from sirius_sources import ROOT, combined_sources, normalize_newlines
 
 BUILD = ROOT / '.build' / 'cache'
 C_FLAGS = ('-std=c11', '-O0', '-Wall', '-Wextra', '-Werror', '-pedantic')
@@ -99,8 +99,7 @@ class BuildCache:
 		runtime = self.runtime()
 		filename = 'program.exe' if sys.platform == 'win32' else 'program'
 		def build(output: Path, _: Path) -> None:
-			execute([self.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
-				'-lm', '-o', str(output)])
+			compile_c(self.cc, source, output, runtime)
 		return self._artifact(category, (source.read_bytes(), runtime.parent.name.encode(), *inputs), filename, build)
 
 	def seed(self) -> Path:
@@ -116,6 +115,55 @@ class BuildCache:
 			combined.write_bytes(data)
 			generated = folder / 'generated.c'
 			execute([str(seed), str(combined), str(generated)])
-			execute([self.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
-				'-lm', '-o', str(output)])
+			compile_c(self.cc, generated, output, runtime)
 		return self._artifact(category, (data, seed.parent.name.encode(), runtime.parent.name.encode()), filename, build)
+
+
+def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
+	"""Link a C source file against the Sirius runtime with strict C11 flags."""
+	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'),
+		str(source), str(runtime), '-lm', '-o', str(output)])
+
+
+def compile_native(cache: BuildCache, source: Path, output: Path | None = None) -> Path:
+	"""Compile generated/reference C with the shared strict flags and runtime."""
+	if output is None:
+		output = source.with_suffix('.exe' if sys.platform == 'win32' else '')
+	compile_c(cache.cc, source, output, cache.runtime())
+	return output
+
+
+def run_native(cache: BuildCache, source: Path, *, output: Path | None = None,
+	args: tuple[str, ...] = (), cwd: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+	"""Compile and run C, preserving process exit codes and raw stderr."""
+	binary = compile_native(cache, source, output)
+	return subprocess.run([str(binary), *args], cwd=cwd, capture_output=True)
+
+
+def assert_native(result: subprocess.CompletedProcess[bytes], *, stdout: bytes = b'',
+	code: int | None = 0, stderr_contains: bytes | None = None) -> None:
+	"""Check native output and status. code=None requires a nonzero exit."""
+	actual = normalize_newlines(result.stdout)
+	failed_status = result.returncode == 0 if code is None else result.returncode != code
+	if actual != normalize_newlines(stdout) or failed_status or (
+		stderr_contains is not None and stderr_contains not in normalize_newlines(result.stderr)
+	):
+		raise AssertionError(f'Unexpected native execution: {result!r}; expected stdout={stdout!r}, '
+			f'exit={"nonzero" if code is None else code}, stderr_contains={stderr_contains!r}')
+
+
+def check_native(cache: BuildCache, source: Path, *, stdout: bytes = b'',
+	code: int | None = 0, stderr_contains: bytes | None = None,
+	output: Path | None = None, args: tuple[str, ...] = (), cwd: Path | None = None) -> None:
+	"""Compile and assert a native executable in one step."""
+	assert_native(run_native(cache, source, output=output, args=args, cwd=cwd),
+		stdout=stdout, code=code, stderr_contains=stderr_contains)
+
+
+def check_sirius_driver(cache: BuildCache, category: str, sources: tuple[str, ...],
+	expected: str) -> str:
+	"""Compile a Sirius test driver, execute it, and check its text output."""
+	result = execute([str(cache.sirius(category, sources))]).stdout
+	if result != expected:
+		raise AssertionError(f'Unexpected {category} output: {result!r}; expected {expected!r}')
+	return result

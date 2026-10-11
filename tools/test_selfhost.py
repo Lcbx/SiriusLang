@@ -7,22 +7,12 @@ import sys
 import tempfile
 
 from emitter_cases import check_cases
-from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, options, require_cc, validate_jobs
-from sirius_sources import ROOT, COMPILER_SOURCES, combined_sources
-
-
-def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
-	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source),
-		str(runtime), '-lm', '-o', str(output)])
-
-
-def canonical_bytes(path: Path) -> bytes:
-	return path.read_bytes().replace(b'\r\n', b'\n')
-
+from test_build import BuildCache, compile_c, execute, options, require_cc, validate_jobs
+from sirius_sources import ROOT, COMPILER_SOURCES, combined_sources, normalize_newlines
 
 
 def check_committed(committed: Path, generated: bytes) -> None:
-	checked_in = canonical_bytes(committed)
+	checked_in = normalize_newlines(committed.read_bytes())
 	if checked_in == generated:
 		print('PASS committed bootstrap C matches')
 		return

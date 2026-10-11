@@ -5,9 +5,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, validate_jobs
+from test_build import BuildCache, compile_c, execute, validate_jobs
 
-from sirius_sources import ROOT
+from sirius_sources import ROOT, normalize_newlines
 
 REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '29_strings_and_arguments', '36_string_byte_at', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
 ERRORS = {
@@ -70,12 +70,12 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 		folder = work / f'positive_{index}'
 		folder.mkdir()
 		input_file = folder / 'input.sirius'
-		input_file.write_bytes(source.read_bytes().replace(b'\r\n', b'\n'))
+		input_file.write_bytes(normalize_newlines(source.read_bytes()))
 		generated = folder / 'generated.c'
 		execute([str(compiler), str(input_file), str(generated)])
 		output_binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
-		execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
-			'-lm', '-o', str(output_binary)])
+
+		compile_c(cc, generated, output_binary, runtime)
 		args = [str(output_binary)]
 		if source.stem == '48_file_io':
 			args.append(str(folder / 'stage1_file_roundtrip.txt'))

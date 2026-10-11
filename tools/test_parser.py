@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from sirius_sources import ROOT, PARSER_SOURCES
+from sirius_sources import ROOT, PARSER_SOURCES, normalize_newlines
 from test_build import BuildCache, options, require_cc, validate_jobs
 
 
@@ -27,7 +27,7 @@ def main() -> None:
 		def golden(item: tuple[int, Path]) -> str:
 			index, case = item
 			fixture = work / f'fixture_{index}.sirius'
-			fixture.write_bytes(case.read_bytes().replace(b'\r\n', b'\n'))
+			fixture.write_bytes(normalize_newlines(case.read_bytes()))
 			result = subprocess.run([str(binary), str(fixture)], capture_output=True,
 				text=True, encoding='utf-8')
 			expected = (ROOT / 'tests/parser/expected_output' / (case.stem + '.txt')).read_text(encoding='utf-8')

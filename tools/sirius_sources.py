@@ -16,6 +16,12 @@ COMPILER_SOURCES = PARSER_SOURCES + (
 	'src/mir_emit_c.sirius',
 	'tests/emitter/driver.sirius',
 )
+MIR_DRIVER_SOURCES = COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
+
+
+def normalize_newlines(data: bytes) -> bytes:
+	"""Normalize CRLF output and source bytes for portable comparisons."""
+	return data.replace(b'\r\n', b'\n')
 
 
 def combined_sources(sources: tuple[str, ...], separator: bytes = b'\n') -> bytes:
@@ -24,4 +30,4 @@ def combined_sources(sources: tuple[str, ...], separator: bytes = b'\n') -> byte
 	The self-host fixed point uses separator=b'' to preserve its historical
 	concatenation exactly; other tests historically inserted extra newlines.
 	"""
-	return separator.join((ROOT / name).read_bytes().replace(b'\r\n', b'\n') for name in sources)
+	return separator.join(normalize_newlines((ROOT / name).read_bytes()) for name in sources)

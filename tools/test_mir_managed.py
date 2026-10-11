@@ -1,17 +1,15 @@
 #!/usr/bin/env python
 """Execute the same managed MIR in the interpreter and native C backend."""
-import subprocess
 import tempfile
 from pathlib import Path
 
-from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, require_cc
-from sirius_sources import COMPILER_SOURCES, ROOT
+from test_build import BuildCache, check_native, execute, require_cc
+from sirius_sources import MIR_DRIVER_SOURCES
 
 
 def main() -> None:
-	cc = require_cc()
-	cache = BuildCache(cc)
-	driver = cache.sirius('mir-managed', COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius', 'tests/mir/managed_driver.sirius'))
+	cache = BuildCache(require_cc())
+	driver = cache.sirius('mir-managed', MIR_DRIVER_SOURCES + ('tests/mir/managed_driver.sirius',))
 	with tempfile.TemporaryDirectory() as directory:
 		folder = Path(directory)
 		generated = [folder / 'managed.c', folder / 'invalid.c']
@@ -19,11 +17,7 @@ def main() -> None:
 		if result.stdout != 'hello!\nPASS managed MIR\n':
 			raise AssertionError(result.stdout)
 		for source, expected, fragment in ((generated[0], b'hello!\n', None), (generated[1], b'', b'uninitialized register')):
-			program = source.with_suffix('')
-			execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source), str(cache.runtime()), '-lm', '-o', str(program)])
-			run = subprocess.run([str(program)], capture_output=True)
-			if run.stdout != expected or (fragment is None and run.returncode != 6) or (fragment is not None and (run.returncode == 0 or fragment not in run.stderr)):
-				raise AssertionError((source.name, run))
+			check_native(cache, source, stdout=expected, code=6 if fragment is None else None, stderr_contains=fragment)
 		print('PASS managed MIR: interpreter, native C, and use-after-move detection')
 
 

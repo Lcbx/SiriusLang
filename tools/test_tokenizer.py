@@ -6,13 +6,13 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from sirius_sources import ROOT, TOKENIZER_SOURCES
+from sirius_sources import ROOT, TOKENIZER_SOURCES, normalize_newlines
 from test_build import BuildCache, options, require_cc, validate_jobs
 
 
 def fixture_bytes(case: Path) -> bytes:
 	# Byte offsets refer to canonical fixture bytes, even on Windows checkouts.
-	data = case.read_bytes().replace(b'\r\n', b'\n')
+	data = normalize_newlines(case.read_bytes())
 	if case.name == '08_crlf.sirius':
 		return data.replace(b'\n', b'\r\n')
 	if case.name == '18_cr.sirius':

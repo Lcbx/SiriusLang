@@ -5,8 +5,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, options, require_cc
-from sirius_sources import COMPILER_SOURCES, ROOT
+from test_build import BuildCache, assert_native, execute, normalize_newlines, options, require_cc, run_native
+from sirius_sources import COMPILER_SOURCES, normalize_newlines
 
 
 CASES = {
@@ -51,14 +51,12 @@ def main() -> None:
 			results = []
 			for backend in ('legacy', 'mir'):
 				c_path = work / f'{name}-{backend}.c'
-				program = work / f'{name}-{backend}'
 				command = [str(compiler), str(input_path), str(c_path)]
 				if backend == 'mir':
 					command.insert(1, '--mir-c')
 				execute(command)
-				execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(c_path), str(cache.runtime()), '-lm', '-o', str(program)])
-				result = subprocess.run([str(program)], capture_output=True)
-				results.append((result.returncode, result.stdout, result.stderr))
+				result = run_native(cache, c_path)
+				results.append((result.returncode, normalize_newlines(result.stdout), normalize_newlines(result.stderr)))
 			if results[0] != results[1]:
 				raise AssertionError(f'{name}: backend mismatch: {results}')
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
@@ -82,14 +80,8 @@ def main() -> None:
 			(generated[1], b'', b'quoted "panic" and backslash \\ end'),
 			(generated[2], b'', b'uninitialized register'),
 		):
-			program = source.with_suffix('')
-			execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source),
-				str(cache.runtime()), '-lm', '-o', str(program)])
-			result = subprocess.run([str(program)], capture_output=True)
-			if result.stdout != expected or (error_fragment is None and result.returncode != 0) or (
-				error_fragment is not None and (result.returncode == 0 or error_fragment not in result.stderr)
-			):
-				raise AssertionError(f'{source.name}: {result}')
+			result = run_native(cache, source)
+			assert_native(result, stdout=expected, code=0 if error_fragment is None else None, stderr_contains=error_fragment)
 		print('PASS MIR-C direct print, panic escaping, uninitialized register')
 
 

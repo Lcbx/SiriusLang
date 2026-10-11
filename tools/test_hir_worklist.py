@@ -2,7 +2,7 @@
 """Test the specialization worklist without a MIR or C-emitter dependency."""
 import argparse
 
-from test_build import BuildCache, execute, options, require_cc
+from test_build import BuildCache, check_sirius_driver, options, require_cc
 
 
 def main() -> None:
@@ -10,14 +10,11 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	binary = cache.sirius('hir-worklist', (
+	output = check_sirius_driver(cache, 'hir-worklist', (
 		'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
 		'src/hir.sirius', 'src/hir_specialize.sirius',
 		'tests/types/worklist_driver.sirius',
-	))
-	output = execute([str(binary)]).stdout
-	if output != 'PASS HIR worklist without backend\n':
-		raise AssertionError(f'Unexpected worklist output: {output!r}')
+	), 'PASS HIR worklist without backend\n')
 	print(output, end='')
 
 
