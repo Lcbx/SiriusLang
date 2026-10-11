@@ -99,7 +99,7 @@ rec ParameterInfo(name: string, kind: i64)
 
 rec FunctionInfo(name: string, kind: i64, params: Array[ParameterInfo], body: i64, constructor: bool, symbol: string)
 
-rec InstanceInfo(name: string, kinds: Array[i64], type_ids: Array[i64], kind: i64, symbol: string, code: string, status: i64)
+rec InstanceInfo(kinds: Array[i64], kind: i64, symbol: string, code: string)
 
 rec ConstantInfo(name: string, value: string)
 
@@ -108,6 +108,7 @@ rec RecordInfo(fields: Array[RecordField], canonical: i64)
 rec EmitState(tree: ParseState)
 	pub functions = Array[FunctionInfo]()
 	pub instances = Array[InstanceInfo]()
+	pub specializations = new_hir_specializations()
 	pub active_params = Array[ParameterInfo]()
 	pub symbols = Array[SymbolInfo]()
 	pub constants = Array[ConstantInfo]()
@@ -327,20 +328,6 @@ def is_generic(info: FunctionInfo) -> bool
 		if param.kind == TYPE_INVALID
 			return true
 	return false
-
-# Specializations are identified by canonical semantic types. Legacy kinds are
-# retained only to name their C parameter and result representations.
-def find_instance(state: EmitState, name: string, type_ids: Array[i64]) -> i64
-	for i in 0..len(state.instances)
-		let instance = state.instances[!i]
-		if instance.name == name and len(instance.type_ids) == len(type_ids)
-			var equal = true
-			for j in 0..len(type_ids)
-				if instance.type_ids[!j] != type_ids[!j]
-					equal = false
-			if equal
-				return i
-	return -1
 
 def find_constant(state: EmitState, name: string) -> string
 	for item in state.constants
@@ -774,24 +761,26 @@ def uses_optional_fallback(state: EmitState, id: i64) -> bool
 def ambiguous_order(state: EmitState, a: i64, b: i64) -> bool
 	return has_effect(state, a, Array[string]()) and has_effect(state, b, Array[string]())
 
-# Compile each concrete generic call only once. The in-progress cache entry
-# prevents accidental infinite specialization of recursive generic functions.
+# HIR owns specialization identity and lifecycle. The emitter stores only C
+# representations of each HIR registry entry (at the same index for now).
 def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[i64], arguments: Array[string]) -> ExprCode
 	let signature = canonical_signature(state, kinds)
 	var next = state
-	next.types = signature.table
-	let existing = find_instance(next, info.name, signature.ids)
-	if existing >= 0
-		let instance = next.instances[!existing]
+	let declared = canonical_kind(signature.table, next.records, info.kind)
+	next.types = declared.table
+	let started = hir_begin_specialization(next.specializations, info.body, signature.ids, declared.id)
+	next.specializations = started.registry
+	if not started.created
+		let instance = next.instances[!started.index]
 		if instance.kind == TYPE_INVALID
 			return ExprCode(emit_error(next, id, "recursive generic call requires an explicit return type"), "", TYPE_INVALID)
 		return ExprCode(next, instance.symbol + "(" + ", ".join(arguments) + ")", instance.kind)
-	let index = len(next.instances)
+	let index = started.index
 	let symbol = "s_" + info.name + "__" + str(index)
 	var params = Array[ParameterInfo]()
 	for i in 0..len(kinds)
 		params = params.append(ParameterInfo(info.params[!i].name, kinds[!i]))
-	next.instances = next.instances.append(InstanceInfo(info.name, kinds, signature.ids, info.kind, symbol, "", 1))
+	next.instances = next.instances.append(InstanceInfo(kinds, info.kind, symbol, ""))
 	let previous_lines = next.lines
 	let previous_symbols = next.symbols
 	let previous_indent = next.indentation
@@ -812,14 +801,17 @@ def specialize_call(state: EmitState, id: i64, info: FunctionInfo, kinds: Array[
 		body = body + row + "\n"
 	let result = next.return_kind
 	if next.error == ""
-		next.instances[!index] = InstanceInfo(info.name, kinds, signature.ids, result, symbol, body, 2)
+		let resolved = canonical_kind(next.types, next.records, result)
+		next.types = resolved.table
+		next.specializations = hir_complete_specialization(next.specializations, index, resolved.id)
+		next.instances[!index] = InstanceInfo(kinds, result, symbol, body)
 	next.lines = previous_lines
 	next.symbols = previous_symbols
 	next.indentation = previous_indent
 	next.loop_depth = previous_loop
 	next.loop_scope = previous_loop_scope
-	next.scope_depth = previous_scope
 	next.return_kind = previous_return
+	next.scope_depth = previous_scope
 	next.function_name = previous_name
 	next.active_params = previous_params
 	if next.error != ""

@@ -19,6 +19,7 @@ def main() -> None:
 		('canonical', ('src/types.sirius', 'tests/types/driver.sirius'), 'PASS canonical type descriptors\n'),
 		('emitter', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/emit_c.sirius', 'tests/types/emitter_driver.sirius'), 'PASS canonical emitter types\n'),
 		('hir', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'tests/types/hir_driver.sirius'), 'PASS typed HIR resolution\n'),
+		('specializations', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'tests/types/specialization_driver.sirius'), 'PASS HIR specialization registry\n'),
 	)
 	def check(case: tuple[str, tuple[str, ...], str]) -> str:
 		name, sources, expected = case
@@ -26,7 +27,7 @@ def main() -> None:
 		output = execute([str(binary)]).stdout
 		if output != expected:
 			raise AssertionError(f'Unexpected {name} output: {output!r}')
-		return f'PASS {name} type table' if name != 'hir' else 'PASS typed HIR resolution'
+		return f'PASS {name} type table' if name not in ('hir', 'specializations') else ('PASS typed HIR resolution' if name == 'hir' else 'PASS HIR specialization registry')
 
 	with ThreadPoolExecutor(max_workers=validate_jobs(args.jobs)) as pool:
 		for message in pool.map(check, cases):

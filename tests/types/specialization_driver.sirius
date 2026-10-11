@@ -1,0 +1,35 @@
+# Semantic specialization identity, duplicate suppression and lifecycle.
+def main() -> i64
+	var types = new_type_table()
+	let first = intern_record_type(types, [RecordField("z", TYPE_TAG_I64), RecordField("a", TYPE_TAG_BOOL)])
+	types = first.table
+	let second = intern_record_type(types, [RecordField("a", TYPE_TAG_BOOL), RecordField("z", TYPE_TAG_I64)])
+	types = second.table
+	if first.id != second.id
+		return 1
+	let started = hir_begin_specialization(new_hir_specializations(), 101, [first.id], TYPE_TAG_INVALID)
+	if started.index != 0 or not started.created
+		return 2
+	if started.registry.entries[!0].status != HIR_SPEC_IN_PROGRESS
+		return 3
+	let duplicate = hir_begin_specialization(started.registry, 101, [second.id], TYPE_TAG_I64)
+	if duplicate.created or duplicate.index != started.index or len(duplicate.registry.entries) != 1
+		return 4
+	let unrelated = hir_begin_specialization(duplicate.registry, 102, [second.id], TYPE_TAG_I64)
+	if unrelated.index != 1 or not unrelated.created
+		return 5
+	let alternate = hir_begin_specialization(unrelated.registry, 101, [TYPE_TAG_BOOL], TYPE_TAG_BOOL)
+	if alternate.index != 2 or not alternate.created
+		return 6
+	var registry = hir_complete_specialization(alternate.registry, started.index, TYPE_TAG_STRING)
+	if registry.entries[!0].status != HIR_SPEC_COMPLETE or registry.entries[!0].result_type != TYPE_TAG_STRING
+		return 7
+	if registry.entries[!1].status != HIR_SPEC_IN_PROGRESS
+		return 8
+	registry = hir_complete_specialization(registry, unrelated.index, TYPE_TAG_I64)
+	if hir_find_specialization(registry, 102, [first.id]) != unrelated.index
+		return 9
+	if hir_find_specialization(registry, 101, [TYPE_TAG_I64]) != -1
+		return 10
+	print("PASS HIR specialization registry")
+	return 0

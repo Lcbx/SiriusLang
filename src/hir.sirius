@@ -87,6 +87,50 @@ def resolve_hir_unary(types: TypeTable, operand: i64, op: string) -> HirResoluti
 		return HirResolution(operand, -1, "")
 	return HirResolution(TYPE_TAG_INVALID, -1, "unsupported unary operator '" + op + "'")
 
+# A specialization belongs to semantic HIR, not to a particular code emitter.
+# definition is the function declaration's stable AST body ID for this module;
+# future cross-module symbol IDs can replace it without changing the registry.
+# Canonical argument TypeIds are interned in the owning module TypeTable.
+let HIR_SPEC_IN_PROGRESS = 1
+let HIR_SPEC_COMPLETE = 2
+
+rec HirSpecialization(definition: i64, arguments: Array[i64], result_type: i64, status: i64)
+rec HirSpecializationRegistry(entries: Array[HirSpecialization])
+rec HirSpecializationStart(registry: HirSpecializationRegistry, index: i64, created: bool)
+
+def new_hir_specializations() -> HirSpecializationRegistry
+	return HirSpecializationRegistry(Array[HirSpecialization]())
+
+def hir_find_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64]) -> i64
+	for i in 0..len(registry.entries)
+		let entry = registry.entries[!i]
+		if entry.definition != definition or len(entry.arguments) != len(arguments)
+			continue
+		var same = true
+		for j in 0..len(arguments)
+			if entry.arguments[!j] != arguments[!j]
+				same = false
+		if same
+			return i
+	return -1
+
+# Insert BEFORE analyzing a body. Recursive calls then reuse the in-progress
+# entry rather than triggering another specialization of the same signature.
+def hir_begin_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64], result_type: i64) -> HirSpecializationStart
+	let existing = hir_find_specialization(registry, definition, arguments)
+	if existing >= 0
+		return HirSpecializationStart(registry, existing, false)
+	var next = registry
+	let index = len(next.entries)
+	next.entries = next.entries.append(HirSpecialization(definition, arguments, result_type, HIR_SPEC_IN_PROGRESS))
+	return HirSpecializationStart(next, index, true)
+
+def hir_complete_specialization(registry: HirSpecializationRegistry, index: i64, result_type: i64) -> HirSpecializationRegistry
+	var next = registry
+	let entry = next.entries[!index]
+	next.entries[!index] = HirSpecialization(entry.definition, entry.arguments, result_type, HIR_SPEC_COMPLETE)
+	return next
+
 # Call signature validation is semantic: no C names or ownership helpers.
 # A checked call returns an interned result type, and (possibly) an extended
 # type table for results such as Optional[string].

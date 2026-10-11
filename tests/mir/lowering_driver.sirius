@@ -1,0 +1,46 @@
+# Source -> typed HIR -> scalar MIR -> interpreter, without generating C.
+def check(source: string, arguments: Array[MirValue], expected: i64) -> bool
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		print(parsed.state.error)
+		return false
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		print(declarations.error)
+		return false
+	let typed = hir_analyze_module_body(parsed.state, declarations.functions[!0], declarations.functions, Array[string]())
+	if typed.error != ""
+		print(typed.error)
+		return false
+	var types = Array[i64]()
+	for value in arguments
+		types = types.append(value.type_id)
+	let lowered = mir_lower_function(parsed.state, declarations.functions[!0], typed.nodes, types, TYPE_TAG_I64)
+	if lowered.error != ""
+		print(lowered.error)
+		return false
+	let program = MirProgram([lowered.function])
+	let outcome = mir_execute(program, 0, arguments, 10000, 10)
+	if outcome.error != "" or outcome.value.bits != expected
+		print(outcome.error)
+		return false
+	return true
+
+def main() -> i64
+	let loop_case = "def main() -> i64\n\tvar n = 0\n\tvar total = 0\n\twhile n < 5\n\t\tif n == 3\n\t\t\ttotal = total + 10\n\t\telse\n\t\t\ttotal = total + n\n\t\tn = n + 1\n\treturn total\n"
+	if not check(loop_case, Array[MirValue](), 17)
+		return 1
+	let shortcut = "def main() -> i64\n\tif false and (1 / 0 > 0)\n\t\treturn 1\n\tif true or (1 / 0 > 0)\n\t\treturn 42\n\treturn 0\n"
+	if not check(shortcut, Array[MirValue](), 42)
+		return 2
+	let branching = "def main() -> i64\n\tlet n = 2\n\tif n == 1\n\t\treturn 3\n\telif n == 2\n\t\treturn 5\n\telse\n\t\treturn 7\n"
+	if not check(branching, Array[MirValue](), 5)
+		return 3
+	let arguments = "def add(a: i64, b: i64) -> i64\n\treturn a + b\n"
+	if not check(arguments, [MirValue(TYPE_TAG_I64, 3), MirValue(TYPE_TAG_I64, 6)], 9)
+		return 4
+	let shadow = "def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\treturn x\n"
+	if not check(shadow, Array[MirValue](), 7)
+		return 5
+	print("PASS typed HIR scalar CFG lowering")
+	return 0

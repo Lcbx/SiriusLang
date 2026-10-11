@@ -25,9 +25,11 @@ def main() -> i64
 	if state.error != "" or state.symbols[!0].type_id != one.ids[!0]
 		return 5
 
-	# Cache lookup must depend on semantic TypeIds, not the C-facing kinds.
-	state.instances = state.instances.append(InstanceInfo("typed", [TYPE_BOOL], one.ids, TYPE_I64, "s_example", "", 2))
-	if find_instance(state, "typed", two.ids) != 0
+	# Specialization identity belongs to HIR, while C instances store output.
+	let started = hir_begin_specialization(state.specializations, 123, one.ids, TYPE_TAG_I64)
+	state.specializations = hir_complete_specialization(started.registry, started.index, TYPE_TAG_I64)
+	state.instances = state.instances.append(InstanceInfo([TYPE_BOOL], TYPE_I64, "s_example", ""))
+	if hir_find_specialization(state.specializations, 123, two.ids) != 0
 		return 6
 	let layout = c_abi(state, first.kind)
 	if layout.type_id != state.records[!first.kind - TYPE_RECORD_START].canonical or layout.copy != layout.c_name + "_copy"
