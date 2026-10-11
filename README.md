@@ -120,9 +120,11 @@ full regression suite.
 
 `MIR_ONLY_COMPILER_SOURCES` excludes `src/emit_c.sirius` and uses
 `tests/emitter/mir_driver.sirius`. Run `python tools/check_mir_bootstrap.py
---require-ready` to probe the replacement source through MIR, without legacy
-fallback. Successful C emission alone would not establish a self-hosting fixed
-point. That probe is not yet verified to complete successfully.
+--require-ready` to build a MIR-only compiler using the committed C seed,
+then ask it to compile its own source through MIR. Pass `--timeout 120` for a
+bounded probe; the script reports build and C-generation wall times separately.
+The legacy emitter is not included in MIR-only test drivers. Successful C
+emission alone would not establish a self-hosting fixed point.
 
 MIR now handles string methods (`byte_at`, `slice`, `find`, `starts_with`,
 `ends_with`, `join`), string comparisons, direct record-field updates,

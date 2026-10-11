@@ -22,12 +22,12 @@ COMPILER_SOURCES = PARSER_SOURCES + (
 	'src/mir_emit_c.sirius',
 	'tests/emitter/driver.sirius',
 )
-MIR_DRIVER_SOURCES = COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
 # Standalone compiler sources without the legacy C emitter. Do not use as the
 # default until this compiler can compile itself and pass the regression suite.
 MIR_ONLY_COMPILER_SOURCES = tuple(source for source in COMPILER_SOURCES
 	if source not in ('src/emit_c.sirius', 'tests/emitter/driver.sirius')) + (
 	'tests/emitter/mir_driver.sirius',)
+MIR_DRIVER_SOURCES = MIR_ONLY_COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
 
 
 

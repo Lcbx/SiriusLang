@@ -16,14 +16,20 @@ def mir_cleanup_releases(program: MirProgram, function: MirFunction, owned: Arra
 def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirCleanupFunction
 	var blocks = function.blocks
 	var count = 0
-	# Recompute forward state after each edge rewrite: a release on an incoming
-	# edge must be visible before considering releases on an outgoing edge.
+	# Recompute forward state only after an edge rewrite. A release on an
+	# incoming edge must be visible before considering outgoing edges.
+	var reached = mir_ownership_reachable(function)
+	var ownership = mir_ownership_states(function)
+	var liveness = mir_lifetime_states(function)
+	var dirty = false
 	for i in 0..len(function.blocks)
-		let current = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
-		let reached = mir_ownership_reachable(current)
+		if dirty
+			let current = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
+			reached = mir_ownership_reachable(current)
+			ownership = mir_ownership_states(current)
+			liveness = mir_lifetime_states(current)
+			dirty = false
 		if reached[!i] != 0
-			let ownership = mir_ownership_states(current)
-			let liveness = mir_lifetime_states(current)
 			let original = blocks[!i]
 			let term = original.terminator
 			let owned = ownership[!i].outgoing
@@ -34,6 +40,8 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 				for release in releases
 					instructions = instructions.append(release)
 					count += 1
+				if len(releases) > 0
+					dirty = true
 			elif term.kind == MIR_BRANCH
 				var yes = term.target
 				var no = term.alternative
@@ -42,11 +50,13 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 					yes = len(blocks)
 					blocks = blocks.append(MirBlock(yes_releases, mir_jump(term.target)))
 					count += len(yes_releases)
+					dirty = true
 				let no_releases = mir_cleanup_releases(program, function, owned, liveness[!no].live_in, -1)
 				if len(no_releases) > 0
 					no = len(blocks)
 					blocks = blocks.append(MirBlock(no_releases, mir_jump(term.alternative)))
 					count += len(no_releases)
+					dirty = true
 				next = mir_branch(term.operand, yes, no)
 			blocks[!i] = MirBlock(instructions, next)
 	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
