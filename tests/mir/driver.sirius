@@ -1,0 +1,182 @@
+# Execute independently constructed typed MIR, without C output for the tested
+# MIR program. The Sirius interpreter executable itself is bootstrapped via C.
+
+def mir_test_loop() -> MirProgram
+	# Compute 5! using registers and a backedge.
+	var entry_ins = Array[MirInstruction]()
+	entry_ins = entry_ins.append(mir_op(MIR_CONST_I64, 0, -1, -1, 1))
+	entry_ins = entry_ins.append(mir_op(MIR_CONST_I64, 1, -1, -1, 1))
+	entry_ins = entry_ins.append(mir_op(MIR_CONST_I64, 2, -1, -1, 5))
+	entry_ins = entry_ins.append(mir_op(MIR_CONST_I64, 4, -1, -1, 1))
+	let entry_term = mir_jump(1)
+	let entry = MirBlock(entry_ins, entry_term)
+	let test_instr = mir_op(MIR_LE_I64, 3, 1, 2, -1)
+	let test_term = mir_branch(3, 2, 3)
+	let test = MirBlock([test_instr], test_term)
+	let multiply = mir_op(MIR_MUL_I64, 0, 0, 1, -1)
+	let increment = mir_op(MIR_ADD_I64, 1, 1, 4, -1)
+	let body_term = mir_jump(1)
+	let body = MirBlock([multiply, increment], body_term)
+	let done_term = mir_return(0)
+	let done = MirBlock(Array[MirInstruction](), done_term)
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_BOOL, TYPE_TAG_I64], [entry, test, body, done], 0)
+	return MirProgram([function])
+
+def mir_test_calls() -> MirProgram
+	# Function 0 doubles an integer; function 1 applies function 0 twice.
+	let add = mir_op(MIR_ADD_I64, 1, 0, 0, -1)
+	let inner_term = mir_return(1)
+	let inner_block = MirBlock([add], inner_term)
+	let inner = MirFunction(1, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64], [inner_block], 0)
+	let call1 = mir_call(1, 0, [0])
+	let call2 = mir_call(2, 0, [1])
+	let outer_term = mir_return(2)
+	let outer_block = MirBlock([call1, call2], outer_term)
+	let outer = MirFunction(1, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [outer_block], 0)
+	return MirProgram([inner, outer])
+
+def mir_test_division() -> MirProgram
+	let ten = mir_op(MIR_CONST_I64, 0, -1, -1, 10)
+	let zero = mir_op(MIR_CONST_I64, 1, -1, -1, 0)
+	let div = mir_op(MIR_DIV_I64, 2, 0, 1, -1)
+	let term = mir_return(2)
+	let block = MirBlock([ten, zero, div], term)
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [block], 0)
+	return MirProgram([function])
+
+
+def mir_test_arithmetic() -> MirProgram
+	# Exercise all scalar arithmetic opcodes, copies and the print intrinsic.
+	var instructions = Array[MirInstruction]()
+	instructions = instructions.append(mir_op(MIR_CONST_I64, 0, -1, -1, 21))
+	instructions = instructions.append(mir_op(MIR_CONST_I64, 1, -1, -1, 2))
+	instructions = instructions.append(mir_op(MIR_DIV_I64, 2, 0, 1, -1))
+	instructions = instructions.append(mir_op(MIR_REM_I64, 3, 0, 1, -1))
+	instructions = instructions.append(mir_op(MIR_ADD_I64, 4, 2, 3, -1))
+	instructions = instructions.append(mir_op(MIR_NEG_I64, 5, 3, -1, -1))
+	instructions = instructions.append(mir_op(MIR_SUB_I64, 6, 4, 5, -1))
+	instructions = instructions.append(mir_op(MIR_MUL_I64, 7, 6, 1, -1))
+	instructions = instructions.append(mir_op(MIR_COPY, 8, 7, -1, -1))
+	instructions = instructions.append(mir_op(MIR_CONST_I64, 9, -1, -1, 18))
+	instructions = instructions.append(mir_op(MIR_ADD_I64, 10, 8, 9, -1))
+	instructions = instructions.append(mir_op(MIR_PRINT, -1, 10, -1, -1))
+	let term = mir_return(10)
+	let block = MirBlock(instructions, term)
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [block], 0)
+	return MirProgram([function])
+
+def mir_test_branch() -> MirProgram
+	# The comparison is false, selecting block 2.
+	let a = mir_op(MIR_CONST_I64, 0, -1, -1, 8)
+	let b = mir_op(MIR_CONST_I64, 1, -1, -1, 4)
+	let less = mir_op(MIR_LT_I64, 2, 0, 1, -1)
+	let condition = mir_branch(2, 1, 2)
+	let entry = MirBlock([a, b, less], condition)
+	let wrong_value = mir_op(MIR_CONST_I64, 3, -1, -1, 999)
+	let result_term = mir_return(3)
+	let yes = MirBlock([wrong_value], result_term)
+	let correct_value = mir_op(MIR_CONST_I64, 3, -1, -1, 42)
+	let no = MirBlock([correct_value], result_term)
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_BOOL, TYPE_TAG_I64], [entry, yes, no], 0)
+	return MirProgram([function])
+
+def mir_test_bool_equality() -> MirProgram
+	let a = mir_op(MIR_CONST_BOOL, 0, -1, -1, 1)
+	let b = mir_op(MIR_CONST_BOOL, 1, -1, -1, 1)
+	let equal = mir_op(MIR_EQ_BOOL, 2, 0, 1, -1)
+	let term = mir_return(2)
+	let block = MirBlock([a, b, equal], term)
+	let function = MirFunction(0, TYPE_TAG_BOOL, [TYPE_TAG_BOOL, TYPE_TAG_BOOL, TYPE_TAG_BOOL], [block], 0)
+	return MirProgram([function])
+
+def main() -> i64
+	let factorial = mir_test_loop()
+	let result = mir_execute(factorial, 0, Array[MirValue](), 200, 8)
+	if result.error != "" or result.value.bits != 120 or result.value.type_id != TYPE_TAG_I64
+		print("factorial: " + result.error)
+		return 1
+	let limited = mir_execute(factorial, 0, Array[MirValue](), 5, 8)
+	if limited.error != "step limit exceeded"
+		return 2
+	let calls = mir_test_calls()
+	let arg = MirValue(TYPE_TAG_I64, 7)
+	let doubled = mir_execute(calls, 1, [arg], 100, 8)
+	if doubled.error != "" or doubled.value.bits != 28
+		return 3
+	let short_depth = mir_execute(calls, 1, [arg], 100, 1)
+	if short_depth.error != "call depth limit exceeded"
+		return 4
+	let bad_arg = MirValue(TYPE_TAG_BOOL, 1)
+	let wrong_type = mir_execute(calls, 1, [bad_arg], 100, 8)
+	if wrong_type.error != "argument type mismatch"
+		return 5
+	let no_arg = mir_execute(calls, 1, Array[MirValue](), 100, 8)
+	if no_arg.error != "wrong argument count"
+		return 6
+	let division = mir_test_division()
+	let zero = mir_execute(division, 0, Array[MirValue](), 100, 8)
+	if zero.error != "division by zero"
+		return 7
+	let wrong_jump_term = mir_jump(17)
+	let wrong_jump_block = MirBlock(Array[MirInstruction](), wrong_jump_term)
+	let wrong_jump_fn = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64], [wrong_jump_block], 0)
+	let wrong_jump = MirProgram([wrong_jump_fn])
+	if mir_verify(wrong_jump) != "invalid jump target"
+		return 8
+	let wrong_instr = mir_op(MIR_CONST_I64, 0, -1, -1, 2)
+	let wrong_return = mir_return(0)
+	let bad_type_block = MirBlock([wrong_instr], wrong_return)
+	let bad_type_fn = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_BOOL], [bad_type_block], 0)
+	let bad_type = MirProgram([bad_type_fn])
+	if mir_verify(bad_type) != "integer constant destination must be i64"
+		return 9
+	let uninitialized_term = mir_return(0)
+	let uninitialized_block = MirBlock(Array[MirInstruction](), uninitialized_term)
+	let uninitialized_fn = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64], [uninitialized_block], 0)
+	let uninitialized = MirProgram([uninitialized_fn])
+	let uninitialized_outcome = mir_execute(uninitialized, 0, Array[MirValue](), 20, 2)
+	if uninitialized_outcome.error != "uninitialized return register"
+		return 10
+	let invalid_call_instr = mir_call(0, 1, Array[i64]())
+	let invalid_call_term = mir_return(0)
+	let invalid_call_block = MirBlock([invalid_call_instr], invalid_call_term)
+	let invalid_call_fn = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64], [invalid_call_block], 0)
+	let invalid_call = MirProgram([invalid_call_fn])
+	if mir_verify(invalid_call) != "invalid callee"
+		return 11
+	let bool_const = mir_op(MIR_CONST_BOOL, 0, -1, -1, 1)
+	let bool_not = mir_op(MIR_NOT_BOOL, 1, 0, -1, -1)
+	let bool_term = mir_return(1)
+	let bool_block = MirBlock([bool_const, bool_not], bool_term)
+	let bool_fn = MirFunction(0, TYPE_TAG_BOOL, [TYPE_TAG_BOOL, TYPE_TAG_BOOL], [bool_block], 0)
+	let bool_program = MirProgram([bool_fn])
+	let boolean = mir_execute(bool_program, 0, Array[MirValue](), 20, 2)
+	if boolean.error != "" or boolean.value.type_id != TYPE_TAG_BOOL or boolean.value.bits != 0
+		return 12
+	let panic_term = mir_panic("test panic")
+	let panic_block = MirBlock(Array[MirInstruction](), panic_term)
+	let panic_fn = MirFunction(0, TYPE_TAG_I64, Array[i64](), [panic_block], 0)
+	let panic_program = MirProgram([panic_fn])
+	let panic_result = mir_execute(panic_program, 0, Array[MirValue](), 20, 2)
+	if panic_result.error != "test panic"
+		return 13
+	let arithmetic = mir_test_arithmetic()
+	let answer = mir_execute(arithmetic, 0, Array[MirValue](), 50, 2)
+	if answer.error != "" or answer.value.bits != 42
+		return 14
+	let branch = mir_test_branch()
+	let selected = mir_execute(branch, 0, Array[MirValue](), 50, 2)
+	if selected.error != "" or selected.value.bits != 42
+		return 15
+	let equal_bool = mir_test_bool_equality()
+	let eq = mir_execute(equal_bool, 0, Array[MirValue](), 50, 2)
+	if eq.error != "" or eq.value.bits != 1
+		return 16
+	let malformed_bool = mir_execute(calls, 1, [MirValue(TYPE_TAG_I64, 7)], 3, 8)
+	if malformed_bool.error != "step limit exceeded" or malformed_bool.steps != 3
+		return 17
+	let bad_bool = mir_execute(MirProgram([bool_fn]), 0, Array[MirValue](), 20, 2)
+	if bad_bool.error != ""
+		return 18
+	print("PASS Sirius MIR interpreter")
+	return 0

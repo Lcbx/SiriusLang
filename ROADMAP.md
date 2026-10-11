@@ -79,6 +79,9 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 ### Phase C — Introduce CFG MIR and deterministic evaluation
 
+- [x] Implement a first executable scalar CFG MIR, structural/type verifier, and unoptimized Sirius-written interpreter, independently tested with hand-built MIR (`src/mir.sirius`, `src/mir_interpreter.sirius`, `tools/test_mir.py`). Not connected to source/HIR or the C emitter yet.
+- [ ] After shared source-to-MIR lowering and C emission exist, expose shared behavioral tests with `--backend=c|both` (`INTERPRETER.md`).
+
 **Available then:** typed HIR, indexed records/arrays, scalar indices, and normal imperative loops. Represent MIR as flat arrays of blocks and instructions; no generalized pattern matching or heap graph is required.
 
 - [ ] Give each MIR instruction typed operands and a destination; represent `Branch`, `Jump`, `Switch`, `Return` and `Panic` as terminators.
@@ -146,6 +149,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [README.md](README.md): how to build/test, what works, where to look next.
 - [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md): the intended public language, independent of backend shortcuts.
 - [IR_DESIGN.md](IR_DESIGN.md): target HIR/MIR representations and lowering examples; refer to phases B–D here for the implementation sequence.
+- [INTERPRETER.md](INTERPRETER.md): interpreter status, validation policy, shared backend testing plan.
 - `target_ir.py`: exploratory Python dataclasses only, not a runtime dependency or mandatory implementation blueprint.
 
 Update this roadmap at **phase milestones**, not with an entry for every small patch; the commit history and test fixtures provide the incremental development record.

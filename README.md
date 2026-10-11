@@ -62,6 +62,7 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_emitter.py` | Sirius-written emitter: 82 positive C executions, 36 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 11 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
+| `python tools/test_mir.py` | Sirius-written scalar CFG MIR interpreter and verifier (manually constructed MIR; no source lowering yet) |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
 | `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
 | `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
@@ -73,14 +74,15 @@ The counts describe the current fixtures, not full conformance. The active token
 ## Repository map
 
 ```text
-src/                  Sirius lexer, parser, type table, initial typed HIR, and C emitter
+src/                  Sirius lexer, parser, types, HIR, C emitter, and standalone MIR interpreter
 bootstrap_python/     Frozen historical Python bootstrap (not used by active builds)
 bootstrap_c/          Checked-in, reproducible generated compiler.c
 include/              Shared C11 runtime (ARC, CoW collections, strings, I/O)
 tests/                Language, lexer, parser, emitter and failure fixtures
 tools/                Tests and bootstrap/build helpers
 LANGUAGE_DESIGN.md    Intended language semantics (normative direction)
-IR_DESIGN.md          Proposed typed HIR and CFG MIR lowering
+IR_DESIGN.md          Typed IR design and proposed MIR lowering
+INTERPRETER.md        MIR interpreter progress and backend testing policy
 ROADMAP.md            Technical debt, design assessment, staged implementation plan
 target_ir.py          Illustrative Python IR dataclasses; not used by the compiler
 ```
@@ -90,6 +92,8 @@ Source modules in `src/` are currently **concatenated in a fixed order**, along 
 ## Current scope and limitations
 
 The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published; `def` constructors rejected), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
+
+The new `src/mir.sirius` and `src/mir_interpreter.sirius` provide a verified, executable scalar CFG MIR subset and an unoptimized interpreter written in Sirius. It can execute manually constructed MIR without producing C for those programs; it is not yet wired to HIR or the CLI. Run `python tools/test_mir.py` for isolated tests. See [INTERPRETER.md](INTERPRETER.md) for scope and the planned shared `--backend` test flag.
 
 The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. Generic specialization caches, bound symbols and record-field lookup now use canonical `TypeId`s. Canonical descriptors now drive record field layout and C retain/drop helper selection for records, arrays and dictionaries. The incremental typed HIR (`src/hir.sirius`) resolves literals, local names, record fields, unary/binary expressions, assignment compatibility, builtin and user-function call signatures, string methods, collection method types, and record/constructor field composition using canonical `TypeId`s. A separate pre-emission HIR traversal now handles lexical scopes, bindings, known scalar/record/collection expressions, checked/optional indexing, optional fallback, and concrete user-function/constructor call results (including nested nonrecursive generic inference). The C emitter still handles unresolved expression types, argument evaluation, specialization caching, constructor lowering, control flow and ownership; no complete typed-function HIR exists. Legacy arithmetic type IDs still name generated C types and occur in the remaining lowering paths; a complete HIR-only semantic pass remains Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
 

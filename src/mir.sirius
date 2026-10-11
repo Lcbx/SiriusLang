@@ -1,0 +1,155 @@
+# Executable typed CFG MIR. Registers are mutable slots within each call frame.
+# The first interpreter subset supports i64 and bool values; managed values,
+# float/string operations and ownership instructions will be added alongside
+# source-to-MIR lowering.
+
+let MIR_CONST_I64 = 1
+let MIR_CONST_BOOL = 2
+let MIR_COPY = 3
+let MIR_ADD_I64 = 4
+let MIR_SUB_I64 = 5
+let MIR_MUL_I64 = 6
+let MIR_DIV_I64 = 7
+let MIR_REM_I64 = 8
+let MIR_EQ_I64 = 9
+let MIR_LT_I64 = 10
+let MIR_LE_I64 = 11
+let MIR_NOT_BOOL = 12
+let MIR_EQ_BOOL = 13
+let MIR_NEG_I64 = 14
+let MIR_CALL = 15
+let MIR_PRINT = 16
+
+let MIR_JUMP = 1
+let MIR_BRANCH = 2
+let MIR_RETURN = 3
+let MIR_PANIC = 4
+
+# immediate carries literal bits or a function index. A call uses inputs to
+# identify argument registers, in evaluation order. All other operands are
+# register indices. Unused operands are -1.
+rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64])
+rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
+rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
+rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
+rec MirProgram(functions: Array[MirFunction])
+
+# For the initial scalar subset, an i64 slot stores its integer and a bool slot
+# stores 0/1 in bits. type_id 0 represents an uninitialized register.
+rec MirValue(type_id: i64, bits: i64)
+rec MirOutcome(value: MirValue, error: string, steps: i64)
+
+def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
+	return MirInstruction(op, dst, first, second, immediate, Array[i64]())
+
+def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
+	return MirInstruction(MIR_CALL, dst, -1, -1, function_id, inputs)
+
+def mir_jump(target: i64) -> MirTerminator
+	return MirTerminator(MIR_JUMP, -1, target, -1, "")
+
+def mir_branch(condition: i64, yes: i64, no: i64) -> MirTerminator
+	return MirTerminator(MIR_BRANCH, condition, yes, no, "")
+
+def mir_return(source: i64) -> MirTerminator
+	return MirTerminator(MIR_RETURN, source, -1, -1, "")
+
+def mir_panic(message: string) -> MirTerminator
+	return MirTerminator(MIR_PANIC, -1, -1, -1, message)
+
+# Verification is structural and type-directed. Definite register initialization
+# is checked dynamically for now (CFG data-flow analysis comes with lowering).
+def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool
+	return register >= 0 and register < len(types) and types[!register] == expected
+
+def mir_supported_type(type_id: i64) -> bool
+	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL
+
+def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
+	let types = function.register_types
+	if ins.op == MIR_PRINT
+		if ins.first < 0 or ins.first >= len(types) or not mir_supported_type(types[!ins.first])
+			return "invalid print operand"
+		return ""
+	if ins.dst < 0 or ins.dst >= len(types)
+		return "invalid destination register"
+	let dst_type = types[!ins.dst]
+	if ins.op == MIR_CONST_I64
+		if dst_type != TYPE_TAG_I64
+			return "integer constant destination must be i64"
+		return ""
+	if ins.op == MIR_CONST_BOOL
+		if dst_type != TYPE_TAG_BOOL or (ins.immediate != 0 and ins.immediate != 1)
+			return "invalid boolean constant"
+		return ""
+	if ins.op == MIR_COPY
+		if not mir_register_valid(types, ins.first, dst_type)
+			return "copy register type mismatch"
+		return ""
+	if ins.op == MIR_CALL
+		if ins.immediate < 0 or ins.immediate >= len(program.functions)
+			return "invalid callee"
+		let callee = program.functions[!ins.immediate]
+		if len(ins.inputs) != callee.argument_count or dst_type != callee.return_type
+			return "call signature mismatch"
+		for i in 0..len(ins.inputs)
+			if not mir_register_valid(types, ins.inputs[!i], callee.register_types[!i])
+				return "call argument type mismatch"
+		return ""
+	if ins.op == MIR_NOT_BOOL
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_BOOL)
+			return "boolean operand type mismatch"
+		return ""
+	if ins.op == MIR_NEG_I64
+		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "integer operand type mismatch"
+		return ""
+	if ins.op == MIR_EQ_BOOL
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_BOOL) or not mir_register_valid(types, ins.second, TYPE_TAG_BOOL)
+			return "boolean operand type mismatch"
+		return ""
+	if ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64
+		let comparison = ins.op == MIR_EQ_I64 or ins.op == MIR_LT_I64 or ins.op == MIR_LE_I64
+		let required = TYPE_TAG_I64
+		if comparison
+			if dst_type != TYPE_TAG_BOOL
+				return "integer comparison destination must be bool"
+		elif dst_type != required
+			return "integer arithmetic destination must be i64"
+		if not mir_register_valid(types, ins.first, required) or not mir_register_valid(types, ins.second, required)
+			return "integer operand type mismatch"
+		return ""
+	return "unsupported MIR opcode"
+
+def mir_verify(program: MirProgram) -> string
+	# Validate signatures first: call validation may inspect any callee.
+	for function in program.functions
+		let count = len(function.register_types)
+		if function.argument_count < 0 or function.argument_count > count or not mir_supported_type(function.return_type)
+			return "invalid function signature"
+		for type_id in function.register_types
+			if not mir_supported_type(type_id)
+				return "unsupported register type"
+	for function in program.functions
+		if function.entry < 0 or function.entry >= len(function.blocks)
+			return "invalid entry block"
+		for block in function.blocks
+			for ins in block.instructions
+				let error = mir_verify_instruction(program, function, ins)
+				if error != ""
+					return error
+			let term = block.terminator
+			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+				if term.target < 0 or term.target >= len(function.blocks)
+					return "invalid jump target"
+			if term.kind == MIR_BRANCH
+				if term.alternative < 0 or term.alternative >= len(function.blocks)
+					return "invalid branch target"
+				if not mir_register_valid(function.register_types, term.operand, TYPE_TAG_BOOL)
+					return "branch condition must be bool"
+			elif term.kind == MIR_RETURN
+				if not mir_register_valid(function.register_types, term.operand, function.return_type)
+					return "return type mismatch"
+			elif term.kind != MIR_JUMP and term.kind != MIR_PANIC
+				return "invalid block terminator"
+	return ""
