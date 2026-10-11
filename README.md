@@ -58,13 +58,15 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 76 executable cases and 32 expected diagnostics |
-| `python tools/test_emitter.py` | Sirius-written emitter: 76 positive C executions, 32 expected diagnostics |
-| `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
+| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 82 executable cases and 36 expected diagnostics |
+| `python tools/test_emitter.py` | Sirius-written emitter: 82 positive C executions, 36 expected diagnostics |
+| `python tools/test_parser.py` | Sirius parser: 11 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
 | `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
 | `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
+
+Indexing uses `a[?i]` for optional reads, `a[!i]` for checked reads/updates, and postfix `!` to unbox an optional. Boolean guards use `condition else return value`, `condition else break`, or `condition else continue`.
 
 The counts describe the current fixtures, not full conformance. The active tokenizer, parser, emitter and bootstrap tests use **only the committed C compiler** as their compiler seed. Python orchestrates tests but does not compile Sirius. The historical `bootstrap_python/` tests may still be run manually for archival comparison.
 

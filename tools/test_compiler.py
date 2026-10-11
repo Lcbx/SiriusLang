@@ -16,7 +16,7 @@ import subprocess
 import sys
 import tempfile
 
-from test_build import BuildCache, C_FLAGS, options, require_cc, validate_jobs
+from test_build import BuildCache, C_FLAGS, LINK_FLAGS, options, require_cc, validate_jobs
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -48,7 +48,7 @@ def main():
                 raise SystemExit(f'FAIL {src.stem} Sirius compiler: {result.stderr}')
             binary = folder / (src.stem + ('.exe' if sys.platform == 'win32' else ''))
             flags = ['-Wall', '-Wextra', '-Werror', '-pedantic'] if ns.strict_c else []
-            result = subprocess.run([cc, '-std=c11', '-O0', *flags, '-I', str(ROOT / 'include'), str(c_path),
+            result = subprocess.run([cc, '-std=c11', '-O0', *flags, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(c_path),
                                      str(runtime), '-lm', '-o', str(binary)],
                                     capture_output=True, text=True)
             if result.returncode:
@@ -89,7 +89,7 @@ def main():
                                         capture_output=True, text=True)
                 if result.returncode:
                     raise SystemExit(f'FAIL {stem} compile: {result.stderr}')
-                result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'include'),
+                result = subprocess.run([cc, '-std=c11', '-O0', *LINK_FLAGS, '-I', str(ROOT / 'include'),
                                          str(c_path), str(runtime),
                                          '-lm', '-o', str(binary)], capture_output=True, text=True)
                 if result.returncode:

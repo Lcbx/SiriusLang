@@ -1,0 +1,15 @@
+def accept(n: i64) -> i64
+	let text = "owned"
+	n > 0 else return -1
+	return len(text)
+
+def main() -> i64
+	print(accept(-1))
+	print(accept(3))
+	var total = 0
+	for i in 0..6
+		i >= 2 else continue
+		i < 4 else break
+		total += i
+	print(total)
+	return 0

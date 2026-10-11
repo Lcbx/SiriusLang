@@ -1,0 +1,30 @@
+0 type i64 ->
+1 integer 10 ->
+2 array -> 1
+3 let values -> 2
+4 name values ->
+5 integer 0 ->
+6 optional_index -> 4 5
+7 let maybe -> 6
+8 name maybe ->
+9 unwrap -> 8
+10 let present -> 9
+11 name present ->
+12 integer 10 ->
+13 binary == -> 11 12
+14 integer 1 ->
+15 unary - -> 14
+16 return -> 15
+17 guard -> 13 16
+18 name print ->
+19 name values ->
+20 integer 0 ->
+21 checked_index -> 19 20
+22 call -> 18 21
+23 expr -> 22
+24 integer 0 ->
+25 return -> 24
+26 block -> 3 7 10 17 23 25
+27 def main -> 0 26
+28 module -> 27
+ROOT 28

@@ -84,7 +84,7 @@ Indexed assignment follows the same value semantics:
 
 ```python
 var a = [1, 2, 3]
-a[1?]! = 10
+a[!1] = 10
 ```
 
 Field and indexed assignments require a mutable root binding. They are equivalent to replacing the corresponding immutable value.
@@ -302,18 +302,31 @@ Module constants may be referenced without captures. Bound receiver objects are 
 
 ```python
 a[i]       # Statically proven in bounds
-a[i?]      # Optional[T]
-a[i?]!     # Runtime-checked; panics if invalid
+a[?i]      # Optional[T]; returns None if out of bounds
+a[!i]      # Runtime-checked; panics if out of bounds
+optional!   # Unbox Optional[T]; panics if absent
 ```
 
 Only straightforward static bounds checks are required. Multidimensional indexing uses `a[i, j]`; partial indexing produces lower-rank arrays.
 
 ```python
-let value = a[i?] or 0
-let value = a[i?] else return false
+let value = a[?i] or 0
+let value = a[?i] else return false
 ```
 
-`or` on `Optional` selects a fallback on absence, independent of truthiness. Indexed assignment uses the same checked syntax.
+`or` on `Optional` selects a fallback on absence, independent of truthiness. Prefix `?` and `!` only modify indexing; postfix `!` unboxes any `Optional`. Indexed assignment uses `a[!i] = value`.
+
+### Guards
+
+An expression guard requires a scalar `bool`. Execution continues when it is `true`; otherwise the `else` branch terminates the current path with `return`, `break`, or `continue`:
+
+```python
+value >= 0 else return -1
+found else continue
+ready else break
+```
+
+The condition is evaluated once, and the exit runs only when it is false. This is a statement, not a boolean-valued expression. Optional extraction with `let value = optional else return fallback` remains a separate, value-binding form.
 
 ## 8. Sequential Iteration and Recursion
 
@@ -427,7 +440,7 @@ The Python bootstrap is then frozen; subsequent development uses Sirius.
 ### Medium priority
 
 * Strided views, slicing, and advanced indexing.
-* **Python-style negative array indexing** (`a[-1?]` accesses the final element), including checked reads and CoW writes.
+* **Python-style negative array indexing** (`a[?-1]` accesses the final element), including checked reads and CoW writes.
 * Axis-specific reductions and richer linear algebra.
 * Richer reflection and serialization.
 * String builders and advanced Unicode operations.

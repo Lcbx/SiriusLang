@@ -45,6 +45,8 @@ let NODE_UNARY = 39
 let NODE_VAR = 40
 let NODE_WHILE = 41
 let NODE_REC = 42
+let NODE_GUARD = 43
+let NODE_UNWRAP = 44
 
 def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -115,6 +117,10 @@ def node_kind_name(kind: i64) -> string
 		return "record"
 	if kind == NODE_REC
 		return "rec"
+	if kind == NODE_GUARD
+		return "guard"
+	if kind == NODE_UNWRAP
+		return "unwrap"
 	if kind == NODE_RECUR
 		return "recur"
 	if kind == NODE_RETURN
@@ -145,7 +151,7 @@ rec ParseState(source: string, tokens: Array[Token])
 rec ParseResult(state: ParseState, node: i64)
 
 def current(p: ParseState) -> Token
-	return p.tokens[p.index?]!
+	return p.tokens[!p.index]
 
 def word(p: ParseState) -> string
 	return token_text(p.source, current(p))
@@ -406,6 +412,13 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 		if op == "[" and min_bp <= 10
 			let position = next.index
 			next = expect(next, "[")
+			var kind = NODE_INDEX
+			if is_token(next, "?")
+				next = expect(next, "?")
+				kind = NODE_OPTIONAL_INDEX
+			elif is_token(next, "!")
+				next = expect(next, "!")
+				kind = NODE_CHECKED_INDEX
 			var args = Array[i64]()
 			args = args.append(lhs)
 			let index = parse_expr(next, 0)
@@ -416,17 +429,15 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 				let item = parse_expr(next, 0)
 				next = item.state
 				args = args.append(item.node)
-			var kind = NODE_INDEX
-			if next.error == "" and is_token(next, "?")
-				next = expect(next, "?")
-				kind = NODE_OPTIONAL_INDEX
 			next = expect(next, "]")
-			if next.error == "" and is_token(next, "!")
-				next = expect(next, "!")
-				if kind != NODE_OPTIONAL_INDEX
-					next = fail(next, "checked indexing requires '?'")
-				kind = NODE_CHECKED_INDEX
 			let node = append_node(next, kind, position, args)
+			next = node.state
+			lhs = node.node
+			continue
+		if op == "!" and min_bp <= 10
+			let position = next.index
+			next = expect(next, "!")
+			let node = unary_node(next, NODE_UNWRAP, position, lhs)
 			next = node.state
 			lhs = node.node
 			continue
@@ -477,22 +488,22 @@ def rec_body(p: ParseState, params: Array[i64]) -> ParseResult
 		return body
 	var next = body.state
 	var statements = Array[i64]()
-	let block = next.nodes[body.node?]!
+	let block = next.nodes[!body.node]
 	for param in params
-		let entry = next.nodes[param?]!
-		let name = token_text(next.source, next.tokens[entry.token?]!)
+		let entry = next.nodes[!param]
+		let name = token_text(next.source, next.tokens[!entry.token])
 		var explicit = false
 		for i in 0..block.count
-			let child = next.edges[block.first + i?]!
-			let published = next.nodes[child?]!
-			if published.kind == NODE_PUB and token_text(next.source, next.tokens[published.token?]!) == name
+			let child = next.edges[!block.first + i]
+			let published = next.nodes[!child]
+			if published.kind == NODE_PUB and token_text(next.source, next.tokens[!published.token]) == name
 				explicit = true
 		if not explicit
 			let node = leaf(next, NODE_PUB, entry.token)
 			next = node.state
 			statements = statements.append(node.node)
 	for i in 0..block.count
-		statements = statements.append(next.edges[block.first + i?]!)
+		statements = statements.append(next.edges[!block.first + i])
 	return append_node(next, NODE_BLOCK, block.token, statements)
 
 def parse_statement(p: ParseState) -> ParseResult
@@ -668,6 +679,28 @@ def parse_statement(p: ParseState) -> ParseResult
 		let rhs = parse_expr(next, 0)
 		next = expect_kind(rhs.state, TOKEN_NEWLINE, "newline")
 		return binary_node(next, NODE_ASSIGN, position, lhs.node, rhs.node)
+	if next.error == "" and is_token(next, "else")
+		next = expect(next, "else")
+		let exit_token = next.index
+		var exit_node = ParseResult(next, -1)
+		if is_token(next, "return")
+			next = expect(next, "return")
+			if kind_is(next, TOKEN_NEWLINE)
+				exit_node = leaf(next, NODE_RETURN, exit_token)
+			else
+				let value = parse_expr(next, 0)
+				exit_node = unary_node(value.state, NODE_RETURN, exit_token, value.node)
+		elif is_token(next, "break") or is_token(next, "continue")
+			let is_break = is_token(next, "break")
+			next.index += 1
+			if is_break
+				exit_node = leaf(next, NODE_BREAK, exit_token)
+			else
+				exit_node = leaf(next, NODE_CONTINUE, exit_token)
+		else
+			return ParseResult(fail(next, "guard else requires return, break, or continue"), -1)
+		next = expect_kind(exit_node.state, TOKEN_NEWLINE, "newline")
+		return binary_node(next, NODE_GUARD, token, lhs.node, exit_node.node)
 	next = expect_kind(next, TOKEN_NEWLINE, "newline")
 	return unary_node(next, NODE_EXPR, token, lhs.node)
 

@@ -7,9 +7,9 @@ def total(items) -> i64
 def main() -> i64
 	var points = [{x = 2, y = 4}, {y = 8, x = 3}]
 	let original = points
-	points[0?]! = {y = 6, x = 7}
+	points[!0] = {y = 6, x = 7}
 	points = points.append({x = 10, y = 12})
 	print(total(points))
 	print(total(original))
-	print(points[2?]!.y)
+	print(points[!2].y)
 	return 0

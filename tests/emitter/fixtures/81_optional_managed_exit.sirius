@@ -1,0 +1,11 @@
+rec Item(label: string)
+
+def lookup(i: i64) -> string
+	let items = [Item("present")]
+	let found = items[?i] else return "missing"
+	return found.label
+
+def main() -> i64
+	print(lookup(0))
+	print(lookup(7))
+	return 0

@@ -1,11 +1,11 @@
 def main() -> i64
 	var a = [10, 20, 30]
 	let original = a
-	a[1?]! = 99
-	print(a[1?]!)
-	print(original[1?]!)
+	a[!1] = 99
+	print(a[!1])
+	print(original[!1])
 	a = a.append(40)
-	print(a[3?]!)
+	print(a[!3])
 	print(len(a))
 	print(len(original))
 	return 0

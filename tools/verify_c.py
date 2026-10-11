@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 from sirius_sources import ROOT
-from test_build import BuildCache, C_FLAGS, execute, options, require_cc, validate_jobs
+from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, options, require_cc, validate_jobs
 
 
 def main() -> None:
@@ -34,7 +34,7 @@ def main() -> None:
 			folder = work / f'case_{index}'
 			folder.mkdir()
 			binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
-			execute([cache.cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
+			execute([cache.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
 				'-lm', '-o', str(binary)])
 			result = subprocess.run([str(binary)], text=True, encoding='utf-8', capture_output=True, cwd=folder)
 			expected = stdout.read_text(encoding='utf-8')
@@ -47,7 +47,7 @@ def main() -> None:
 			folder = work / f'panic_{index}'
 			folder.mkdir()
 			binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
-			execute([cache.cc, *C_FLAGS, '-I', str(ROOT / 'include'),
+			execute([cache.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'),
 				str(ROOT / 'tests/runtime_errors' / f'{stem}.c'), str(runtime), '-lm', '-o', str(binary)])
 			result = subprocess.run([str(binary)], capture_output=True, text=True, encoding='utf-8', cwd=folder)
 			if result.returncode != expected['exit'] or expected['stderr_contains'] not in result.stderr:

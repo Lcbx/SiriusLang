@@ -1,0 +1,7 @@
+def main() -> i64
+	let values = [10]
+	let maybe = values[?0]
+	let present = maybe!
+	present == 10 else return -1
+	print(values[!0])
+	return 0

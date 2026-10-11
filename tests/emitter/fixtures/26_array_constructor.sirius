@@ -4,9 +4,9 @@ def main() -> i64
 	var tokens = Array[Token]()
 	tokens = tokens.append(Token(3, 10))
 	tokens = tokens.append(Token(5, 20))
-	print(tokens[1?]!.kind)
+	print(tokens[!1].kind)
 	print(len(tokens))
 	var words = Array[string]()
 	words = words.append("hello")
-	print(words[0?]!)
+	print(words[!0])
 	return 0

@@ -1,11 +1,11 @@
 def change_first(values: Array[i64, 1]) -> Array[i64, 1]
 	var copy = values
-	copy[0?]! = 42
+	copy[!0] = 42
 	return copy
 
 def main() -> i64
 	let a = [10, 20]
 	let b = change_first(a)
-	print(a[0?] or -1)
-	print(b[0?] or -1)
+	print(a[?0] or -1)
+	print(b[?0] or -1)
 	return 0

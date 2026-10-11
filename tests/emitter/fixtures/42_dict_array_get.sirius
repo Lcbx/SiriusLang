@@ -8,6 +8,6 @@ def main() -> i64
 	let alias = d
 	let present = d.get(1) or default_list()
 	let missing = alias.get(2) or default_list()
-	print(present[0?]!)
-	print(missing[0?]!)
+	print(present[!0])
+	print(missing[!0])
 	return 0

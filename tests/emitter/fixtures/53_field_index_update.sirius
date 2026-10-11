@@ -3,7 +3,7 @@ rec Store(values: Array[i64])
 def main() -> i64
 	var store = Store([1, 2])
 	let original = store
-	store.values[1?]! = 9
-	print(store.values[1?]!)
-	print(original.values[1?]!)
+	store.values[!1] = 9
+	print(store.values[!1])
+	print(original.values[!1])
 	return 0

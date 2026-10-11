@@ -32,13 +32,13 @@ def new_type_table() -> TypeTable
 # through different paths.
 def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
 	for i in 0..len(table.entries)
-		let entry = table.entries[i?]!
+		let entry = table.entries[!i]
 		if entry.tag != tag or entry.first != first or entry.second != second or len(entry.fields) != len(fields)
 			continue
 		var equal = true
 		for j in 0..len(fields)
-			let a = entry.fields[j?]!
-			let b = fields[j?]!
+			let a = entry.fields[!j]
+			let b = fields[!j]
 			if a.name != b.name or a.kind != b.kind
 				equal = false
 		if equal
@@ -61,14 +61,14 @@ def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
 	var result = Array[RecordField]()
 	for field in fields
 		var at = 0
-		while at < len(result) and result[at?]!.name < field.name
+		while at < len(result) and result[!at].name < field.name
 			at += 1
 		var sorted = Array[RecordField]()
 		for i in 0..at
-			sorted = sorted.append(result[i?]!)
+			sorted = sorted.append(result[!i])
 		sorted = sorted.append(field)
 		for i in at..len(result)
-			sorted = sorted.append(result[i?]!)
+			sorted = sorted.append(result[!i])
 		result = sorted
 	return result
 

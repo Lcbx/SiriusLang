@@ -269,12 +269,12 @@ def tokenize(source: string) -> Array[Token]
 				if depth == len(brackets)
 					brackets = brackets.append(c)
 				else
-					brackets[depth?]! = c
+					brackets[!depth] = c
 				depth += 1
 			elif c == 41 or c == 93 or c == 125 # ) ] }
 				if depth == 0
 					return tokens.append(Token(TOKEN_INVALID_BRACKET, pos, end, line, column))
-				let opening = brackets[depth - 1?]!
+				let opening = brackets[!depth - 1]
 				if (c == 41 and opening != 40) or (c == 93 and opening != 91) or (c == 125 and opening != 123) # () [] {}
 					return tokens.append(Token(TOKEN_INVALID_BRACKET, pos, end, line, column))
 				depth -= 1

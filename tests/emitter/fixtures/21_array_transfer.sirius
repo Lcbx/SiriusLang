@@ -7,6 +7,6 @@ def main() -> i64
 	var a = [2]
 	let b = a
 	a = grow(a)
-	print(a[1?]!)
-	print(b[0?]!)
+	print(a[!1])
+	print(b[!0])
 	return 0

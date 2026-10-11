@@ -4,12 +4,12 @@ def main() -> i64
 	if len(args) != 3
 		print("usage: emit_c input.sirius output.c")
 		return 2
-	let source = read_text(args[1?]!) or ""
+	let source = read_text(args[!1]) or ""
 	let result = compile_c(source)
 	if result.error != ""
 		print("ERROR " + str(result.line) + ": " + result.error)
 		return 1
-	if not write_text(args[2?]!, result.code)
+	if not write_text(args[!2], result.code)
 		print("cannot write output")
 		return 2
 	return 0

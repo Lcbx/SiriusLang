@@ -27,8 +27,8 @@ def main() -> i64
 	let record2 = intern_record_type(record1.table, ba)
 	if record1.id != record2.id
 		return 4
-	let fields = record2.table.entries[record2.id?]!.fields
-	if fields[0?]!.name != "a" or fields[1?]!.name != "b"
+	let fields = record2.table.entries[!record2.id].fields
+	if fields[!0].name != "a" or fields[!1].name != "b"
 		return 5
 
 	let changed = intern_record_type(record2.table, [RecordField("a", TYPE_TAG_I64)])

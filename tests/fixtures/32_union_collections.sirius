@@ -9,7 +9,7 @@ def main() -> i64
 	values = values.append(Success(7))
 	values = values.append(Failure(2))
 	print(len(values))
-	let entry: Result = values[0?]!
+	let entry: Result = values[!0]
 	match entry
 		Success(value)
 			print(value)

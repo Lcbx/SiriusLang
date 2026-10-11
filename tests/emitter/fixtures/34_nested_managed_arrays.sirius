@@ -3,6 +3,6 @@ def main() -> i64
 	rows = rows.append(["alpha"])
 	let old = rows
 	rows = rows.append(["beta"])
-	print(old[0?]![0?]!)
-	print(rows[1?]![0?]!)
+	print(old[!0][!0])
+	print(rows[!1][!0])
 	return 0

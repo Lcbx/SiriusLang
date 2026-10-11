@@ -1,19 +1,19 @@
 # Concatenate after src/tokenizer.sirius and src/parser.sirius.
 def main() -> i64
 	let args = arguments()
-	let source = read_text(args[1?]!) or ""
+	let source = read_text(args[!1]) or ""
 	let result = parse_module(source)
 	if result.state.error != ""
 		print("ERROR " + str(result.state.error_line) + ": " + result.state.error)
 		return 0
 	for i in 0..len(result.state.nodes)
-		let entry = result.state.nodes[i?]!
+		let entry = result.state.nodes[!i]
 		var info = str(i) + " " + node_kind_name(entry.kind)
 		if entry.kind == NODE_NAME or entry.kind == NODE_BOOL or entry.kind == NODE_DELETE or entry.kind == NODE_INTEGER or entry.kind == NODE_FLOAT or entry.kind == NODE_STRING or entry.kind == NODE_BINARY or entry.kind == NODE_UNARY or entry.kind == NODE_ATTR or entry.kind == NODE_TYPE or entry.kind == NODE_PARAM or entry.kind == NODE_DEF or entry.kind == NODE_FIELD or entry.kind == NODE_CASE or entry.kind == NODE_LET or entry.kind == NODE_VAR or entry.kind == NODE_PUB or entry.kind == NODE_ASSIGN
-			info = info + " " + token_text(result.state.source, result.state.tokens[entry.token?]!)
+			info = info + " " + token_text(result.state.source, result.state.tokens[!entry.token])
 		info = info + " ->"
 		for j in entry.first..(entry.first + entry.count)
-			info = info + " " + str(result.state.edges[j?]!)
+			info = info + " " + str(result.state.edges[!j])
 		print(info)
 	print("ROOT " + str(result.node))
 	return 0

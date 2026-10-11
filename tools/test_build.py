@@ -18,6 +18,8 @@ from sirius_sources import ROOT, combined_sources
 
 BUILD = ROOT / '.build' / 'cache'
 C_FLAGS = ('-std=c11', '-O0', '-Wall', '-Wextra', '-Werror', '-pedantic')
+# Windows PE executables default to a small stack; self-hosting needs more.
+LINK_FLAGS = ('-Wl,--stack,16777216',) if sys.platform == 'win32' else ()
 
 
 def options(parser: argparse.ArgumentParser) -> None:
@@ -43,7 +45,8 @@ def require_cc() -> str:
 def execute(command: list[str]) -> subprocess.CompletedProcess[str]:
 	result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8', errors='replace')
 	if result.returncode:
-		raise RuntimeError(f'{" ".join(command)}\n{result.stdout}{result.stderr}')
+		status = f'{result.returncode} (0x{result.returncode & 0xffffffff:08X})'
+		raise RuntimeError(f'Exit code {status}: {" ".join(command)}\n{result.stdout}{result.stderr}')
 	return result
 
 
@@ -59,7 +62,7 @@ class BuildCache:
 	def _artifact(self, category: str, inputs: tuple[bytes, ...], filename: str,
 		build: Callable[[Path, Path], None]) -> Path:
 		hash_value = hashlib.sha256()
-		for value in (self.toolchain.encode(), category.encode(), repr(C_FLAGS).encode(), *inputs):
+		for value in (self.toolchain.encode(), category.encode(), repr((C_FLAGS, LINK_FLAGS)).encode(), *inputs):
 			hash_value.update(len(value).to_bytes(8, 'big'))
 			hash_value.update(value)
 		folder = BUILD / category / hash_value.hexdigest()
@@ -96,7 +99,7 @@ class BuildCache:
 		runtime = self.runtime()
 		filename = 'program.exe' if sys.platform == 'win32' else 'program'
 		def build(output: Path, _: Path) -> None:
-			execute([self.cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
+			execute([self.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source), str(runtime),
 				'-lm', '-o', str(output)])
 		return self._artifact(category, (source.read_bytes(), runtime.parent.name.encode(), *inputs), filename, build)
 
@@ -113,6 +116,6 @@ class BuildCache:
 			combined.write_bytes(data)
 			generated = folder / 'generated.c'
 			execute([str(seed), str(combined), str(generated)])
-			execute([self.cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
+			execute([self.cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
 				'-lm', '-o', str(output)])
 		return self._artifact(category, (data, seed.parent.name.encode(), runtime.parent.name.encode()), filename, build)

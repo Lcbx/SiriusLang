@@ -3,6 +3,6 @@ def main() -> i64
 	grid = grid.append([10, 20])
 	let before = grid
 	grid = grid.append([30])
-	print(before[0?]![1?]!)
-	print(grid[1?]![0?]!)
+	print(before[!0][!1])
+	print(grid[!1][!0])
 	return 0

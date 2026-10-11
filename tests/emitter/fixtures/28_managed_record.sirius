@@ -5,7 +5,7 @@ def main() -> i64
 	changed.label = "second"
 	changed.scores = changed.scores.append(30)
 	print(original.label)
-	print(alias.scores[1?]!)
+	print(alias.scores[!1])
 	print(changed.label)
-	print(changed.scores[2?]!)
+	print(changed.scores[!2])
 	return 0

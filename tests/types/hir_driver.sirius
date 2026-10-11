@@ -46,7 +46,7 @@ def main() -> i64
 	if resolve_hir_string_call(typed_array.table, TYPE_TAG_STRING, "join", [TYPE_TAG_I64]).error != "expected Array[string], found i64"
 		return 16
 	let file_read = resolve_hir_builtin_call(typed_array.table, "read_text", [TYPE_TAG_STRING])
-	if file_read.error != "" or file_read.table.entries[file_read.type_id?]!.tag != TYPE_TAG_OPTIONAL
+	if file_read.error != "" or file_read.table.entries[!file_read.type_id].tag != TYPE_TAG_OPTIONAL
 		return 17
 	if resolve_hir_builtin_call(typed_array.table, "write_text", [TYPE_TAG_STRING, TYPE_TAG_I64]).error != "expected string, found i64"
 		return 18
@@ -61,7 +61,7 @@ def main() -> i64
 		return 22
 	let dict = intern_dict_type(typed_array.table, TYPE_TAG_STRING, typed_array.id)
 	let get = resolve_hir_collection_call(dict.table, dict.id, "get", [TYPE_TAG_STRING])
-	if get.error != "" or get.table.entries[get.type_id?]!.first != typed_array.id
+	if get.error != "" or get.table.entries[!get.type_id].first != typed_array.id
 		return 23
 	if resolve_hir_collection_call(dict.table, dict.id, "insert", [TYPE_TAG_I64, typed_array.id]).error != "expected string, found i64"
 		return 24
@@ -78,7 +78,7 @@ def main() -> i64
 	if second.error != "" or len(second.fields) != 2
 		return 29
 	let override = hir_record_put(second.fields, "z", TYPE_TAG_BOOL)
-	if override.index != 0 or override.fields[0?]!.kind != TYPE_TAG_BOOL
+	if override.index != 0 or override.fields[!0].kind != TYPE_TAG_BOOL
 		return 30
 	let restored = hir_record_put(override.fields, "z", TYPE_TAG_I64)
 	let same_record = resolve_hir_record(table, restored.fields)
@@ -106,10 +106,10 @@ def main() -> i64
 	let declarations = hir_module_declarations(parsed.state, parsed.node)
 	if declarations.error != "" or len(declarations.functions) != 2
 		return 40
-	let first_fn = declarations.functions[0?]!
+	let first_fn = declarations.functions[!0]
 	if first_fn.name != "id" or first_fn.constructor or len(first_fn.parameters) != 1 or first_fn.result_type_node < 0
 		return 41
-	let second_fn = declarations.functions[1?]!
+	let second_fn = declarations.functions[!1]
 	if second_fn.name != "Pair" or not second_fn.constructor or len(second_fn.parameters) != 2 or second_fn.result_type_node >= 0
 		return 42
 	let duplicate = parse_module("def f(x: i64, x: i64) -> i64\n\treturn x\n")
@@ -126,7 +126,7 @@ def main() -> i64
 	if body_tree.state.error != ""
 		return 46
 	let body_decls = hir_module_declarations(body_tree.state, body_tree.node)
-	let body_check = hir_analyze_function_body(body_tree.state, body_decls.functions[0?]!, ["calculate"], Array[string]())
+	let body_check = hir_analyze_function_body(body_tree.state, body_decls.functions[!0], ["calculate"], Array[string]())
 	if body_check.error != "" or len(body_check.nodes) < 10
 		return 47
 	var found_binary = false
@@ -140,27 +140,27 @@ def main() -> i64
 		return 48
 	let repeated = parse_module("def f() -> i64\n\tlet x = 1\n\tlet x = 2\n\treturn x\n")
 	let repeated_decl = hir_module_declarations(repeated.state, repeated.node)
-	if hir_analyze_function_body(repeated.state, repeated_decl.functions[0?]!, ["f"], Array[string]()).error != "duplicate binding 'x'"
+	if hir_analyze_function_body(repeated.state, repeated_decl.functions[!0], ["f"], Array[string]()).error != "duplicate binding 'x'"
 		return 49
 	let reassigned = parse_module("def f() -> i64\n\tlet x = 1\n\tx = 2\n\treturn x\n")
 	let reassigned_decl = hir_module_declarations(reassigned.state, reassigned.node)
-	if hir_analyze_function_body(reassigned.state, reassigned_decl.functions[0?]!, ["f"], Array[string]()).error != "cannot assign immutable binding 'x'"
+	if hir_analyze_function_body(reassigned.state, reassigned_decl.functions[!0], ["f"], Array[string]()).error != "cannot assign immutable binding 'x'"
 		return 50
 	let loop = parse_module("def f() -> i64\n\tfor i in 0..3\n\t\ti += 1\n\treturn 0\n")
 	let loop_decl = hir_module_declarations(loop.state, loop.node)
-	if hir_analyze_function_body(loop.state, loop_decl.functions[0?]!, ["f"], Array[string]()).error != "cannot assign immutable binding 'i'"
+	if hir_analyze_function_body(loop.state, loop_decl.functions[!0], ["f"], Array[string]()).error != "cannot assign immutable binding 'i'"
 		return 51
 	let wrong_type = parse_module("def f() -> i64\n\tlet x: bool = 3\n\treturn 0\n")
 	let wrong_decl = hir_module_declarations(wrong_type.state, wrong_type.node)
-	if hir_analyze_function_body(wrong_type.state, wrong_decl.functions[0?]!, ["f"], Array[string]()).error != "expected bool, found i64"
+	if hir_analyze_function_body(wrong_type.state, wrong_decl.functions[!0], ["f"], Array[string]()).error != "expected bool, found i64"
 		return 52
 	let missing = parse_module("def f() -> i64\n\treturn missing\n")
 	let missing_decl = hir_module_declarations(missing.state, missing.node)
-	if hir_analyze_function_body(missing.state, missing_decl.functions[0?]!, ["f"], Array[string]()).error != "unknown name 'missing'"
+	if hir_analyze_function_body(missing.state, missing_decl.functions[!0], ["f"], Array[string]()).error != "unknown name 'missing'"
 		return 53
 	let deferred = parse_module("def f() -> i64\n\tlet values = [1, 2]\n\treturn len(values)\n")
 	let deferred_decl = hir_module_declarations(deferred.state, deferred.node)
-	if hir_analyze_function_body(deferred.state, deferred_decl.functions[0?]!, ["f"], Array[string]()).error != ""
+	if hir_analyze_function_body(deferred.state, deferred_decl.functions[!0], ["f"], Array[string]()).error != ""
 		return 54
 	print("PASS typed HIR resolution")
 	return 0

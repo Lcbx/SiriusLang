@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-from test_build import BuildCache, C_FLAGS, execute, validate_jobs
+from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, validate_jobs
 
 from sirius_sources import ROOT
 
@@ -43,6 +43,10 @@ ERRORS = {
 	'32_def_constructor': 'def constructors are no longer supported; use rec',
 	'33_duplicate_module_name': "duplicate function 'VALUE'",
 	'34_hir_scope_escape': "unknown name 'hidden'",
+	'35_guard_type': 'expected bool, found i64',
+	'36_guard_exit': 'guard else requires return, break, or continue',
+	'37_unwrap_type': 'unboxing requires an Optional',
+	'38_legacy_index': "expected ']', found '?'",
 
 }
 
@@ -69,7 +73,7 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 		generated = folder / 'generated.c'
 		execute([str(compiler), str(input_file), str(generated)])
 		output_binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
-		execute([cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
+		execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(generated), str(runtime),
 			'-lm', '-o', str(output_binary)])
 		args = [str(output_binary)]
 		if source.stem == '48_file_io':

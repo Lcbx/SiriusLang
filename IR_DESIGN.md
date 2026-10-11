@@ -57,7 +57,7 @@ Sirius:
 ```sirius
 var a = [10, 20, 30]
 let original = a
-a[1?]! = 99
+a[!1] = 99
 ```
 
 Illustrative MIR (notation rather than exact Python serialization):
@@ -105,7 +105,7 @@ let Result = Success | Failure
 ### `13_optional_early_exit`
 
 ```sirius
-let x = values[index?] else return false
+let x = values[?index] else return false
 ```
 
 ```text

@@ -1,5 +1,5 @@
 def main() -> i64
 	var a = Array[string]()
 	a = a.append("hi")
-	let v = a[0?] or "missing"
+	let v = a[?0] or "missing"
 	return len(v)

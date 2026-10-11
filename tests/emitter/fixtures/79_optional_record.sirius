@@ -1,0 +1,10 @@
+rec Entry(name: string, count: i64)
+
+def main() -> i64
+	let items = [Entry("first", 1), Entry("second", 2)]
+	let some = items[?0]
+	print(some!.name)
+	let chosen = items[?8] or Entry("fallback", 9)
+	print(chosen.name)
+	print(items[!1].count)
+	return 0

@@ -3,5 +3,5 @@ def main() -> i64
 	for i in 0..1000
 		a = a.append(i)
 	print(len(a))
-	print(a[1000?]!)
+	print(a[!1000])
 	return 0

@@ -3,24 +3,16 @@
 import argparse
 from itertools import zip_longest
 from pathlib import Path
-import subprocess
 import sys
 import tempfile
 
 from emitter_cases import check_cases
-from test_build import BuildCache, C_FLAGS, options, require_cc, validate_jobs
+from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, options, require_cc, validate_jobs
 from sirius_sources import ROOT, COMPILER_SOURCES, combined_sources
 
 
-def execute(args: list[str]) -> subprocess.CompletedProcess[str]:
-	result = subprocess.run(args, capture_output=True, text=True, encoding='utf-8')
-	if result.returncode:
-		raise RuntimeError(f'{" ".join(args)}\n{result.stdout}{result.stderr}')
-	return result
-
-
 def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
-	execute([cc, *C_FLAGS, '-I', str(ROOT / 'include'), str(source),
+	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source),
 		str(runtime), '-lm', '-o', str(output)])
 
 

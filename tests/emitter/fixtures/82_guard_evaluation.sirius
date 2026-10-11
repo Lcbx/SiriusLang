@@ -1,0 +1,12 @@
+def test(value: bool) -> bool
+	print("tested")
+	return value
+
+def get(value: bool) -> i64
+	test(value) else return 7
+	return 9
+
+def main() -> i64
+	print(get(true))
+	print(get(false))
+	return 0
