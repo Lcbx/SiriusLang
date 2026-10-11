@@ -82,6 +82,5 @@ def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
 		let cleaned = mir_cleanup_function(program, function)
 		functions = functions.append(cleaned.function)
 		count += cleaned.releases
-	var result = MirProgram(functions)
-	result.types = program.types
+	let result = mir_program_with_types(functions, program.types)
 	return MirCleanupResult(result, count, mir_check_balance(result))

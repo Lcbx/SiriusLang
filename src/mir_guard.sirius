@@ -60,8 +60,7 @@ def mir_insert_guards(program: MirProgram) -> MirGuardResult
 		let guarded = mir_guard_function(function)
 		functions = functions.append(guarded.function)
 		count += guarded.guards
-	var result = MirProgram(functions)
-	result.types = program.types
+	let result = mir_program_with_types(functions, program.types)
 	let checked = mir_check_ownership(result)
 	if checked != ""
 		return MirGuardResult(result, count, checked)

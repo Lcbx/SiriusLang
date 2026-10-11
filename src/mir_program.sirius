@@ -21,8 +21,7 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 		if lowered.error != ""
 			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, lowered.error)
 		functions = functions.append(lowered.function)
-	var program = MirProgram(functions)
-	program.types = analyzed.types
+	let program = mir_program_with_types(functions, analyzed.types)
 	let guarded = mir_insert_guards(program)
 	if guarded.error != ""
 		return MirProgramBuild(guarded.program, analyzed.registry, analyzed.bodies, analyzed.entry, guarded.error)

@@ -74,30 +74,39 @@ def mir_ownership_flows(term: MirTerminator, destination: i64) -> bool
 
 def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 	var after = before
-	if ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
+	if mir_consumes_source(ins)
 		after[!ins.first] = 0
 	if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
 		after[!ins.dst] = 1
 	return after
 
-def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
+# Both forward analyses use the same CFG transfer function. The join is an
+# intersection for definitely initialized registers, or a union for registers
+# that may be initialized along at least one predecessor path.
+def mir_ownership_dataflow(function: MirFunction, maybe: bool) -> Array[MirOwnershipBlock]
 	let reached = mir_ownership_reachable(function)
-	let top = mir_ownership_top(len(function.register_types))
+	var initial = mir_ownership_top(len(function.register_types))
+	if maybe
+		for i in 0..len(initial)
+			initial[!i] = 0
 	let entry = mir_ownership_entry(function)
 	var states = Array[MirOwnershipBlock]()
-	for i in 0..len(function.blocks)
-		states = states.append(MirOwnershipBlock(top, top))
+	for block in function.blocks
+		states = states.append(MirOwnershipBlock(initial, initial))
 	var changed = true
 	while changed
 		changed = false
 		for i in 0..len(function.blocks)
 			if reached[!i] != 0
-				var incoming = top
+				var incoming = initial
 				if i == function.entry
 					incoming = entry
 				for j in 0..len(function.blocks)
 					if reached[!j] != 0 and mir_ownership_flows(function.blocks[!j].terminator, i)
-						incoming = mir_ownership_intersect(incoming, states[!j].outgoing)
+						if maybe
+							incoming = mir_ownership_union(incoming, states[!j].outgoing)
+						else
+							incoming = mir_ownership_intersect(incoming, states[!j].outgoing)
 				var outgoing = incoming
 				for ins in function.blocks[!i].instructions
 					outgoing = mir_ownership_after(ins, outgoing)
@@ -106,35 +115,13 @@ def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
 					changed = true
 	return states
 
+def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
+	return mir_ownership_dataflow(function, false)
+
 # May-initialized state is the union of incoming paths. Used to establish
 # whether cleanup is required even when a register is only owned on some paths.
 def mir_ownership_maybe_states(function: MirFunction) -> Array[MirOwnershipBlock]
-	let reached = mir_ownership_reachable(function)
-	var empty = mir_ownership_top(len(function.register_types))
-	for i in 0..len(empty)
-		empty[!i] = 0
-	let entry = mir_ownership_entry(function)
-	var states = Array[MirOwnershipBlock]()
-	for block in function.blocks
-		states = states.append(MirOwnershipBlock(empty, empty))
-	var changed = true
-	while changed
-		changed = false
-		for i in 0..len(function.blocks)
-			if reached[!i] != 0
-				var incoming = empty
-				if i == function.entry
-					incoming = entry
-				for j in 0..len(function.blocks)
-					if reached[!j] != 0 and mir_ownership_flows(function.blocks[!j].terminator, i)
-						incoming = mir_ownership_union(incoming, states[!j].outgoing)
-				var outgoing = incoming
-				for ins in function.blocks[!i].instructions
-					outgoing = mir_ownership_after(ins, outgoing)
-				if not mir_ownership_equal(incoming, states[!i].incoming) or not mir_ownership_equal(outgoing, states[!i].outgoing)
-					states[!i] = MirOwnershipBlock(incoming, outgoing)
-					changed = true
-	return states
+	return mir_ownership_dataflow(function, true)
 
 # Verify that every exit has transferred or released all managed registers.
 # This is a proof about explicit CFG exits, not about implicit runtime panics.

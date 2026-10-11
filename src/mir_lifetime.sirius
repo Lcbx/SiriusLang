@@ -38,14 +38,11 @@ def mir_live_equal(left: Array[i64], right: Array[i64]) -> bool
 			return false
 	return true
 
-def mir_live_consumes(ins: MirInstruction) -> bool
-	return ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
-
 def mir_live_before(ins: MirInstruction, after: Array[i64]) -> Array[i64]
 	var before = after
 	if ins.op != MIR_PRINT
 		before = mir_live_remove(before, ins.dst)
-	if mir_live_consumes(ins)
+	if mir_consumes_source(ins)
 		before = mir_live_remove(before, ins.first)
 	return mir_live_union(before, mir_instruction_reads(ins))
 
@@ -54,10 +51,10 @@ def mir_live_term(term: MirTerminator, after: Array[i64]) -> Array[i64]
 		return mir_live_add(after, term.operand)
 	return after
 
-def mir_managed_type_id(function: MirFunction, register: i64) -> bool
+def mir_lifetime_managed(types: TypeTable, function: MirFunction, register: i64) -> bool
 	if register < 0 or register >= len(function.register_types)
 		return false
-	return function.register_types[!register] == TYPE_TAG_STRING or function.register_types[!register] >= TYPE_TAG_RECORD
+	return mir_managed_type(types, function.register_types[!register])
 
 def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
 	var state = Array[MirLifetimeBlock]()
@@ -83,7 +80,7 @@ def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
 				changed = true
 	return state
 
-def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
+def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLifetime
 	let state = mir_lifetime_states(function)
 	var blocks = Array[MirBlock]()
 	var count = 0
@@ -95,10 +92,10 @@ def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
 			let ins = block.instructions[!len(block.instructions) - 1 - position]
 			var dropping = Array[i64]()
 			if ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
-				if ins.op != MIR_PRINT and not mir_live_contains(live, ins.dst) and mir_managed_type_id(function, ins.dst)
+				if ins.op != MIR_PRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
 					dropping = mir_live_add(dropping, ins.dst)
 				for register in mir_instruction_reads(ins)
-					if register != ins.dst and not (mir_live_consumes(ins) and register == ins.first) and not mir_live_contains(live, register) and mir_managed_type_id(function, register)
+					if register != ins.dst and not (mir_consumes_source(ins) and register == ins.first) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)
 						dropping = mir_live_add(dropping, register)
 			releases = releases.append(dropping)
 			live = mir_live_before(ins, live)
@@ -120,9 +117,8 @@ def mir_insert_lifetimes(program: MirProgram) -> MirLifetimeResult
 	var functions = Array[MirFunction]()
 	var count = 0
 	for function in program.functions
-		let lowered = mir_lifetime_function(function)
+		let lowered = mir_lifetime_function(program.types, function)
 		functions = functions.append(lowered.function)
 		count += lowered.releases
-	var result = MirProgram(functions)
-	result.types = program.types
+	let result = mir_program_with_types(functions, program.types)
 	return MirLifetimeResult(result, count, mir_check_ownership(result))

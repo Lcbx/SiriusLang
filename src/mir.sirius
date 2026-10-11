@@ -75,6 +75,11 @@ rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64
 rec MirProgram(functions: Array[MirFunction])
 	pub types = new_type_table()
 
+def mir_program_with_types(functions: Array[MirFunction], types: TypeTable) -> MirProgram
+	var program = MirProgram(functions)
+	program.types = types
+	return program
+
 # For the initial scalar subset, an i64 slot stores its integer and a bool slot
 # stores 0/1 in bits. type_id 0 represents an uninitialized register.
 rec MirValue(type_id: i64, bits: i64, text: string)
@@ -152,6 +157,11 @@ def mir_return(source: i64) -> MirTerminator
 
 def mir_panic(message: string) -> MirTerminator
 	return MirTerminator(MIR_PANIC, -1, -1, -1, message)
+
+# Consuming instructions invalidate their source register. Shared by
+# forward ownership and backward lifetime analyses.
+def mir_consumes_source(ins: MirInstruction) -> bool
+	return ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
 
 # Register operands read by an instruction. Literal immediates are excluded.
 # Shared by backward liveness and forward definite-initialization analyses.
