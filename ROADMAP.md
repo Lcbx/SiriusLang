@@ -87,9 +87,9 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Give each MIR instruction typed operands and a destination; represent `Branch`, `Jump`, `Switch`, `Return` and `Panic` as terminators.
 - [ ] Evaluate expressions into explicit temporaries in source order, including calls, record fields, nested updates, and constructor publications.
-- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. This is not yet the production C path and does not handle `for` or managed values.
+- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar tests (`tools/test_mir_c.py`). The default legacy C emitter does not yet use MIR; neither path lowers `for` or managed values through MIR.
 - [ ] Lower `recur` to parallel assignment into temporaries followed by a backedge, even for managed values once ownership is implemented.
-- [ ] Make the C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one.
+- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with 8 scalar native differential cases and direct print/panic/register checks.
 
 **Done when:** complex optional/boolean combinations and branch-local evaluation work without special-case rejection; no semantic checks depend on generated C expressions.
 

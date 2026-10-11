@@ -1,6 +1,6 @@
 # MIR interpreter
 
-**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar lowering and linked specialization worklist** now exist; ordinary Sirius programs still compile through the existing direct C emitter. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included.
+**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar lowering and linked specialization worklist** now exist; ordinary Sirius programs compile through the existing direct C emitter by default, while scalar programs may opt in to `--mir-c`. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included.
 
 ## Run isolated tests
 
@@ -10,6 +10,7 @@ python tools/test_mir.py --rebuild     # Bypass build cache
 python tools/test_mir_lower.py          # Lower checked scalar source to MIR and execute it
 python tools/test_hir_worklist.py       # Test semantic specialization without any backend
 python tools/test_mir_program.py        # Link HIR specializations into a scalar MIR program
+python tools/test_mir_c.py              # Compare native MIR-C and legacy C on shared scalar cases
 ```
 
 `tests/mir/driver.sirius` builds MIR blocks directly. Tests assert program results as well as instruction budgets, branch selection, function calls, verifier diagnostics, panics, invalid inputs, and uninitialized registers. `MirOutcome` returns a value, an error string, and consumed instruction/terminator steps. The separate `tests/mir/lowering_driver.sirius` and `tools/test_mir_lower.py` exercise pre-emission typed HIR, lowering, MIR verification, and execution with no C generation for the input source.
@@ -22,9 +23,13 @@ Initial scalar coverage: `i64`, `bool`, copies, integer arithmetic/comparisons, 
 
 `src/hir_specialize.sirius` owns specialization discovery and semantic body analysis independently of C or MIR. It indexes requests by declaration-body identity and canonical argument TypeIds; repeat calls and active recursive calls reuse an entry. Each worklist entry yields `HirSpecializedFunction` with typed nodes, call-to-specialization IDs and return type. `src/mir_program.sirius` lowers one `MirFunction` per completed entry, retaining **the same index** as the HIR registry; `MIR_CALL` refers to that index. The final linked program is verified before execution.
 
-This migration slice supports direct and mutual recursion, generic parameters with scalar instantiations, and scalar calls; an unannotated callee return type is explicitly rejected by the new worklist. The semantic worklist can analyze non-scalar types such as arrays, although lowering them to MIR remains unsupported. The existing production C emitter still instantiates and emits its own bodies; it has **not** yet been switched to the HIR worklist or MIR.
+This migration slice supports direct and mutual recursion, generic parameters with scalar instantiations, and scalar calls; an unannotated callee return type is explicitly rejected by the new worklist. The semantic worklist can analyze non-scalar types such as arrays, although lowering them to MIR remains unsupported. The default C emitter still instantiates and emits its own bodies, but the opt-in `--mir-c` backend now emits from the linked MIR and HIR-owned specialization IDs. The two backends share the source subset used by `tools/test_mir_c.py`, and the experimental backend fails explicitly outside that subset.
 
-## Backend policy (after lowering is in place)
+## Experimental MIR C backend and future test policy
+
+`./sirius --mir-c input.sirius output.c` currently selects scalar HIR specialization → MIR → C11, bypassing the legacy specialization/emission path. It is **not** the interpreter path. The default `./sirius input.sirius output.c` still supports the wider bootstrap language. Strict C11 tests exercise native execution of both for a common scalar subset. MIR currently tracks initialized registers dynamically in generated C, and handles division by zero and panic; overflow semantics remain unsettled.
+
+The future unified interpreter-vs-native test CLI remains:
 
 ```sh
 sirius test                   # Interpret MIR (default)
@@ -32,7 +37,7 @@ sirius test --backend=c       # Generate/compile C, then run
 sirius test --backend=both    # Execute both and check expected output/exit status
 ```
 
-**These commands are planned, not implemented.** Until both backends consume a shared MIR, keep the existing C-based test runners and `tools/test_mir.py` separate. Do not silently fall back to C when an instruction is unsupported by the interpreter.
+**These `sirius test` commands are planned, not implemented.** Until the source-level interpreter CLI is wired, keep the existing C-based test runners, MIR-C differential tests and interpreter-specific runners separate. Do not silently fall back to C when an instruction is unsupported by the interpreter.
 
 - Reuse the **same source fixtures** and expected stdout, exit status and runtime-error results for both backends. Test each backend against the independently stated expectation before comparing the two results.
 - Run frontend/negative compiler cases once, MIR interpreter unit cases independently, and C emitter-specific tests only with C. CI eventually runs behavioral tests with `--backend=both`.
@@ -43,6 +48,6 @@ sirius test --backend=both    # Execute both and check expected output/exit stat
 
 1. Extend the worklist to infer unannotated callee result types safely, handle constructors and full HIR operations, and retain source-span diagnostics.
 2. Extend MIR lowering with `for`, remaining scalar constructs and owned value operations.
-3. Move production C emission onto the **same** specialized MIR in increments, comparing existing fixtures with the legacy emitter.
+3. Expand the opt-in MIR C backend to the full supported language, then switch default production emission to the **same** specialized MIR while retaining differential tests.
 4. Add managed values and explicit ownership operations in both backends before interpreting record/array/dictionary fixtures.
 5. Implement the shared test harness and `--backend` switch after the two execution paths accept the same fixtures.

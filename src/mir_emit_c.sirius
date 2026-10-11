@@ -1,0 +1,162 @@
+# Experimental scalar C backend. Consumes only verified MIR produced by the
+# HIR-owned specialization worklist. The legacy emitter remains the default.
+
+def mir_c_type(type_id: i64) -> string
+	if type_id == TYPE_TAG_BOOL
+		return "bool"
+	return "int64_t"
+
+def mir_c_register(index: i64) -> string
+	return "r" + str(index)
+
+def mir_c_function(index: i64) -> string
+	return "s_mir_f" + str(index)
+
+def mir_c_signature(function: MirFunction, index: i64) -> string
+	var args = Array[string]()
+	for i in 0..function.argument_count
+		args = args.append(mir_c_type(function.register_types[!i]) + " a" + str(i))
+	if len(args) == 0
+		return "static " + mir_c_type(function.return_type) + " " + mir_c_function(index) + "(void)"
+	return "static " + mir_c_type(function.return_type) + " " + mir_c_function(index) + "(" + ", ".join(args) + ")"
+
+# Encode every source byte as a three-digit octal escape, so even user-supplied
+# panic text cannot inject C source or terminate the C string literal.
+def mir_c_string(value: string) -> string
+	var result = "\""
+	for i in 0..len(value)
+		let byte = value.byte_at(i) or 0
+		result = result + "\\" + str(byte / 64) + str((byte / 8) % 8) + str(byte % 8)
+	return result + "\""
+
+def mir_c_check(index: i64) -> string
+	return "\tif (!init" + str(index) + ") s_panic(\"uninitialized register\");\n"
+
+def mir_c_instruction(instruction: MirInstruction) -> string
+	let op = instruction.op
+	var result = ""
+	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL
+		if op == MIR_CALL
+			for arg in instruction.inputs
+				result = result + mir_c_check(arg)
+		else
+			result = result + mir_c_check(instruction.first)
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL
+				result = result + mir_c_check(instruction.second)
+	if op == MIR_PRINT
+		return result
+	let dst = mir_c_register(instruction.dst)
+	var expr = ""
+	let first = mir_c_register(instruction.first)
+	let second = mir_c_register(instruction.second)
+	if op == MIR_CONST_I64
+		expr = "INT64_C(" + str(instruction.immediate) + ")"
+	elif op == MIR_CONST_BOOL
+		if instruction.immediate == 1
+			expr = "true"
+		else
+			expr = "false"
+	elif op == MIR_COPY
+		expr = first
+	elif op == MIR_NEG_I64
+		expr = "(-" + first + ")"
+	elif op == MIR_NOT_BOOL
+		expr = "(!" + first + ")"
+	elif op == MIR_CALL
+		var arguments = Array[string]()
+		for arg in instruction.inputs
+			arguments = arguments.append(mir_c_register(arg))
+		if len(arguments) == 0
+			expr = mir_c_function(instruction.immediate) + "()"
+		else
+			expr = mir_c_function(instruction.immediate) + "(" + ", ".join(arguments) + ")"
+	else
+		var symbol = ""
+		if op == MIR_ADD_I64
+			symbol = "+"
+		elif op == MIR_SUB_I64
+			symbol = "-"
+		elif op == MIR_MUL_I64
+			symbol = "*"
+		elif op == MIR_DIV_I64
+			symbol = "/"
+		elif op == MIR_REM_I64
+			symbol = "%"
+		elif op == MIR_EQ_I64 or op == MIR_EQ_BOOL
+			symbol = "=="
+		elif op == MIR_LT_I64
+			symbol = "<"
+		elif op == MIR_LE_I64
+			symbol = "<="
+		if op == MIR_DIV_I64 or op == MIR_REM_I64
+			result = result + "\tif (" + second + " == 0) s_panic(\"division by zero\");\n"
+			result = result + "\tif (" + first + " == INT64_MIN && " + second + " == -1) s_panic(\"integer overflow\");\n"
+		expr = "(" + first + " " + symbol + " " + second + ")"
+	return result + "\t" + dst + " = " + expr + "; init" + str(instruction.dst) + " = true;\n"
+
+def mir_c_terminator(term: MirTerminator) -> string
+	if term.kind == MIR_JUMP
+		return "\tgoto block" + str(term.target) + ";\n"
+	if term.kind == MIR_BRANCH
+		return mir_c_check(term.operand) + "\tif (" + mir_c_register(term.operand) + ") goto block" + str(term.target) + ";\n\tgoto block" + str(term.alternative) + ";\n"
+	if term.kind == MIR_RETURN
+		return mir_c_check(term.operand) + "\treturn " + mir_c_register(term.operand) + ";\n"
+	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
+
+def mir_c_definition(function: MirFunction, index: i64) -> string
+	var output = mir_c_signature(function, index) + "\n{\n"
+	for i in 0..len(function.register_types)
+		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = 0;\n"
+		output = output + "\tbool init" + str(i) + " = false;\n"
+		output = output + "\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n"
+	for i in 0..function.argument_count
+		output = output + "\t" + mir_c_register(i) + " = a" + str(i) + "; init" + str(i) + " = true;\n"
+	output = output + "\tgoto block" + str(function.entry) + ";\n"
+	for i in 0..len(function.blocks)
+		let block = function.blocks[!i]
+		output = output + "block" + str(i) + ": ;\n"
+		for instruction in block.instructions
+			if instruction.op == MIR_PRINT
+				output = output + mir_c_check(instruction.first)
+				if function.register_types[!instruction.first] == TYPE_TAG_BOOL
+					output = output + "\ts_print_bool(" + mir_c_register(instruction.first) + ");\n"
+				else
+					output = output + "\ts_print_i64(" + mir_c_register(instruction.first) + ");\n"
+			else
+				output = output + mir_c_instruction(instruction)
+		output = output + mir_c_terminator(block.terminator)
+	return output + "}\n"
+
+rec MirCResult(code: string, error: string)
+
+def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
+	let error = mir_verify(program)
+	if error != ""
+		return MirCResult("", error)
+	if entry < 0 or entry >= len(program.functions)
+		return MirCResult("", "invalid entry function")
+	let main = program.functions[!entry]
+	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
+		return MirCResult("", "MIR C entry must be main() -> i64")
+	var code = "#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include \"sirius_runtime.h\"\n\n"
+	for i in 0..len(program.functions)
+		code = code + mir_c_signature(program.functions[!i], i) + ";\n"
+	code = code + "\n"
+	for i in 0..len(program.functions)
+		code = code + mir_c_definition(program.functions[!i], i) + "\n"
+	return MirCResult(code + "int main(void) { return (int)" + mir_c_function(entry) + "(); }\n", "")
+
+# Opt-in pipeline: parse -> specialized HIR worklist -> linked CFG MIR -> C.
+# Failure is explicit, never an implicit fallback to the old emitter.
+def compile_c_mir(source: string) -> CompileResult
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		return CompileResult("", parsed.state.error, parsed.state.error_line)
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return CompileResult("", declarations.error, declarations.error_line)
+	let lowered = mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	if lowered.error != ""
+		return CompileResult("", lowered.error, 1)
+	let emitted = mir_emit_c(lowered.program, lowered.entry)
+	return CompileResult(emitted.code, emitted.error, 1)

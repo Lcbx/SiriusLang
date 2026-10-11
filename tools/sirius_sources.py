@@ -9,6 +9,11 @@ COMPILER_SOURCES = PARSER_SOURCES + (
 	'src/types.sirius',
 	'src/hir.sirius',
 	'src/emit_c.sirius',
+	'src/hir_specialize.sirius',
+	'src/mir.sirius',
+	'src/mir_lower.sirius',
+	'src/mir_program.sirius',
+	'src/mir_emit_c.sirius',
 	'tests/emitter/driver.sirius',
 )
 

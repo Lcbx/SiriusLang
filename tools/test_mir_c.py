@@ -1,0 +1,82 @@
+#!/usr/bin/env python
+"""Compare opt-in HIR->MIR->C emission with the legacy C emitter."""
+import argparse
+from pathlib import Path
+import subprocess
+import tempfile
+
+from test_build import BuildCache, C_FLAGS, LINK_FLAGS, execute, options, require_cc
+from sirius_sources import COMPILER_SOURCES, ROOT
+
+
+CASES = {
+	'arithmetic': 'def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n',
+	'factorial': 'def factorial(n: i64) -> i64\n\tif n <= 1\n\t\treturn 1\n\treturn n * factorial(n - 1)\ndef main() -> i64\n\treturn factorial(5)\n',
+	'mutual': 'def even(n: i64) -> bool\n\tif n == 0\n\t\treturn true\n\treturn odd(n - 1)\ndef odd(n: i64) -> bool\n\tif n == 0\n\t\treturn false\n\treturn even(n - 1)\ndef main() -> i64\n\tif even(6)\n\t\treturn 42\n\treturn 0\n',
+	'generic': 'def discard(x) -> i64\n\tlet copy = x\n\tif x == copy\n\t\treturn 1\n\treturn 0\ndef main() -> i64\n\treturn discard(0) + discard(true)\n',
+	'nested': 'def inc(n: i64) -> i64\n\treturn n + 1\ndef twice(n: i64) -> i64\n\treturn inc(inc(n))\ndef main() -> i64\n\treturn twice(40)\n',
+	'loop': 'def main() -> i64\n\tvar n = 0\n\tvar total = 0\n\twhile n < 5\n\t\tif n == 3\n\t\t\ttotal = total + 10\n\t\telse\n\t\t\ttotal = total + n\n\t\tn = n + 1\n\treturn total\n',
+	'short_circuit': 'def main() -> i64\n\tif false and (1 / 0 > 0)\n\t\treturn 1\n\tif true or (1 / 0 > 0)\n\t\treturn 42\n\treturn 0\n',
+	'shadow': 'def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\t\tif x == 0\n\t\t\treturn 99\n\treturn x\n',
+}
+
+
+def main() -> None:
+	parser = argparse.ArgumentParser(description=__doc__)
+	options(parser)
+	args = parser.parse_args()
+	cc = require_cc()
+	cache = BuildCache(cc, rebuild=args.rebuild)
+	compiler = cache.sirius('emitter-mir-optin', COMPILER_SOURCES, separator=b'')
+	with tempfile.TemporaryDirectory() as directory:
+		work = Path(directory)
+		for name, source in CASES.items():
+			input_path = work / f'{name}.sirius'
+			input_path.write_text(source)
+			results = []
+			for backend in ('legacy', 'mir'):
+				c_path = work / f'{name}-{backend}.c'
+				program = work / f'{name}-{backend}'
+				command = [str(compiler), str(input_path), str(c_path)]
+				if backend == 'mir':
+					command.insert(1, '--mir-c')
+				execute(command)
+				execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(c_path), str(cache.runtime()), '-lm', '-o', str(program)])
+				result = subprocess.run([str(program)], capture_output=True)
+				results.append((result.returncode, result.stdout, result.stderr))
+			if results[0] != results[1]:
+				raise AssertionError(f'{name}: backend mismatch: {results}')
+			print(f'PASS MIR-C {name} (return {results[0][0]})')
+		# Unsupported MIR constructs must fail rather than silently use legacy C.
+		input_path = work / 'unsupported.sirius'
+		input_path.write_text('def main() -> i64\n\tlet name = "text"\n\treturn 1\n')
+		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
+		if result.returncode == 0 or 'unsupported' not in result.stdout:
+			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')
+		print('PASS MIR-C unsupported construct rejected')
+		driver = cache.sirius('mir-c-direct', (
+			'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
+			'src/hir.sirius', 'src/emit_c.sirius', 'src/hir_specialize.sirius',
+			'src/mir.sirius', 'src/mir_lower.sirius', 'src/mir_program.sirius',
+			'src/mir_emit_c.sirius', 'tests/mir/c_driver.sirius',
+		))
+		generated = [work / f'direct-{name}.c' for name in ('print', 'panic', 'uninitialized')]
+		execute([str(driver), *(str(path) for path in generated)])
+		for source, expected, error_fragment in (
+			(generated[0], b'42\ntrue\n', None),
+			(generated[1], b'', b'quoted "panic" and backslash \\ end'),
+			(generated[2], b'', b'uninitialized register'),
+		):
+			program = source.with_suffix('')
+			execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'), str(source),
+				str(cache.runtime()), '-lm', '-o', str(program)])
+			result = subprocess.run([str(program)], capture_output=True)
+			if result.stdout != expected or (error_fragment is None and result.returncode != 0) or (
+				error_fragment is not None and (result.returncode == 0 or error_fragment not in result.stderr)
+			):
+				raise AssertionError(f'{source.name}: {result}')
+		print('PASS MIR-C direct print, panic escaping, uninitialized register')
+
+
+if __name__ == '__main__':
+	main()
