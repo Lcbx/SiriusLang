@@ -24,17 +24,17 @@ def mir_heap_release(types: TypeTable, heap: Array[MirHeapRecord], index: i64) -
 	next[!index] = record
 	if record.refs == 0
 		for field in record.fields
-			if types.entries[!field.type_id].tag == TYPE_TAG_RECORD
+			if mir_managed_type(types, field.type_id) and field.type_id != TYPE_TAG_STRING
 				next = mir_heap_release(types, next, field.bits)
 	return next
 
 def mir_heap_drop(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and types.entries[!value.type_id].tag == TYPE_TAG_RECORD
+	if value.type_id != TYPE_TAG_INVALID and mir_managed_type(types, value.type_id) and value.type_id != TYPE_TAG_STRING
 		return mir_heap_release(types, heap, value.bits)
 	return heap
 
 def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and types.entries[!value.type_id].tag == TYPE_TAG_RECORD
+	if value.type_id != TYPE_TAG_INVALID and mir_managed_type(types, value.type_id) and value.type_id != TYPE_TAG_STRING
 		return mir_heap_retain(heap, value.bits)
 	return heap
 
@@ -64,6 +64,61 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
+			if ins.op == MIR_ARRAY_NEW
+				var values = Array[MirValue]()
+				for source in ins.inputs
+					let element = registers[!source]
+					if element.type_id == TYPE_TAG_INVALID
+						return mir_failure("uninitialized array element", steps)
+					values = values.append(element)
+				for element in values
+					heap = mir_heap_copy(program.types, heap, element)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], values, 1))
+				continue
+			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET
+				let owner = registers[!ins.first]
+				if owner.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized array", steps)
+				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
+					return mir_failure("invalid array handle", steps)
+				let array = heap[!owner.bits]
+				if ins.op == MIR_ARRAY_LENGTH
+					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(array.fields), "")
+					continue
+				let index = registers[!ins.second]
+				if index.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized array index", steps)
+				if index.bits < 0 or index.bits >= len(array.fields)
+					return mir_failure("array index out of bounds", steps)
+				if ins.op == MIR_ARRAY_GET
+					let element = array.fields[!index.bits]
+					heap = mir_heap_copy(program.types, heap, element)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = element
+					continue
+				let value = registers[!ins.immediate]
+				if value.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized array update value", steps)
+				# Retain replacement before releasing the previous element, even on self-update.
+				heap = mir_heap_copy(program.types, heap, value)
+				var result_index = owner.bits
+				if array.refs > 1
+					for element in array.fields
+						heap = mir_heap_copy(program.types, heap, element)
+					result_index = len(heap)
+					heap = heap.append(MirHeapRecord(owner.type_id, array.fields, 1))
+					heap = mir_heap_release(program.types, heap, owner.bits)
+				var changed = heap[!result_index]
+				heap = mir_heap_drop(program.types, heap, changed.fields[!index.bits])
+				changed.fields[!index.bits] = value
+				heap[!result_index] = changed
+				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				if ins.dst != ins.first
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				continue
 			if ins.op == MIR_RECORD_NEW
 				var fields = Array[MirValue]()
 				for input in ins.inputs
@@ -215,6 +270,6 @@ def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue
 		return mir_failure("invalid execution limits", 0)
 	# External callers cannot fabricate record handles without the execution heap.
 	for argument in arguments
-		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD
-			return mir_failure("record arguments require an execution heap", 0)
+		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == TYPE_TAG_ARRAY)
+			return mir_failure("managed collection arguments require an execution heap", 0)
 	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord]())

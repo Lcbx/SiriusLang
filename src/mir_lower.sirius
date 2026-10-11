@@ -121,6 +121,34 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		if register < 0
 			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 		return MirLowerExpr(state, register)
+	if node.kind == NODE_ARRAY
+		let type_id = mir_lower_type(next, id, HIR_ARRAY)
+		if not mir_type_supported(next.types, type_id) or next.types.entries[!type_id].tag != TYPE_TAG_ARRAY
+			return MirLowerExpr(mir_lower_error(next, "missing typed MIR array"), -1)
+		var inputs = Array[i64]()
+		for i in 0..node.count
+			let element = mir_lower_expression(next, hir_ast_child(next.tree, id, i))
+			next = element.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			inputs = inputs.append(element.slot)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, type_id)
+		next = mir_lower_emit(next, mir_array_new(dst, inputs))
+		return MirLowerExpr(next, dst)
+	if node.kind == NODE_CHECKED_INDEX
+		let owner = mir_lower_expression(next, hir_ast_child(next.tree, id, 0))
+		next = owner.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		let index = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+		next = index.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		let type_id = mir_lower_type(next, id, HIR_INDEX)
+		if not mir_type_supported(next.types, type_id) or next.register_types[!index.slot] != TYPE_TAG_I64
+			return MirLowerExpr(mir_lower_error(next, "unsupported MIR index expression"), -1)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, type_id)
+		next = mir_lower_emit(next, mir_array_get(dst, owner.slot, index.slot))
+		return MirLowerExpr(next, dst)
 	if node.kind == NODE_RECORD
 		let type_id = mir_lower_type(next, id, HIR_RECORD)
 		if not mir_type_supported(next.types, type_id) or next.types.entries[!type_id].tag != TYPE_TAG_RECORD
@@ -192,11 +220,18 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 			let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
 			next = value.state
 			next.error == "" else return MirLowerExpr(next, -1)
-			if next.register_types[!value.slot] == TYPE_TAG_STRING and mir_lower_type(next, id, HIR_CALL) == TYPE_TAG_I64
-				let dst = len(next.register_types)
-				next = mir_lower_register(next, TYPE_TAG_I64)
-				next = mir_lower_emit(next, mir_op(MIR_STRING_LENGTH, dst, value.slot, -1, 0))
-				return MirLowerExpr(next, dst)
+			if mir_lower_type(next, id, HIR_CALL) == TYPE_TAG_I64
+				let kind = next.register_types[!value.slot]
+				var op = 0
+				if kind == TYPE_TAG_STRING
+					op = MIR_STRING_LENGTH
+				elif next.types.entries[!kind].tag == TYPE_TAG_ARRAY
+					op = MIR_ARRAY_LENGTH
+				if op != 0
+					let dst = len(next.register_types)
+					next = mir_lower_register(next, TYPE_TAG_I64)
+					next = mir_lower_emit(next, mir_op(op, dst, value.slot, -1, 0))
+					return MirLowerExpr(next, dst)
 		var callee_id = -1
 		for target in next.call_targets
 			if target.source == id
@@ -350,6 +385,20 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 		return next
 	if node.kind == NODE_ASSIGN
 		let target = hir_ast_child(next.tree, id, 0)
+		if next.tree.nodes[!target].kind == NODE_CHECKED_INDEX
+			let owner = hir_ast_child(next.tree, target, 0)
+			if next.tree.nodes[!owner].kind != NODE_NAME
+				return mir_lower_error(next, "MIR indexed update requires a local array")
+			let register = mir_lower_binding(next, hir_ast_text(next.tree, owner))
+			if register < 0 or next.types.entries[!next.register_types[!register]].tag != TYPE_TAG_ARRAY
+				return mir_lower_error(next, "MIR indexed update requires an array")
+			let index = mir_lower_expression(next, hir_ast_child(next.tree, target, 1))
+			next = index.state
+			next.error == "" else return next
+			let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+			next = value.state
+			next.error == "" else return next
+			return mir_lower_emit(next, mir_array_set(register, register, index.slot, value.slot))
 		if next.tree.nodes[!target].kind != NODE_NAME
 			return mir_lower_error(next, "unsupported MIR assignment target")
 		let register = mir_lower_binding(next, hir_ast_text(next.tree, target))

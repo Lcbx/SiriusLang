@@ -36,8 +36,7 @@ def mir_c_string(value: string) -> string
 def mir_c_check(index: i64) -> string
 	return "\tif (!init" + str(index) + ") s_panic(\"uninitialized register\");\n"
 
-# Managed records are immutable heap objects. A shallow copy retains the
-# record; dropping its last reference releases nested managed fields.
+# Managed records and CoW arrays share an owned, type-tagged heap representation.
 def mir_c_release_value(type_id: i64, value: string) -> string
 	if type_id == TYPE_TAG_STRING
 		return "s_string_release(" + value + ")"
@@ -67,10 +66,10 @@ def mir_c_release_managed(function: MirFunction, except: i64) -> string
 def mir_c_record_runtime(types: TypeTable) -> string
 	var result = "typedef struct S_MirRecord S_MirRecord;\n"
 	result = result + "typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n"
-	result = result + "struct S_MirRecord { int64_t type_id; size_t refs; S_MirField fields[]; };\n"
+	result = result + "struct S_MirRecord { int64_t type_id; size_t refs, length; S_MirField fields[]; };\n"
 	result = result + "static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n"
 	result = result + "\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n"
-	result = result + "\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; return r;\n}\n"
+	result = result + "\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; return r;\n}\n"
 	result = result + "static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n"
 	result = result + "static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n"
 	for i in 0..len(types.entries)
@@ -87,20 +86,66 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".record"
 					result = result + "\t\t" + mir_c_release_value(field_type, field) + ";\n"
 			result = result + "\t\tbreak;\n"
-	result = result + "\tdefault: s_panic(\"unknown record type\");\n\t}\n\tfree(r);\n}\n\n"
-	return result
+		elif type_desc.tag == TYPE_TAG_ARRAY
+			let element_type = type_desc.first
+			result = result + "\tcase " + str(i) + ":\n"
+			if mir_c_managed(element_type)
+				var field = "r->fields[j]"
+				if element_type == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + "\t\tfor (size_t j = 0; j < r->length; ++j) " + mir_c_release_value(element_type, field) + ";\n"
+			result = result + "\t\tbreak;\n"
+	result = result + "\tdefault: s_panic(\"unknown managed type\");\n\t}\n\tfree(r);\n}\n\n"
+	result = result + "static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n"
+	result = result + "\tif (index < 0 || (uint64_t)index >= array->length) s_panic(\"array index out of bounds\");\n"
+	result = result + "\tif (array->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(array->type_id, array->length);\n"
+	result = result + "\t\tfor (size_t j = 0; j < array->length; ++j) copy->fields[j] = array->fields[j];\n"
+	result = result + "\t\tswitch (array->type_id) {\n"
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == TYPE_TAG_ARRAY
+			result = result + "\t\tcase " + str(i) + ":\n"
+			if mir_c_managed(desc.first)
+				var field = "copy->fields[j]"
+				if desc.first == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + "\t\t\tfor (size_t j = 0; j < copy->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n"
+			result = result + "\t\t\tbreak;\n"
+	result = result + "\t\tdefault: s_panic(\"invalid array type\");\n\t\t}\n"
+	result = result + "\t\ts_mir_record_release(array); array = copy;\n\t}\n"
+	result = result + "\tswitch (array->type_id) {\n"
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == TYPE_TAG_ARRAY
+			result = result + "\tcase " + str(i) + ":\n"
+			if mir_c_managed(desc.first)
+				var field = "array->fields[index]"
+				if desc.first == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + "\t\t" + mir_c_release_value(desc.first, field) + ";\n"
+			result = result + "\t\tbreak;\n"
+	result = result + "\tdefault: s_panic(\"invalid array type\");\n\t}\n"
+	return result + "\tarray->fields[index] = owned; return array;\n}\n\n"
 
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
 	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING
-		if op == MIR_CALL or op == MIR_RECORD_NEW
+		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
 		else
 			result = result + mir_c_check(instruction.first)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_SET
 				result = result + mir_c_check(instruction.second)
+			if op == MIR_ARRAY_SET
+				result = result + mir_c_check(instruction.immediate)
 	if op == MIR_PRINT
 		return result
 	let dst = mir_c_register(instruction.dst)
@@ -110,6 +155,50 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	let dst_type = function.register_types[!instruction.dst]
 	if op == MIR_CONST_STRING
 		return mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+	if op == MIR_ARRAY_NEW
+		var code = result + "\t{ S_MirRecord *array = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
+		for i in 0..len(instruction.inputs)
+			let arg = instruction.inputs[!i]
+			let kind = function.register_types[!arg]
+			var field = "bits"
+			var value = mir_c_register(arg)
+			if kind == TYPE_TAG_STRING
+				field = "text"
+				value = mir_c_retain_value(kind, value)
+			elif mir_c_managed(kind)
+				field = "record"
+				value = mir_c_retain_value(kind, value)
+			code = code + "\t\tarray->fields[" + str(i) + "]." + field + " = " + value + ";\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "array") + "\t}\n"
+	if op == MIR_ARRAY_LENGTH
+		return result + "\t" + dst + " = (int64_t)" + first + "->length; init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_ARRAY_GET
+		result = result + "\tif (" + second + " < 0 || (uint64_t)" + second + " >= " + first + "->length) s_panic(\"array index out of bounds\");\n"
+		var field = "bits"
+		if dst_type == TYPE_TAG_STRING
+			field = "text"
+		elif mir_c_managed(dst_type)
+			field = "record"
+		let value = first + "->fields[" + second + "]." + field
+		if mir_c_managed(dst_type)
+			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
+		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_ARRAY_SET
+		let element_type = function.register_types[!instruction.immediate]
+		var field = "bits"
+		var value = mir_c_register(instruction.immediate)
+		if element_type == TYPE_TAG_STRING
+			field = "text"
+			value = mir_c_retain_value(element_type, value)
+		elif mir_c_managed(element_type)
+			field = "record"
+			value = mir_c_retain_value(element_type, value)
+		var code = result + "\t{ S_MirField replacement = {0}; replacement." + field + " = " + value + ";\n"
+		code = code + "\t\tS_MirRecord *updated = s_mir_array_set_owned(" + first + ", " + second + ", replacement);\n"
+		code = code + "\t\t" + first + " = NULL; init" + str(instruction.first) + " = false;\n"
+		if instruction.dst == instruction.first
+			return code + "\t\t" + dst + " = updated; init" + str(instruction.dst) + " = true; }\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "updated") + "\t}\n"
 	if op == MIR_RECORD_NEW
 		var code = result + "\t{ S_MirRecord *record = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
 		for i in 0..len(instruction.inputs)

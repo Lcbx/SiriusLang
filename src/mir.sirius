@@ -26,6 +26,10 @@ let MIR_STRING_LENGTH = 21
 let MIR_STRING_CONCAT = 22
 let MIR_RECORD_NEW = 23
 let MIR_RECORD_GET = 24
+let MIR_ARRAY_NEW = 25
+let MIR_ARRAY_GET = 26
+let MIR_ARRAY_LENGTH = 27
+let MIR_ARRAY_SET = 28
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -64,6 +68,17 @@ def mir_record_new(dst: i64, fields: Array[i64]) -> MirInstruction
 def mir_record_get(dst: i64, owner: i64, field: i64) -> MirInstruction
 	return mir_op(MIR_RECORD_GET, dst, owner, -1, field)
 
+def mir_array_new(dst: i64, elements: Array[i64]) -> MirInstruction
+	return MirInstruction(MIR_ARRAY_NEW, dst, -1, -1, 0, elements, "")
+
+def mir_array_get(dst: i64, owner: i64, index: i64) -> MirInstruction
+	return mir_op(MIR_ARRAY_GET, dst, owner, index, 0)
+
+# Consumes owner: transfers its owned reference to dst (which may equal owner).
+# Shared arrays are copied before mutation; uniquely owned arrays mutate in place.
+def mir_array_set(dst: i64, owner: i64, index: i64, value: i64) -> MirInstruction
+	return MirInstruction(MIR_ARRAY_SET, dst, owner, index, value, Array[i64](), "")
+
 def mir_jump(target: i64) -> MirTerminator
 	return MirTerminator(MIR_JUMP, -1, target, -1, "")
 
@@ -88,13 +103,13 @@ def mir_type_supported(types: TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD
+	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY
 
 def mir_managed_type(types: TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD
+	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY
 
 def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
 	let types = function.register_types
@@ -126,6 +141,33 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		for i in 0..len(fields)
 			if not mir_register_valid(types, ins.inputs[!i], fields[!i].kind)
 				return "record constructor field type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_NEW
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_ARRAY
+			return "array constructor requires array destination"
+		for input in ins.inputs
+			if not mir_register_valid(types, input, desc.first)
+				return "array constructor element type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid array source"
+		let source_type = types[!ins.first]
+		let desc = program.types.entries[!source_type]
+		if desc.tag != TYPE_TAG_ARRAY
+			return "array operand requires array"
+		if ins.op == MIR_ARRAY_LENGTH
+			if dst_type != TYPE_TAG_I64
+				return "array length destination must be i64"
+			return ""
+		if not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "array index must be i64"
+		if ins.op == MIR_ARRAY_GET
+			if dst_type != desc.first
+				return "array element destination type mismatch"
+		elif dst_type != source_type or not mir_register_valid(types, ins.immediate, desc.first)
+			return "array update type mismatch"
 		return ""
 	if ins.op == MIR_RECORD_GET
 		if ins.first < 0 or ins.first >= len(types)
@@ -198,6 +240,9 @@ def mir_verify(program: MirProgram) -> string
 	# Reject malformed/noncanonical type descriptors before accessing field tables.
 	for i in 0..len(program.types.entries)
 		let entry = program.types.entries[!i]
+		if entry.tag == TYPE_TAG_ARRAY
+			if entry.first < 0 or entry.first >= i or not mir_type_supported(program.types, entry.first)
+				return "invalid or cyclic array element type"
 		if entry.tag == TYPE_TAG_RECORD
 			for j in 0..len(entry.fields)
 				let field = entry.fields[!j]
@@ -205,7 +250,7 @@ def mir_verify(program: MirProgram) -> string
 					return "unsupported record field type"
 				if j > 0 and entry.fields[!j - 1].name >= field.name
 					return "record field order is not canonical"
-				if program.types.entries[!field.kind].tag == TYPE_TAG_RECORD and field.kind >= i
+				if (program.types.entries[!field.kind].tag == TYPE_TAG_RECORD or program.types.entries[!field.kind].tag == TYPE_TAG_ARRAY) and field.kind >= i
 					return "cyclic record type descriptor"
 	# Validate signatures first: call validation may inspect any callee.
 	for function in program.functions

@@ -87,9 +87,9 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Give each MIR instruction typed operands and a destination; represent `Branch`, `Jump`, `Switch`, `Return` and `Panic` as terminators.
 - [ ] Evaluate expressions into explicit temporaries in source order, including calls, record fields, nested updates, and constructor publications.
-- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar/string/record tests (`tools/test_mir_c.py`). The default legacy C emitter does not yet use MIR; neither MIR path lowers `for`, arrays or dictionaries.
+- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar/string/record tests (`tools/test_mir_c.py`). The default legacy C emitter does not yet use MIR; neither MIR path lowers `for`, dictionaries, array append, or optional indexing.
 - [ ] Lower `recur` to parallel assignment into temporaries followed by a backedge, even for managed values once ownership is implemented.
-- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with native scalar/string/record differential cases, direct print/panic/register checks and managed-string/record ownership tests.
+- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with native scalar/string/record/array differential cases, direct print/panic/register checks and managed-string/record ownership tests.
 
 **Done when:** complex optional/boolean combinations and branch-local evaluation work without special-case rejection; no semantic checks depend on generated C expressions.
 
@@ -137,7 +137,8 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Make both the Sirius MIR interpreter and opt-in MIR→C backend execute the same string operations; C uses ARC credits across calls and returns.
 - [x] Lower string literals, concatenation and `len(string)` from typed HIR; extend differential and ownership-specific tests.
 - [x] Generalize managed register ownership to immutable structural records, including nested strings/records. `MIR_RECORD_NEW`/`MIR_RECORD_GET` consume canonical layouts; interpreter and generated C handle copy/move/retain/release and recursive destruction. See `tools/test_mir_records.py` and record cases in `tools/test_mir_c.py`.
-- [ ] Add record spreads/updates, arrays/dictionaries, and CoW updates; add ownership data-flow validation for all CFG exits.
+- [x] Add rank-1 MIR arrays with canonical element types, checked access, length and consuming `MIR_ARRAY_SET` with type-directed CoW. Interpreter and MIR-C handle arrays of scalars, strings, records and nested arrays, with alias-preserving differential tests (`tools/test_mir_arrays.py`, `tools/test_mir_c.py`).
+- [ ] Add array append, dictionaries, optional indexing and record spreads/updates; validate ownership data-flow for all CFG exits.
 - [ ] Insert conservative retain/release operations in a dedicated CFG lifetime pass, including exceptional and loop exits; verify ownership data-flow statically.
 - [ ] Expand interpreter/native differential testing to every managed construct and migrate the default C backend only after coverage is sufficient.
 

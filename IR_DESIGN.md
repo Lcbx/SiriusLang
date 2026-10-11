@@ -45,6 +45,10 @@ Each basic block holds ordered instructions and one terminator (`Jump`, `Branch`
 * **Deferred (medium priority):** signed negative array indices normalize relative to array length before the bounds check (`-1` is last element). This applies to reads and CoW writes; optional/checked/proven access retain their current semantics. See `tests/deferred/25_negative_indexing.sirius`.
 * Record spread, deletions and overrides are resolved to a new record layout; preserve left-to-right **expression evaluation** even if a field is later overwritten.
 
+## Implemented experimental array MIR
+
+The opt-in MIR interpreter and C backend now support canonical rank-1 `Array[T]` values using `MIR_ARRAY_NEW`, `MIR_ARRAY_GET`, `MIR_ARRAY_LENGTH`, and `MIR_ARRAY_SET`. Element types may be scalars, strings, records or previously interned array types. Index reads and writes are checked (no negative-index normalization yet). `MIR_ARRAY_SET(dst, owner, index, value)` **consumes** the owned `owner` register, invalidating it if distinct from `dst`. The array is updated in place only when uniquely owned; shared arrays are cloned, retaining managed elements and releasing the replaced element. Copies retain the collection handle; recursive release follows canonical element descriptors. A separate CFG ownership/lifetime pass and dictionary lowering remain planned.
+
 ## Memory management in MIR
 
 Value semantics have to be visible in the compiler, not reconstructed from textual C:

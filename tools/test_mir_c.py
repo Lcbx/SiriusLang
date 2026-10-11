@@ -25,6 +25,11 @@ CASES = {
 	'record_generic': 'def length(r) -> i64\n\treturn len(r.name)\ndef main() -> i64\n\tlet a = {name = "a"}\n\tlet b = {name = "two", count = 2}\n\treturn length(a) + length(b)\n',
 	'records': 'def main() -> i64\n\tlet inner = {count = 7, name = "Ada"}\n\tlet outer = {inner = inner, title = "outer"}\n\tlet alias = outer\n\treturn len(alias.inner.name) + len(outer.title)\n',
 	'shadow': 'def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\t\tif x == 0\n\t\t\treturn 99\n\treturn x\n',
+	'array_cow': 'def main() -> i64\n\tvar a = [7, 8]\n\tlet before = a\n\ta[!0] = 30\n\treturn before[!0] + a[!0]\n',
+	'array_strings': 'def main() -> i64\n\tvar a = ["old", "long"]\n\tlet before = a\n\ta[!0] = "new"\n\treturn len(before[!0]) + len(a[!1]) + len(a)\n',
+	'array_nested': 'def main() -> i64\n\tlet inner = [1, 2]\n\tvar outer = [inner]\n\tlet saved = outer\n\touter[!0] = [7, 8]\n\treturn saved[!0][!0] + outer[!0][!1]\n',
+	'array_record': 'def main() -> i64\n\tlet item = {name = "X", count = 4}\n\tvar array = [item]\n\tlet old = array\n\tarray[!0] = {name = "long", count = 5}\n\treturn old[!0].count + len(array[!0].name)\n',
+
 }
 
 
@@ -56,7 +61,7 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet obj = [1, 2]\n\treturn 1\n')
+		input_path.write_text('def main() -> i64\n\tlet obj = Dict[i64, i64]()\n\treturn 1\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
 		if result.returncode == 0 or 'unsupported' not in result.stdout:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')

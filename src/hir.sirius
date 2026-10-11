@@ -877,7 +877,14 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 					if target.kind == NODE_CHECKED_INDEX
 						return hir_body_error(result, id, "indexed update requires a mutable local array")
 					return hir_body_error(result, id, "cannot assign immutable binding '" + name + "'")
+		var target_type = TYPE_TAG_INVALID
+		if target.kind == NODE_CHECKED_INDEX
+			result = hir_body_expression(result, lhs)
+			result.error == "" else return result
+			target_type = result.last_type
 		result = hir_body_expression(result, rhs)
+		if target_type != TYPE_TAG_INVALID and result.last_type != TYPE_TAG_INVALID and target_type != result.last_type
+			return hir_body_error(result, id, "indexed assignment type mismatch")
 		if target.kind == NODE_NAME
 			let resolved = resolve_hir_name(result.symbols, hir_ast_text(state.tree, lhs))
 			if resolved.error == "" and result.last_type != TYPE_TAG_INVALID and resolved.type_id != TYPE_TAG_INVALID and resolved.type_id != result.last_type
