@@ -28,6 +28,9 @@ CASES = {
 	'array_cow': 'def main() -> i64\n\tvar a = [7, 8]\n\tlet before = a\n\ta[!0] = 30\n\treturn before[!0] + a[!0]\n',
 	'array_strings': 'def main() -> i64\n\tvar a = ["old", "long"]\n\tlet before = a\n\ta[!0] = "new"\n\treturn len(before[!0]) + len(a[!1]) + len(a)\n',
 	'array_nested': 'def main() -> i64\n\tlet inner = [1, 2]\n\tvar outer = [inner]\n\tlet saved = outer\n\touter[!0] = [7, 8]\n\treturn saved[!0][!0] + outer[!0][!1]\n',
+	'dict_len': 'def main() -> i64\n\tvar d = Dict[i64,string]()\n\td = d.insert(2, "old")\n\tlet before = d\n\td = d.insert(2, "new")\n\treturn len(before) + len(d)\n',
+	'dict_chained': 'def main() -> i64\n\tlet first = Dict[string,i64]().insert("a", 3)\n\tlet second = first.insert("b", 4)\n\treturn len(first) * 10 + len(second)\n',
+	'dict_array_value': 'def main() -> i64\n\tlet xs = [1, 2]\n\tlet d = Dict[i64,Array[i64]]().insert(7, xs)\n\treturn len(d)\n',
 	'array_record': 'def main() -> i64\n\tlet item = {name = "X", count = 4}\n\tvar array = [item]\n\tlet old = array\n\tarray[!0] = {name = "long", count = 5}\n\treturn old[!0].count + len(array[!0].name)\n',
 
 }
@@ -61,7 +64,7 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet obj = Dict[i64, i64]()\n\treturn 1\n')
+		input_path.write_text('def main() -> i64\n\tlet obj = Dict[i64, i64]()\n\treturn obj.get(1) or 0\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
 		if result.returncode == 0 or 'unsupported' not in result.stdout:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')

@@ -1,0 +1,92 @@
+# Hand-constructed MIR dictionary programs: CoW, replacement, ownership, lookup.
+def dict_string_program(invalidate: bool) -> MirProgram
+	let typed = intern_dict_type(new_type_table(), TYPE_TAG_STRING, TYPE_TAG_STRING)
+	var code = Array[MirInstruction]()
+	code = code.append(mir_dict_new(0))
+	code = code.append(mir_string(1, "key"))
+	code = code.append(mir_string(2, "old"))
+	code = code.append(mir_dict_insert(0, 0, 1, 2))
+	code = code.append(mir_op(MIR_COPY, 3, 0, -1, 0))
+	code = code.append(mir_string(4, "new"))
+	if invalidate
+		code = code.append(mir_dict_insert(0, 0, 1, 4))
+		code = code.append(mir_dict_length(11, 0))
+	else
+		code = code.append(mir_dict_insert(0, 0, 1, 4))
+		code = code.append(mir_string(5, "fallback"))
+		code = code.append(mir_string(6, "key"))
+		code = code.append(mir_dict_get_or(7, 3, 6, 5))
+		code = code.append(mir_dict_get_or(8, 0, 6, 5))
+		code = code.append(mir_op(MIR_PRINT, -1, 7, -1, 0))
+		code = code.append(mir_op(MIR_PRINT, -1, 8, -1, 0))
+		code = code.append(mir_string(9, "other"))
+		code = code.append(mir_dict_get_or(10, 0, 9, 5))
+		code = code.append(mir_op(MIR_PRINT, -1, 10, -1, 0))
+		code = code.append(mir_dict_length(11, 0))
+	let runner = MirFunction(0, TYPE_TAG_I64, [typed.id, TYPE_TAG_STRING, TYPE_TAG_STRING, typed.id, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_I64], [MirBlock(code, mir_return(11))], 0)
+	var program = MirProgram([runner])
+	program.types = typed.table
+	return program
+
+def dict_nested_program() -> MirProgram
+	let array = intern_array_type(new_type_table(), TYPE_TAG_STRING)
+	let dict = intern_dict_type(array.table, TYPE_TAG_I64, array.id)
+	var code = Array[MirInstruction]()
+	code = code.append(mir_dict_new(0))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, 5))
+	code = code.append(mir_string(2, "one"))
+	code = code.append(mir_array_new(3, [2]))
+	code = code.append(mir_dict_insert(0, 0, 1, 3))
+	code = code.append(mir_op(MIR_COPY, 4, 0, -1, 0))
+	code = code.append(mir_string(5, "two"))
+	code = code.append(mir_array_new(6, [5, 2]))
+	code = code.append(mir_dict_insert(0, 0, 1, 6))
+	code = code.append(mir_array_new(7, Array[i64]()))
+	code = code.append(mir_dict_get_or(8, 4, 1, 7))
+	code = code.append(mir_dict_get_or(9, 0, 1, 7))
+	code = code.append(mir_op(MIR_ARRAY_LENGTH, 10, 8, -1, 0))
+	code = code.append(mir_op(MIR_ARRAY_LENGTH, 11, 9, -1, 0))
+	code = code.append(mir_op(MIR_ADD_I64, 12, 10, 11, 0))
+	let runner = MirFunction(0, TYPE_TAG_I64, [dict.id, TYPE_TAG_I64, TYPE_TAG_STRING, array.id, dict.id, TYPE_TAG_STRING, array.id, array.id, array.id, array.id, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(code, mir_return(12))], 0)
+	var program = MirProgram([runner])
+	program.types = dict.table
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	let program = dict_string_program(false)
+	if mir_verify(program) != ""
+		print(mir_verify(program))
+		return 2
+	let result = mir_execute(program, 0, Array[MirValue](), 100, 10)
+	if result.error != "" or result.value.bits != 1
+		print(result.error)
+		return 3
+	for object in result.heap
+		if object.refs != 0
+			return 4
+	let native = mir_emit_c(program, 0)
+	if native.error != "" or not write_text(args[!1], native.code)
+		print(native.error)
+		return 5
+	let nested = dict_nested_program()
+	let nested_result = mir_execute(nested, 0, Array[MirValue](), 100, 10)
+	if nested_result.error != "" or nested_result.value.bits != 3
+		print(nested_result.error)
+		return 6
+	for object in nested_result.heap
+		if object.refs != 0
+			return 7
+	let nested_c = mir_emit_c(nested, 0)
+	if nested_c.error != "" or not write_text(args[!2], nested_c.code)
+		print(nested_c.error)
+		return 8
+	let invalid = dict_string_program(true)
+	# Invalidation follows consuming update when destination differs from source.
+	let bad_native = mir_emit_c(invalid, 0)
+	if bad_native.error != "" or not write_text(args[!3], bad_native.code)
+		return 9
+	print("PASS dictionary MIR")
+	return 0

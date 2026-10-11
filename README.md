@@ -17,7 +17,7 @@ cc -std=c11 -I include output.c include/sirius_runtime.c -lm -o output
 ./output
 ```
 
-Use `gcc` instead of `cc` where needed. On Windows, use `sirius.exe` / `output.exe` and launch them as appropriate. The self-hosted CLI is `sirius <input.sirius> <output.c>` (legacy C emitter). For the experimental scalar/string/record HIR→MIR→C path, use `sirius --mir-c <input.sirius> <output.c>`; unsupported constructs are rejected without fallback.
+Use `gcc` instead of `cc` where needed. On Windows, use `sirius.exe` / `output.exe` and launch them as appropriate. The self-hosted CLI is `sirius <input.sirius> <output.c>` (legacy C emitter). For the experimental scalar/string/record/array/dictionary HIR→MIR→C path, use `sirius --mir-c <input.sirius> <output.c>`; unsupported constructs are rejected without fallback.
 
 **Regenerating the C bootstrap after changing Sirius compiler sources:**
 
@@ -66,8 +66,9 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_mir_lower.py` | Checked HIR → scalar CFG MIR lowering; branching, loops, short-circuit evaluation, and execution |
 | `python tools/test_hir_worklist.py` | Backend-independent concrete HIR specialization worklist, including canonical array type signatures |
 | `python tools/test_mir_program.py` | HIR worklist → linked scalar MIR program; nested, repeated and recursive calls |
-| `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings), plus direct MIR checks |
+| `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings and dictionaries), plus direct MIR checks |
 | `python tools/test_mir_managed.py` | Shared interpreted/native managed-string MIR, retain/move/release, calls and invalidated-register checks |
+| `python tools/test_mir_dict.py` | MIR dictionaries: CoW insertion, string keys, nested arrays and consuming updates (interpreter/native) |
 | `python tools/test_mir_records.py` | Nested structural records, canonical fields, recursive release, self-copy, calls, and use-after-release |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
 | `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
@@ -106,3 +107,5 @@ The main outstanding work is **a robust typed representation and ownership-aware
 Other design features—including modules, general operator overloads, universal descriptors and `Any`, pure `map`/`filter`/`generate`, multidimensional arrays, SIMD and concurrency—remain unimplemented. Python-style negative array indices are explicitly deferred.
 
 See [ROADMAP.md](ROADMAP.md) for **prioritized debt, incremental implementation steps, acceptance criteria, and design alignment**. See [IR_DESIGN.md](IR_DESIGN.md) for the intended intermediate representations. Regenerate changed bootstrap C with `python tools/test_selfhost.py --update-bootstrap`, then verify with `python tools/test_selfhost.py`; never edit generated C manually.
+
+The experimental MIR backend now includes `Dict[i64 | string, T]` storage (keys are separately typed as either `i64` or `string`), with empty construction, `insert`, and `len` lowered from supported Sirius source. Direct MIR additionally provides an eager `MIR_DICT_GET_OR` primitive. Source-level `get(...)`/optional fallback is **not yet lowered** because it requires lazy optional control flow. MIR dictionaries currently use a simple linear key scan; this is a correctness-oriented baseline, not a production hash-table implementation.

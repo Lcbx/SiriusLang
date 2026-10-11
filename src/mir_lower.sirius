@@ -216,6 +216,33 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_CALL
 		let callee = hir_ast_child(next.tree, id, 0)
+		if next.tree.nodes[!callee].kind == NODE_INDEX and node.count == 1
+			let type_id = mir_lower_type(next, id, HIR_CALL)
+			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_DICT
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_dict_new(dst))
+				return MirLowerExpr(next, dst)
+		if next.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(next.tree, callee) == "insert" and node.count == 3
+			let type_id = mir_lower_type(next, id, HIR_CALL)
+			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_DICT
+				let owner = mir_lower_expression(next, hir_ast_child(next.tree, callee, 0))
+				next = owner.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				let key = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+				next = key.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 2))
+				next = value.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				# Insert consumes its owner in MIR, but source collection calls are nonconsuming.
+				let owned = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_op(MIR_COPY, owned, owner.slot, -1, 0))
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_dict_insert(dst, owned, key.slot, value.slot))
+				return MirLowerExpr(next, dst)
 		if next.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(next.tree, callee) == "len" and node.count == 2
 			let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
 			next = value.state
@@ -227,6 +254,8 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 					op = MIR_STRING_LENGTH
 				elif next.types.entries[!kind].tag == TYPE_TAG_ARRAY
 					op = MIR_ARRAY_LENGTH
+				elif next.types.entries[!kind].tag == TYPE_TAG_DICT
+					op = MIR_DICT_LENGTH
 				if op != 0
 					let dst = len(next.register_types)
 					next = mir_lower_register(next, TYPE_TAG_I64)
