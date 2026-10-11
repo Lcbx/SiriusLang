@@ -24,10 +24,10 @@ Use `gcc` instead of `cc` where needed. On Windows, use `sirius.exe` / `output.e
 ```sh
 python tools/test_emitter.py
 python tools/test_selfhost.py --update-bootstrap
-python tools/test_selfhost.py
+python tools/test_selfhost.py --check
 ```
 
-The update command compiles from the **existing** `bootstrap_c/compiler.c`, checks the self-reproducing fixed point and smoke cases, then overwrites the committed C source. Commit that generated C along with the Sirius changes. New compiler source must remain compilable by the prior C seed; add support for new syntax before using it in `src/`.
+The update command compiles from the **existing** `bootstrap_c/compiler.c`, checks the self-reproducing fixed point, and overwrites the committed C source **without running fixture tests**. The verification command (`--check`, also the default when no mode is specified) checks the fixed point, compares committed C, and runs the full emitter suite. Commit generated C together with the Sirius changes. New compiler source must remain compilable by the prior C seed; add support for new syntax before using it in `src/`.
 
 HIR now runs an independent pre-emission body traversal after declaration indexing. It resolves lexical scopes, local/parameter/module-constant names, and statically known scalar expression types, recording typed source nodes and rejecting definite local binding errors. Record and collection literals, explicit collection constructors, field/index access, optional unboxing and selected builtin/method calls now receive canonical types when inputs are known. Concrete user-function calls and record constructors now also resolve through the declaration table; HIR checks annotated arguments, infers nested nonrecursive generic results, and records callee identities. HIR now defines the canonical specialization registry, keyed by declaration identity and argument TypeIds with in-progress tracking. `src/hir_specialize.sirius` uses a backend-independent worklist to type each concrete function body once (including mutually recursive and repeated signatures). `src/mir_program.sirius` lowers supported scalar/string/record specializations to MIR functions with matching indices. The experimental `--mir-c` path emits C from those linked MIR functions, with HIR-owned specialization identities; the legacy C emitter remains the default for the full bootstrap subset.
 
@@ -58,7 +58,8 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 85 executable cases and 37 expected diagnostics |
+| `python tools/test_selfhost.py --check` (or no mode flag) | C bootstrap fixed point, committed C comparison, 85 executable cases and 37 expected diagnostics |
+| `python tools/test_selfhost_modes.py` | Unit checks for update/check dispatch, stale bootstrap and missing fixed point |
 | `python tools/test_emitter.py` | Sirius-written emitter: 85 positive C executions, 37 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 11 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
@@ -75,7 +76,7 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_mir_dict.py` | MIR dictionaries: CoW insertion, string keys, nested arrays and consuming updates (interpreter/native) |
 | `python tools/test_mir_records.py` | Nested structural records, canonical fields, recursive release, self-copy, calls, and use-after-release |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
-| `python tools/test_selfhost.py --update-bootstrap` | Explicitly replace the committed C bootstrap after fixed-point and full emitter checks |
+| `python tools/test_selfhost.py --update-bootstrap` | Update committed C after verifying the fixed point; skip fixture tests |
 | `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
 
 Indexing uses `a[?i]` for optional reads, `a[!i]` for checked reads/updates, and postfix `!` to unbox an optional. Boolean guards use `condition else return value`, `condition else break`, or `condition else continue`.
@@ -110,7 +111,7 @@ The main outstanding work is **a robust typed representation and ownership-aware
 
 Other design features—including modules, general operator overloads, universal descriptors and `Any`, pure `map`/`filter`/`generate`, multidimensional arrays, SIMD and concurrency—remain unimplemented. Python-style negative array indices are explicitly deferred.
 
-See [ROADMAP.md](ROADMAP.md) for **prioritized debt, incremental implementation steps, acceptance criteria, and design alignment**. See [IR_DESIGN.md](IR_DESIGN.md) for the intended intermediate representations. Regenerate changed bootstrap C with `python tools/test_selfhost.py --update-bootstrap`, then verify with `python tools/test_selfhost.py`; never edit generated C manually.
+See [ROADMAP.md](ROADMAP.md) for **prioritized debt, incremental implementation steps, acceptance criteria, and design alignment**. See [IR_DESIGN.md](IR_DESIGN.md) for the intended intermediate representations. Regenerate changed bootstrap C with `python tools/test_selfhost.py --update-bootstrap`, then verify with `python tools/test_selfhost.py --check`; never edit generated C manually.
 
 The experimental MIR backend now includes `Dict[i64 | string, T]` storage (keys are separately typed as either `i64` or `string`), with empty construction, `insert`, and `len` lowered from supported Sirius source. Direct MIR additionally provides an eager `MIR_DICT_GET_OR` primitive. Source-level `get(...)`/optional fallback is **not yet lowered** because it requires lazy optional control flow. MIR dictionaries currently use a simple linear key scan; this is a correctness-oriented baseline, not a production hash-table implementation.
 

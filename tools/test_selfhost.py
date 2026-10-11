@@ -28,8 +28,11 @@ def check_committed(committed: Path, generated: bytes) -> None:
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument('--update-bootstrap', action='store_true',
-		help='replace bootstrap_c/compiler.c after fixed-point and executable checks')
+	mode = parser.add_mutually_exclusive_group()
+	mode.add_argument('--update-bootstrap', action='store_true',
+		help='replace bootstrap_c/compiler.c after reaching the fixed point (skip fixture tests)')
+	mode.add_argument('--check', action='store_true',
+		help='verify committed bootstrap and run all emitter fixtures (default)')
 	options(parser)
 	args = parser.parse_args()
 	cc = require_cc()
@@ -63,14 +66,13 @@ def main() -> None:
 		if fixed_c is None or fixed_binary is None:
 			raise AssertionError('Compiler C did not reach a fixed point in 8 generations')
 
-		# The generated compiler has been tested, not merely text-compared.
-		check_cases(cc, fixed_binary, work, jobs=validate_jobs(args.jobs), runtime=cache.runtime())
 		generated_c = fixed_c.read_bytes()
 		if args.update_bootstrap:
 			committed.write_bytes(generated_c)
-			print('Updated bootstrap_c/compiler.c')
+			print('Updated bootstrap_c/compiler.c (fixture tests not run)')
 		else:
 			check_committed(committed, generated_c)
+			check_cases(cc, fixed_binary, work, jobs=validate_jobs(args.jobs), runtime=cache.runtime())
 
 
 if __name__ == '__main__':

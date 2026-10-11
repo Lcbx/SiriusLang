@@ -23,8 +23,8 @@ The checked-in C compiler is the **sole seed for ongoing development**. The Pyth
 
 1. Implement a compiler change in `src/` and add tests. Keep the compiler's own source within the *previous* seed compiler's accepted Sirius subset.
 2. Run `python tools/test_emitter.py` and the relevant tokenizer/parser tests (these use the committed C compiler). The committed-C comparison in `test_selfhost.py` may intentionally fail until the generated bootstrap has been refreshed.
-3. Run `python tools/test_selfhost.py --update-bootstrap` to compile the updated compiler with the **current C bootstrap**, iterate until the generated C is self-reproducing, run executable checks, and replace `bootstrap_c/compiler.c` with the verified output.
-4. Run `python tools/test_selfhost.py` again, plus regressions, and commit the Sirius source, tests, and regenerated C together. Review the C diff rather than editing generated C.
+3. Run `python tools/test_selfhost.py --update-bootstrap` to compile the updated compiler with the **current C bootstrap**, iterate until the generated C is self-reproducing, and replace `bootstrap_c/compiler.c` without running the fixture suite.
+4. Run `python tools/test_selfhost.py --check` for the fixed-point/committed-C comparison and full emitter fixture suite, then commit the Sirius source, tests, and regenerated C together. Review the C diff rather than editing generated C.
 
 When the new compiler adds syntax or semantics that the previous seed cannot compile, implement the compiler support first using **old-subset syntax**, refresh the C bootstrap, and only then adopt the new feature inside the compiler source. Otherwise the bootstrap chain cannot advance. A source change that cannot be compiled by the seed is a bootstrapping blocker, not a reason to unfreeze Python.
 
