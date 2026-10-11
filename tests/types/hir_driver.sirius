@@ -233,5 +233,37 @@ def main() -> i64
 	let wrong_annotation_decl = hir_module_declarations(wrong_annotation.state, wrong_annotation.node)
 	if hir_analyze_function_body(wrong_annotation.state, wrong_annotation_decl.functions[!0], ["f"], Array[string]()).error != "expected Array[string], found Array[i64]"
 		return 66
+	# Concrete generic and constructor calls resolve before C emission, even
+	# across forward declarations and nested generic calls.
+	let calls_source = "rec Point(x: i64, y: i64)\n\tpub sum = x + y\ndef field(point)\n\treturn point.y\ndef relay(p)\n\treturn field(p)\ndef make(x: i64)\n\treturn Point(x, x + 1)\ndef main() -> i64\n\tlet point = make(3)\n\treturn relay(point)\n"
+	let calls_tree = parse_module(calls_source)
+	if calls_tree.state.error != ""
+		return 67
+	let calls_decls = hir_module_declarations(calls_tree.state, calls_tree.node)
+	if calls_decls.error != ""
+		return 68
+	let calls_body = hir_analyze_module_body(calls_tree.state, calls_decls.functions[!4], calls_decls.functions, Array[string]())
+	if calls_body.error != ""
+		return 69
+	var found_constructor_result = false
+	var found_generic_result = false
+	var found_resolved_function = false
+	for call in calls_body.nodes
+		if call.operation == HIR_CALL and call.type_id == TYPE_TAG_I64
+			found_generic_result = true
+		if call.operation == HIR_CALL and call.type_id > TYPE_TAG_VOID
+			found_constructor_result = true
+		if call.operation == HIR_CALL and call.field_index >= 0
+			found_resolved_function = true
+	if not found_constructor_result or not found_generic_result or not found_resolved_function
+		return 70
+	let wrong_call = parse_module("def fixed(v: i64) -> i64\n\treturn v\ndef main() -> i64\n\treturn fixed(\"bad\")\n")
+	let wrong_call_decl = hir_module_declarations(wrong_call.state, wrong_call.node)
+	if hir_analyze_module_body(wrong_call.state, wrong_call_decl.functions[!1], wrong_call_decl.functions, Array[string]()).error != "expected i64, found string"
+		return 71
+	let wrong_arity = parse_module("def fixed(v: i64) -> i64\n\treturn v\ndef main() -> i64\n\treturn fixed(1, 2)\n")
+	let arity_decl = hir_module_declarations(wrong_arity.state, wrong_arity.node)
+	if hir_analyze_module_body(wrong_arity.state, arity_decl.functions[!1], arity_decl.functions, Array[string]()).error != "argument count mismatch for 'fixed'"
+		return 72
 	print("PASS typed HIR resolution")
 	return 0

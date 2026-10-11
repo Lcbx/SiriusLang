@@ -366,6 +366,9 @@ rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string
 	pub last_type = TYPE_TAG_INVALID
 	pub error = ""
 	pub error_line = 0
+	pub functions = Array[HirFunctionDecl]()
+	pub active_functions = Array[string]()
+	pub inferred_return = TYPE_TAG_INVALID
 
 rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
 
@@ -428,6 +431,90 @@ def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id: i64, m
 	result.nodes = result.nodes.append(HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
 	return result
 
+# Resolve concrete user calls independently of C emission. Unknown parameter or
+# return types are deferred; an active unannotated recursive call is deferred too.
+# The backend remains responsible for generating/reusing specializations.
+def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i64]) -> HirBodyState
+	var result = state
+	var found = false
+	var function = HirFunctionDecl("", -1, -1, false, -1, Array[HirParameterDecl]())
+	for candidate in state.functions
+		if candidate.name == name
+			function = candidate
+			found = true
+	if not found
+		return result
+	if len(args) != len(function.parameters)
+		return hir_body_error(result, id, "argument count mismatch for '" + name + "'")
+	for i in 0..len(args)
+		let parameter = function.parameters[!i]
+		if parameter.type_node >= 0
+			let annotation = hir_body_type_reference(result.types, result.tree, parameter.type_node)
+			result.types = annotation.table
+			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != args[!i]
+				return hir_body_error(result, id, "expected " + hir_type_name(result.types, annotation.type_id) + ", found " + hir_type_name(result.types, args[!i]))
+	if function.constructor
+		var nested = HirBodyState(state.tree, state.names, state.constants)
+		nested.types = result.types
+		nested.functions = state.functions
+		nested.active_functions = state.active_functions
+		for i in 0..len(args)
+			let param = function.parameters[!i]
+			nested = hir_body_binding(nested, param.source, param.name, args[!i], false)
+		var fields = Array[RecordField]()
+		let block = state.tree.nodes[!function.body]
+		for i in 0..block.count
+			let pub_id = hir_ast_child(state.tree, function.body, i)
+			let pub = state.tree.nodes[!pub_id]
+			if pub.kind != NODE_PUB
+				return result
+			var field_name = hir_ast_text(state.tree, pub_id)
+			var field_type = TYPE_TAG_INVALID
+			if pub.count == 0
+				let symbol = resolve_hir_name(nested.symbols, field_name)
+				field_type = symbol.type_id
+			else
+				let expression = hir_ast_child(state.tree, pub_id, 0)
+				if state.tree.nodes[!expression].kind == NODE_ATTR
+					field_name = hir_ast_text(state.tree, expression)
+				nested = hir_body_expression(nested, expression)
+				field_type = nested.last_type
+			if nested.error != "" or field_type == TYPE_TAG_INVALID
+				return result
+			let edit = hir_constructor_publish(fields, field_name, field_type)
+			if edit.error != ""
+				return hir_body_error(result, pub_id, edit.error)
+			fields = edit.fields
+		if len(fields) > 0
+			let record = intern_record_type(nested.types, fields)
+			result.types = record.table
+			result.last_type = record.id
+		return result
+	if function.result_type_node >= 0
+		let declared = hir_body_type_reference(result.types, result.tree, function.result_type_node)
+		result.types = declared.table
+		result.last_type = declared.type_id
+		if declared.type_id != TYPE_TAG_INVALID
+			return result
+	for active in state.active_functions
+		if active == name
+			return result
+	var nested = HirBodyState(state.tree, state.names, state.constants)
+	nested.types = result.types
+	nested.functions = state.functions
+	nested.active_functions = state.active_functions.append(name)
+	for i in 0..len(args)
+		let parameter = function.parameters[!i]
+		nested = hir_body_binding(nested, parameter.source, parameter.name, args[!i], false)
+	nested = hir_body_block(nested, function.body)
+	if nested.error != ""
+		result.error = nested.error
+		result.error_line = nested.error_line
+		return result
+	result.types = nested.types
+	result.last_type = nested.inferred_return
+	return result
+
 def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 	state.error == "" else return state
 	let node = state.tree.nodes[!id]
@@ -461,6 +548,7 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 		let callee_kind = state.tree.nodes[!callee].kind
 		var receiver = TYPE_TAG_INVALID
 		var method = ""
+		var resolved_function = -1
 		if callee_kind == NODE_ATTR
 			method = hir_ast_text(state.tree, callee)
 			result = hir_body_expression(result, hir_ast_child(state.tree, callee, 0))
@@ -490,6 +578,11 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 					return hir_body_error(result, id, checked.error)
 				result.types = checked.table
 				result.last_type = checked.type_id
+			else
+				for j in 0..len(result.functions)
+					if result.functions[!j].name == name
+						resolved_function = j
+				result = hir_body_user_call(result, id, name, args)
 		elif complete and receiver != TYPE_TAG_INVALID
 			let tag = result.types.entries[!receiver].tag
 			var checked = HirCallCheck(result.types, TYPE_TAG_INVALID, "")
@@ -502,7 +595,7 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			result.types = checked.table
 			result.last_type = checked.type_id
 		if result.last_type != TYPE_TAG_INVALID
-			result.nodes = result.nodes.append(HirNode(id, HIR_CALL, result.last_type, -1))
+			result.nodes = result.nodes.append(HirNode(id, HIR_CALL, result.last_type, resolved_function))
 		return result
 	if kind == NODE_UNARY
 		result = hir_body_expression(result, hir_ast_child(state.tree, id, 0))
@@ -770,11 +863,35 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 	if node.kind == NODE_RETURN or node.kind == NODE_EXPR or node.kind == NODE_RECUR
 		for i in 0..node.count
 			result = hir_body_expression(result, hir_ast_child(state.tree, id, i))
+		if node.kind == NODE_RETURN and result.last_type != TYPE_TAG_INVALID
+			if result.inferred_return != TYPE_TAG_INVALID and result.inferred_return != result.last_type
+				return hir_body_error(result, id, "inconsistent return types")
+			result.inferred_return = result.last_type
 		return result
 	return result
 
 def hir_analyze_function_body(tree: ParseState, header: HirFunctionDecl, names: Array[string], constants: Array[string]) -> HirBodyAnalysis
 	var state = HirBodyState(tree, names, constants)
+	for parameter in header.parameters
+		var type_id = TYPE_TAG_INVALID
+		if parameter.type_node >= 0
+			let annotated = hir_body_type_reference(state.types, tree, parameter.type_node)
+			state.types = annotated.table
+			type_id = annotated.type_id
+		state = hir_body_binding(state, parameter.source, parameter.name, type_id, false)
+	if state.error == ""
+		state = hir_body_block(state, header.body)
+	return HirBodyAnalysis(state.nodes, state.error, state.error_line)
+
+# The module-level entry point shares the declaration table with the body
+# analyzer, enabling concrete user calls before C generation begins.
+def hir_analyze_module_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[string]) -> HirBodyAnalysis
+	var names = Array[string]()
+	for function in functions
+		names = names.append(function.name)
+	var state = HirBodyState(tree, names, constants)
+	state.functions = functions
+	state.active_functions = [header.name]
 	for parameter in header.parameters
 		var type_id = TYPE_TAG_INVALID
 		if parameter.type_node >= 0

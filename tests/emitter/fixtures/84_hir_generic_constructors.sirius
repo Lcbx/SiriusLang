@@ -1,0 +1,20 @@
+rec Pair(x: i64, y: i64)
+	pub sum = x + y
+
+def second(pair)
+	return pair.y
+
+def identity(x)
+	return x
+
+def forward(value)
+	return second(identity(value))
+
+def package(x: i64)
+	return Pair(x, x + 3)
+
+def main() -> i64
+	let pair = package(4)
+	let result = forward(pair)
+	print(result)
+	return 0
