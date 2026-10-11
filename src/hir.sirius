@@ -351,3 +351,255 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 					return hir_declaration_error(functions, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
 		functions = functions.append(HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters))
 	return HirModuleDecl(functions, "", 0)
+
+# Independent, pre-emission body analysis. Unresolved types are explicitly
+# deferred rather than guessed: specialization and collection typing still
+# belong to the legacy emitter during this migration.
+let HIR_BINDING = 9
+let HIR_ASSIGN = 10
+
+rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string])
+	pub symbols = Array[SymbolInfo]()
+	pub nodes = Array[HirNode]()
+	pub types = new_type_table()
+	pub depth = 0
+	pub last_type = TYPE_TAG_INVALID
+	pub error = ""
+	pub error_line = 0
+
+rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
+
+def hir_body_error(state: HirBodyState, id: i64, message: string) -> HirBodyState
+	var result = state
+	if result.error == ""
+		result.error = message
+		result.error_line = hir_ast_line(state.tree, id)
+	return result
+
+def hir_annotation_type(tree: ParseState, id: i64) -> i64
+	if id < 0
+		return TYPE_TAG_INVALID
+	let annotation = tree.nodes[id?]!
+	if annotation.kind != NODE_TYPE or annotation.count != 0
+		return TYPE_TAG_INVALID
+	let name = hir_ast_text(tree, id)
+	if name == "i64"
+		return TYPE_TAG_I64
+	if name == "f64"
+		return TYPE_TAG_F64
+	if name == "bool"
+		return TYPE_TAG_BOOL
+	if name == "string"
+		return TYPE_TAG_STRING
+	return TYPE_TAG_INVALID
+
+def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id: i64, mutable: bool) -> HirBodyState
+	var result = state
+	for symbol in result.symbols
+		if symbol.name == name and symbol.depth == result.depth
+			return hir_body_error(result, id, "duplicate binding '" + name + "'")
+	result.symbols = result.symbols.append(SymbolInfo(name, type_id, type_id, mutable, result.depth))
+	result.nodes = result.nodes.append(HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
+	return result
+
+def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
+	if state.error != ""
+		return state
+	let node = state.tree.nodes[id?]!
+	let kind = node.kind
+	var result = state
+	result.last_type = TYPE_TAG_INVALID
+	let literal = resolve_hir_literal(kind)
+	if literal != TYPE_TAG_INVALID
+		result.last_type = literal
+		result.nodes = result.nodes.append(HirNode(id, HIR_LITERAL, literal, -1))
+		return result
+	if kind == NODE_NAME
+		let name = hir_ast_text(state.tree, id)
+		let resolved = resolve_hir_name(result.symbols, name)
+		if resolved.error == ""
+			result.last_type = resolved.type_id
+			result.nodes = result.nodes.append(HirNode(id, HIR_NAME, resolved.type_id, resolved.field_index))
+			return result
+		for constant in result.constants
+			if constant == name
+				result.last_type = TYPE_TAG_I64
+				result.nodes = result.nodes.append(HirNode(id, HIR_NAME, TYPE_TAG_I64, -1))
+				return result
+		for function in result.names
+			if function == name
+				# Function values and constructor calls need specialization.
+				return result
+		return hir_body_error(result, id, "unknown name '" + name + "'")
+	if kind == NODE_CALL
+		# The callee is not a local-value use when it names a function or type.
+		let callee = hir_ast_child(state.tree, id, 0)
+		let callee_kind = state.tree.nodes[callee?]!.kind
+		if callee_kind == NODE_ATTR
+			result = hir_body_expression(result, hir_ast_child(state.tree, callee, 0))
+		elif callee_kind != NODE_NAME and callee_kind != NODE_INDEX
+			result = hir_body_expression(result, callee)
+		for i in 1..node.count
+			result = hir_body_expression(result, hir_ast_child(state.tree, id, i))
+		result.last_type = TYPE_TAG_INVALID
+		return result
+	if kind == NODE_UNARY
+		result = hir_body_expression(result, hir_ast_child(state.tree, id, 0))
+		if result.last_type != TYPE_TAG_INVALID
+			let checked = resolve_hir_unary(result.types, result.last_type, hir_ast_text(state.tree, id))
+			if checked.error != ""
+				return hir_body_error(result, id, checked.error)
+			result.last_type = checked.type_id
+			result.nodes = result.nodes.append(HirNode(id, HIR_UNARY, checked.type_id, -1))
+		return result
+	if kind == NODE_BINARY
+		let lhs = hir_body_expression(result, hir_ast_child(state.tree, id, 0))
+		let left = lhs.last_type
+		result = hir_body_expression(lhs, hir_ast_child(state.tree, id, 1))
+		let right = result.last_type
+		let op = hir_ast_text(state.tree, id)
+		if left != TYPE_TAG_INVALID and right != TYPE_TAG_INVALID and op != ".."
+			let checked = resolve_hir_binary(result.types, left, right, op)
+			if checked.error != ""
+				return hir_body_error(result, id, checked.error)
+			result.last_type = checked.type_id
+			result.nodes = result.nodes.append(HirNode(id, HIR_BINARY, checked.type_id, -1))
+		else
+			result.last_type = TYPE_TAG_INVALID
+		return result
+	if kind == NODE_ATTR
+		result = hir_body_expression(result, hir_ast_child(state.tree, id, 0))
+		# Record field types need full canonical construction/specialization.
+		result.last_type = TYPE_TAG_INVALID
+		return result
+	if kind == NODE_LAMBDA
+		# Lambda parameter binding is specialized with the target function type.
+		return result
+	if kind == NODE_RECORD
+		for i in 0..node.count
+			let field = hir_ast_child(state.tree, id, i)
+			if state.tree.nodes[field?]!.kind == NODE_FIELD
+				result = hir_body_expression(result, hir_ast_child(state.tree, field, 0))
+		result.last_type = TYPE_TAG_INVALID
+		return result
+	if kind == NODE_INDEX or kind == NODE_OPTIONAL_INDEX or kind == NODE_CHECKED_INDEX or kind == NODE_ARRAY
+		if kind == NODE_INDEX and node.count > 0
+			let base = hir_ast_child(state.tree, id, 0)
+			if state.tree.nodes[base?]!.kind == NODE_NAME
+				let type_name = hir_ast_text(state.tree, base)
+				if type_name == "Array" or type_name == "Dict" or type_name == "Optional"
+					return result
+		for i in 0..node.count
+			result = hir_body_expression(result, hir_ast_child(state.tree, id, i))
+		result.last_type = TYPE_TAG_INVALID
+		return result
+	if kind == NODE_ELSE_RETURN
+		for i in 0..node.count
+			result = hir_body_expression(result, hir_ast_child(state.tree, id, i))
+		return result
+	# Other expressions keep their original emitter validation until typed.
+	return result
+
+def hir_body_block(state: HirBodyState, id: i64) -> HirBodyState
+	var result = state
+	let initial = len(result.symbols)
+	result.depth += 1
+	let block = result.tree.nodes[id?]!
+	for i in 0..block.count
+		result = hir_body_statement(result, hir_ast_child(result.tree, id, i))
+		if result.error != ""
+			return result
+	var symbols = Array[SymbolInfo]()
+	for i in 0..initial
+		symbols = symbols.append(result.symbols[i?]!)
+	result.symbols = symbols
+	result.depth -= 1
+	return result
+
+def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
+	if state.error != ""
+		return state
+	let node = state.tree.nodes[id?]!
+	var result = state
+	if node.kind == NODE_LET or node.kind == NODE_VAR
+		var declared = TYPE_TAG_INVALID
+		var initializer = -1
+		for i in 0..node.count
+			let child = hir_ast_child(state.tree, id, i)
+			if state.tree.nodes[child?]!.kind == NODE_TYPE
+				declared = hir_annotation_type(state.tree, child)
+			else
+				initializer = child
+		if initializer >= 0
+			result = hir_body_expression(result, initializer)
+		if result.error != ""
+			return result
+		if declared != TYPE_TAG_INVALID and result.last_type != TYPE_TAG_INVALID and declared != result.last_type
+			return hir_body_error(result, id, "expected " + hir_type_name(result.types, declared) + ", found " + hir_type_name(result.types, result.last_type))
+		if declared == TYPE_TAG_INVALID
+			declared = result.last_type
+		return hir_body_binding(result, id, hir_ast_text(state.tree, id), declared, node.kind == NODE_VAR)
+	if node.kind == NODE_ASSIGN
+		let lhs = hir_ast_child(state.tree, id, 0)
+		let rhs = hir_ast_child(state.tree, id, 1)
+		let target = state.tree.nodes[lhs?]!
+		var root = lhs
+		while state.tree.nodes[root?]!.kind == NODE_ATTR or state.tree.nodes[root?]!.kind == NODE_CHECKED_INDEX
+			root = hir_ast_child(state.tree, root, 0)
+		if state.tree.nodes[root?]!.kind == NODE_NAME
+			let name = hir_ast_text(state.tree, root)
+			let resolved = resolve_hir_name(result.symbols, name)
+			if resolved.error == ""
+				if not result.symbols[resolved.field_index?]!.mutable
+					if target.kind == NODE_CHECKED_INDEX
+						return hir_body_error(result, id, "indexed update requires a mutable local array")
+					return hir_body_error(result, id, "cannot assign immutable binding '" + name + "'")
+		result = hir_body_expression(result, rhs)
+		if target.kind == NODE_NAME
+			let resolved = resolve_hir_name(result.symbols, hir_ast_text(state.tree, lhs))
+			if resolved.error == "" and result.last_type != TYPE_TAG_INVALID and resolved.type_id != TYPE_TAG_INVALID and resolved.type_id != result.last_type
+				return hir_body_error(result, id, "expected " + hir_type_name(result.types, resolved.type_id) + ", found " + hir_type_name(result.types, result.last_type))
+		result.nodes = result.nodes.append(HirNode(id, HIR_ASSIGN, result.last_type, -1))
+		return result
+	if node.kind == NODE_IF
+		for i in 0..node.count
+			let arm = hir_ast_child(state.tree, id, i)
+			let branch = state.tree.nodes[arm?]!
+			if branch.kind == NODE_ELSE
+				result = hir_body_block(result, hir_ast_child(state.tree, arm, 0))
+			else
+				result = hir_body_expression(result, hir_ast_child(state.tree, arm, 0))
+				result = hir_body_block(result, hir_ast_child(state.tree, arm, 1))
+		return result
+	if node.kind == NODE_WHILE
+		result = hir_body_expression(result, hir_ast_child(state.tree, id, 0))
+		return hir_body_block(result, hir_ast_child(state.tree, id, 1))
+	if node.kind == NODE_FOR
+		let iterable = hir_ast_child(state.tree, id, node.count - 2)
+		result = hir_body_expression(result, iterable)
+		let initial = len(result.symbols)
+		result.depth += 1
+		var item_type = TYPE_TAG_INVALID
+		if result.tree.nodes[iterable?]!.kind == NODE_BINARY and hir_ast_text(result.tree, iterable) == ".."
+			item_type = TYPE_TAG_I64
+		result = hir_body_binding(result, id, hir_ast_text(state.tree, id), item_type, false)
+		result = hir_body_block(result, hir_ast_child(state.tree, id, node.count - 1))
+		var symbols = Array[SymbolInfo]()
+		for i in 0..initial
+			symbols = symbols.append(result.symbols[i?]!)
+		result.symbols = symbols
+		result.depth -= 1
+		return result
+	if node.kind == NODE_RETURN or node.kind == NODE_EXPR or node.kind == NODE_RECUR
+		for i in 0..node.count
+			result = hir_body_expression(result, hir_ast_child(state.tree, id, i))
+		return result
+	return result
+
+def hir_analyze_function_body(tree: ParseState, header: HirFunctionDecl, names: Array[string], constants: Array[string]) -> HirBodyAnalysis
+	var state = HirBodyState(tree, names, constants)
+	for parameter in header.parameters
+		state = hir_body_binding(state, parameter.source, parameter.name, hir_annotation_type(tree, parameter.type_node), false)
+	if state.error == ""
+		state = hir_body_block(state, header.body)
+	return HirBodyAnalysis(state.nodes, state.error, state.error_line)

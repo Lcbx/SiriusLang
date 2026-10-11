@@ -1,0 +1,10 @@
+def main() -> i64
+	let x = 4
+	if true
+		let x = 7
+		print(x)
+	var y = x + 3
+	for i in 0..2
+		y += i
+	print(y)
+	return 0

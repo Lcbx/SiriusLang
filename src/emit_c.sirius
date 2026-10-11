@@ -1871,6 +1871,21 @@ def compile_c(source: string) -> CompileResult
 			state = collect_constant(state, id)
 		if state.error != ""
 			return CompileResult("", state.error, state.error_line)
+	# Analyze each evaluator body before any C is emitted. Complex and generic
+	# expressions keep unresolved types for the existing specialization pass.
+	var names = Array[string]()
+	var constants = Array[string]()
+	for function in module_index.functions
+		names = names.append(function.name)
+	for constant in state.constants
+		constants = constants.append(constant.name)
+	for function in module_index.functions
+		if not function.constructor
+			let body = hir_analyze_function_body(state.tree, function, names, constants)
+			if body.error != ""
+				return CompileResult("", body.error, body.error_line)
+			for typed in body.nodes
+				state.hir = state.hir.append(typed)
 	let main_index = find_function(state, "main")
 	if main_index < 0 or state.functions[main_index?]!.kind != TYPE_I64 or len(state.functions[main_index?]!.params) != 0
 		return CompileResult("", "expected def main() -> i64", 1)

@@ -42,6 +42,7 @@ ERRORS = {
 	'31_string_slice_bad_arity': 'string method argument count mismatch',
 	'32_def_constructor': 'def constructors are no longer supported; use rec',
 	'33_duplicate_module_name': "duplicate function 'VALUE'",
+	'34_hir_scope_escape': "unknown name 'hidden'",
 
 }
 

@@ -29,7 +29,7 @@ python tools/test_selfhost.py
 
 The update command compiles from the **existing** `bootstrap_c/compiler.c`, checks the self-reproducing fixed point and smoke cases, then overwrites the committed C source. Commit that generated C along with the Sirius changes. New compiler source must remain compilable by the prior C seed; add support for new syntax before using it in `src/`.
 
-The HIR declaration index now validates module names, function headers and parameters before C emission. Whole-function semantic checking and ownership lowering are not yet separate passes.
+HIR now runs an independent pre-emission body traversal after declaration indexing. It resolves lexical scopes, local/parameter/module-constant names, and statically known scalar expression types, recording typed source nodes and rejecting definite local binding errors. Generic, collection and record expression types remain deferred to the existing emitter; this is not yet a complete semantic or ownership pass.
 
 ## Tests
 
@@ -58,8 +58,8 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 75 executable cases and 31 expected diagnostics |
-| `python tools/test_emitter.py` | Sirius-written emitter: 75 positive C executions, 31 expected diagnostics |
+| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 76 executable cases and 32 expected diagnostics |
+| `python tools/test_emitter.py` | Sirius-written emitter: 76 positive C executions, 32 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
@@ -89,7 +89,7 @@ Source modules in `src/` are currently **concatenated in a fixed order**, along 
 
 The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published; `def` constructors rejected), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
 
-The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. Generic specialization caches, bound symbols and record-field lookup now use canonical `TypeId`s. Canonical descriptors now drive record field layout and C retain/drop helper selection for records, arrays and dictionaries. The incremental typed HIR (`src/hir.sirius`) resolves literals, local names, record fields, unary/binary expressions, assignment compatibility, builtin and user-function call signatures, string methods, collection method types, and record/constructor field composition using canonical `TypeId`s. The C emitter still orchestrates expression traversal, argument evaluation, generic specialization, constructors, control flow and ownership; no complete pre-emission HIR pass exists. Legacy arithmetic type IDs still name generated C types and occur in the remaining lowering paths; a complete HIR-only semantic pass remains Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
+The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. Generic specialization caches, bound symbols and record-field lookup now use canonical `TypeId`s. Canonical descriptors now drive record field layout and C retain/drop helper selection for records, arrays and dictionaries. The incremental typed HIR (`src/hir.sirius`) resolves literals, local names, record fields, unary/binary expressions, assignment compatibility, builtin and user-function call signatures, string methods, collection method types, and record/constructor field composition using canonical `TypeId`s. A separate pre-emission HIR traversal now handles lexical scopes, bindings, known scalar operations and assignment checks for function bodies. The C emitter still handles deferred expression types, argument evaluation, generic specialization, constructors, control flow and ownership; no complete typed-function HIR exists. Legacy arithmetic type IDs still name generated C types and occur in the remaining lowering paths; a complete HIR-only semantic pass remains Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
 
 Other design features—including modules, general operator overloads, universal descriptors and `Any`, pure `map`/`filter`/`generate`, multidimensional arrays, SIMD and concurrency—remain unimplemented. Python-style negative array indices are explicitly deferred.
 

@@ -1,0 +1,5 @@
+def main() -> i64
+	if true
+		let hidden = 2
+	print(hidden)
+	return 0
