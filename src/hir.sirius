@@ -331,7 +331,41 @@ rec HirParameterDecl(name: string, source: i64, type_node: i64)
 
 rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl])
 
-rec HirModuleDecl(functions: Array[HirFunctionDecl], error: string, error_line: i64)
+rec HirModuleConstant(name: string, value: i64)
+rec HirConstantEval(value: i64, valid: bool)
+rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], error: string, error_line: i64)
+
+def hir_eval_constant(tree: ParseState, id: i64, constants: Array[HirModuleConstant]) -> HirConstantEval
+	let node = tree.nodes[!id]
+	let value = hir_ast_text(tree, id)
+	if node.kind == NODE_INTEGER
+		var number = 0
+		for i in 0..len(value)
+			number = number * 10 + (value.byte_at(i) or 48) - 48
+		return HirConstantEval(number, true)
+	if node.kind == NODE_NAME
+		for item in constants
+			if item.name == value
+				return HirConstantEval(item.value, true)
+	if node.kind == NODE_UNARY and (value == "-" or value == "+")
+		let inner = hir_eval_constant(tree, hir_ast_child(tree, id, 0), constants)
+		if not inner.valid
+			return inner
+		if value == "-"
+			return HirConstantEval(-inner.value, true)
+		return inner
+	if node.kind == NODE_BINARY and (value == "+" or value == "-" or value == "*")
+		let left = hir_eval_constant(tree, hir_ast_child(tree, id, 0), constants)
+		let right = hir_eval_constant(tree, hir_ast_child(tree, id, 1), constants)
+		if not left.valid or not right.valid
+			return HirConstantEval(0, false)
+		if value == "+"
+			return HirConstantEval(left.value + right.value, true)
+		if value == "-"
+			return HirConstantEval(left.value - right.value, true)
+		return HirConstantEval(left.value * right.value, true)
+	return HirConstantEval(0, false)
+
 
 def hir_ast_child(tree: ParseState, id: i64, offset: i64) -> i64
 	let node = tree.nodes[!id]
@@ -343,28 +377,36 @@ def hir_ast_text(tree: ParseState, id: i64) -> string
 def hir_ast_line(tree: ParseState, id: i64) -> i64
 	return tree.tokens[!tree.nodes[!id].token].line
 
-def hir_declaration_error(functions: Array[HirFunctionDecl], message: string, line: i64) -> HirModuleDecl
-	return HirModuleDecl(functions, message, line)
+def hir_declaration_error(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], message: string, line: i64) -> HirModuleDecl
+	return HirModuleDecl(functions, constants, message, line)
 
 def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 	var functions = Array[HirFunctionDecl]()
 	var names = Array[string]()
+	var constants = Array[HirModuleConstant]()
 	let module = tree.nodes[!root]
 	for i in 0..module.count
 		let id = hir_ast_child(tree, root, i)
 		let entry = tree.nodes[!id]
 		let name = hir_ast_text(tree, id)
 		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET
-			return hir_declaration_error(functions, "unsupported module statement", hir_ast_line(tree, id))
+			return hir_declaration_error(functions, constants, "unsupported module statement", hir_ast_line(tree, id))
 		if name == "print" and (entry.kind == NODE_DEF or entry.kind == NODE_REC)
-			return hir_declaration_error(functions, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
 		for seen in names
 			if seen == name
 				if entry.kind == NODE_LET
-					return hir_declaration_error(functions, "duplicate module name", hir_ast_line(tree, id))
-				return hir_declaration_error(functions, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+					return hir_declaration_error(functions, constants, "duplicate module name", hir_ast_line(tree, id))
+				return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
 		names = names.append(name)
 		if entry.kind == NODE_LET
+			if entry.count == 0
+				return hir_declaration_error(functions, constants, "module constant requires initializer", hir_ast_line(tree, id))
+			let initializer = hir_ast_child(tree, id, entry.count - 1)
+			let evaluated = hir_eval_constant(tree, initializer, constants)
+			if not evaluated.valid
+				return hir_declaration_error(functions, constants, "unsupported module constant initializer", hir_ast_line(tree, id))
+			constants = constants.append(HirModuleConstant(name, evaluated.value))
 			continue
 		var parameters = Array[HirParameterDecl]()
 		var return_type = -1
@@ -376,11 +418,11 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 				if info.count > 0
 					annotation = hir_ast_child(tree, part, 0)
 					if info.count != 1 or tree.nodes[!annotation].kind != NODE_TYPE
-						return hir_declaration_error(functions, "parameter defaults are not supported yet", hir_ast_line(tree, part))
+						return hir_declaration_error(functions, constants, "parameter defaults are not supported yet", hir_ast_line(tree, part))
 				let pname = hir_ast_text(tree, part)
 				for previous in parameters
 					if previous.name == pname
-						return hir_declaration_error(functions, "duplicate parameter '" + pname + "'", hir_ast_line(tree, part))
+						return hir_declaration_error(functions, constants, "duplicate parameter '" + pname + "'", hir_ast_line(tree, part))
 				parameters = parameters.append(HirParameterDecl(pname, part, annotation))
 			elif info.kind == NODE_TYPE
 				return_type = part
@@ -389,9 +431,9 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			let body = tree.nodes[!body_id]
 			for j in 0..body.count
 				if tree.nodes[!hir_ast_child(tree, body_id, j)].kind == NODE_PUB
-					return hir_declaration_error(functions, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
+					return hir_declaration_error(functions, constants, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
 		functions = functions.append(HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters))
-	return HirModuleDecl(functions, "", 0)
+	return HirModuleDecl(functions, constants, "", 0)
 
 # Independent, pre-emission body analysis. Unresolved types are explicitly
 # deferred rather than guessed: specialization and collection typing still
@@ -419,6 +461,7 @@ rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string
 	pub inferred_return = TYPE_TAG_INVALID
 	pub collect_calls = false
 	pub requests = Array[HirSpecializationRequest]()
+	pub module_constants = Array[HirModuleConstant]()
 
 rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
 
@@ -472,6 +515,57 @@ def hir_body_type_reference(types: TypeTable, tree: ParseState, id: i64) -> HirC
 	let dict = intern_dict_type(value.table, element.type_id, value.type_id)
 	return HirCallCheck(dict.table, dict.id, "")
 
+# Named record annotations refer to a constructor's canonical published shape.
+# The plain resolver above remains useful for type-only clients without a module.
+def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, functions: Array[HirFunctionDecl]) -> HirCallCheck
+	let resolved = hir_body_type_reference(types, tree, id)
+	if resolved.type_id != TYPE_TAG_INVALID
+		return resolved
+	let node = tree.nodes[!id]
+	if (node.kind == NODE_NAME or node.kind == NODE_TYPE) and node.count == 0
+		let name = hir_ast_text(tree, id)
+		for function in functions
+			if function.name == name and function.constructor
+				var current = types
+				var arguments = Array[i64]()
+				for parameter in function.parameters
+					if parameter.type_node < 0
+						return HirCallCheck(current, TYPE_TAG_INVALID, "named record type requires annotated constructor parameters")
+					let argument = hir_module_type_reference(current, tree, parameter.type_node, functions)
+					if argument.type_id == TYPE_TAG_INVALID
+						return argument
+					current = argument.table
+					arguments = arguments.append(argument.type_id)
+				var state = HirBodyState(tree, Array[string](), Array[string]())
+				state.types = current
+				state.functions = functions
+				let constructed = hir_body_user_call(state, id, name, arguments)
+				return HirCallCheck(constructed.types, constructed.last_type, constructed.error)
+		return resolved
+	var name = hir_ast_text(tree, id)
+	var start = 0
+	if node.kind == NODE_INDEX and node.count > 0
+		name = hir_ast_text(tree, hir_ast_child(tree, id, 0))
+		start = 1
+	if name != "Array" and name != "Optional" and name != "Dict"
+		return resolved
+	if (name == "Dict" and node.count != start + 2) or (name != "Dict" and node.count != start + 1)
+		return resolved
+	let first = hir_module_type_reference(types, tree, hir_ast_child(tree, id, start), functions)
+	if first.type_id == TYPE_TAG_INVALID
+		return first
+	if name == "Array"
+		let result = intern_array_type(first.table, first.type_id)
+		return HirCallCheck(result.table, result.id, "")
+	if name == "Optional"
+		let result = intern_optional_type(first.table, first.type_id)
+		return HirCallCheck(result.table, result.id, "")
+	let second = hir_module_type_reference(first.table, tree, hir_ast_child(tree, id, start + 1), functions)
+	if second.type_id == TYPE_TAG_INVALID
+		return second
+	let result = intern_dict_type(second.table, first.type_id, second.type_id)
+	return HirCallCheck(result.table, result.id, "")
+
 def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id: i64, mutable: bool) -> HirBodyState
 	var result = state
 	for symbol in result.symbols
@@ -499,7 +593,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
 		if parameter.type_node >= 0
-			let annotation = hir_body_type_reference(result.types, result.tree, parameter.type_node)
+			let annotation = hir_module_type_reference(result.types, result.tree, parameter.type_node, result.functions)
 			result.types = annotation.table
 			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != args[!i]
 				return hir_body_error(result, id, "expected " + hir_type_name(result.types, annotation.type_id) + ", found " + hir_type_name(result.types, args[!i]))
@@ -508,7 +602,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	if result.collect_calls and not function.constructor
 		result.requests = result.requests.append(HirSpecializationRequest(id, function.body, args))
 		if function.result_type_node >= 0
-			let declared = hir_body_type_reference(result.types, result.tree, function.result_type_node)
+			let declared = hir_module_type_reference(result.types, result.tree, function.result_type_node, result.functions)
 			result.types = declared.table
 			result.last_type = declared.type_id
 		return result
@@ -544,13 +638,16 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 			if edit.error != ""
 				return hir_body_error(result, pub_id, edit.error)
 			fields = edit.fields
+		for typed_node in nested.nodes
+			if typed_node.operation != HIR_BINDING
+				result.nodes = result.nodes.append(typed_node)
 		if len(fields) > 0
 			let record = intern_record_type(nested.types, fields)
 			result.types = record.table
 			result.last_type = record.id
 		return result
 	if function.result_type_node >= 0
-		let declared = hir_body_type_reference(result.types, result.tree, function.result_type_node)
+		let declared = hir_module_type_reference(result.types, result.tree, function.result_type_node, result.functions)
 		result.types = declared.table
 		result.last_type = declared.type_id
 		if declared.type_id != TYPE_TAG_INVALID
@@ -592,6 +689,11 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			result.last_type = resolved.type_id
 			result.nodes = result.nodes.append(HirNode(id, HIR_NAME, resolved.type_id, resolved.field_index))
 			return result
+		for constant in result.module_constants
+			if constant.name == name
+				result.last_type = TYPE_TAG_I64
+				result.nodes = result.nodes.append(HirNode(id, HIR_NAME, TYPE_TAG_I64, -1))
+				return result
 		for constant in result.constants
 			if constant == name
 				result.last_type = TYPE_TAG_I64
@@ -625,7 +727,7 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			args = args.append(result.last_type)
 		result.last_type = TYPE_TAG_INVALID
 		if callee_kind == NODE_INDEX and node.count == 1
-			let typed = hir_body_type_reference(result.types, result.tree, callee)
+			let typed = hir_module_type_reference(result.types, result.tree, callee, result.functions)
 			if typed.type_id != TYPE_TAG_INVALID
 				result.types = typed.table
 				result.last_type = typed.type_id
@@ -837,7 +939,7 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			let child = hir_ast_child(state.tree, id, i)
 			let child_kind = state.tree.nodes[!child].kind
 			if child_kind == NODE_TYPE
-				let annotated = hir_body_type_reference(result.types, result.tree, child)
+				let annotated = hir_module_type_reference(result.types, result.tree, child, result.functions)
 				result.types = annotated.table
 				declared = annotated.type_id
 			elif child_kind == NODE_ELSE_RETURN
@@ -912,6 +1014,8 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 		var item_type = TYPE_TAG_INVALID
 		if result.tree.nodes[!iterable].kind == NODE_BINARY and hir_ast_text(result.tree, iterable) == ".."
 			item_type = TYPE_TAG_I64
+		elif result.last_type != TYPE_TAG_INVALID and result.types.entries[!result.last_type].tag == TYPE_TAG_ARRAY
+			item_type = result.types.entries[!result.last_type].first
 		result = hir_body_binding(result, id, hir_ast_text(state.tree, id), item_type, false)
 		result = hir_body_block(result, hir_ast_child(state.tree, id, node.count - 1))
 		var symbols = Array[SymbolInfo]()
@@ -941,7 +1045,7 @@ def hir_analyze_function_body(tree: ParseState, header: HirFunctionDecl, names: 
 	for parameter in header.parameters
 		var type_id = TYPE_TAG_INVALID
 		if parameter.type_node >= 0
-			let annotated = hir_body_type_reference(state.types, tree, parameter.type_node)
+			let annotated = hir_module_type_reference(state.types, tree, parameter.type_node, state.functions)
 			state.types = annotated.table
 			type_id = annotated.type_id
 		state = hir_body_binding(state, parameter.source, parameter.name, type_id, false)
@@ -961,7 +1065,7 @@ def hir_analyze_module_body(tree: ParseState, header: HirFunctionDecl, functions
 	for parameter in header.parameters
 		var type_id = TYPE_TAG_INVALID
 		if parameter.type_node >= 0
-			let annotated = hir_body_type_reference(state.types, tree, parameter.type_node)
+			let annotated = hir_module_type_reference(state.types, tree, parameter.type_node, state.functions)
 			state.types = annotated.table
 			type_id = annotated.type_id
 		state = hir_body_binding(state, parameter.source, parameter.name, type_id, false)

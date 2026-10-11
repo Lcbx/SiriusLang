@@ -177,8 +177,8 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Extract `CompileResult` from the legacy emitter.
 - [x] Share MIR entry validation and managed TypeId classification in `mir_common.sirius`.
 - [x] Add an explicit self-hosting coverage probe for the MIR backend.
-- [ ] Support all concrete return annotations and specializations needed to analyze the compiler in HIR.
-- [ ] Complete HIR→MIR lowering for remaining compiler syntax and builtins.
+- [ ] Support all concrete return annotations and specializations needed to analyze the compiler in HIR. **Progress:** named canonical `rec` annotations (including inside collections), constructor `pub` fields, and module `i64` constants are supported.
+- [ ] Complete HIR→MIR lowering for remaining compiler syntax and builtins. **Progress:** typed empty arrays, `Array.append` with CoW-safe copying, `for` over arrays/ranges, `break`, `continue`, expression statements, `print`, CLI arguments, `str(i64)`, file read/write in native C. Remaining: other string methods, unannotated result specialization, richer record updates, other unsupported source constructs, and MIR interpreter parity for file reads.
 - [ ] Achieve a stage-2/stage-3 fixed point when compiling the compiler through MIR.
 - [ ] Run the full execution and diagnostic suites with MIR as the default.
 - [ ] Remove the legacy C emitter and retire the `--mir-c` switch.

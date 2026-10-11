@@ -74,6 +74,32 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = MirValue(TYPE_TAG_INVALID, 0, "")
 				continue
+			if ins.op == MIR_ARGUMENTS
+				var fields = Array[MirValue]()
+				for argument in arguments()
+					fields = fields.append(MirValue(TYPE_TAG_STRING, 0, argument))
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == MIR_STR_I64
+				let value = registers[!ins.first]
+				if value.type_id != TYPE_TAG_I64
+					return mir_failure("str expects i64", steps)
+				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, str(value.bits))
+				continue
+			if ins.op == MIR_READ_TEXT
+				return mir_failure("read_text is not yet supported in the MIR interpreter", steps)
+			if ins.op == MIR_WRITE_TEXT
+				let path = registers[!ins.first]
+				let content = registers[!ins.second]
+				if path.type_id != TYPE_TAG_STRING or content.type_id != TYPE_TAG_STRING
+					return mir_failure("write_text expects strings", steps)
+				var success = 0
+				if write_text(path.text, content.text)
+					success = 1
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, success, "")
+				continue
 			if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
 				var fields = Array[MirValue]()
 				if ins.op == MIR_OPTIONAL_SOME
@@ -195,6 +221,25 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				continue
+			if ins.op == MIR_ARRAY_APPEND
+				let owner = registers[!ins.first]
+				let value = registers[!ins.second]
+				if owner.type_id == TYPE_TAG_INVALID or value.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized array append", steps)
+				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
+					return mir_failure("invalid array handle", steps)
+				var fields = heap[!owner.bits].fields
+				for item in fields
+					heap = mir_heap_copy(program.types, heap, item)
+				heap = mir_heap_copy(program.types, heap, value)
+				fields = fields.append(value)
+				heap = mir_heap_drop(program.types, heap, owner)
+				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				if ins.dst != ins.first
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(owner.type_id, len(heap), "")
+				heap = heap.append(MirHeapRecord(owner.type_id, fields, 1))
 				continue
 			if ins.op == MIR_ARRAY_NEW
 				var values = Array[MirValue]()

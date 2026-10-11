@@ -17,7 +17,7 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 		var targets = Array[MirCallTarget]()
 		for call in body.calls
 			targets = targets.append(MirCallTarget(call.source, call.specialization))
-		let lowered = mir_lower_function_typed(tree, header, body.nodes, spec.arguments, body.return_type, targets, analyzed.types)
+		let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, targets, analyzed.types, declarations.functions, declarations.constants)
 		if lowered.error != ""
 			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, lowered.error)
 		functions = functions.append(lowered.function)

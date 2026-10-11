@@ -44,6 +44,11 @@ let MIR_RELEASE_IF_INIT = 39
 let MIR_NONZERO_I64 = 40
 let MIR_DIV_NO_OVERFLOW_I64 = 41
 let MIR_ARRAY_INDEX_VALID = 42
+let MIR_ARGUMENTS = 43
+let MIR_READ_TEXT = 44
+let MIR_WRITE_TEXT = 45
+let MIR_STR_I64 = 46
+let MIR_ARRAY_APPEND = 47
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -61,7 +66,7 @@ def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(true, false)
 	if op == MIR_ARRAY_SET
 		return MirFailureInfo(true, true)
-	if op == MIR_CALL or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
+	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
 		return MirFailureInfo(false, true)
 	return MirFailureInfo(false, false)
 
@@ -110,6 +115,9 @@ def mir_array_get(dst: i64, owner: i64, index: i64) -> MirInstruction
 
 # Consumes owner: transfers its owned reference to dst (which may equal owner).
 # Shared arrays are copied before mutation; uniquely owned arrays mutate in place.
+def mir_array_append(dst: i64, owner: i64, value: i64) -> MirInstruction
+	return mir_op(MIR_ARRAY_APPEND, dst, owner, value, 0)
+
 def mir_array_set(dst: i64, owner: i64, index: i64, value: i64) -> MirInstruction
 	return MirInstruction(MIR_ARRAY_SET, dst, owner, index, value, Array[i64](), "")
 
@@ -161,7 +169,7 @@ def mir_panic(message: string) -> MirTerminator
 # Consuming instructions invalidate their source register. Shared by
 # forward ownership and backward lifetime analyses.
 def mir_consumes_source(ins: MirInstruction) -> bool
-	return ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
+	return ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_ARRAY_APPEND or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
 
 # Register operands read by an instruction. Literal immediates are excluded.
 # Shared by backward liveness and forward definite-initialization analyses.
@@ -175,8 +183,10 @@ def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
 
 def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 	var reads = Array[i64]()
-	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_RELEASE_IF_INIT
+	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_ARGUMENTS or ins.op == MIR_RELEASE_IF_INIT
 		return reads
+	if ins.op == MIR_WRITE_TEXT
+		return [ins.first, ins.second]
 	if ins.op == MIR_CALL or ins.op == MIR_RECORD_NEW or ins.op == MIR_ARRAY_NEW
 		return ins.inputs
 	reads = reads.append(ins.first)
@@ -186,7 +196,7 @@ def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 		return reads
 	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR
 		reads = mir_read_add(reads, ins.immediate)
-	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND
 		reads = mir_read_add(reads, ins.second)
 	return reads
 
@@ -219,6 +229,24 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 	if ins.dst < 0 or ins.dst >= len(types)
 		return "invalid destination register"
 	let dst_type = types[!ins.dst]
+	if ins.op == MIR_ARGUMENTS
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_ARRAY or desc.first != TYPE_TAG_STRING
+			return "arguments requires Array[string] destination"
+		return ""
+	if ins.op == MIR_STR_I64
+		if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "str requires i64 and string result"
+		return ""
+	if ins.op == MIR_READ_TEXT
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_OPTIONAL or desc.first != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "read_text requires string path and Optional[string] result"
+		return ""
+	if ins.op == MIR_WRITE_TEXT
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "write_text requires two strings and bool result"
+		return ""
 	if ins.op == MIR_CONST_I64
 		if dst_type != TYPE_TAG_I64
 			return "integer constant destination must be i64"
@@ -307,6 +335,14 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		for input in ins.inputs
 			if not mir_register_valid(types, input, desc.first)
 				return "array constructor element type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_APPEND
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid append owner"
+		let owner = types[!ins.first]
+		let desc = program.types.entries[!owner]
+		if desc.tag != TYPE_TAG_ARRAY or dst_type != owner or not mir_register_valid(types, ins.second, desc.first)
+			return "array append signature mismatch"
 		return ""
 	if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL
 		if ins.first < 0 or ins.first >= len(types)

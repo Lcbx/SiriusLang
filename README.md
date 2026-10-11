@@ -31,6 +31,12 @@ The update command compiles from the **existing** `bootstrap_c/compiler.c`, chec
 
 HIR now runs an independent pre-emission body traversal after declaration indexing. It resolves lexical scopes, local/parameter/module-constant names, and statically known scalar expression types, recording typed source nodes and rejecting definite local binding errors. Record and collection literals, explicit collection constructors, field/index access, optional unboxing and selected builtin/method calls now receive canonical types when inputs are known. Concrete user-function calls and record constructors now also resolve through the declaration table; HIR checks annotated arguments, infers nested nonrecursive generic results, and records callee identities. HIR now defines the canonical specialization registry, keyed by declaration identity and argument TypeIds with in-progress tracking. `src/hir_specialize.sirius` uses a backend-independent worklist to type each concrete function body once (including mutually recursive and repeated signatures). `src/mir_program.sirius` lowers supported scalar/string/record specializations to MIR functions with matching indices. The experimental `--mir-c` path emits C from those linked MIR functions, with HIR-owned specialization identities; the legacy C emitter remains the default for the full bootstrap subset.
 
+## MIR-only migration status
+
+The experimental `--mir-c` backend additionally lowers named structural `rec` annotations, non-generic `rec` constructor calls (including direct `pub` expressions), module `i64` constants, empty typed arrays, `Array.append`, array and half-open-range `for` loops, `break`/`continue`, expression statements and `print`. The native C backend also supports `arguments`, `str(i64)`, `read_text` and `write_text`. `Array.append` currently copies its storage, including for a unique owner; correctness takes precedence over optimization. The MIR interpreter does not yet execute `read_text`.
+
+**The legacy `emit_c.sirius` remains necessary**: the MIR path still lacks language constructs used by the compiler itself (notably additional string/collection methods, unannotated return types and other complex lowering). A MIR self-hosting fixed point has not been demonstrated. Continue running the default compiler through the legacy emitter until `tools/check_mir_bootstrap.py --require-ready`, full differential tests and independent MIR self-hosting all pass.
+
 ## Tests
 
 Test runners use `-O0` for disposable C binaries and compile the runtime once
@@ -74,6 +80,8 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_mir_failure_contract.py` | Failure metadata, post-lowering guard audit, and non-unwinding operation classification |
 | `python tools/test_mir_optional.py` | Managed optional values and missing-value control flow in Sirius interpreter and native C |
 | `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings and dictionaries), plus direct MIR checks |
+| `python tools/test_mir_migration.py` | New MIR coverage against legacy native C: named records/constructors, module constants, CLI/file builtins, append, array/range iteration, loop control |
+| `python tools/check_mir_bootstrap.py --require-ready` | Attempt to compile the combined compiler source via MIR (must pass before changing the default backend) |
 | `python tools/test_mir_managed.py` | Shared interpreted/native managed-string MIR, retain/move/release, calls and invalidated-register checks |
 | `python tools/test_mir_dict.py` | MIR dictionaries: CoW insertion, string keys, nested arrays and consuming updates (interpreter/native) |
 | `python tools/test_mir_records.py` | Nested structural records, canonical fields, recursive release, self-copy, calls, and use-after-release |

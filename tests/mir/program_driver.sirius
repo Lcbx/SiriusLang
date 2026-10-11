@@ -45,5 +45,23 @@ def main() -> i64
 	let unsupported = mir_build_program(bad.state, bad_declarations, "main", Array[i64]())
 	if unsupported.error != "HIR worklist calls require an explicit return type"
 		return 6
+	let named = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef size(p: Point) -> i64\n\treturn p.x + p.y\ndef main() -> i64\n\treturn size({x = 20, y = 22})\n"
+	if not check(named, 42, 2)
+		return 7
+	let constructed = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef size(p: Point) -> i64\n\treturn p.x + p.y\ndef main() -> i64\n\treturn size(Point(20, 22))\n"
+	if not check(constructed, 42, 2)
+		return 8
+	let nested_type = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef first(items: Array[Point]) -> i64\n\treturn items[!0].x\ndef main() -> i64\n\treturn first([Point(42, 1)])\n"
+	if not check(nested_type, 42, 2)
+		return 9
+	let loop = "def main() -> i64\n\tvar result = 0\n\tfor x in [10, 20, 12]\n\t\tresult = result + x\n\treturn result\n"
+	if not check(loop, 42, 1)
+		return 10
+	let append = "def main() -> i64\n\tlet a = Array[i64]()\n\tlet b = a.append(42)\n\treturn len(a) + b[!0]\n"
+	if not check(append, 42, 1)
+		return 11
+	let loop_control = "def main() -> i64\n\tvar total = 0\n\tfor i in 0..10\n\t\tif i == 2\n\t\t\tcontinue\n\t\tif i == 5\n\t\t\tbreak\n\t\ttotal = total + i\n\treturn total + 34\n"
+	if not check(loop_control, 42, 1)
+		return 12
 	print("PASS HIR specialization worklist and MIR calls")
 	return 0

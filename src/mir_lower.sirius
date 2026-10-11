@@ -15,6 +15,10 @@ rec MirLowerState(tree: ParseState, hir: Array[HirNode])
 	pub error = ""
 	pub call_targets = Array[MirCallTarget]()
 	pub types = new_type_table()
+	pub functions = Array[HirFunctionDecl]()
+	pub constants = Array[HirModuleConstant]()
+	pub break_targets = Array[i64]()
+	pub continue_targets = Array[i64]()
 
 rec MirLowerExpr(state: MirLowerState, slot: i64)
 rec MirLowerResult(function: MirFunction, error: string)
@@ -119,6 +123,12 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 			return MirLowerExpr(mir_lower_error(state, "missing typed name"), -1)
 		let register = mir_lower_binding(state, text)
 		if register < 0
+			for constant in state.constants
+				if constant.name == text
+					let dst = len(next.register_types)
+					next = mir_lower_register(next, TYPE_TAG_I64)
+					next = mir_lower_emit(next, mir_op(MIR_CONST_I64, dst, -1, -1, constant.value))
+					return MirLowerExpr(next, dst)
 			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 		return MirLowerExpr(state, register)
 	if node.kind == NODE_ARRAY
@@ -230,12 +240,84 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_CALL
 		let callee = hir_ast_child(next.tree, id, 0)
+		if next.tree.nodes[!callee].kind == NODE_NAME
+			let name = hir_ast_text(next.tree, callee)
+			for function in next.functions
+				if function.name == name and function.constructor
+					let type_id = mir_lower_type(next, id, HIR_CALL)
+					if not mir_type_supported(next.types, type_id) or next.types.entries[!type_id].tag != TYPE_TAG_RECORD
+						return MirLowerExpr(mir_lower_error(next, "constructor requires typed record result"), -1)
+					if node.count - 1 != len(function.parameters)
+						return MirLowerExpr(mir_lower_error(next, "constructor argument count mismatch"), -1)
+					let previous = next.bindings
+					for j in 0..len(function.parameters)
+						let argument = mir_lower_expression(next, hir_ast_child(next.tree, id, j + 1))
+						next = argument.state
+						next.error == "" else return MirLowerExpr(next, -1)
+						next.bindings = next.bindings.append(MirSourceBinding(function.parameters[!j].name, argument.slot, next.depth + 1))
+					var evaluated = Array[MirLowerField]()
+					let body = next.tree.nodes[!function.body]
+					for j in 0..body.count
+						let published = hir_ast_child(next.tree, function.body, j)
+						let pub = next.tree.nodes[!published]
+						if pub.kind != NODE_PUB
+							return MirLowerExpr(mir_lower_error(next, "constructor requires direct pub statements"), -1)
+						var field_name = hir_ast_text(next.tree, published)
+						var slot = -1
+						if pub.count == 0
+							slot = mir_lower_binding(next, field_name)
+						else
+							let expression_id = hir_ast_child(next.tree, published, 0)
+							if next.tree.nodes[!expression_id].kind == NODE_ATTR
+								field_name = hir_ast_text(next.tree, expression_id)
+							let expression = mir_lower_expression(next, expression_id)
+							next = expression.state
+							next.error == "" else return MirLowerExpr(next, -1)
+							slot = expression.slot
+						if slot < 0
+							return MirLowerExpr(mir_lower_error(next, "unknown published constructor field"), -1)
+						evaluated = evaluated.append(MirLowerField(field_name, slot))
+					next.bindings = previous
+					var inputs = Array[i64]()
+					for field in next.types.entries[!type_id].fields
+						var source = -1
+						for candidate in evaluated
+							if candidate.name == field.name
+								source = candidate.slot
+						if source < 0
+							return MirLowerExpr(mir_lower_error(next, "missing canonical constructor field"), -1)
+						inputs = inputs.append(source)
+					let dst = len(next.register_types)
+					next = mir_lower_register(next, type_id)
+					next = mir_lower_emit(next, mir_record_new(dst, inputs))
+					return MirLowerExpr(next, dst)
 		if next.tree.nodes[!callee].kind == NODE_INDEX and node.count == 1
 			let type_id = mir_lower_type(next, id, HIR_CALL)
+			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_ARRAY
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_array_new(dst, Array[i64]()))
+				return MirLowerExpr(next, dst)
 			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_DICT
 				let dst = len(next.register_types)
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, mir_dict_new(dst))
+				return MirLowerExpr(next, dst)
+		if next.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(next.tree, callee) == "append" and node.count == 2
+			let type_id = mir_lower_type(next, id, HIR_CALL)
+			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_ARRAY
+				let owner = mir_lower_expression(next, hir_ast_child(next.tree, callee, 0))
+				next = owner.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+				next = value.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				let owned = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_op(MIR_COPY, owned, owner.slot, -1, 0))
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_array_append(dst, owned, value.slot))
 				return MirLowerExpr(next, dst)
 		if next.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(next.tree, callee) == "get" and node.count == 2
 			let type_id = mir_lower_type(next, id, HIR_CALL)
@@ -272,6 +354,37 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, mir_dict_insert(dst, owned, key.slot, value.slot))
 				return MirLowerExpr(next, dst)
+		if next.tree.nodes[!callee].kind == NODE_NAME
+			let builtin = hir_ast_text(next.tree, callee)
+			var op = 0
+			if builtin == "arguments" and node.count == 1
+				op = MIR_ARGUMENTS
+			elif builtin == "read_text" and node.count == 2
+				op = MIR_READ_TEXT
+			elif builtin == "write_text" and node.count == 3
+				op = MIR_WRITE_TEXT
+			elif builtin == "str" and node.count == 2
+				op = MIR_STR_I64
+			if op != 0
+				let type_id = mir_lower_type(next, id, HIR_CALL)
+				if not mir_type_supported(next.types, type_id)
+					return MirLowerExpr(mir_lower_error(next, "missing typed builtin call"), -1)
+				var inputs = Array[i64]()
+				for i in 1..node.count
+					let argument = mir_lower_expression(next, hir_ast_child(next.tree, id, i))
+					next = argument.state
+					next.error == "" else return MirLowerExpr(next, -1)
+					inputs = inputs.append(argument.slot)
+				var first = -1
+				var second = -1
+				if len(inputs) > 0
+					first = inputs[!0]
+				if len(inputs) > 1
+					second = inputs[!1]
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_op(op, dst, first, second, 0))
+				return MirLowerExpr(next, dst)
 		if next.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(next.tree, callee) == "len" and node.count == 2
 			let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
 			next = value.state
@@ -295,7 +408,7 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 			if target.source == id
 				callee_id = target.specialization
 		if callee_id < 0
-			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call target"), -1)
+			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call target: " + hir_ast_text(next.tree, callee)), -1)
 		let type_id = mir_lower_type(next, id, HIR_CALL)
 		if not mir_type_supported(next.types, type_id)
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call result type"), -1)
@@ -453,6 +566,27 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 	state.error == "" else return state
 	let node = state.tree.nodes[!id]
 	var next = state
+	if node.kind == NODE_BREAK or node.kind == NODE_CONTINUE
+		var target = -1
+		if node.kind == NODE_BREAK and len(next.break_targets) > 0
+			target = next.break_targets[!len(next.break_targets) - 1]
+		elif node.kind == NODE_CONTINUE and len(next.continue_targets) > 0
+			target = next.continue_targets[!len(next.continue_targets) - 1]
+		if target < 0
+			return mir_lower_error(next, "loop control outside loop")
+		return mir_lower_end(next, mir_jump(target))
+	if node.kind == NODE_EXPR
+		let expression_id = hir_ast_child(next.tree, id, 0)
+		let expression_node = next.tree.nodes[!expression_id]
+		if expression_node.kind == NODE_CALL and expression_node.count == 2
+			let callee = hir_ast_child(next.tree, expression_id, 0)
+			if next.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(next.tree, callee) == "print"
+				let argument = mir_lower_expression(next, hir_ast_child(next.tree, expression_id, 1))
+				next = argument.state
+				next.error == "" else return next
+				return mir_lower_emit(next, mir_op(MIR_PRINT, -1, argument.slot, -1, 0))
+		let expression = mir_lower_expression(next, expression_id)
+		return expression.state
 	if node.kind == NODE_LET or node.kind == NODE_VAR
 		var initializer = -1
 		var fallback = -1
@@ -572,6 +706,98 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 			if not can_fallthrough and has_else
 				next = mir_lower_end(next, mir_panic("unreachable"))
 		return next
+	if node.kind == NODE_FOR
+		let iterable_id = hir_ast_child(next.tree, id, node.count - 2)
+		let body_id = hir_ast_child(next.tree, id, node.count - 1)
+		let iterable_node = next.tree.nodes[!iterable_id]
+		var is_range = iterable_node.kind == NODE_BINARY and hir_ast_text(next.tree, iterable_id) == ".."
+		var begin_slot = -1
+		var end_slot = -1
+		var array_slot = -1
+		var item_type = TYPE_TAG_I64
+		if is_range
+			let begin_value = mir_lower_expression(next, hir_ast_child(next.tree, iterable_id, 0))
+			next = begin_value.state
+			next.error == "" else return next
+			let end_value = mir_lower_expression(next, hir_ast_child(next.tree, iterable_id, 1))
+			next = end_value.state
+			next.error == "" else return next
+			begin_slot = begin_value.slot
+			end_slot = end_value.slot
+		else
+			let array = mir_lower_expression(next, iterable_id)
+			next = array.state
+			next.error == "" else return next
+			array_slot = array.slot
+			let array_type = next.register_types[!array_slot]
+			if next.types.entries[!array_type].tag != TYPE_TAG_ARRAY
+				return mir_lower_error(next, "MIR for requires range or array")
+			item_type = next.types.entries[!array_type].first
+			let empty = len(next.register_types)
+			next = mir_lower_register(next, TYPE_TAG_I64)
+			next = mir_lower_emit(next, mir_op(MIR_CONST_I64, empty, -1, -1, 0))
+			begin_slot = empty
+			let size = len(next.register_types)
+			next = mir_lower_register(next, TYPE_TAG_I64)
+			next = mir_lower_emit(next, mir_op(MIR_ARRAY_LENGTH, size, array_slot, -1, 0))
+			end_slot = size
+		let index = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_I64)
+		next = mir_lower_emit(next, mir_op(MIR_COPY, index, begin_slot, -1, 0))
+		let one = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_I64)
+		next = mir_lower_emit(next, mir_op(MIR_CONST_I64, one, -1, -1, 1))
+		let previous = next.active
+		next = mir_lower_block(next)
+		let condition = next.active
+		next.active = previous
+		next = mir_lower_end(next, mir_jump(condition))
+		next.active = condition
+		let has_item = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_BOOL)
+		next = mir_lower_emit(next, mir_op(MIR_LT_I64, has_item, index, end_slot, 0))
+		next = mir_lower_block(next)
+		let body_block = next.active
+		next = mir_lower_block(next)
+		let step_block = next.active
+		next = mir_lower_block(next)
+		let exit_block = next.active
+		next.active = condition
+		next = mir_lower_end(next, mir_branch(has_item, body_block, exit_block))
+		next.active = body_block
+		let item = len(next.register_types)
+		next = mir_lower_register(next, item_type)
+		if is_range
+			next = mir_lower_emit(next, mir_op(MIR_COPY, item, index, -1, 0))
+		else
+			next = mir_lower_emit(next, mir_array_get(item, array_slot, index))
+		let initial = len(next.bindings)
+		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(next.tree, id), item, next.depth + 1))
+		next.break_targets = next.break_targets.append(exit_block)
+		next.continue_targets = next.continue_targets.append(step_block)
+		next = mir_lower_statements(next, body_id)
+		next.error == "" else return next
+		var saved = Array[MirSourceBinding]()
+		for j in 0..initial
+			saved = saved.append(next.bindings[!j])
+		next.bindings = saved
+		var previous_breaks = Array[i64]()
+		var previous_continues = Array[i64]()
+		for j in 0..len(next.break_targets) - 1
+			previous_breaks = previous_breaks.append(next.break_targets[!j])
+			previous_continues = previous_continues.append(next.continue_targets[!j])
+		next.break_targets = previous_breaks
+		next.continue_targets = previous_continues
+		if not mir_lower_ended(next)
+			next = mir_lower_end(next, mir_jump(step_block))
+		next.active = step_block
+		let incremented = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_I64)
+		next = mir_lower_emit(next, mir_op(MIR_ADD_I64, incremented, index, one, 0))
+		next = mir_lower_emit(next, mir_op(MIR_COPY, index, incremented, -1, 0))
+		next = mir_lower_end(next, mir_jump(condition))
+		next.active = exit_block
+		return next
 	if node.kind == NODE_WHILE
 		let previous = next.active
 		next = mir_lower_block(next)
@@ -590,16 +816,28 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 		next.active = decision_block
 		next = mir_lower_end(next, mir_branch(cond.slot, body_block, exit_block))
 		next.active = body_block
+		next.break_targets = next.break_targets.append(exit_block)
+		next.continue_targets = next.continue_targets.append(condition_block)
 		next = mir_lower_statements(next, hir_ast_child(next.tree, id, 1))
+		next.error == "" else return next
+		var previous_breaks = Array[i64]()
+		var previous_continues = Array[i64]()
+		for j in 0..len(next.break_targets) - 1
+			previous_breaks = previous_breaks.append(next.break_targets[!j])
+			previous_continues = previous_continues.append(next.continue_targets[!j])
+		next.break_targets = previous_breaks
+		next.continue_targets = previous_continues
 		if not mir_lower_ended(next)
 			next = mir_lower_end(next, mir_jump(condition_block))
 		next.active = exit_block
 		return next
-	return mir_lower_error(next, "unsupported source statement for MIR")
+	return mir_lower_error(next, "unsupported source statement for MIR: " + node_kind_name(node.kind))
 
-def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable) -> MirLowerResult
+def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant]) -> MirLowerResult
 	var state = MirLowerState(tree, hir)
 	state.types = types
+	state.functions = functions
+	state.constants = constants
 	state.call_targets = targets
 	state = mir_lower_block(state)
 	if not mir_type_supported(state.types, return_type) or len(arguments) != len(header.parameters)
@@ -613,6 +851,9 @@ def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Arr
 	if state.error == "" and not mir_lower_ended(state)
 		state = mir_lower_error(state, "missing MIR return")
 	return MirLowerResult(MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)
+
+def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable) -> MirLowerResult
+	return mir_lower_function_module(tree, header, hir, arguments, return_type, targets, types, Array[HirFunctionDecl](), Array[HirModuleConstant]())
 
 # Compatibility wrapper for scalar standalone lowering tests.
 def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget]) -> MirLowerResult
