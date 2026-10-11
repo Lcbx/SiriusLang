@@ -59,7 +59,7 @@ def mir_managed_type_id(function: MirFunction, register: i64) -> bool
 		return false
 	return function.register_types[!register] == TYPE_TAG_STRING or function.register_types[!register] >= TYPE_TAG_RECORD
 
-def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
+def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
 	var state = Array[MirLifetimeBlock]()
 	for block in function.blocks
 		state = state.append(MirLifetimeBlock(Array[i64](), Array[i64]()))
@@ -81,6 +81,10 @@ def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
 			if not mir_live_equal(incoming, state[!i].live_in) or not mir_live_equal(outgoing, state[!i].live_out)
 				state[!i] = MirLifetimeBlock(incoming, outgoing)
 				changed = true
+	return state
+
+def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
+	let state = mir_lifetime_states(function)
 	var blocks = Array[MirBlock]()
 	var count = 0
 	for i in 0..len(function.blocks)

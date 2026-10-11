@@ -14,6 +14,7 @@ python tools/test_mir_c.py              # Differential source execution, includi
 python tools/test_mir_optional.py       # Direct optional MIR tests, interpreter and C
 python tools/test_mir_lifetime.py       # CFG last-use releases, branches, loops, CoW and native equivalence
 python tools/test_mir_ownership.py      # Definite initialization, moves, releases and CFG joins
+python tools/test_mir_exit_cleanup.py   # CFG-edge releases, unused arguments, returns and explicit panic cleanup
 python tools/test_mir_managed.py        # Shared interpreted/native managed-string ownership tests
 python tools/test_mir_records.py        # Nested structural records and managed field ownership
 python tools/test_mir_arrays.py         # CoW, bounds, and nested managed arrays
@@ -73,4 +74,4 @@ MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT
 
 ## CFG ownership pass (experimental)
 
-The linked HIR specialization program runs `mir_insert_lifetimes` before emission. This computes fixed-point backward liveness over branch and jump edges and inserts an owned `MIR_RELEASE` after the last use of each managed register. The pass respects consuming moves and CoW updates and is idempotent. Return-time conditional cleanup remains enabled in both backends; forward definite-initialization analysis now rejects invalid reads, use-after-move and double release on reachable CFG paths, before and after cleanup insertion. It does not yet prove path-specific ownership credits or implement exceptional-exit cleanup.
+The linked HIR specialization program runs `mir_insert_lifetimes` and then `mir_insert_exit_cleanup`. Backward liveness inserts `MIR_RELEASE` after the last register use; forward definite-initialization rejects invalid reads, moves and double release. Exit cleanup splits branch edges when needed, drops definitely owned registers that are dead on a successor, and drops remaining initialized managed values before explicit returns and panics (excluding the returned value). It recomputes ownership states after edge insertion to avoid double releases. Both rewrites are idempotent and verified, and native/interpreter tests cover them. Backend return cleanup remains enabled for defensive handling of partially initialized registers. Implicit runtime panics do not unwind references, and general ownership-credit proofs remain incomplete.

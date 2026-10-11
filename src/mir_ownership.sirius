@@ -71,7 +71,7 @@ def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 		after[!ins.dst] = 1
 	return after
 
-def mir_ownership_function(function: MirFunction) -> string
+def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
 	let reached = mir_ownership_reachable(function)
 	let top = mir_ownership_top(len(function.register_types))
 	let entry = mir_ownership_entry(function)
@@ -95,6 +95,11 @@ def mir_ownership_function(function: MirFunction) -> string
 				if not mir_ownership_equal(incoming, states[!i].incoming) or not mir_ownership_equal(outgoing, states[!i].outgoing)
 					states[!i] = MirOwnershipBlock(incoming, outgoing)
 					changed = true
+	return states
+
+def mir_ownership_function(function: MirFunction) -> string
+	let reached = mir_ownership_reachable(function)
+	let states = mir_ownership_states(function)
 	for i in 0..len(function.blocks)
 		if reached[!i] != 0
 			let block = function.blocks[!i]

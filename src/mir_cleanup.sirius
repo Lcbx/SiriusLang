@@ -1,0 +1,83 @@
+# Path-sensitive cleanup for managed MIR registers.
+# Exit blocks release all definitely owned registers except a returned value;
+# CFG edges release values dead on that particular successor path.
+# Applied after last-use lifetime insertion, before backend execution/emission.
+
+rec MirCleanupFunction(function: MirFunction, releases: i64)
+rec MirCleanupResult(program: MirProgram, releases: i64, error: string)
+
+def mir_cleanup_releases(program: MirProgram, function: MirFunction, owned: Array[i64], live: Array[i64], preserved: i64) -> Array[MirInstruction]
+	var releases = Array[MirInstruction]()
+	for register in 0..len(function.register_types)
+		if owned[!register] != 0 and register != preserved and not mir_live_contains(live, register) and mir_managed_type(program.types, function.register_types[!register])
+			releases = releases.append(mir_op(MIR_RELEASE, register, register, -1, 0))
+	return releases
+
+def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirCleanupFunction
+	var blocks = function.blocks
+	var count = 0
+	# Recompute forward state after each edge rewrite: a release on an incoming
+	# edge must be visible before considering releases on an outgoing edge.
+	for i in 0..len(function.blocks)
+		let current = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
+		let reached = mir_ownership_reachable(current)
+		if reached[!i] != 0
+			let ownership = mir_ownership_states(current)
+			let liveness = mir_lifetime_states(current)
+			let original = blocks[!i]
+			let term = original.terminator
+			let owned = ownership[!i].outgoing
+			var instructions = original.instructions
+			var next = term
+			if term.kind == MIR_JUMP
+				let releases = mir_cleanup_releases(program, function, owned, liveness[!term.target].live_in, -1)
+				for release in releases
+					instructions = instructions.append(release)
+					count += 1
+			elif term.kind == MIR_BRANCH
+				var yes = term.target
+				var no = term.alternative
+				let yes_releases = mir_cleanup_releases(program, function, owned, liveness[!yes].live_in, -1)
+				if len(yes_releases) > 0
+					yes = len(blocks)
+					blocks = blocks.append(MirBlock(yes_releases, mir_jump(term.target)))
+					count += len(yes_releases)
+				let no_releases = mir_cleanup_releases(program, function, owned, liveness[!no].live_in, -1)
+				if len(no_releases) > 0
+					no = len(blocks)
+					blocks = blocks.append(MirBlock(no_releases, mir_jump(term.alternative)))
+					count += len(no_releases)
+				next = mir_branch(term.operand, yes, no)
+			blocks[!i] = MirBlock(instructions, next)
+	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
+	let exit_reached = mir_ownership_reachable(edged)
+	let exit_states = mir_ownership_states(edged)
+	for i in 0..len(blocks)
+		if exit_reached[!i] != 0
+			let block = blocks[!i]
+			let term = block.terminator
+			if term.kind == MIR_RETURN or term.kind == MIR_PANIC
+				var preserved = -1
+				if term.kind == MIR_RETURN
+					preserved = term.operand
+				let releases = mir_cleanup_releases(program, edged, exit_states[!i].outgoing, Array[i64](), preserved)
+				var instructions = block.instructions
+				for release in releases
+					instructions = instructions.append(release)
+					count += 1
+				blocks[!i] = MirBlock(instructions, term)
+	return MirCleanupFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
+
+def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
+	let error = mir_check_ownership(program)
+	if error != ""
+		return MirCleanupResult(program, 0, error)
+	var functions = Array[MirFunction]()
+	var count = 0
+	for function in program.functions
+		let cleaned = mir_cleanup_function(program, function)
+		functions = functions.append(cleaned.function)
+		count += cleaned.releases
+	var result = MirProgram(functions)
+	result.types = program.types
+	return MirCleanupResult(result, count, mir_check_ownership(result))

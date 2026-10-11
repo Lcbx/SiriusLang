@@ -99,7 +99,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Define ownership for every argument, result, local, field projection and call (borrow, owned value or transferred value); conservatively retain when in doubt.
 - [ ] Insert `Retain`, `Release`, `Move`, `Borrow` and `CoWSet`-like MIR operations; ensure nested record/array paths are safe under aliasing.
-- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. Define panic as terminating without exception unwinding, consistent with the runtime contract.
+- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. **Partially done:** `src/mir_cleanup.sirius` inserts path-specific dead-value releases on CFG edges and explicit return/panic cleanup, including unused arguments; `break`, `continue`, and `recur` still need MIR source lowering and coverage. Implicit runtime panics remain non-unwinding.
 - [ ] Test managed records, nested arrays, dictionary values, optionals and unions under repeated aliasing, branch exits and sanitizers.
 - [ ] **Only afterward** add ownership/uniqueness optimization and in-place storage reuse; keep these invisible at language level.
 
