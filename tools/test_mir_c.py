@@ -20,6 +20,10 @@ CASES = {
 	'string_loop': 'def main() -> i64\n\tvar s = "a"\n\tvar i = 0\n\twhile i < 6\n\t\ts = s + "b"\n\t\ti = i + 1\n\treturn len(s)\n',
 	'string_alias': 'def passthrough(x: string) -> string\n\treturn x\ndef main() -> i64\n\tvar a = "ok"\n\tlet b = passthrough(a)\n\ta = "longer"\n\treturn len(a) + len(b)\n',
 	'strings': 'def decorate(s: string) -> string\n\treturn s + "!"\ndef main() -> i64\n\tvar a = "hi"\n\tlet b = decorate(a)\n\tlet c = b + "\\n"\n\treturn len(a) + len(b) + len(c)\n',
+	'record_call': 'def size(r) -> i64\n\treturn len(r.name)\ndef main() -> i64\n\tlet record = {name = "hello", count = 7}\n\treturn size(record) + size(record)\n',
+	'record_reassign': 'def main() -> i64\n\tvar record = {name = "a", count = 1}\n\tlet before = record\n\trecord = {name = "long", count = 2}\n\treturn len(before.name) + len(record.name)\n',
+	'record_generic': 'def length(r) -> i64\n\treturn len(r.name)\ndef main() -> i64\n\tlet a = {name = "a"}\n\tlet b = {name = "two", count = 2}\n\treturn length(a) + length(b)\n',
+	'records': 'def main() -> i64\n\tlet inner = {count = 7, name = "Ada"}\n\tlet outer = {inner = inner, title = "outer"}\n\tlet alias = outer\n\treturn len(alias.inner.name) + len(outer.title)\n',
 	'shadow': 'def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\t\tif x == 0\n\t\t\treturn 99\n\treturn x\n',
 }
 
@@ -52,7 +56,7 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet obj = {x = 1}\n\treturn 1\n')
+		input_path.write_text('def main() -> i64\n\tlet obj = [1, 2]\n\treturn 1\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
 		if result.returncode == 0 or 'unsupported' not in result.stdout:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')

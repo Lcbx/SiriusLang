@@ -1,5 +1,5 @@
 # Executable typed CFG MIR. Registers are mutable slots within each call frame.
-# Scalar values and owned strings. Every initialized string register owns one
+# Scalar values, owned strings and immutable structural records. Every initialized string register owns one
 # reference; copy/retain duplicates, move transfers, release invalidates.
 
 let MIR_CONST_I64 = 1
@@ -24,6 +24,8 @@ let MIR_MOVE = 19
 let MIR_RELEASE = 20
 let MIR_STRING_LENGTH = 21
 let MIR_STRING_CONCAT = 22
+let MIR_RECORD_NEW = 23
+let MIR_RECORD_GET = 24
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -38,11 +40,14 @@ rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, messag
 rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
 rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
 rec MirProgram(functions: Array[MirFunction])
+	pub types = new_type_table()
 
 # For the initial scalar subset, an i64 slot stores its integer and a bool slot
 # stores 0/1 in bits. type_id 0 represents an uninitialized register.
 rec MirValue(type_id: i64, bits: i64, text: string)
+rec MirHeapRecord(type_id: i64, fields: Array[MirValue], refs: i64)
 rec MirOutcome(value: MirValue, error: string, steps: i64)
+	pub heap = Array[MirHeapRecord]()
 
 def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
 	return MirInstruction(op, dst, first, second, immediate, Array[i64](), "")
@@ -52,6 +57,12 @@ def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
 
 def mir_string(dst: i64, value: string) -> MirInstruction
 	return MirInstruction(MIR_CONST_STRING, dst, -1, -1, 0, Array[i64](), value)
+
+def mir_record_new(dst: i64, fields: Array[i64]) -> MirInstruction
+	return MirInstruction(MIR_RECORD_NEW, dst, -1, -1, 0, fields, "")
+
+def mir_record_get(dst: i64, owner: i64, field: i64) -> MirInstruction
+	return mir_op(MIR_RECORD_GET, dst, owner, -1, field)
 
 def mir_jump(target: i64) -> MirTerminator
 	return MirTerminator(MIR_JUMP, -1, target, -1, "")
@@ -72,6 +83,18 @@ def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool
 
 def mir_supported_type(type_id: i64) -> bool
 	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL or type_id == TYPE_TAG_STRING
+
+def mir_type_supported(types: TypeTable, type_id: i64) -> bool
+	if type_id < 0 or type_id >= len(types.entries)
+		return false
+	let tag = types.entries[!type_id].tag
+	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD
+
+def mir_managed_type(types: TypeTable, type_id: i64) -> bool
+	if type_id < 0 or type_id >= len(types.entries)
+		return false
+	let tag = types.entries[!type_id].tag
+	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD
 
 def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
 	let types = function.register_types
@@ -94,17 +117,39 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		if dst_type != TYPE_TAG_STRING
 			return "string constant destination must be string"
 		return ""
+	if ins.op == MIR_RECORD_NEW
+		if program.types.entries[!dst_type].tag != TYPE_TAG_RECORD
+			return "record construction requires record destination"
+		let fields = program.types.entries[!dst_type].fields
+		if len(ins.inputs) != len(fields)
+			return "record constructor field count mismatch"
+		for i in 0..len(fields)
+			if not mir_register_valid(types, ins.inputs[!i], fields[!i].kind)
+				return "record constructor field type mismatch"
+		return ""
+	if ins.op == MIR_RECORD_GET
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid record source"
+		let owner = types[!ins.first]
+		if program.types.entries[!owner].tag != TYPE_TAG_RECORD
+			return "record field access requires record"
+		let fields = program.types.entries[!owner].fields
+		if ins.immediate < 0 or ins.immediate >= len(fields)
+			return "invalid record field"
+		if dst_type != fields[!ins.immediate].kind
+			return "record field type mismatch"
+		return ""
 	if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE
 		if not mir_register_valid(types, ins.first, dst_type)
 			return "copy/move register type mismatch"
-		if ins.op == MIR_RETAIN and dst_type != TYPE_TAG_STRING
+		if ins.op == MIR_RETAIN and not mir_managed_type(program.types, dst_type)
 			return "retain requires a managed register"
-		if ins.op == MIR_MOVE and (ins.dst == ins.first or dst_type != TYPE_TAG_STRING)
+		if ins.op == MIR_MOVE and (ins.dst == ins.first or not mir_managed_type(program.types, dst_type))
 			return "move requires distinct managed registers"
 		return ""
 	if ins.op == MIR_RELEASE
-		if dst_type != TYPE_TAG_STRING or ins.first != ins.dst
-			return "release requires a string register"
+		if not mir_managed_type(program.types, dst_type) or ins.first != ins.dst
+			return "release requires a managed register"
 		return ""
 	if ins.op == MIR_STRING_LENGTH
 		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
@@ -150,13 +195,25 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 	return "unsupported MIR opcode"
 
 def mir_verify(program: MirProgram) -> string
+	# Reject malformed/noncanonical type descriptors before accessing field tables.
+	for i in 0..len(program.types.entries)
+		let entry = program.types.entries[!i]
+		if entry.tag == TYPE_TAG_RECORD
+			for j in 0..len(entry.fields)
+				let field = entry.fields[!j]
+				if not mir_type_supported(program.types, field.kind)
+					return "unsupported record field type"
+				if j > 0 and entry.fields[!j - 1].name >= field.name
+					return "record field order is not canonical"
+				if program.types.entries[!field.kind].tag == TYPE_TAG_RECORD and field.kind >= i
+					return "cyclic record type descriptor"
 	# Validate signatures first: call validation may inspect any callee.
 	for function in program.functions
 		let count = len(function.register_types)
-		if function.argument_count < 0 or function.argument_count > count or not mir_supported_type(function.return_type)
+		if function.argument_count < 0 or function.argument_count > count or not mir_type_supported(program.types, function.return_type)
 			return "invalid function signature"
 		for type_id in function.register_types
-			if not mir_supported_type(type_id)
+			if not mir_type_supported(program.types, type_id)
 				return "unsupported register type"
 	for function in program.functions
 		if function.entry < 0 or function.entry >= len(function.blocks)

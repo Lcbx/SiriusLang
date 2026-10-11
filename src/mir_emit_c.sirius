@@ -1,4 +1,4 @@
-# Experimental scalar C backend. Consumes only verified MIR produced by the
+# Experimental typed MIR C backend. Consumes only verified MIR produced by the
 # HIR-owned specialization worklist. The legacy emitter remains the default.
 
 def mir_c_type(type_id: i64) -> string
@@ -6,6 +6,8 @@ def mir_c_type(type_id: i64) -> string
 		return "bool"
 	if type_id == TYPE_TAG_STRING
 		return "S_String *"
+	if type_id >= TYPE_TAG_RECORD
+		return "S_MirRecord *"
 	return "int64_t"
 
 def mir_c_register(index: i64) -> string
@@ -34,24 +36,65 @@ def mir_c_string(value: string) -> string
 def mir_c_check(index: i64) -> string
 	return "\tif (!init" + str(index) + ") s_panic(\"uninitialized register\");\n"
 
-# Each managed register owns one reference. Evaluate replacement first to
-# preserve self-copy and calls whose arguments alias the destination.
-def mir_c_store_string(dst: i64, expression: string) -> string
-	let name = mir_c_register(dst)
-	return "\t{ S_String *owned = " + expression + "; if (init" + str(dst) + ") s_string_release(" + name + "); " + name + " = owned; init" + str(dst) + " = true; }\n"
+# Managed records are immutable heap objects. A shallow copy retains the
+# record; dropping its last reference releases nested managed fields.
+def mir_c_release_value(type_id: i64, value: string) -> string
+	if type_id == TYPE_TAG_STRING
+		return "s_string_release(" + value + ")"
+	return "s_mir_record_release(" + value + ")"
 
-def mir_c_release_strings(function: MirFunction, except: i64) -> string
+def mir_c_retain_value(type_id: i64, value: string) -> string
+	if type_id == TYPE_TAG_STRING
+		return "s_string_retain(" + value + ")"
+	return "s_mir_record_retain(" + value + ")"
+
+def mir_c_managed(type_id: i64) -> bool
+	return type_id == TYPE_TAG_STRING or type_id >= TYPE_TAG_RECORD
+
+# Evaluate the incoming value before dropping dst, including self-copies.
+def mir_c_store_owned(dst: i64, type_id: i64, expression: string) -> string
+	let name = mir_c_register(dst)
+	return "\t{ " + mir_c_type(type_id) + " owned = " + expression + "; if (init" + str(dst) + ") " + mir_c_release_value(type_id, name) + "; " + name + " = owned; init" + str(dst) + " = true; }\n"
+
+def mir_c_release_managed(function: MirFunction, except: i64) -> string
 	var result = ""
 	for i in 0..len(function.register_types)
-		if i != except and function.register_types[!i] == TYPE_TAG_STRING
-			result = result + "\tif (init" + str(i) + ") s_string_release(" + mir_c_register(i) + ");\n"
+		let type_id = function.register_types[!i]
+		if i != except and mir_c_managed(type_id)
+			result = result + "\tif (init" + str(i) + ") " + mir_c_release_value(type_id, mir_c_register(i)) + ";\n"
+	return result
+
+def mir_c_record_runtime(types: TypeTable) -> string
+	var result = "typedef struct S_MirRecord S_MirRecord;\n"
+	result = result + "typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n"
+	result = result + "struct S_MirRecord { int64_t type_id; size_t refs; S_MirField fields[]; };\n"
+	result = result + "static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n"
+	result = result + "\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n"
+	result = result + "\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; return r;\n}\n"
+	result = result + "static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n"
+	result = result + "static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n"
+	for i in 0..len(types.entries)
+		let type_desc = types.entries[!i]
+		if type_desc.tag == TYPE_TAG_RECORD
+			result = result + "\tcase " + str(i) + ":\n"
+			for j in 0..len(type_desc.fields)
+				let field_type = type_desc.fields[!j].kind
+				if mir_c_managed(field_type)
+					var field = "r->fields[" + str(j) + "]"
+					if field_type == TYPE_TAG_STRING
+						field = field + ".text"
+					else
+						field = field + ".record"
+					result = result + "\t\t" + mir_c_release_value(field_type, field) + ";\n"
+			result = result + "\t\tbreak;\n"
+	result = result + "\tdefault: s_panic(\"unknown record type\");\n\t}\n\tfree(r);\n}\n\n"
 	return result
 
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
 	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING
-		if op == MIR_CALL
+		if op == MIR_CALL or op == MIR_RECORD_NEW
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
 		else
@@ -64,20 +107,46 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	var expr = ""
 	let first = mir_c_register(instruction.first)
 	let second = mir_c_register(instruction.second)
+	let dst_type = function.register_types[!instruction.dst]
 	if op == MIR_CONST_STRING
-		return mir_c_store_string(instruction.dst, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+		return mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+	if op == MIR_RECORD_NEW
+		var code = result + "\t{ S_MirRecord *record = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
+		for i in 0..len(instruction.inputs)
+			let arg = instruction.inputs[!i]
+			let kind = function.register_types[!arg]
+			var field = "bits"
+			var value = mir_c_register(arg)
+			if kind == TYPE_TAG_STRING
+				field = "text"
+				value = mir_c_retain_value(kind, value)
+			elif kind >= TYPE_TAG_RECORD
+				field = "record"
+				value = mir_c_retain_value(kind, value)
+			code = code + "\t\trecord->fields[" + str(i) + "]." + field + " = " + value + ";\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "record") + "\t}\n"
+	if op == MIR_RECORD_GET
+		var field = "bits"
+		if dst_type == TYPE_TAG_STRING
+			field = "text"
+		elif dst_type >= TYPE_TAG_RECORD
+			field = "record"
+		let value = first + "->fields[" + str(instruction.immediate) + "]." + field
+		if mir_c_managed(dst_type)
+			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
+		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_RELEASE
-		return result + "\ts_string_release(" + dst + "); " + dst + " = NULL; init" + str(instruction.dst) + " = false;\n"
+		return result + "\t" + mir_c_release_value(dst_type, dst) + "; " + dst + " = NULL; init" + str(instruction.dst) + " = false;\n"
 	if op == MIR_MOVE
-		var transfer = result + "\t{ S_String *owned = " + first + "; " + first + " = NULL; init" + str(instruction.first) + " = false; "
-		transfer = transfer + "if (init" + str(instruction.dst) + ") s_string_release(" + dst + "); " + dst + " = owned; init" + str(instruction.dst) + " = true; }\n"
+		var transfer = result + "\t{ " + mir_c_type(dst_type) + " owned = " + first + "; " + first + " = NULL; init" + str(instruction.first) + " = false; "
+		transfer = transfer + "if (init" + str(instruction.dst) + ") " + mir_c_release_value(dst_type, dst) + "; " + dst + " = owned; init" + str(instruction.dst) + " = true; }\n"
 		return transfer
 	if op == MIR_COPY or op == MIR_RETAIN
-		if function.register_types[!instruction.dst] == TYPE_TAG_STRING
-			return result + mir_c_store_string(instruction.dst, "s_string_retain(" + first + ")")
+		if mir_c_managed(dst_type)
+			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, first))
 	if op == MIR_STRING_CONCAT
 		result = result + mir_c_check(instruction.second)
-		return result + mir_c_store_string(instruction.dst, "s_string_concat(" + first + ", " + second + ")")
+		return result + mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_concat(" + first + ", " + second + ")")
 	if op == MIR_STRING_LENGTH
 		return result + "\t" + dst + " = (int64_t)s_string_length(" + first + "); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_CONST_I64
@@ -97,8 +166,8 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		var arguments = Array[string]()
 		for arg in instruction.inputs
 			var value = mir_c_register(arg)
-			if function.register_types[!arg] == TYPE_TAG_STRING
-				value = "s_string_retain(" + value + ")"
+			if mir_c_managed(function.register_types[!arg])
+				value = mir_c_retain_value(function.register_types[!arg], value)
 			arguments = arguments.append(value)
 		if len(arguments) == 0
 			expr = mir_c_function(instruction.immediate) + "()"
@@ -126,8 +195,8 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			result = result + "\tif (" + second + " == 0) s_panic(\"division by zero\");\n"
 			result = result + "\tif (" + first + " == INT64_MIN && " + second + " == -1) s_panic(\"integer overflow\");\n"
 		expr = "(" + first + " " + symbol + " " + second + ")"
-	if function.register_types[!instruction.dst] == TYPE_TAG_STRING
-		return result + mir_c_store_string(instruction.dst, expr)
+	if mir_c_managed(dst_type)
+		return result + mir_c_store_owned(instruction.dst, dst_type, expr)
 	return result + "\t" + dst + " = " + expr + "; init" + str(instruction.dst) + " = true;\n"
 
 def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
@@ -137,18 +206,18 @@ def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
 		return mir_c_check(term.operand) + "\tif (" + mir_c_register(term.operand) + ") goto block" + str(term.target) + ";\n\tgoto block" + str(term.alternative) + ";\n"
 	if term.kind == MIR_RETURN
 		var result = mir_c_check(term.operand)
-		if function.return_type == TYPE_TAG_STRING
-			result = result + "\tS_String *returned = " + mir_c_register(term.operand) + ";\n"
-			result = result + mir_c_release_strings(function, term.operand)
+		if mir_c_managed(function.return_type)
+			result = result + "\t" + mir_c_type(function.return_type) + " returned = " + mir_c_register(term.operand) + ";\n"
+			result = result + mir_c_release_managed(function, term.operand)
 			return result + "\treturn returned;\n"
-		return result + mir_c_release_strings(function, -1) + "\treturn " + mir_c_register(term.operand) + ";\n"
+		return result + mir_c_release_managed(function, -1) + "\treturn " + mir_c_register(term.operand) + ";\n"
 	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
 
 def mir_c_definition(function: MirFunction, index: i64) -> string
 	var output = mir_c_signature(function, index) + "\n{\n"
 	for i in 0..len(function.register_types)
 		var initial = "0"
-		if function.register_types[!i] == TYPE_TAG_STRING
+		if mir_c_managed(function.register_types[!i])
 			initial = "NULL"
 		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n"
 		output = output + "\tbool init" + str(i) + " = false;\n"
@@ -184,7 +253,8 @@ def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
 	let main = program.functions[!entry]
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")
-	var code = "#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include \"sirius_runtime.h\"\n\n"
+	var code = "#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n"
+	code = code + mir_c_record_runtime(program.types)
 	for i in 0..len(program.functions)
 		code = code + mir_c_signature(program.functions[!i], i) + ";\n"
 	code = code + "\n"

@@ -1,9 +1,10 @@
-# Initial typed-HIR -> scalar CFG MIR lowering. This is deliberately restricted
-# to i64/bool functions; no C emission, generic calls or ownership lowering.
+# Typed-HIR -> CFG MIR lowering for scalars, strings and simple records.
+# Advanced collections, spreads and mutable projections remain unsupported.
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
 rec MirSourceBinding(name: string, slot: i64, depth: i64)
 rec MirCallTarget(source: i64, specialization: i64)
+rec MirLowerField(name: string, slot: i64)
 
 rec MirLowerState(tree: ParseState, hir: Array[HirNode])
 	pub register_types = Array[i64]()
@@ -13,6 +14,7 @@ rec MirLowerState(tree: ParseState, hir: Array[HirNode])
 	pub depth = 0
 	pub error = ""
 	pub call_targets = Array[MirCallTarget]()
+	pub types = new_type_table()
 
 rec MirLowerExpr(state: MirLowerState, slot: i64)
 rec MirLowerResult(function: MirFunction, error: string)
@@ -54,6 +56,12 @@ def mir_lower_type(state: MirLowerState, source: i64, operation: i64) -> i64
 		if node.source == source and node.operation == operation
 			return node.type_id
 	return TYPE_TAG_INVALID
+
+def mir_lower_field_index(state: MirLowerState, source: i64) -> i64
+	for node in state.hir
+		if node.source == source and node.operation == HIR_FIELD
+			return node.field_index
+	return -1
 
 def mir_lower_binding(state: MirLowerState, name: string) -> i64
 	for i in 0..len(state.bindings)
@@ -113,6 +121,46 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		if register < 0
 			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 		return MirLowerExpr(state, register)
+	if node.kind == NODE_RECORD
+		let type_id = mir_lower_type(next, id, HIR_RECORD)
+		if not mir_type_supported(next.types, type_id) or next.types.entries[!type_id].tag != TYPE_TAG_RECORD
+			return MirLowerExpr(mir_lower_error(next, "missing typed record"), -1)
+		var evaluated = Array[MirLowerField]()
+		# Evaluate source fields left to right, then lay them out canonically.
+		for i in 0..node.count
+			let field = hir_ast_child(next.tree, id, i)
+			if next.tree.nodes[!field].kind != NODE_FIELD
+				return MirLowerExpr(mir_lower_error(next, "MIR record spread/delete is not supported yet"), -1)
+			let expression = mir_lower_expression(next, hir_ast_child(next.tree, field, 0))
+			next = expression.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			evaluated = evaluated.append(MirLowerField(hir_ast_text(next.tree, field), expression.slot))
+		let layout = next.types.entries[!type_id].fields
+		var inputs = Array[i64]()
+		for field in layout
+			var source = -1
+			for candidate in evaluated
+				if candidate.name == field.name
+					source = candidate.slot
+			if source < 0
+				return MirLowerExpr(mir_lower_error(next, "missing canonical MIR record field"), -1)
+			inputs = inputs.append(source)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, type_id)
+		next = mir_lower_emit(next, mir_record_new(dst, inputs))
+		return MirLowerExpr(next, dst)
+	if node.kind == NODE_ATTR
+		let owner = mir_lower_expression(next, hir_ast_child(next.tree, id, 0))
+		next = owner.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		let field_type = mir_lower_type(next, id, HIR_FIELD)
+		let index = mir_lower_field_index(next, id)
+		if index < 0 or not mir_type_supported(next.types, field_type)
+			return MirLowerExpr(mir_lower_error(next, "missing typed MIR record field"), -1)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, field_type)
+		next = mir_lower_emit(next, mir_record_get(dst, owner.slot, index))
+		return MirLowerExpr(next, dst)
 	if node.kind == NODE_STRING
 		if mir_lower_type(next, id, HIR_LITERAL) != TYPE_TAG_STRING
 			return MirLowerExpr(mir_lower_error(next, "missing typed string literal"), -1)
@@ -156,7 +204,7 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		if callee_id < 0
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call target"), -1)
 		let type_id = mir_lower_type(next, id, HIR_CALL)
-		if not mir_supported_type(type_id)
+		if not mir_type_supported(next.types, type_id)
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call result type"), -1)
 		var inputs = Array[i64]()
 		for i in 1..node.count
@@ -293,7 +341,7 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 		next = value.state
 		next.error == "" else return next
 		let type_id = mir_lower_type(next, id, HIR_BINDING)
-		if not mir_supported_type(type_id)
+		if not mir_type_supported(next.types, type_id)
 			return mir_lower_error(next, "unsupported MIR binding type")
 		let register = len(next.register_types)
 		next = mir_lower_register(next, type_id)
@@ -383,14 +431,15 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 		return next
 	return mir_lower_error(next, "unsupported source statement for MIR")
 
-def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget]) -> MirLowerResult
+def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable) -> MirLowerResult
 	var state = MirLowerState(tree, hir)
+	state.types = types
 	state.call_targets = targets
 	state = mir_lower_block(state)
-	if not mir_supported_type(return_type) or len(arguments) != len(header.parameters)
+	if not mir_type_supported(state.types, return_type) or len(arguments) != len(header.parameters)
 		return MirLowerResult(MirFunction(0, return_type, state.register_types, state.blocks, 0), "unsupported MIR function signature")
 	for i in 0..len(arguments)
-		if not mir_supported_type(arguments[!i])
+		if not mir_type_supported(state.types, arguments[!i])
 			return MirLowerResult(MirFunction(0, return_type, state.register_types, state.blocks, 0), "unsupported MIR parameter type")
 		state = mir_lower_register(state, arguments[!i])
 		state.bindings = state.bindings.append(MirSourceBinding(header.parameters[!i].name, i, 0))
@@ -398,6 +447,10 @@ def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Arr
 	if state.error == "" and not mir_lower_ended(state)
 		state = mir_lower_error(state, "missing MIR return")
 	return MirLowerResult(MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)
+
+# Compatibility wrapper for scalar standalone lowering tests.
+def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget]) -> MirLowerResult
+	return mir_lower_function_typed(tree, header, hir, arguments, return_type, targets, new_type_table())
 
 # Retain the simple single-function entry point for existing tests.
 def mir_lower_function(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64) -> MirLowerResult

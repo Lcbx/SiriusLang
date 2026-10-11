@@ -1534,17 +1534,25 @@ static inline int64_t s_record_139_get_return_type_take(s_record_139 owned) {
 }
 typedef struct {
 	S_Array * functions;
+	s_record_106 types;
 } s_record_140;
 static inline s_record_140 s_record_140_copy(s_record_140 value) {
 	value.functions = s_array_retain(value.functions);
+	value.types = s_record_106_copy(value.types);
 	return value;
 }
 static inline void s_record_140_drop(s_record_140 value) {
 	s_array_release(value.functions);
+	s_record_106_drop(value.types);
 	(void)value;
 }
 static inline S_Array * s_record_140_get_functions_take(s_record_140 owned) {
 	S_Array * field = s_array_retain(owned.functions);
+	s_record_140_drop(owned);
+	return field;
+}
+static inline s_record_106 s_record_140_get_types_take(s_record_140 owned) {
+	s_record_106 field = s_record_106_copy(owned.types);
 	s_record_140_drop(owned);
 	return field;
 }
@@ -1577,61 +1585,119 @@ static inline int64_t s_record_141_get_type_id_take(s_record_141 owned) {
 	return field;
 }
 typedef struct {
-	S_String * error;
-	int64_t steps;
-	s_record_141 value;
+	S_Array * fields;
+	int64_t refs;
+	int64_t type_id;
 } s_record_142;
 static inline s_record_142 s_record_142_copy(s_record_142 value) {
-	value.error = s_string_retain(value.error);
-	value.value = s_record_141_copy(value.value);
+	value.fields = s_array_retain(value.fields);
 	return value;
 }
 static inline void s_record_142_drop(s_record_142 value) {
+	s_array_release(value.fields);
+	(void)value;
+}
+static inline S_Array * s_record_142_get_fields_take(s_record_142 owned) {
+	S_Array * field = s_array_retain(owned.fields);
+	s_record_142_drop(owned);
+	return field;
+}
+static inline int64_t s_record_142_get_refs_take(s_record_142 owned) {
+	int64_t field = owned.refs;
+	s_record_142_drop(owned);
+	return field;
+}
+static inline int64_t s_record_142_get_type_id_take(s_record_142 owned) {
+	int64_t field = owned.type_id;
+	s_record_142_drop(owned);
+	return field;
+}
+typedef struct {
+	S_String * error;
+	S_Array * heap;
+	int64_t steps;
+	s_record_141 value;
+} s_record_143;
+static inline s_record_143 s_record_143_copy(s_record_143 value) {
+	value.error = s_string_retain(value.error);
+	value.heap = s_array_retain(value.heap);
+	value.value = s_record_141_copy(value.value);
+	return value;
+}
+static inline void s_record_143_drop(s_record_143 value) {
 	s_string_release(value.error);
+	s_array_release(value.heap);
 	s_record_141_drop(value.value);
 	(void)value;
 }
-static inline S_String * s_record_142_get_error_take(s_record_142 owned) {
+static inline S_String * s_record_143_get_error_take(s_record_143 owned) {
 	S_String * field = s_string_retain(owned.error);
-	s_record_142_drop(owned);
+	s_record_143_drop(owned);
 	return field;
 }
-static inline int64_t s_record_142_get_steps_take(s_record_142 owned) {
+static inline S_Array * s_record_143_get_heap_take(s_record_143 owned) {
+	S_Array * field = s_array_retain(owned.heap);
+	s_record_143_drop(owned);
+	return field;
+}
+static inline int64_t s_record_143_get_steps_take(s_record_143 owned) {
 	int64_t field = owned.steps;
-	s_record_142_drop(owned);
+	s_record_143_drop(owned);
 	return field;
 }
-static inline s_record_141 s_record_142_get_value_take(s_record_142 owned) {
+static inline s_record_141 s_record_143_get_value_take(s_record_143 owned) {
 	s_record_141 field = s_record_141_copy(owned.value);
-	s_record_142_drop(owned);
+	s_record_143_drop(owned);
 	return field;
 }
 typedef struct {
 	int64_t depth;
 	S_String * name;
 	int64_t slot;
-} s_record_143;
-static inline s_record_143 s_record_143_copy(s_record_143 value) {
+} s_record_144;
+static inline s_record_144 s_record_144_copy(s_record_144 value) {
 	value.name = s_string_retain(value.name);
 	return value;
 }
-static inline void s_record_143_drop(s_record_143 value) {
+static inline void s_record_144_drop(s_record_144 value) {
 	s_string_release(value.name);
 	(void)value;
 }
-static inline int64_t s_record_143_get_depth_take(s_record_143 owned) {
+static inline int64_t s_record_144_get_depth_take(s_record_144 owned) {
 	int64_t field = owned.depth;
-	s_record_143_drop(owned);
+	s_record_144_drop(owned);
 	return field;
 }
-static inline S_String * s_record_143_get_name_take(s_record_143 owned) {
+static inline S_String * s_record_144_get_name_take(s_record_144 owned) {
 	S_String * field = s_string_retain(owned.name);
-	s_record_143_drop(owned);
+	s_record_144_drop(owned);
 	return field;
 }
-static inline int64_t s_record_143_get_slot_take(s_record_143 owned) {
+static inline int64_t s_record_144_get_slot_take(s_record_144 owned) {
 	int64_t field = owned.slot;
-	s_record_143_drop(owned);
+	s_record_144_drop(owned);
+	return field;
+}
+typedef struct {
+	S_String * name;
+	int64_t slot;
+} s_record_145;
+static inline s_record_145 s_record_145_copy(s_record_145 value) {
+	value.name = s_string_retain(value.name);
+	return value;
+}
+static inline void s_record_145_drop(s_record_145 value) {
+	s_string_release(value.name);
+	(void)value;
+}
+static inline S_String * s_record_145_get_name_take(s_record_145 owned) {
+	S_String * field = s_string_retain(owned.name);
+	s_record_145_drop(owned);
+	return field;
+}
+static inline int64_t s_record_145_get_slot_take(s_record_145 owned) {
+	int64_t field = owned.slot;
+	s_record_145_drop(owned);
 	return field;
 }
 typedef struct {
@@ -1644,8 +1710,9 @@ typedef struct {
 	S_Array * hir;
 	S_Array_i64 * register_types;
 	s_record_102 tree;
-} s_record_144;
-static inline s_record_144 s_record_144_copy(s_record_144 value) {
+	s_record_106 types;
+} s_record_146;
+static inline s_record_146 s_record_146_copy(s_record_146 value) {
 	value.bindings = s_array_retain(value.bindings);
 	value.blocks = s_array_retain(value.blocks);
 	value.call_targets = s_array_retain(value.call_targets);
@@ -1653,9 +1720,10 @@ static inline s_record_144 s_record_144_copy(s_record_144 value) {
 	value.hir = s_array_retain(value.hir);
 	value.register_types = s_array_i64_retain(value.register_types);
 	value.tree = s_record_102_copy(value.tree);
+	value.types = s_record_106_copy(value.types);
 	return value;
 }
-static inline void s_record_144_drop(s_record_144 value) {
+static inline void s_record_146_drop(s_record_146 value) {
 	s_array_release(value.bindings);
 	s_array_release(value.blocks);
 	s_array_release(value.call_targets);
@@ -1663,121 +1731,127 @@ static inline void s_record_144_drop(s_record_144 value) {
 	s_array_release(value.hir);
 	s_array_i64_release(value.register_types);
 	s_record_102_drop(value.tree);
+	s_record_106_drop(value.types);
 	(void)value;
 }
-static inline int64_t s_record_144_get_active_take(s_record_144 owned) {
+static inline int64_t s_record_146_get_active_take(s_record_146 owned) {
 	int64_t field = owned.active;
-	s_record_144_drop(owned);
+	s_record_146_drop(owned);
 	return field;
 }
-static inline S_Array * s_record_144_get_bindings_take(s_record_144 owned) {
+static inline S_Array * s_record_146_get_bindings_take(s_record_146 owned) {
 	S_Array * field = s_array_retain(owned.bindings);
-	s_record_144_drop(owned);
+	s_record_146_drop(owned);
 	return field;
 }
-static inline S_Array * s_record_144_get_blocks_take(s_record_144 owned) {
+static inline S_Array * s_record_146_get_blocks_take(s_record_146 owned) {
 	S_Array * field = s_array_retain(owned.blocks);
-	s_record_144_drop(owned);
+	s_record_146_drop(owned);
 	return field;
 }
-static inline S_Array * s_record_144_get_call_targets_take(s_record_144 owned) {
+static inline S_Array * s_record_146_get_call_targets_take(s_record_146 owned) {
 	S_Array * field = s_array_retain(owned.call_targets);
-	s_record_144_drop(owned);
+	s_record_146_drop(owned);
 	return field;
 }
-static inline int64_t s_record_144_get_depth_take(s_record_144 owned) {
+static inline int64_t s_record_146_get_depth_take(s_record_146 owned) {
 	int64_t field = owned.depth;
-	s_record_144_drop(owned);
+	s_record_146_drop(owned);
 	return field;
-}
-static inline S_String * s_record_144_get_error_take(s_record_144 owned) {
-	S_String * field = s_string_retain(owned.error);
-	s_record_144_drop(owned);
-	return field;
-}
-static inline S_Array * s_record_144_get_hir_take(s_record_144 owned) {
-	S_Array * field = s_array_retain(owned.hir);
-	s_record_144_drop(owned);
-	return field;
-}
-static inline S_Array_i64 * s_record_144_get_register_types_take(s_record_144 owned) {
-	S_Array_i64 * field = s_array_i64_retain(owned.register_types);
-	s_record_144_drop(owned);
-	return field;
-}
-static inline s_record_102 s_record_144_get_tree_take(s_record_144 owned) {
-	s_record_102 field = s_record_102_copy(owned.tree);
-	s_record_144_drop(owned);
-	return field;
-}
-typedef struct {
-	int64_t slot;
-	s_record_144 state;
-} s_record_145;
-static inline s_record_145 s_record_145_copy(s_record_145 value) {
-	value.state = s_record_144_copy(value.state);
-	return value;
-}
-static inline void s_record_145_drop(s_record_145 value) {
-	s_record_144_drop(value.state);
-	(void)value;
-}
-static inline int64_t s_record_145_get_slot_take(s_record_145 owned) {
-	int64_t field = owned.slot;
-	s_record_145_drop(owned);
-	return field;
-}
-static inline s_record_144 s_record_145_get_state_take(s_record_145 owned) {
-	s_record_144 field = s_record_144_copy(owned.state);
-	s_record_145_drop(owned);
-	return field;
-}
-typedef struct {
-	S_String * error;
-	s_record_139 function;
-} s_record_146;
-static inline s_record_146 s_record_146_copy(s_record_146 value) {
-	value.error = s_string_retain(value.error);
-	value.function = s_record_139_copy(value.function);
-	return value;
-}
-static inline void s_record_146_drop(s_record_146 value) {
-	s_string_release(value.error);
-	s_record_139_drop(value.function);
-	(void)value;
 }
 static inline S_String * s_record_146_get_error_take(s_record_146 owned) {
 	S_String * field = s_string_retain(owned.error);
 	s_record_146_drop(owned);
 	return field;
 }
-static inline s_record_139 s_record_146_get_function_take(s_record_146 owned) {
-	s_record_139 field = s_record_139_copy(owned.function);
+static inline S_Array * s_record_146_get_hir_take(s_record_146 owned) {
+	S_Array * field = s_array_retain(owned.hir);
 	s_record_146_drop(owned);
+	return field;
+}
+static inline S_Array_i64 * s_record_146_get_register_types_take(s_record_146 owned) {
+	S_Array_i64 * field = s_array_i64_retain(owned.register_types);
+	s_record_146_drop(owned);
+	return field;
+}
+static inline s_record_102 s_record_146_get_tree_take(s_record_146 owned) {
+	s_record_102 field = s_record_102_copy(owned.tree);
+	s_record_146_drop(owned);
+	return field;
+}
+static inline s_record_106 s_record_146_get_types_take(s_record_146 owned) {
+	s_record_106 field = s_record_106_copy(owned.types);
+	s_record_146_drop(owned);
+	return field;
+}
+typedef struct {
+	int64_t slot;
+	s_record_146 state;
+} s_record_147;
+static inline s_record_147 s_record_147_copy(s_record_147 value) {
+	value.state = s_record_146_copy(value.state);
+	return value;
+}
+static inline void s_record_147_drop(s_record_147 value) {
+	s_record_146_drop(value.state);
+	(void)value;
+}
+static inline int64_t s_record_147_get_slot_take(s_record_147 owned) {
+	int64_t field = owned.slot;
+	s_record_147_drop(owned);
+	return field;
+}
+static inline s_record_146 s_record_147_get_state_take(s_record_147 owned) {
+	s_record_146 field = s_record_146_copy(owned.state);
+	s_record_147_drop(owned);
+	return field;
+}
+typedef struct {
+	S_String * error;
+	s_record_139 function;
+} s_record_148;
+static inline s_record_148 s_record_148_copy(s_record_148 value) {
+	value.error = s_string_retain(value.error);
+	value.function = s_record_139_copy(value.function);
+	return value;
+}
+static inline void s_record_148_drop(s_record_148 value) {
+	s_string_release(value.error);
+	s_record_139_drop(value.function);
+	(void)value;
+}
+static inline S_String * s_record_148_get_error_take(s_record_148 owned) {
+	S_String * field = s_string_retain(owned.error);
+	s_record_148_drop(owned);
+	return field;
+}
+static inline s_record_139 s_record_148_get_function_take(s_record_148 owned) {
+	s_record_139 field = s_record_139_copy(owned.function);
+	s_record_148_drop(owned);
 	return field;
 }
 typedef struct {
 	S_String * error;
 	S_String * value;
-} s_record_147;
-static inline s_record_147 s_record_147_copy(s_record_147 value) {
+} s_record_149;
+static inline s_record_149 s_record_149_copy(s_record_149 value) {
 	value.error = s_string_retain(value.error);
 	value.value = s_string_retain(value.value);
 	return value;
 }
-static inline void s_record_147_drop(s_record_147 value) {
+static inline void s_record_149_drop(s_record_149 value) {
 	s_string_release(value.error);
 	s_string_release(value.value);
 	(void)value;
 }
-static inline S_String * s_record_147_get_error_take(s_record_147 owned) {
+static inline S_String * s_record_149_get_error_take(s_record_149 owned) {
 	S_String * field = s_string_retain(owned.error);
-	s_record_147_drop(owned);
+	s_record_149_drop(owned);
 	return field;
 }
-static inline S_String * s_record_147_get_value_take(s_record_147 owned) {
+static inline S_String * s_record_149_get_value_take(s_record_149 owned) {
 	S_String * field = s_string_retain(owned.value);
-	s_record_147_drop(owned);
+	s_record_149_drop(owned);
 	return field;
 }
 typedef struct {
@@ -1786,68 +1860,68 @@ typedef struct {
 	S_String * error;
 	s_record_140 program;
 	s_record_112 registry;
-} s_record_148;
-static inline s_record_148 s_record_148_copy(s_record_148 value) {
+} s_record_150;
+static inline s_record_150 s_record_150_copy(s_record_150 value) {
 	value.analyses = s_array_retain(value.analyses);
 	value.error = s_string_retain(value.error);
 	value.program = s_record_140_copy(value.program);
 	value.registry = s_record_112_copy(value.registry);
 	return value;
 }
-static inline void s_record_148_drop(s_record_148 value) {
+static inline void s_record_150_drop(s_record_150 value) {
 	s_array_release(value.analyses);
 	s_string_release(value.error);
 	s_record_140_drop(value.program);
 	s_record_112_drop(value.registry);
 	(void)value;
 }
-static inline S_Array * s_record_148_get_analyses_take(s_record_148 owned) {
+static inline S_Array * s_record_150_get_analyses_take(s_record_150 owned) {
 	S_Array * field = s_array_retain(owned.analyses);
-	s_record_148_drop(owned);
+	s_record_150_drop(owned);
 	return field;
 }
-static inline int64_t s_record_148_get_entry_take(s_record_148 owned) {
+static inline int64_t s_record_150_get_entry_take(s_record_150 owned) {
 	int64_t field = owned.entry;
-	s_record_148_drop(owned);
+	s_record_150_drop(owned);
 	return field;
 }
-static inline S_String * s_record_148_get_error_take(s_record_148 owned) {
+static inline S_String * s_record_150_get_error_take(s_record_150 owned) {
 	S_String * field = s_string_retain(owned.error);
-	s_record_148_drop(owned);
+	s_record_150_drop(owned);
 	return field;
 }
-static inline s_record_140 s_record_148_get_program_take(s_record_148 owned) {
+static inline s_record_140 s_record_150_get_program_take(s_record_150 owned) {
 	s_record_140 field = s_record_140_copy(owned.program);
-	s_record_148_drop(owned);
+	s_record_150_drop(owned);
 	return field;
 }
-static inline s_record_112 s_record_148_get_registry_take(s_record_148 owned) {
+static inline s_record_112 s_record_150_get_registry_take(s_record_150 owned) {
 	s_record_112 field = s_record_112_copy(owned.registry);
-	s_record_148_drop(owned);
+	s_record_150_drop(owned);
 	return field;
 }
 typedef struct {
 	S_String * code;
 	S_String * error;
-} s_record_149;
-static inline s_record_149 s_record_149_copy(s_record_149 value) {
+} s_record_151;
+static inline s_record_151 s_record_151_copy(s_record_151 value) {
 	value.code = s_string_retain(value.code);
 	value.error = s_string_retain(value.error);
 	return value;
 }
-static inline void s_record_149_drop(s_record_149 value) {
+static inline void s_record_151_drop(s_record_151 value) {
 	s_string_release(value.code);
 	s_string_release(value.error);
 	(void)value;
 }
-static inline S_String * s_record_149_get_code_take(s_record_149 owned) {
+static inline S_String * s_record_151_get_code_take(s_record_151 owned) {
 	S_String * field = s_string_retain(owned.code);
-	s_record_149_drop(owned);
+	s_record_151_drop(owned);
 	return field;
 }
-static inline S_String * s_record_149_get_error_take(s_record_149 owned) {
+static inline S_String * s_record_151_get_error_take(s_record_151 owned) {
 	S_String * field = s_string_retain(owned.error);
-	s_record_149_drop(owned);
+	s_record_151_drop(owned);
 	return field;
 }
 typedef S_Optional_string s_optional_4;
@@ -2257,6 +2331,22 @@ static inline s_optional_149 s_optional_149_copy(s_optional_149 owned) {
 }
 static inline void s_optional_149_drop(s_optional_149 owned) {
 	if (owned.has_value) s_record_149_drop(owned.value);
+}
+typedef struct { bool has_value; s_record_150 value; } s_optional_150;
+static inline s_optional_150 s_optional_150_copy(s_optional_150 owned) {
+	if (owned.has_value) owned.value = s_record_150_copy(owned.value);
+	return owned;
+}
+static inline void s_optional_150_drop(s_optional_150 owned) {
+	if (owned.has_value) s_record_150_drop(owned.value);
+}
+typedef struct { bool has_value; s_record_151 value; } s_optional_151;
+static inline s_optional_151 s_optional_151_copy(s_optional_151 owned) {
+	if (owned.has_value) owned.value = s_record_151_copy(owned.value);
+	return owned;
+}
+static inline void s_optional_151_drop(s_optional_151 owned) {
+	if (owned.has_value) s_record_151_drop(owned.value);
 }
 typedef struct { bool has_value; S_Array_i64 * value; } s_optional_7;
 static inline s_optional_7 s_optional_7_copy(s_optional_7 owned) {
@@ -2674,6 +2764,22 @@ static inline s_optional_10149 s_optional_10149_copy(s_optional_10149 owned) {
 static inline void s_optional_10149_drop(s_optional_10149 owned) {
 	if (owned.has_value) s_array_release(owned.value);
 }
+typedef struct { bool has_value; S_Array * value; } s_optional_10150;
+static inline s_optional_10150 s_optional_10150_copy(s_optional_10150 owned) {
+	if (owned.has_value) owned.value = s_array_retain(owned.value);
+	return owned;
+}
+static inline void s_optional_10150_drop(s_optional_10150 owned) {
+	if (owned.has_value) s_array_release(owned.value);
+}
+typedef struct { bool has_value; S_Array * value; } s_optional_10151;
+static inline s_optional_10151 s_optional_10151_copy(s_optional_10151 owned) {
+	if (owned.has_value) owned.value = s_array_retain(owned.value);
+	return owned;
+}
+static inline void s_optional_10151_drop(s_optional_10151 owned) {
+	if (owned.has_value) s_array_release(owned.value);
+}
 typedef struct { bool has_value; S_Array * value; } s_optional_10007;
 static inline s_optional_10007 s_optional_10007_copy(s_optional_10007 owned) {
 	if (owned.has_value) owned.value = s_array_retain(owned.value);
@@ -3088,6 +3194,22 @@ static inline s_optional_20149 s_optional_20149_copy(s_optional_20149 owned) {
 	return owned;
 }
 static inline void s_optional_20149_drop(s_optional_20149 owned) {
+	if (owned.has_value) s_array_release(owned.value);
+}
+typedef struct { bool has_value; S_Array * value; } s_optional_20150;
+static inline s_optional_20150 s_optional_20150_copy(s_optional_20150 owned) {
+	if (owned.has_value) owned.value = s_array_retain(owned.value);
+	return owned;
+}
+static inline void s_optional_20150_drop(s_optional_20150 owned) {
+	if (owned.has_value) s_array_release(owned.value);
+}
+typedef struct { bool has_value; S_Array * value; } s_optional_20151;
+static inline s_optional_20151 s_optional_20151_copy(s_optional_20151 owned) {
+	if (owned.has_value) owned.value = s_array_retain(owned.value);
+	return owned;
+}
+static inline void s_optional_20151_drop(s_optional_20151 owned) {
 	if (owned.has_value) s_array_release(owned.value);
 }
 static inline S_Optional_i64 s_array_i64_get_optional_take(S_Array_i64 *owned, int64_t index) {
@@ -4879,6 +5001,76 @@ static inline s_record_149 s_ga_10149_get_borrow(const S_Array *array, int64_t i
 static inline void s_ga_10149_set_take(S_Array **owned, int64_t index, s_record_149 item) {
 	s_array_set(owned, index, &item);
 	s_record_149_drop(item);
+}
+static inline void s_ga_10150_copy(void *dst, const void *src) { *(s_record_150 *)dst = s_record_150_copy(*(s_record_150 const *)src); }
+static inline void s_ga_10150_drop(void *value) { s_record_150_drop(*(s_record_150 *)value); }
+static inline S_Array *s_ga_10150_make_take(size_t count, s_record_150 *items) {
+	S_Array *result = s_array_make(count, items, sizeof(s_record_150), s_ga_10150_copy, s_ga_10150_drop);
+	for (size_t i = 0; i < count; ++i) s_record_150_drop(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_10150_append_take(S_Array *owned, s_record_150 item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_record_150_drop(item);
+	return result;
+}
+static inline s_record_150 s_ga_10150_get_checked_take(S_Array *owned, int64_t index) {
+	s_record_150 const *p = (s_record_150 const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	s_record_150 value = s_record_150_copy(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_150 s_ga_10150_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_150 result = {0};
+	s_record_150 const *p = (s_record_150 const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_record_150_copy(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline s_record_150 s_ga_10150_get_borrow(const S_Array *array, int64_t index) {
+	s_record_150 const *p = (s_record_150 const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_record_150_copy(*p);
+}
+static inline void s_ga_10150_set_take(S_Array **owned, int64_t index, s_record_150 item) {
+	s_array_set(owned, index, &item);
+	s_record_150_drop(item);
+}
+static inline void s_ga_10151_copy(void *dst, const void *src) { *(s_record_151 *)dst = s_record_151_copy(*(s_record_151 const *)src); }
+static inline void s_ga_10151_drop(void *value) { s_record_151_drop(*(s_record_151 *)value); }
+static inline S_Array *s_ga_10151_make_take(size_t count, s_record_151 *items) {
+	S_Array *result = s_array_make(count, items, sizeof(s_record_151), s_ga_10151_copy, s_ga_10151_drop);
+	for (size_t i = 0; i < count; ++i) s_record_151_drop(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_10151_append_take(S_Array *owned, s_record_151 item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_record_151_drop(item);
+	return result;
+}
+static inline s_record_151 s_ga_10151_get_checked_take(S_Array *owned, int64_t index) {
+	s_record_151 const *p = (s_record_151 const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	s_record_151 value = s_record_151_copy(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_151 s_ga_10151_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_151 result = {0};
+	s_record_151 const *p = (s_record_151 const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_record_151_copy(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline s_record_151 s_ga_10151_get_borrow(const S_Array *array, int64_t index) {
+	s_record_151 const *p = (s_record_151 const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_record_151_copy(*p);
+}
+static inline void s_ga_10151_set_take(S_Array **owned, int64_t index, s_record_151 item) {
+	s_array_set(owned, index, &item);
+	s_record_151_drop(item);
 }
 static inline void s_ga_10007_copy(void *dst, const void *src) { *(S_Array_i64 * *)dst = s_array_i64_retain(*(S_Array_i64 * const *)src); }
 static inline void s_ga_10007_drop(void *value) { s_array_i64_release(*(S_Array_i64 * *)value); }
@@ -6697,6 +6889,76 @@ static inline S_Array * s_ga_20149_get_borrow(const S_Array *array, int64_t inde
 	return s_array_retain(*p);
 }
 static inline void s_ga_20149_set_take(S_Array **owned, int64_t index, S_Array * item) {
+	s_array_set(owned, index, &item);
+	s_array_release(item);
+}
+static inline void s_ga_20150_copy(void *dst, const void *src) { *(S_Array * *)dst = s_array_retain(*(S_Array * const *)src); }
+static inline void s_ga_20150_drop(void *value) { s_array_release(*(S_Array * *)value); }
+static inline S_Array *s_ga_20150_make_take(size_t count, S_Array * *items) {
+	S_Array *result = s_array_make(count, items, sizeof(S_Array *), s_ga_20150_copy, s_ga_20150_drop);
+	for (size_t i = 0; i < count; ++i) s_array_release(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_20150_append_take(S_Array *owned, S_Array * item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_array_release(item);
+	return result;
+}
+static inline S_Array * s_ga_20150_get_checked_take(S_Array *owned, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	S_Array * value = s_array_retain(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_10150 s_ga_20150_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_10150 result = {0};
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_array_retain(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline S_Array * s_ga_20150_get_borrow(const S_Array *array, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_array_retain(*p);
+}
+static inline void s_ga_20150_set_take(S_Array **owned, int64_t index, S_Array * item) {
+	s_array_set(owned, index, &item);
+	s_array_release(item);
+}
+static inline void s_ga_20151_copy(void *dst, const void *src) { *(S_Array * *)dst = s_array_retain(*(S_Array * const *)src); }
+static inline void s_ga_20151_drop(void *value) { s_array_release(*(S_Array * *)value); }
+static inline S_Array *s_ga_20151_make_take(size_t count, S_Array * *items) {
+	S_Array *result = s_array_make(count, items, sizeof(S_Array *), s_ga_20151_copy, s_ga_20151_drop);
+	for (size_t i = 0; i < count; ++i) s_array_release(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_20151_append_take(S_Array *owned, S_Array * item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_array_release(item);
+	return result;
+}
+static inline S_Array * s_ga_20151_get_checked_take(S_Array *owned, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	S_Array * value = s_array_retain(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_10151 s_ga_20151_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_10151 result = {0};
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_array_retain(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline S_Array * s_ga_20151_get_borrow(const S_Array *array, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_array_retain(*p);
+}
+static inline void s_ga_20151_set_take(S_Array **owned, int64_t index, S_Array * item) {
 	s_array_set(owned, index, &item);
 	s_array_release(item);
 }
@@ -8520,6 +8782,76 @@ static inline void s_ga_30149_set_take(S_Array **owned, int64_t index, S_Array *
 	s_array_set(owned, index, &item);
 	s_array_release(item);
 }
+static inline void s_ga_30150_copy(void *dst, const void *src) { *(S_Array * *)dst = s_array_retain(*(S_Array * const *)src); }
+static inline void s_ga_30150_drop(void *value) { s_array_release(*(S_Array * *)value); }
+static inline S_Array *s_ga_30150_make_take(size_t count, S_Array * *items) {
+	S_Array *result = s_array_make(count, items, sizeof(S_Array *), s_ga_30150_copy, s_ga_30150_drop);
+	for (size_t i = 0; i < count; ++i) s_array_release(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_30150_append_take(S_Array *owned, S_Array * item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_array_release(item);
+	return result;
+}
+static inline S_Array * s_ga_30150_get_checked_take(S_Array *owned, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	S_Array * value = s_array_retain(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_20150 s_ga_30150_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_20150 result = {0};
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_array_retain(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline S_Array * s_ga_30150_get_borrow(const S_Array *array, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_array_retain(*p);
+}
+static inline void s_ga_30150_set_take(S_Array **owned, int64_t index, S_Array * item) {
+	s_array_set(owned, index, &item);
+	s_array_release(item);
+}
+static inline void s_ga_30151_copy(void *dst, const void *src) { *(S_Array * *)dst = s_array_retain(*(S_Array * const *)src); }
+static inline void s_ga_30151_drop(void *value) { s_array_release(*(S_Array * *)value); }
+static inline S_Array *s_ga_30151_make_take(size_t count, S_Array * *items) {
+	S_Array *result = s_array_make(count, items, sizeof(S_Array *), s_ga_30151_copy, s_ga_30151_drop);
+	for (size_t i = 0; i < count; ++i) s_array_release(items[i]);
+	return result;
+}
+static inline S_Array *s_ga_30151_append_take(S_Array *owned, S_Array * item) {
+	S_Array *result = s_array_append(owned, &item);
+	s_array_release(item);
+	return result;
+}
+static inline S_Array * s_ga_30151_get_checked_take(S_Array *owned, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (!p) s_panic("index out of bounds");
+	S_Array * value = s_array_retain(*p);
+	s_array_release(owned);
+	return value;
+}
+static inline s_optional_20151 s_ga_30151_get_optional_take(S_Array *owned, int64_t index) {
+	s_optional_20151 result = {0};
+	S_Array * const *p = (S_Array * const *)s_array_at(owned, index);
+	if (p) { result.has_value = true; result.value = s_array_retain(*p); }
+	s_array_release(owned);
+	return result;
+}
+static inline S_Array * s_ga_30151_get_borrow(const S_Array *array, int64_t index) {
+	S_Array * const *p = (S_Array * const *)s_array_at(array, index);
+	if (!p) s_panic("index out of bounds");
+	return s_array_retain(*p);
+}
+static inline void s_ga_30151_set_take(S_Array **owned, int64_t index, S_Array * item) {
+	s_array_set(owned, index, &item);
+	s_array_release(item);
+}
 static inline int64_t s_generic_array_length_take(S_Array *owned) { int64_t n = (int64_t)s_array_length(owned); s_array_release(owned); return n; }
 static inline int64_t s_dict_length_take(S_Dict *owned) { int64_t n = (int64_t)s_dict_length(owned); s_dict_release(owned); return n; }
 
@@ -8714,54 +9046,66 @@ s_record_138 s_MirBlock(S_Array *, s_record_137);
 s_record_139 s_MirFunction(int64_t, int64_t, S_Array_i64 *, S_Array *, int64_t);
 s_record_140 s_MirProgram(S_Array *);
 s_record_141 s_MirValue(int64_t, int64_t, S_String *);
-s_record_142 s_MirOutcome(s_record_141, S_String *, int64_t);
+s_record_142 s_MirHeapRecord(int64_t, S_Array *, int64_t);
+s_record_143 s_MirOutcome(s_record_141, S_String *, int64_t);
 s_record_136 s_mir_op(int64_t, int64_t, int64_t, int64_t, int64_t);
 s_record_136 s_mir_call(int64_t, int64_t, S_Array_i64 *);
 s_record_136 s_mir_string(int64_t, S_String *);
+s_record_136 s_mir_record_new(int64_t, S_Array_i64 *);
+s_record_136 s_mir_record_get(int64_t, int64_t, int64_t);
 s_record_137 s_mir_jump(int64_t);
 s_record_137 s_mir_branch(int64_t, int64_t, int64_t);
 s_record_137 s_mir_return(int64_t);
 s_record_137 s_mir_panic(S_String *);
 bool s_mir_register_valid(S_Array_i64 *, int64_t, int64_t);
 bool s_mir_supported_type(int64_t);
+bool s_mir_type_supported(s_record_106, int64_t);
+bool s_mir_managed_type(s_record_106, int64_t);
 S_String * s_mir_verify_instruction(s_record_140, s_record_139, s_record_136);
 S_String * s_mir_verify(s_record_140);
-s_record_143 s_MirSourceBinding(S_String *, int64_t, int64_t);
+s_record_144 s_MirSourceBinding(S_String *, int64_t, int64_t);
 s_record_133 s_MirCallTarget(int64_t, int64_t);
-s_record_144 s_MirLowerState(s_record_102, S_Array *);
-s_record_145 s_MirLowerExpr(s_record_144, int64_t);
-s_record_146 s_MirLowerResult(s_record_139, S_String *);
-s_record_144 s_mir_lower_error(s_record_144, S_String *);
-s_record_144 s_mir_lower_block(s_record_144);
-bool s_mir_lower_ended(s_record_144);
-s_record_144 s_mir_lower_emit(s_record_144, s_record_136);
-s_record_144 s_mir_lower_end(s_record_144, s_record_137);
-s_record_144 s_mir_lower_register(s_record_144, int64_t);
-int64_t s_mir_lower_type(s_record_144, int64_t, int64_t);
-int64_t s_mir_lower_binding(s_record_144, S_String *);
+s_record_145 s_MirLowerField(S_String *, int64_t);
+s_record_146 s_MirLowerState(s_record_102, S_Array *);
+s_record_147 s_MirLowerExpr(s_record_146, int64_t);
+s_record_148 s_MirLowerResult(s_record_139, S_String *);
+s_record_146 s_mir_lower_error(s_record_146, S_String *);
+s_record_146 s_mir_lower_block(s_record_146);
+bool s_mir_lower_ended(s_record_146);
+s_record_146 s_mir_lower_emit(s_record_146, s_record_136);
+s_record_146 s_mir_lower_end(s_record_146, s_record_137);
+s_record_146 s_mir_lower_register(s_record_146, int64_t);
+int64_t s_mir_lower_type(s_record_146, int64_t, int64_t);
+int64_t s_mir_lower_field_index(s_record_146, int64_t);
+int64_t s_mir_lower_binding(s_record_146, S_String *);
 int64_t s_mir_lower_literal(S_String *);
-s_record_147 s_MirLowerString(S_String *, S_String *);
-s_record_147 s_mir_lower_string(S_String *);
-s_record_145 s_mir_lower_expression(s_record_144, int64_t);
-s_record_144 s_mir_lower_statements(s_record_144, int64_t);
-s_record_144 s_mir_lower_statement(s_record_144, int64_t);
-s_record_146 s_mir_lower_function_calls(s_record_102, s_record_117, S_Array *, S_Array_i64 *, int64_t, S_Array *);
-s_record_146 s_mir_lower_function(s_record_102, s_record_117, S_Array *, S_Array_i64 *, int64_t);
-s_record_148 s_MirProgramBuild(s_record_140, s_record_112, S_Array *, int64_t, S_String *);
-s_record_148 s_mir_build_program(s_record_102, s_record_118, S_String *, S_Array_i64 *);
+s_record_149 s_MirLowerString(S_String *, S_String *);
+s_record_149 s_mir_lower_string(S_String *);
+s_record_147 s_mir_lower_expression(s_record_146, int64_t);
+s_record_146 s_mir_lower_statements(s_record_146, int64_t);
+s_record_146 s_mir_lower_statement(s_record_146, int64_t);
+s_record_148 s_mir_lower_function_typed(s_record_102, s_record_117, S_Array *, S_Array_i64 *, int64_t, S_Array *, s_record_106);
+s_record_148 s_mir_lower_function_calls(s_record_102, s_record_117, S_Array *, S_Array_i64 *, int64_t, S_Array *);
+s_record_148 s_mir_lower_function(s_record_102, s_record_117, S_Array *, S_Array_i64 *, int64_t);
+s_record_150 s_MirProgramBuild(s_record_140, s_record_112, S_Array *, int64_t, S_String *);
+s_record_150 s_mir_build_program(s_record_102, s_record_118, S_String *, S_Array_i64 *);
 S_String * s_mir_c_type(int64_t);
 S_String * s_mir_c_register(int64_t);
 S_String * s_mir_c_function(int64_t);
 S_String * s_mir_c_signature(s_record_139, int64_t);
 S_String * s_mir_c_string(S_String *);
 S_String * s_mir_c_check(int64_t);
-S_String * s_mir_c_store_string(int64_t, S_String *);
-S_String * s_mir_c_release_strings(s_record_139, int64_t);
+S_String * s_mir_c_release_value(int64_t, S_String *);
+S_String * s_mir_c_retain_value(int64_t, S_String *);
+bool s_mir_c_managed(int64_t);
+S_String * s_mir_c_store_owned(int64_t, int64_t, S_String *);
+S_String * s_mir_c_release_managed(s_record_139, int64_t);
+S_String * s_mir_c_record_runtime(s_record_106);
 S_String * s_mir_c_instruction(s_record_136, s_record_139);
 S_String * s_mir_c_terminator(s_record_137, s_record_139);
 S_String * s_mir_c_definition(s_record_139, int64_t);
-s_record_149 s_MirCResult(S_String *, S_String *);
-s_record_149 s_mir_emit_c(s_record_140, int64_t);
+s_record_151 s_MirCResult(S_String *, S_String *);
+s_record_151 s_mir_emit_c(s_record_140, int64_t);
 s_record_128 s_compile_c_mir(S_String *);
 int64_t s_main();
 
@@ -20526,6 +20870,7 @@ s_record_140 s_MirProgram(S_Array * v_functions)
 {
 	s_record_140 s_constructor_result = {0};
 	s_constructor_result.functions = v_functions;
+	s_constructor_result.types = s_new_type_table();
 	return s_constructor_result;
 }
 
@@ -20538,12 +20883,22 @@ s_record_141 s_MirValue(int64_t v_type_id, int64_t v_bits, S_String * v_text)
 	return s_constructor_result;
 }
 
-s_record_142 s_MirOutcome(s_record_141 v_value, S_String * v_error, int64_t v_steps)
+s_record_142 s_MirHeapRecord(int64_t v_type_id, S_Array * v_fields, int64_t v_refs)
 {
 	s_record_142 s_constructor_result = {0};
+	s_constructor_result.type_id = v_type_id;
+	s_constructor_result.fields = v_fields;
+	s_constructor_result.refs = v_refs;
+	return s_constructor_result;
+}
+
+s_record_143 s_MirOutcome(s_record_141 v_value, S_String * v_error, int64_t v_steps)
+{
+	s_record_143 s_constructor_result = {0};
 	s_constructor_result.value = v_value;
 	s_constructor_result.error = v_error;
 	s_constructor_result.steps = v_steps;
+	s_constructor_result.heap = s_ga_10142_make_take(0, NULL);
 	return s_constructor_result;
 }
 
@@ -20566,6 +20921,18 @@ s_record_136 s_mir_string(int64_t v_dst, S_String * v_value)
 	return s_return_1400;
 }
 
+s_record_136 s_mir_record_new(int64_t v_dst, S_Array_i64 * v_fields)
+{
+	s_record_136 s_return_1401 = s_MirInstruction(23, v_dst, (-1), (-1), 0, s_array_i64_retain(v_fields), s_string_from_bytes("", sizeof("") - 1));
+	s_array_i64_release(v_fields);
+	return s_return_1401;
+}
+
+s_record_136 s_mir_record_get(int64_t v_dst, int64_t v_owner, int64_t v_field)
+{
+	return s_mir_op(24, v_dst, v_owner, (-1), v_field);
+}
+
 s_record_137 s_mir_jump(int64_t v_target)
 {
 	return s_MirTerminator(1, (-1), v_target, (-1), s_string_from_bytes("", sizeof("") - 1));
@@ -20583,21 +20950,49 @@ s_record_137 s_mir_return(int64_t v_source)
 
 s_record_137 s_mir_panic(S_String * v_message)
 {
-	s_record_137 s_return_1401 = s_MirTerminator(4, (-1), (-1), (-1), s_string_retain(v_message));
+	s_record_137 s_return_1402 = s_MirTerminator(4, (-1), (-1), (-1), s_string_retain(v_message));
 	s_string_release(v_message);
-	return s_return_1401;
+	return s_return_1402;
 }
 
 bool s_mir_register_valid(S_Array_i64 * v_types, int64_t v_register, int64_t v_expected)
 {
-	bool s_return_1402 = (((v_register >= 0) && (v_register < s_array_i64_length_take(s_array_i64_retain(v_types)))) && (s_array_i64_get_checked_take(s_array_i64_retain(v_types), v_register) == v_expected));
+	bool s_return_1403 = (((v_register >= 0) && (v_register < s_array_i64_length_take(s_array_i64_retain(v_types)))) && (s_array_i64_get_checked_take(s_array_i64_retain(v_types), v_register) == v_expected));
 	s_array_i64_release(v_types);
-	return s_return_1402;
+	return s_return_1403;
 }
 
 bool s_mir_supported_type(int64_t v_type_id)
 {
 	return (((v_type_id == 1) || (v_type_id == 3)) || (v_type_id == 4));
+}
+
+bool s_mir_type_supported(s_record_106 v_types, int64_t v_type_id)
+{
+	if (((v_type_id < 0) || (v_type_id >= s_generic_array_length_take(s_record_106_get_entries_take(s_record_106_copy(v_types))))))
+	{
+		bool s_return_1404 = false;
+		s_record_106_drop(v_types);
+		return s_return_1404;
+	}
+	const int64_t v_tag = s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_106_copy(v_types)), v_type_id));
+	bool s_return_1405 = (s_mir_supported_type(v_tag) || (v_tag == 6));
+	s_record_106_drop(v_types);
+	return s_return_1405;
+}
+
+bool s_mir_managed_type(s_record_106 v_types, int64_t v_type_id)
+{
+	if (((v_type_id < 0) || (v_type_id >= s_generic_array_length_take(s_record_106_get_entries_take(s_record_106_copy(v_types))))))
+	{
+		bool s_return_1406 = false;
+		s_record_106_drop(v_types);
+		return s_return_1406;
+	}
+	const int64_t v_tag = s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_106_copy(v_types)), v_type_id));
+	bool s_return_1407 = ((v_tag == 4) || (v_tag == 6));
+	s_record_106_drop(v_types);
+	return s_return_1407;
 }
 
 S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_function, s_record_136 v_ins)
@@ -20607,53 +21002,7 @@ S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_funct
 	{
 		if ((((s_record_136_get_first_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_first_take(s_record_136_copy(v_ins)) >= s_array_i64_length_take(s_array_i64_retain(v_types)))) || (!s_mir_supported_type(s_array_i64_get_checked_take(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)))))))
 		{
-			S_String * s_return_1403 = s_string_from_bytes("invalid print operand", sizeof("invalid print operand") - 1);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1403;
-		}
-		S_String * s_return_1404 = s_string_from_bytes("", sizeof("") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1404;
-	}
-	if (((s_record_136_get_dst_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_dst_take(s_record_136_copy(v_ins)) >= s_array_i64_length_take(s_array_i64_retain(v_types)))))
-	{
-		S_String * s_return_1405 = s_string_from_bytes("invalid destination register", sizeof("invalid destination register") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1405;
-	}
-	const int64_t v_dst_type = s_array_i64_get_checked_take(s_array_i64_retain(v_types), s_record_136_get_dst_take(s_record_136_copy(v_ins)));
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 1))
-	{
-		if ((v_dst_type != 1))
-		{
-			S_String * s_return_1406 = s_string_from_bytes("integer constant destination must be i64", sizeof("integer constant destination must be i64") - 1);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1406;
-		}
-		S_String * s_return_1407 = s_string_from_bytes("", sizeof("") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1407;
-	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 2))
-	{
-		if (((v_dst_type != 3) || ((s_record_136_get_immediate_take(s_record_136_copy(v_ins)) != 0) && (s_record_136_get_immediate_take(s_record_136_copy(v_ins)) != 1))))
-		{
-			S_String * s_return_1408 = s_string_from_bytes("invalid boolean constant", sizeof("invalid boolean constant") - 1);
+			S_String * s_return_1408 = s_string_from_bytes("invalid print operand", sizeof("invalid print operand") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
@@ -20667,163 +21016,152 @@ S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_funct
 		s_record_140_drop(v_program);
 		return s_return_1409;
 	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 17))
+	if (((s_record_136_get_dst_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_dst_take(s_record_136_copy(v_ins)) >= s_array_i64_length_take(s_array_i64_retain(v_types)))))
 	{
-		if ((v_dst_type != 4))
-		{
-			S_String * s_return_1410 = s_string_from_bytes("string constant destination must be string", sizeof("string constant destination must be string") - 1);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1410;
-		}
-		S_String * s_return_1411 = s_string_from_bytes("", sizeof("") - 1);
+		S_String * s_return_1410 = s_string_from_bytes("invalid destination register", sizeof("invalid destination register") - 1);
 		s_array_i64_release(v_types);
 		s_record_136_drop(v_ins);
 		s_record_139_drop(v_function);
 		s_record_140_drop(v_program);
-		return s_return_1411;
+		return s_return_1410;
 	}
-	if ((((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 3) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 18)) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 19)))
+	const int64_t v_dst_type = s_array_i64_get_checked_take(s_array_i64_retain(v_types), s_record_136_get_dst_take(s_record_136_copy(v_ins)));
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 1))
 	{
-		if ((!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), v_dst_type)))
+		if ((v_dst_type != 1))
 		{
-			S_String * s_return_1412 = s_string_from_bytes("copy/move register type mismatch", sizeof("copy/move register type mismatch") - 1);
+			S_String * s_return_1411 = s_string_from_bytes("integer constant destination must be i64", sizeof("integer constant destination must be i64") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
-			return s_return_1412;
+			return s_return_1411;
 		}
-		if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 18) && (v_dst_type != 4)))
+		S_String * s_return_1412 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1412;
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 2))
+	{
+		if (((v_dst_type != 3) || ((s_record_136_get_immediate_take(s_record_136_copy(v_ins)) != 0) && (s_record_136_get_immediate_take(s_record_136_copy(v_ins)) != 1))))
 		{
-			S_String * s_return_1413 = s_string_from_bytes("retain requires a managed register", sizeof("retain requires a managed register") - 1);
+			S_String * s_return_1413 = s_string_from_bytes("invalid boolean constant", sizeof("invalid boolean constant") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
 			return s_return_1413;
 		}
-		if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 19) && ((s_record_136_get_dst_take(s_record_136_copy(v_ins)) == s_record_136_get_first_take(s_record_136_copy(v_ins))) || (v_dst_type != 4))))
-		{
-			S_String * s_return_1414 = s_string_from_bytes("move requires distinct managed registers", sizeof("move requires distinct managed registers") - 1);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1414;
-		}
-		S_String * s_return_1415 = s_string_from_bytes("", sizeof("") - 1);
+		S_String * s_return_1414 = s_string_from_bytes("", sizeof("") - 1);
 		s_array_i64_release(v_types);
 		s_record_136_drop(v_ins);
 		s_record_139_drop(v_function);
 		s_record_140_drop(v_program);
-		return s_return_1415;
+		return s_return_1414;
 	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 20))
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 17))
 	{
-		if (((v_dst_type != 4) || (s_record_136_get_first_take(s_record_136_copy(v_ins)) != s_record_136_get_dst_take(s_record_136_copy(v_ins)))))
+		if ((v_dst_type != 4))
 		{
-			S_String * s_return_1416 = s_string_from_bytes("release requires a string register", sizeof("release requires a string register") - 1);
+			S_String * s_return_1415 = s_string_from_bytes("string constant destination must be string", sizeof("string constant destination must be string") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
-			return s_return_1416;
+			return s_return_1415;
 		}
-		S_String * s_return_1417 = s_string_from_bytes("", sizeof("") - 1);
+		S_String * s_return_1416 = s_string_from_bytes("", sizeof("") - 1);
 		s_array_i64_release(v_types);
 		s_record_136_drop(v_ins);
 		s_record_139_drop(v_function);
 		s_record_140_drop(v_program);
-		return s_return_1417;
+		return s_return_1416;
 	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 21))
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 23))
 	{
-		if (((v_dst_type != 1) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 4))))
+		if ((s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), v_dst_type)) != 6))
 		{
-			S_String * s_return_1418 = s_string_from_bytes("string length operand type mismatch", sizeof("string length operand type mismatch") - 1);
+			S_String * s_return_1417 = s_string_from_bytes("record construction requires record destination", sizeof("record construction requires record destination") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
-			return s_return_1418;
+			return s_return_1417;
 		}
-		S_String * s_return_1419 = s_string_from_bytes("", sizeof("") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1419;
-	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 22))
-	{
-		if ((((v_dst_type != 4) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 4))) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), 4))))
+		S_Array * v_fields = s_record_105_get_fields_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), v_dst_type));
+		int64_t s_left_1418 = s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins)));
+		int64_t s_right_1419 = s_generic_array_length_take(s_array_retain(v_fields));
+		if ((s_left_1418 != s_right_1419))
 		{
-			S_String * s_return_1420 = s_string_from_bytes("string concat operand type mismatch", sizeof("string concat operand type mismatch") - 1);
+			S_String * s_return_1420 = s_string_from_bytes("record constructor field count mismatch", sizeof("record constructor field count mismatch") - 1);
+			s_array_release(v_fields);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
 			return s_return_1420;
 		}
-		S_String * s_return_1421 = s_string_from_bytes("", sizeof("") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1421;
-	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 15))
-	{
-		if (((s_record_136_get_immediate_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_immediate_take(s_record_136_copy(v_ins)) >= s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))))))
+		for (int64_t v_i = 0, s_bound_1421 = s_generic_array_length_take(s_array_retain(v_fields)); v_i < s_bound_1421; ++v_i)
 		{
-			S_String * s_return_1422 = s_string_from_bytes("invalid callee", sizeof("invalid callee") - 1);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1422;
-		}
-		s_record_139 v_callee = s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), s_record_136_get_immediate_take(s_record_136_copy(v_ins)));
-		if (((s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins))) != s_record_139_get_argument_count_take(s_record_139_copy(v_callee))) || (v_dst_type != s_record_139_get_return_type_take(s_record_139_copy(v_callee)))))
-		{
-			S_String * s_return_1423 = s_string_from_bytes("call signature mismatch", sizeof("call signature mismatch") - 1);
-			s_record_139_drop(v_callee);
-			s_array_i64_release(v_types);
-			s_record_136_drop(v_ins);
-			s_record_139_drop(v_function);
-			s_record_140_drop(v_program);
-			return s_return_1423;
-		}
-		for (int64_t v_i = 0, s_bound_1424 = s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins))); v_i < s_bound_1424; ++v_i)
-		{
-			if ((!s_mir_register_valid(s_array_i64_retain(v_types), s_array_i64_get_checked_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins)), v_i), s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_callee)), v_i))))
+			if ((!s_mir_register_valid(s_array_i64_retain(v_types), s_array_i64_get_checked_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins)), v_i), s_record_104_get_kind_take(s_ga_10104_get_checked_take(s_array_retain(v_fields), v_i)))))
 			{
-				S_String * s_return_1425 = s_string_from_bytes("call argument type mismatch", sizeof("call argument type mismatch") - 1);
-				s_record_139_drop(v_callee);
+				S_String * s_return_1422 = s_string_from_bytes("record constructor field type mismatch", sizeof("record constructor field type mismatch") - 1);
+				s_array_release(v_fields);
 				s_array_i64_release(v_types);
 				s_record_136_drop(v_ins);
 				s_record_139_drop(v_function);
 				s_record_140_drop(v_program);
-				return s_return_1425;
+				return s_return_1422;
 			}
 		}
-		S_String * s_return_1426 = s_string_from_bytes("", sizeof("") - 1);
-		s_record_139_drop(v_callee);
+		S_String * s_return_1423 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_release(v_fields);
 		s_array_i64_release(v_types);
 		s_record_136_drop(v_ins);
 		s_record_139_drop(v_function);
 		s_record_140_drop(v_program);
-		return s_return_1426;
-		s_record_139_drop(v_callee);
+		return s_return_1423;
+		s_array_release(v_fields);
 	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 12))
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 24))
 	{
-		if (((v_dst_type != 3) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 3))))
+		if (((s_record_136_get_first_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_first_take(s_record_136_copy(v_ins)) >= s_array_i64_length_take(s_array_i64_retain(v_types)))))
 		{
-			S_String * s_return_1427 = s_string_from_bytes("boolean operand type mismatch", sizeof("boolean operand type mismatch") - 1);
+			S_String * s_return_1424 = s_string_from_bytes("invalid record source", sizeof("invalid record source") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1424;
+		}
+		const int64_t v_owner = s_array_i64_get_checked_take(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)));
+		if ((s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), v_owner)) != 6))
+		{
+			S_String * s_return_1425 = s_string_from_bytes("record field access requires record", sizeof("record field access requires record") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1425;
+		}
+		S_Array * v_fields = s_record_105_get_fields_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), v_owner));
+		if (((s_record_136_get_immediate_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_immediate_take(s_record_136_copy(v_ins)) >= s_generic_array_length_take(s_array_retain(v_fields)))))
+		{
+			S_String * s_return_1426 = s_string_from_bytes("invalid record field", sizeof("invalid record field") - 1);
+			s_array_release(v_fields);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1426;
+		}
+		if ((v_dst_type != s_record_104_get_kind_take(s_ga_10104_get_checked_take(s_array_retain(v_fields), s_record_136_get_immediate_take(s_record_136_copy(v_ins))))))
+		{
+			S_String * s_return_1427 = s_string_from_bytes("record field type mismatch", sizeof("record field type mismatch") - 1);
+			s_array_release(v_fields);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
@@ -20831,35 +21169,37 @@ S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_funct
 			return s_return_1427;
 		}
 		S_String * s_return_1428 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_release(v_fields);
 		s_array_i64_release(v_types);
 		s_record_136_drop(v_ins);
 		s_record_139_drop(v_function);
 		s_record_140_drop(v_program);
 		return s_return_1428;
+		s_array_release(v_fields);
 	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 14))
+	if ((((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 3) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 18)) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 19)))
 	{
-		if (((v_dst_type != 1) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 1))))
+		if ((!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), v_dst_type)))
 		{
-			S_String * s_return_1429 = s_string_from_bytes("integer operand type mismatch", sizeof("integer operand type mismatch") - 1);
+			S_String * s_return_1429 = s_string_from_bytes("copy/move register type mismatch", sizeof("copy/move register type mismatch") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
 			return s_return_1429;
 		}
-		S_String * s_return_1430 = s_string_from_bytes("", sizeof("") - 1);
-		s_array_i64_release(v_types);
-		s_record_136_drop(v_ins);
-		s_record_139_drop(v_function);
-		s_record_140_drop(v_program);
-		return s_return_1430;
-	}
-	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 13))
-	{
-		if ((((v_dst_type != 3) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 3))) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), 3))))
+		if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 18) && (!s_mir_managed_type(s_record_140_get_types_take(s_record_140_copy(v_program)), v_dst_type))))
 		{
-			S_String * s_return_1431 = s_string_from_bytes("boolean operand type mismatch", sizeof("boolean operand type mismatch") - 1);
+			S_String * s_return_1430 = s_string_from_bytes("retain requires a managed register", sizeof("retain requires a managed register") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1430;
+		}
+		if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 19) && ((s_record_136_get_dst_take(s_record_136_copy(v_ins)) == s_record_136_get_first_take(s_record_136_copy(v_ins))) || (!s_mir_managed_type(s_record_140_get_types_take(s_record_140_copy(v_program)), v_dst_type)))))
+		{
+			S_String * s_return_1431 = s_string_from_bytes("move requires distinct managed registers", sizeof("move requires distinct managed registers") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
@@ -20873,34 +21213,29 @@ S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_funct
 		s_record_140_drop(v_program);
 		return s_return_1432;
 	}
-	if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) >= 4) && (s_record_136_get_op_take(s_record_136_copy(v_ins)) <= 11)))
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 20))
 	{
-		const bool v_comparison = (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 9) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 10)) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 11));
-		const int64_t v_required = 1;
-		if (v_comparison)
+		if (((!s_mir_managed_type(s_record_140_get_types_take(s_record_140_copy(v_program)), v_dst_type)) || (s_record_136_get_first_take(s_record_136_copy(v_ins)) != s_record_136_get_dst_take(s_record_136_copy(v_ins)))))
 		{
-			if ((v_dst_type != 3))
-			{
-				S_String * s_return_1433 = s_string_from_bytes("integer comparison destination must be bool", sizeof("integer comparison destination must be bool") - 1);
-				s_array_i64_release(v_types);
-				s_record_136_drop(v_ins);
-				s_record_139_drop(v_function);
-				s_record_140_drop(v_program);
-				return s_return_1433;
-			}
-		}
-		else if ((v_dst_type != v_required))
-		{
-			S_String * s_return_1434 = s_string_from_bytes("integer arithmetic destination must be i64", sizeof("integer arithmetic destination must be i64") - 1);
+			S_String * s_return_1433 = s_string_from_bytes("release requires a managed register", sizeof("release requires a managed register") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
 			s_record_140_drop(v_program);
-			return s_return_1434;
+			return s_return_1433;
 		}
-		if (((!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), v_required)) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), v_required))))
+		S_String * s_return_1434 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1434;
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 21))
+	{
+		if (((v_dst_type != 1) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 4))))
 		{
-			S_String * s_return_1435 = s_string_from_bytes("integer operand type mismatch", sizeof("integer operand type mismatch") - 1);
+			S_String * s_return_1435 = s_string_from_bytes("string length operand type mismatch", sizeof("string length operand type mismatch") - 1);
 			s_array_i64_release(v_types);
 			s_record_136_drop(v_ins);
 			s_record_139_drop(v_function);
@@ -20914,176 +21249,370 @@ S_String * s_mir_verify_instruction(s_record_140 v_program, s_record_139 v_funct
 		s_record_140_drop(v_program);
 		return s_return_1436;
 	}
-	S_String * s_return_1437 = s_string_from_bytes("unsupported MIR opcode", sizeof("unsupported MIR opcode") - 1);
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 22))
+	{
+		if ((((v_dst_type != 4) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 4))) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), 4))))
+		{
+			S_String * s_return_1437 = s_string_from_bytes("string concat operand type mismatch", sizeof("string concat operand type mismatch") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1437;
+		}
+		S_String * s_return_1438 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1438;
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 15))
+	{
+		if (((s_record_136_get_immediate_take(s_record_136_copy(v_ins)) < 0) || (s_record_136_get_immediate_take(s_record_136_copy(v_ins)) >= s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))))))
+		{
+			S_String * s_return_1439 = s_string_from_bytes("invalid callee", sizeof("invalid callee") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1439;
+		}
+		s_record_139 v_callee = s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), s_record_136_get_immediate_take(s_record_136_copy(v_ins)));
+		if (((s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins))) != s_record_139_get_argument_count_take(s_record_139_copy(v_callee))) || (v_dst_type != s_record_139_get_return_type_take(s_record_139_copy(v_callee)))))
+		{
+			S_String * s_return_1440 = s_string_from_bytes("call signature mismatch", sizeof("call signature mismatch") - 1);
+			s_record_139_drop(v_callee);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1440;
+		}
+		for (int64_t v_i = 0, s_bound_1441 = s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins))); v_i < s_bound_1441; ++v_i)
+		{
+			if ((!s_mir_register_valid(s_array_i64_retain(v_types), s_array_i64_get_checked_take(s_record_136_get_inputs_take(s_record_136_copy(v_ins)), v_i), s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_callee)), v_i))))
+			{
+				S_String * s_return_1442 = s_string_from_bytes("call argument type mismatch", sizeof("call argument type mismatch") - 1);
+				s_record_139_drop(v_callee);
+				s_array_i64_release(v_types);
+				s_record_136_drop(v_ins);
+				s_record_139_drop(v_function);
+				s_record_140_drop(v_program);
+				return s_return_1442;
+			}
+		}
+		S_String * s_return_1443 = s_string_from_bytes("", sizeof("") - 1);
+		s_record_139_drop(v_callee);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1443;
+		s_record_139_drop(v_callee);
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 12))
+	{
+		if (((v_dst_type != 3) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 3))))
+		{
+			S_String * s_return_1444 = s_string_from_bytes("boolean operand type mismatch", sizeof("boolean operand type mismatch") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1444;
+		}
+		S_String * s_return_1445 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1445;
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 14))
+	{
+		if (((v_dst_type != 1) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 1))))
+		{
+			S_String * s_return_1446 = s_string_from_bytes("integer operand type mismatch", sizeof("integer operand type mismatch") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1446;
+		}
+		S_String * s_return_1447 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1447;
+	}
+	if ((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 13))
+	{
+		if ((((v_dst_type != 3) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), 3))) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), 3))))
+		{
+			S_String * s_return_1448 = s_string_from_bytes("boolean operand type mismatch", sizeof("boolean operand type mismatch") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1448;
+		}
+		S_String * s_return_1449 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1449;
+	}
+	if (((s_record_136_get_op_take(s_record_136_copy(v_ins)) >= 4) && (s_record_136_get_op_take(s_record_136_copy(v_ins)) <= 11)))
+	{
+		const bool v_comparison = (((s_record_136_get_op_take(s_record_136_copy(v_ins)) == 9) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 10)) || (s_record_136_get_op_take(s_record_136_copy(v_ins)) == 11));
+		const int64_t v_required = 1;
+		if (v_comparison)
+		{
+			if ((v_dst_type != 3))
+			{
+				S_String * s_return_1450 = s_string_from_bytes("integer comparison destination must be bool", sizeof("integer comparison destination must be bool") - 1);
+				s_array_i64_release(v_types);
+				s_record_136_drop(v_ins);
+				s_record_139_drop(v_function);
+				s_record_140_drop(v_program);
+				return s_return_1450;
+			}
+		}
+		else if ((v_dst_type != v_required))
+		{
+			S_String * s_return_1451 = s_string_from_bytes("integer arithmetic destination must be i64", sizeof("integer arithmetic destination must be i64") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1451;
+		}
+		if (((!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_first_take(s_record_136_copy(v_ins)), v_required)) || (!s_mir_register_valid(s_array_i64_retain(v_types), s_record_136_get_second_take(s_record_136_copy(v_ins)), v_required))))
+		{
+			S_String * s_return_1452 = s_string_from_bytes("integer operand type mismatch", sizeof("integer operand type mismatch") - 1);
+			s_array_i64_release(v_types);
+			s_record_136_drop(v_ins);
+			s_record_139_drop(v_function);
+			s_record_140_drop(v_program);
+			return s_return_1452;
+		}
+		S_String * s_return_1453 = s_string_from_bytes("", sizeof("") - 1);
+		s_array_i64_release(v_types);
+		s_record_136_drop(v_ins);
+		s_record_139_drop(v_function);
+		s_record_140_drop(v_program);
+		return s_return_1453;
+	}
+	S_String * s_return_1454 = s_string_from_bytes("unsupported MIR opcode", sizeof("unsupported MIR opcode") - 1);
 	s_array_i64_release(v_types);
 	s_record_136_drop(v_ins);
 	s_record_139_drop(v_function);
 	s_record_140_drop(v_program);
-	return s_return_1437;
+	return s_return_1454;
 	s_array_i64_release(v_types);
 }
 
 S_String * s_mir_verify(s_record_140 v_program)
 {
+	for (int64_t v_i = 0, s_bound_1455 = s_generic_array_length_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program)))); v_i < s_bound_1455; ++v_i)
 	{
-		S_Array * v_s_iter_1438 = s_record_140_get_functions_take(s_record_140_copy(v_program));
-		for (int64_t s_index_1438 = 0; s_index_1438 < (int64_t)s_array_length(v_s_iter_1438); ++s_index_1438)
+		s_record_105 v_entry = s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), v_i);
+		if ((s_record_105_get_tag_take(s_record_105_copy(v_entry)) == 6))
 		{
-			s_record_139 v_function = s_ga_10139_get_borrow(v_s_iter_1438, s_index_1438);
-			const int64_t v_count = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)));
-			if ((((s_record_139_get_argument_count_take(s_record_139_copy(v_function)) < 0) || (s_record_139_get_argument_count_take(s_record_139_copy(v_function)) > v_count)) || (!s_mir_supported_type(s_record_139_get_return_type_take(s_record_139_copy(v_function))))))
+			for (int64_t v_j = 0, s_bound_1456 = s_generic_array_length_take(s_record_105_get_fields_take(s_record_105_copy(v_entry))); v_j < s_bound_1456; ++v_j)
 			{
-				S_String * s_return_1439 = s_string_from_bytes("invalid function signature", sizeof("invalid function signature") - 1);
+				s_record_104 v_field = s_ga_10104_get_checked_take(s_record_105_get_fields_take(s_record_105_copy(v_entry)), v_j);
+				if ((!s_mir_type_supported(s_record_140_get_types_take(s_record_140_copy(v_program)), s_record_104_get_kind_take(s_record_104_copy(v_field)))))
+				{
+					S_String * s_return_1457 = s_string_from_bytes("unsupported record field type", sizeof("unsupported record field type") - 1);
+					s_record_104_drop(v_field);
+					s_record_105_drop(v_entry);
+					s_record_140_drop(v_program);
+					return s_return_1457;
+				}
+				if (((v_j > 0) && (s_string_compare_take(s_record_104_get_name_take(s_ga_10104_get_checked_take(s_record_105_get_fields_take(s_record_105_copy(v_entry)), (v_j - 1))), s_record_104_get_name_take(s_record_104_copy(v_field))) >= 0)))
+				{
+					S_String * s_return_1458 = s_string_from_bytes("record field order is not canonical", sizeof("record field order is not canonical") - 1);
+					s_record_104_drop(v_field);
+					s_record_105_drop(v_entry);
+					s_record_140_drop(v_program);
+					return s_return_1458;
+				}
+				if (((s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_140_get_types_take(s_record_140_copy(v_program))), s_record_104_get_kind_take(s_record_104_copy(v_field)))) == 6) && (s_record_104_get_kind_take(s_record_104_copy(v_field)) >= v_i)))
+				{
+					S_String * s_return_1459 = s_string_from_bytes("cyclic record type descriptor", sizeof("cyclic record type descriptor") - 1);
+					s_record_104_drop(v_field);
+					s_record_105_drop(v_entry);
+					s_record_140_drop(v_program);
+					return s_return_1459;
+				}
+				s_record_104_drop(v_field);
+			}
+		}
+		s_record_105_drop(v_entry);
+	}
+	{
+		S_Array * v_s_iter_1460 = s_record_140_get_functions_take(s_record_140_copy(v_program));
+		for (int64_t s_index_1460 = 0; s_index_1460 < (int64_t)s_array_length(v_s_iter_1460); ++s_index_1460)
+		{
+			s_record_139 v_function = s_ga_10139_get_borrow(v_s_iter_1460, s_index_1460);
+			const int64_t v_count = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)));
+			if ((((s_record_139_get_argument_count_take(s_record_139_copy(v_function)) < 0) || (s_record_139_get_argument_count_take(s_record_139_copy(v_function)) > v_count)) || (!s_mir_type_supported(s_record_140_get_types_take(s_record_140_copy(v_program)), s_record_139_get_return_type_take(s_record_139_copy(v_function))))))
+			{
+				S_String * s_return_1461 = s_string_from_bytes("invalid function signature", sizeof("invalid function signature") - 1);
 				s_record_139_drop(v_function);
-				s_array_release(v_s_iter_1438);
+				s_array_release(v_s_iter_1460);
 				s_record_140_drop(v_program);
-				return s_return_1439;
+				return s_return_1461;
 			}
 			{
-				S_Array_i64 * v_s_iter_1440 = s_record_139_get_register_types_take(s_record_139_copy(v_function));
-				for (int64_t s_index_1440 = 0; s_index_1440 < (int64_t)v_s_iter_1440->length; ++s_index_1440)
+				S_Array_i64 * v_s_iter_1462 = s_record_139_get_register_types_take(s_record_139_copy(v_function));
+				for (int64_t s_index_1462 = 0; s_index_1462 < (int64_t)v_s_iter_1462->length; ++s_index_1462)
 				{
-					int64_t v_type_id = s_array_i64_get_checked(v_s_iter_1440, s_index_1440);
-					if ((!s_mir_supported_type(v_type_id)))
+					int64_t v_type_id = s_array_i64_get_checked(v_s_iter_1462, s_index_1462);
+					if ((!s_mir_type_supported(s_record_140_get_types_take(s_record_140_copy(v_program)), v_type_id)))
 					{
-						S_String * s_return_1441 = s_string_from_bytes("unsupported register type", sizeof("unsupported register type") - 1);
-						s_array_i64_release(v_s_iter_1440);
+						S_String * s_return_1463 = s_string_from_bytes("unsupported register type", sizeof("unsupported register type") - 1);
+						s_array_i64_release(v_s_iter_1462);
 						s_record_139_drop(v_function);
-						s_array_release(v_s_iter_1438);
+						s_array_release(v_s_iter_1460);
 						s_record_140_drop(v_program);
-						return s_return_1441;
+						return s_return_1463;
 					}
 				}
-				s_array_i64_release(v_s_iter_1440);
+				s_array_i64_release(v_s_iter_1462);
 			}
 			s_record_139_drop(v_function);
 		}
-		s_array_release(v_s_iter_1438);
+		s_array_release(v_s_iter_1460);
 	}
 	{
-		S_Array * v_s_iter_1442 = s_record_140_get_functions_take(s_record_140_copy(v_program));
-		for (int64_t s_index_1442 = 0; s_index_1442 < (int64_t)s_array_length(v_s_iter_1442); ++s_index_1442)
+		S_Array * v_s_iter_1464 = s_record_140_get_functions_take(s_record_140_copy(v_program));
+		for (int64_t s_index_1464 = 0; s_index_1464 < (int64_t)s_array_length(v_s_iter_1464); ++s_index_1464)
 		{
-			s_record_139 v_function = s_ga_10139_get_borrow(v_s_iter_1442, s_index_1442);
+			s_record_139 v_function = s_ga_10139_get_borrow(v_s_iter_1464, s_index_1464);
 			if (((s_record_139_get_entry_take(s_record_139_copy(v_function)) < 0) || (s_record_139_get_entry_take(s_record_139_copy(v_function)) >= s_generic_array_length_take(s_record_139_get_blocks_take(s_record_139_copy(v_function))))))
 			{
-				S_String * s_return_1443 = s_string_from_bytes("invalid entry block", sizeof("invalid entry block") - 1);
+				S_String * s_return_1465 = s_string_from_bytes("invalid entry block", sizeof("invalid entry block") - 1);
 				s_record_139_drop(v_function);
-				s_array_release(v_s_iter_1442);
+				s_array_release(v_s_iter_1464);
 				s_record_140_drop(v_program);
-				return s_return_1443;
+				return s_return_1465;
 			}
 			{
-				S_Array * v_s_iter_1444 = s_record_139_get_blocks_take(s_record_139_copy(v_function));
-				for (int64_t s_index_1444 = 0; s_index_1444 < (int64_t)s_array_length(v_s_iter_1444); ++s_index_1444)
+				S_Array * v_s_iter_1466 = s_record_139_get_blocks_take(s_record_139_copy(v_function));
+				for (int64_t s_index_1466 = 0; s_index_1466 < (int64_t)s_array_length(v_s_iter_1466); ++s_index_1466)
 				{
-					s_record_138 v_block = s_ga_10138_get_borrow(v_s_iter_1444, s_index_1444);
+					s_record_138 v_block = s_ga_10138_get_borrow(v_s_iter_1466, s_index_1466);
 					{
-						S_Array * v_s_iter_1445 = s_record_138_get_instructions_take(s_record_138_copy(v_block));
-						for (int64_t s_index_1445 = 0; s_index_1445 < (int64_t)s_array_length(v_s_iter_1445); ++s_index_1445)
+						S_Array * v_s_iter_1467 = s_record_138_get_instructions_take(s_record_138_copy(v_block));
+						for (int64_t s_index_1467 = 0; s_index_1467 < (int64_t)s_array_length(v_s_iter_1467); ++s_index_1467)
 						{
-							s_record_136 v_ins = s_ga_10136_get_borrow(v_s_iter_1445, s_index_1445);
+							s_record_136 v_ins = s_ga_10136_get_borrow(v_s_iter_1467, s_index_1467);
 							S_String * v_error = s_mir_verify_instruction(s_record_140_copy(v_program), s_record_139_copy(v_function), s_record_136_copy(v_ins));
 							if ((s_string_compare_take(s_string_retain(v_error), s_string_from_bytes("", sizeof("") - 1)) != 0))
 							{
-								S_String * s_return_1446 = s_string_retain(v_error);
+								S_String * s_return_1468 = s_string_retain(v_error);
 								s_string_release(v_error);
 								s_record_136_drop(v_ins);
-								s_array_release(v_s_iter_1445);
+								s_array_release(v_s_iter_1467);
 								s_record_138_drop(v_block);
-								s_array_release(v_s_iter_1444);
+								s_array_release(v_s_iter_1466);
 								s_record_139_drop(v_function);
-								s_array_release(v_s_iter_1442);
+								s_array_release(v_s_iter_1464);
 								s_record_140_drop(v_program);
-								return s_return_1446;
+								return s_return_1468;
 							}
 							s_string_release(v_error);
 							s_record_136_drop(v_ins);
 						}
-						s_array_release(v_s_iter_1445);
+						s_array_release(v_s_iter_1467);
 					}
 					s_record_137 v_term = s_record_138_get_terminator_take(s_record_138_copy(v_block));
 					if (((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 1) || (s_record_137_get_kind_take(s_record_137_copy(v_term)) == 2)))
 					{
 						if (((s_record_137_get_target_take(s_record_137_copy(v_term)) < 0) || (s_record_137_get_target_take(s_record_137_copy(v_term)) >= s_generic_array_length_take(s_record_139_get_blocks_take(s_record_139_copy(v_function))))))
 						{
-							S_String * s_return_1447 = s_string_from_bytes("invalid jump target", sizeof("invalid jump target") - 1);
+							S_String * s_return_1469 = s_string_from_bytes("invalid jump target", sizeof("invalid jump target") - 1);
 							s_record_137_drop(v_term);
 							s_record_138_drop(v_block);
-							s_array_release(v_s_iter_1444);
+							s_array_release(v_s_iter_1466);
 							s_record_139_drop(v_function);
-							s_array_release(v_s_iter_1442);
+							s_array_release(v_s_iter_1464);
 							s_record_140_drop(v_program);
-							return s_return_1447;
+							return s_return_1469;
 						}
 					}
 					if ((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 2))
 					{
 						if (((s_record_137_get_alternative_take(s_record_137_copy(v_term)) < 0) || (s_record_137_get_alternative_take(s_record_137_copy(v_term)) >= s_generic_array_length_take(s_record_139_get_blocks_take(s_record_139_copy(v_function))))))
 						{
-							S_String * s_return_1448 = s_string_from_bytes("invalid branch target", sizeof("invalid branch target") - 1);
+							S_String * s_return_1470 = s_string_from_bytes("invalid branch target", sizeof("invalid branch target") - 1);
 							s_record_137_drop(v_term);
 							s_record_138_drop(v_block);
-							s_array_release(v_s_iter_1444);
+							s_array_release(v_s_iter_1466);
 							s_record_139_drop(v_function);
-							s_array_release(v_s_iter_1442);
+							s_array_release(v_s_iter_1464);
 							s_record_140_drop(v_program);
-							return s_return_1448;
+							return s_return_1470;
 						}
 						if ((!s_mir_register_valid(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_137_get_operand_take(s_record_137_copy(v_term)), 3)))
 						{
-							S_String * s_return_1449 = s_string_from_bytes("branch condition must be bool", sizeof("branch condition must be bool") - 1);
+							S_String * s_return_1471 = s_string_from_bytes("branch condition must be bool", sizeof("branch condition must be bool") - 1);
 							s_record_137_drop(v_term);
 							s_record_138_drop(v_block);
-							s_array_release(v_s_iter_1444);
+							s_array_release(v_s_iter_1466);
 							s_record_139_drop(v_function);
-							s_array_release(v_s_iter_1442);
+							s_array_release(v_s_iter_1464);
 							s_record_140_drop(v_program);
-							return s_return_1449;
+							return s_return_1471;
 						}
 					}
 					else if ((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 3))
 					{
 						if ((!s_mir_register_valid(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_137_get_operand_take(s_record_137_copy(v_term)), s_record_139_get_return_type_take(s_record_139_copy(v_function)))))
 						{
-							S_String * s_return_1450 = s_string_from_bytes("return type mismatch", sizeof("return type mismatch") - 1);
+							S_String * s_return_1472 = s_string_from_bytes("return type mismatch", sizeof("return type mismatch") - 1);
 							s_record_137_drop(v_term);
 							s_record_138_drop(v_block);
-							s_array_release(v_s_iter_1444);
+							s_array_release(v_s_iter_1466);
 							s_record_139_drop(v_function);
-							s_array_release(v_s_iter_1442);
+							s_array_release(v_s_iter_1464);
 							s_record_140_drop(v_program);
-							return s_return_1450;
+							return s_return_1472;
 						}
 					}
 					else if (((s_record_137_get_kind_take(s_record_137_copy(v_term)) != 1) && (s_record_137_get_kind_take(s_record_137_copy(v_term)) != 4)))
 					{
-						S_String * s_return_1451 = s_string_from_bytes("invalid block terminator", sizeof("invalid block terminator") - 1);
+						S_String * s_return_1473 = s_string_from_bytes("invalid block terminator", sizeof("invalid block terminator") - 1);
 						s_record_137_drop(v_term);
 						s_record_138_drop(v_block);
-						s_array_release(v_s_iter_1444);
+						s_array_release(v_s_iter_1466);
 						s_record_139_drop(v_function);
-						s_array_release(v_s_iter_1442);
+						s_array_release(v_s_iter_1464);
 						s_record_140_drop(v_program);
-						return s_return_1451;
+						return s_return_1473;
 					}
 					s_record_137_drop(v_term);
 					s_record_138_drop(v_block);
 				}
-				s_array_release(v_s_iter_1444);
+				s_array_release(v_s_iter_1466);
 			}
 			s_record_139_drop(v_function);
 		}
-		s_array_release(v_s_iter_1442);
+		s_array_release(v_s_iter_1464);
 	}
-	S_String * s_return_1452 = s_string_from_bytes("", sizeof("") - 1);
+	S_String * s_return_1474 = s_string_from_bytes("", sizeof("") - 1);
 	s_record_140_drop(v_program);
-	return s_return_1452;
+	return s_return_1474;
 }
 
-s_record_143 s_MirSourceBinding(S_String * v_name, int64_t v_slot, int64_t v_depth)
+s_record_144 s_MirSourceBinding(S_String * v_name, int64_t v_slot, int64_t v_depth)
 {
-	s_record_143 s_constructor_result = {0};
+	s_record_144 s_constructor_result = {0};
 	s_constructor_result.name = v_name;
 	s_constructor_result.slot = v_slot;
 	s_constructor_result.depth = v_depth;
@@ -21098,369 +21627,550 @@ s_record_133 s_MirCallTarget(int64_t v_source, int64_t v_specialization)
 	return s_constructor_result;
 }
 
-s_record_144 s_MirLowerState(s_record_102 v_tree, S_Array * v_hir)
+s_record_145 s_MirLowerField(S_String * v_name, int64_t v_slot)
 {
-	s_record_144 s_constructor_result = {0};
+	s_record_145 s_constructor_result = {0};
+	s_constructor_result.name = v_name;
+	s_constructor_result.slot = v_slot;
+	return s_constructor_result;
+}
+
+s_record_146 s_MirLowerState(s_record_102 v_tree, S_Array * v_hir)
+{
+	s_record_146 s_constructor_result = {0};
 	s_constructor_result.tree = v_tree;
 	s_constructor_result.hir = v_hir;
 	s_constructor_result.register_types = s_array_i64_make(0, NULL);
 	s_constructor_result.blocks = s_ga_10138_make_take(0, NULL);
 	s_constructor_result.active = 0;
-	s_constructor_result.bindings = s_ga_10143_make_take(0, NULL);
+	s_constructor_result.bindings = s_ga_10144_make_take(0, NULL);
 	s_constructor_result.depth = 0;
 	s_constructor_result.error = s_string_from_bytes("", sizeof("") - 1);
 	s_constructor_result.call_targets = s_ga_10133_make_take(0, NULL);
+	s_constructor_result.types = s_new_type_table();
 	return s_constructor_result;
 }
 
-s_record_145 s_MirLowerExpr(s_record_144 v_state, int64_t v_slot)
+s_record_147 s_MirLowerExpr(s_record_146 v_state, int64_t v_slot)
 {
-	s_record_145 s_constructor_result = {0};
+	s_record_147 s_constructor_result = {0};
 	s_constructor_result.state = v_state;
 	s_constructor_result.slot = v_slot;
 	return s_constructor_result;
 }
 
-s_record_146 s_MirLowerResult(s_record_139 v_function, S_String * v_error)
+s_record_148 s_MirLowerResult(s_record_139 v_function, S_String * v_error)
 {
-	s_record_146 s_constructor_result = {0};
+	s_record_148 s_constructor_result = {0};
 	s_constructor_result.function = v_function;
 	s_constructor_result.error = v_error;
 	return s_constructor_result;
 }
 
-s_record_144 s_mir_lower_error(s_record_144 v_state, S_String * v_message)
+s_record_146 s_mir_lower_error(s_record_146 v_state, S_String * v_message)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	if ((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))
+	s_record_146 v_next = s_record_146_copy(v_state);
+	if ((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))
 	{
-		S_String * s_field_1453 = s_string_retain(v_message);
+		S_String * s_field_1475 = s_string_retain(v_message);
 		s_string_release(v_next.error);
-		v_next.error = s_field_1453;
+		v_next.error = s_field_1475;
 	}
-	s_record_144 s_return_1454 = s_record_144_copy(v_next);
-	s_record_144_drop(v_next);
+	s_record_146 s_return_1476 = s_record_146_copy(v_next);
+	s_record_146_drop(v_next);
 	s_string_release(v_message);
-	s_record_144_drop(v_state);
-	return s_return_1454;
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1476;
+	s_record_146_drop(v_next);
 }
 
-s_record_144 s_mir_lower_block(s_record_144 v_state)
+s_record_146 s_mir_lower_block(s_record_146 v_state)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	v_next.active = s_generic_array_length_take(s_record_144_get_blocks_take(s_record_144_copy(v_next)));
-	s_record_138 s_item_1455 = s_MirBlock(s_ga_10136_make_take(0, NULL), s_MirTerminator(0, (-1), (-1), (-1), s_string_from_bytes("", sizeof("") - 1)));
-	v_next.blocks = s_ga_10138_append_take(v_next.blocks, s_item_1455);
-	s_record_144 s_return_1456 = s_record_144_copy(v_next);
-	s_record_144_drop(v_next);
-	s_record_144_drop(v_state);
-	return s_return_1456;
-	s_record_144_drop(v_next);
+	s_record_146 v_next = s_record_146_copy(v_state);
+	v_next.active = s_generic_array_length_take(s_record_146_get_blocks_take(s_record_146_copy(v_next)));
+	s_record_138 s_item_1477 = s_MirBlock(s_ga_10136_make_take(0, NULL), s_MirTerminator(0, (-1), (-1), (-1), s_string_from_bytes("", sizeof("") - 1)));
+	v_next.blocks = s_ga_10138_append_take(v_next.blocks, s_item_1477);
+	s_record_146 s_return_1478 = s_record_146_copy(v_next);
+	s_record_146_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1478;
+	s_record_146_drop(v_next);
 }
 
-bool s_mir_lower_ended(s_record_144 v_state)
+bool s_mir_lower_ended(s_record_146 v_state)
 {
-	bool s_return_1457 = (s_record_137_get_kind_take(s_record_138_get_terminator_take(s_ga_10138_get_checked_take(s_record_144_get_blocks_take(s_record_144_copy(v_state)), s_record_144_get_active_take(s_record_144_copy(v_state))))) != 0);
-	s_record_144_drop(v_state);
-	return s_return_1457;
+	bool s_return_1479 = (s_record_137_get_kind_take(s_record_138_get_terminator_take(s_ga_10138_get_checked_take(s_record_146_get_blocks_take(s_record_146_copy(v_state)), s_record_146_get_active_take(s_record_146_copy(v_state))))) != 0);
+	s_record_146_drop(v_state);
+	return s_return_1479;
 }
 
-s_record_144 s_mir_lower_emit(s_record_144 v_state, s_record_136 v_instruction)
+s_record_146 s_mir_lower_emit(s_record_146 v_state, s_record_136 v_instruction)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	s_record_138 v_block = s_ga_10138_get_checked_take(s_record_144_get_blocks_take(s_record_144_copy(v_next)), s_record_144_get_active_take(s_record_144_copy(v_next)));
-	s_ga_10138_set_take(&v_next.blocks, s_record_144_get_active_take(s_record_144_copy(v_next)), s_MirBlock(s_ga_10136_append_take(s_record_138_get_instructions_take(s_record_138_copy(v_block)), s_record_136_copy(v_instruction)), s_record_138_get_terminator_take(s_record_138_copy(v_block))));
-	s_record_144 s_return_1458 = s_record_144_copy(v_next);
+	s_record_146 v_next = s_record_146_copy(v_state);
+	s_record_138 v_block = s_ga_10138_get_checked_take(s_record_146_get_blocks_take(s_record_146_copy(v_next)), s_record_146_get_active_take(s_record_146_copy(v_next)));
+	s_ga_10138_set_take(&v_next.blocks, s_record_146_get_active_take(s_record_146_copy(v_next)), s_MirBlock(s_ga_10136_append_take(s_record_138_get_instructions_take(s_record_138_copy(v_block)), s_record_136_copy(v_instruction)), s_record_138_get_terminator_take(s_record_138_copy(v_block))));
+	s_record_146 s_return_1480 = s_record_146_copy(v_next);
 	s_record_138_drop(v_block);
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_next);
 	s_record_136_drop(v_instruction);
-	s_record_144_drop(v_state);
-	return s_return_1458;
+	s_record_146_drop(v_state);
+	return s_return_1480;
 	s_record_138_drop(v_block);
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_next);
 }
 
-s_record_144 s_mir_lower_end(s_record_144 v_state, s_record_137 v_term)
+s_record_146 s_mir_lower_end(s_record_146 v_state, s_record_137 v_term)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	s_record_138 v_block = s_ga_10138_get_checked_take(s_record_144_get_blocks_take(s_record_144_copy(v_next)), s_record_144_get_active_take(s_record_144_copy(v_next)));
-	s_ga_10138_set_take(&v_next.blocks, s_record_144_get_active_take(s_record_144_copy(v_next)), s_MirBlock(s_record_138_get_instructions_take(s_record_138_copy(v_block)), s_record_137_copy(v_term)));
-	s_record_144 s_return_1459 = s_record_144_copy(v_next);
+	s_record_146 v_next = s_record_146_copy(v_state);
+	s_record_138 v_block = s_ga_10138_get_checked_take(s_record_146_get_blocks_take(s_record_146_copy(v_next)), s_record_146_get_active_take(s_record_146_copy(v_next)));
+	s_ga_10138_set_take(&v_next.blocks, s_record_146_get_active_take(s_record_146_copy(v_next)), s_MirBlock(s_record_138_get_instructions_take(s_record_138_copy(v_block)), s_record_137_copy(v_term)));
+	s_record_146 s_return_1481 = s_record_146_copy(v_next);
 	s_record_138_drop(v_block);
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_next);
 	s_record_137_drop(v_term);
-	s_record_144_drop(v_state);
-	return s_return_1459;
+	s_record_146_drop(v_state);
+	return s_return_1481;
 	s_record_138_drop(v_block);
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_next);
 }
 
-s_record_144 s_mir_lower_register(s_record_144 v_state, int64_t v_type_id)
+s_record_146 s_mir_lower_register(s_record_146 v_state, int64_t v_type_id)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	int64_t s_item_1460 = v_type_id;
-	v_next.register_types = s_array_i64_append_take(v_next.register_types, s_item_1460);
-	s_record_144 s_return_1461 = s_record_144_copy(v_next);
-	s_record_144_drop(v_next);
-	s_record_144_drop(v_state);
-	return s_return_1461;
-	s_record_144_drop(v_next);
+	s_record_146 v_next = s_record_146_copy(v_state);
+	int64_t s_item_1482 = v_type_id;
+	v_next.register_types = s_array_i64_append_take(v_next.register_types, s_item_1482);
+	s_record_146 s_return_1483 = s_record_146_copy(v_next);
+	s_record_146_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1483;
+	s_record_146_drop(v_next);
 }
 
-int64_t s_mir_lower_type(s_record_144 v_state, int64_t v_source, int64_t v_operation)
+int64_t s_mir_lower_type(s_record_146 v_state, int64_t v_source, int64_t v_operation)
 {
 	{
-		S_Array * v_s_iter_1462 = s_record_144_get_hir_take(s_record_144_copy(v_state));
-		for (int64_t s_index_1462 = 0; s_index_1462 < (int64_t)s_array_length(v_s_iter_1462); ++s_index_1462)
+		S_Array * v_s_iter_1484 = s_record_146_get_hir_take(s_record_146_copy(v_state));
+		for (int64_t s_index_1484 = 0; s_index_1484 < (int64_t)s_array_length(v_s_iter_1484); ++s_index_1484)
 		{
-			s_record_108 v_node = s_ga_10108_get_borrow(v_s_iter_1462, s_index_1462);
+			s_record_108 v_node = s_ga_10108_get_borrow(v_s_iter_1484, s_index_1484);
 			if (((s_record_108_get_source_take(s_record_108_copy(v_node)) == v_source) && (s_record_108_get_operation_take(s_record_108_copy(v_node)) == v_operation)))
 			{
-				int64_t s_return_1463 = s_record_108_get_type_id_take(s_record_108_copy(v_node));
+				int64_t s_return_1485 = s_record_108_get_type_id_take(s_record_108_copy(v_node));
 				s_record_108_drop(v_node);
-				s_array_release(v_s_iter_1462);
-				s_record_144_drop(v_state);
-				return s_return_1463;
+				s_array_release(v_s_iter_1484);
+				s_record_146_drop(v_state);
+				return s_return_1485;
 			}
 			s_record_108_drop(v_node);
 		}
-		s_array_release(v_s_iter_1462);
+		s_array_release(v_s_iter_1484);
 	}
-	int64_t s_return_1464 = 0;
-	s_record_144_drop(v_state);
-	return s_return_1464;
+	int64_t s_return_1486 = 0;
+	s_record_146_drop(v_state);
+	return s_return_1486;
 }
 
-int64_t s_mir_lower_binding(s_record_144 v_state, S_String * v_name)
+int64_t s_mir_lower_field_index(s_record_146 v_state, int64_t v_source)
 {
-	for (int64_t v_i = 0, s_bound_1465 = s_generic_array_length_take(s_record_144_get_bindings_take(s_record_144_copy(v_state))); v_i < s_bound_1465; ++v_i)
 	{
-		const int64_t v_j = ((s_generic_array_length_take(s_record_144_get_bindings_take(s_record_144_copy(v_state))) - 1) - v_i);
-		if ((s_string_compare_take(s_record_143_get_name_take(s_ga_10143_get_checked_take(s_record_144_get_bindings_take(s_record_144_copy(v_state)), v_j)), s_string_retain(v_name)) == 0))
+		S_Array * v_s_iter_1487 = s_record_146_get_hir_take(s_record_146_copy(v_state));
+		for (int64_t s_index_1487 = 0; s_index_1487 < (int64_t)s_array_length(v_s_iter_1487); ++s_index_1487)
 		{
-			int64_t s_return_1466 = s_record_143_get_slot_take(s_ga_10143_get_checked_take(s_record_144_get_bindings_take(s_record_144_copy(v_state)), v_j));
+			s_record_108 v_node = s_ga_10108_get_borrow(v_s_iter_1487, s_index_1487);
+			if (((s_record_108_get_source_take(s_record_108_copy(v_node)) == v_source) && (s_record_108_get_operation_take(s_record_108_copy(v_node)) == 1)))
+			{
+				int64_t s_return_1488 = s_record_108_get_field_index_take(s_record_108_copy(v_node));
+				s_record_108_drop(v_node);
+				s_array_release(v_s_iter_1487);
+				s_record_146_drop(v_state);
+				return s_return_1488;
+			}
+			s_record_108_drop(v_node);
+		}
+		s_array_release(v_s_iter_1487);
+	}
+	int64_t s_return_1489 = (-1);
+	s_record_146_drop(v_state);
+	return s_return_1489;
+}
+
+int64_t s_mir_lower_binding(s_record_146 v_state, S_String * v_name)
+{
+	for (int64_t v_i = 0, s_bound_1490 = s_generic_array_length_take(s_record_146_get_bindings_take(s_record_146_copy(v_state))); v_i < s_bound_1490; ++v_i)
+	{
+		const int64_t v_j = ((s_generic_array_length_take(s_record_146_get_bindings_take(s_record_146_copy(v_state))) - 1) - v_i);
+		if ((s_string_compare_take(s_record_144_get_name_take(s_ga_10144_get_checked_take(s_record_146_get_bindings_take(s_record_146_copy(v_state)), v_j)), s_string_retain(v_name)) == 0))
+		{
+			int64_t s_return_1491 = s_record_144_get_slot_take(s_ga_10144_get_checked_take(s_record_146_get_bindings_take(s_record_146_copy(v_state)), v_j));
 			s_string_release(v_name);
-			s_record_144_drop(v_state);
-			return s_return_1466;
+			s_record_146_drop(v_state);
+			return s_return_1491;
 		}
 	}
-	int64_t s_return_1467 = (-1);
+	int64_t s_return_1492 = (-1);
 	s_string_release(v_name);
-	s_record_144_drop(v_state);
-	return s_return_1467;
+	s_record_146_drop(v_state);
+	return s_return_1492;
 }
 
 int64_t s_mir_lower_literal(S_String * v_text)
 {
 	int64_t v_value = 0;
-	for (int64_t v_i = 0, s_bound_1468 = s_string_length_take(s_string_retain(v_text)); v_i < s_bound_1468; ++v_i)
+	for (int64_t v_i = 0, s_bound_1493 = s_string_length_take(s_string_retain(v_text)); v_i < s_bound_1493; ++v_i)
 	{
-		S_Optional_i64 s_option_1469 = s_string_byte_at_take(s_string_retain(v_text), v_i);
-		int64_t s_fallback_1469;
-		if (s_option_1469.has_value) {
-			s_fallback_1469 = s_option_1469.value;
+		S_Optional_i64 s_option_1494 = s_string_byte_at_take(s_string_retain(v_text), v_i);
+		int64_t s_fallback_1494;
+		if (s_option_1494.has_value) {
+			s_fallback_1494 = s_option_1494.value;
 		} else {
-			s_fallback_1469 = 48;
+			s_fallback_1494 = 48;
 		}
-		v_value = (((v_value * 10) + s_fallback_1469) - 48);
+		v_value = (((v_value * 10) + s_fallback_1494) - 48);
 	}
-	int64_t s_return_1470 = v_value;
+	int64_t s_return_1495 = v_value;
 	s_string_release(v_text);
-	return s_return_1470;
+	return s_return_1495;
 }
 
-s_record_147 s_MirLowerString(S_String * v_value, S_String * v_error)
+s_record_149 s_MirLowerString(S_String * v_value, S_String * v_error)
 {
-	s_record_147 s_constructor_result = {0};
+	s_record_149 s_constructor_result = {0};
 	s_constructor_result.value = v_value;
 	s_constructor_result.error = v_error;
 	return s_constructor_result;
 }
 
-s_record_147 s_mir_lower_string(S_String * v_text)
+s_record_149 s_mir_lower_string(S_String * v_text)
 {
 	S_String * v_result = s_string_from_bytes("", sizeof("") - 1);
 	int64_t v_i = 1;
 	while (true) {
 		if (!((v_i < (s_string_length_take(s_string_retain(v_text)) - 1)))) break;
-		S_Optional_i64 s_option_1471 = s_string_byte_at_take(s_string_retain(v_text), v_i);
-		int64_t s_fallback_1471;
-		if (s_option_1471.has_value) {
-			s_fallback_1471 = s_option_1471.value;
+		S_Optional_i64 s_option_1496 = s_string_byte_at_take(s_string_retain(v_text), v_i);
+		int64_t s_fallback_1496;
+		if (s_option_1496.has_value) {
+			s_fallback_1496 = s_option_1496.value;
 		} else {
-			s_fallback_1471 = 0;
+			s_fallback_1496 = 0;
 		}
-		const int64_t v_byte = s_fallback_1471;
+		const int64_t v_byte = s_fallback_1496;
 		if ((v_byte == 92))
 		{
 			v_i += 1;
 			if ((v_i >= (s_string_length_take(s_string_retain(v_text)) - 1)))
 			{
-				s_record_147 s_return_1472 = s_MirLowerString(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("unterminated MIR string escape", sizeof("unterminated MIR string escape") - 1));
+				s_record_149 s_return_1497 = s_MirLowerString(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("unterminated MIR string escape", sizeof("unterminated MIR string escape") - 1));
 				s_string_release(v_result);
 				s_string_release(v_text);
-				return s_return_1472;
+				return s_return_1497;
 			}
-			S_Optional_i64 s_option_1473 = s_string_byte_at_take(s_string_retain(v_text), v_i);
-			int64_t s_fallback_1473;
-			if (s_option_1473.has_value) {
-				s_fallback_1473 = s_option_1473.value;
+			S_Optional_i64 s_option_1498 = s_string_byte_at_take(s_string_retain(v_text), v_i);
+			int64_t s_fallback_1498;
+			if (s_option_1498.has_value) {
+				s_fallback_1498 = s_option_1498.value;
 			} else {
-				s_fallback_1473 = 0;
+				s_fallback_1498 = 0;
 			}
-			const int64_t v_escaped = s_fallback_1473;
+			const int64_t v_escaped = s_fallback_1498;
 			if ((v_escaped == 110))
 			{
-				S_String *s_value_1474 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\n", sizeof("\n") - 1));
+				S_String *s_value_1499 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\n", sizeof("\n") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1474;
+				v_result = s_value_1499;
 			}
 			else if ((v_escaped == 116))
 			{
-				S_String *s_value_1475 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1));
+				S_String *s_value_1500 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1475;
+				v_result = s_value_1500;
 			}
 			else if ((v_escaped == 114))
 			{
-				S_String *s_value_1476 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\r", sizeof("\r") - 1));
+				S_String *s_value_1501 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\r", sizeof("\r") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1476;
+				v_result = s_value_1501;
 			}
 			else if ((v_escaped == 92))
 			{
-				S_String *s_value_1477 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\\", sizeof("\\") - 1));
+				S_String *s_value_1502 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\\", sizeof("\\") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1477;
+				v_result = s_value_1502;
 			}
 			else if ((v_escaped == 34))
 			{
-				S_String *s_value_1478 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\"", sizeof("\"") - 1));
+				S_String *s_value_1503 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\"", sizeof("\"") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1478;
+				v_result = s_value_1503;
 			}
 			else if ((v_escaped == 39))
 			{
-				S_String *s_value_1479 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("'", sizeof("'") - 1));
+				S_String *s_value_1504 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("'", sizeof("'") - 1));
 				s_string_release(v_result);
-				v_result = s_value_1479;
+				v_result = s_value_1504;
 			}
 			else
 			{
-				s_record_147 s_return_1480 = s_MirLowerString(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("unsupported MIR string escape", sizeof("unsupported MIR string escape") - 1));
+				s_record_149 s_return_1505 = s_MirLowerString(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("unsupported MIR string escape", sizeof("unsupported MIR string escape") - 1));
 				s_string_release(v_result);
 				s_string_release(v_text);
-				return s_return_1480;
+				return s_return_1505;
 			}
 		}
 		else
 		{
-			S_String *s_value_1481 = s_string_concat_take(s_string_retain(v_result), s_string_slice_take(s_string_retain(v_text), v_i, (v_i + 1)));
+			S_String *s_value_1506 = s_string_concat_take(s_string_retain(v_result), s_string_slice_take(s_string_retain(v_text), v_i, (v_i + 1)));
 			s_string_release(v_result);
-			v_result = s_value_1481;
+			v_result = s_value_1506;
 		}
 		v_i += 1;
 	}
-	s_record_147 s_return_1482 = s_MirLowerString(s_string_retain(v_result), s_string_from_bytes("", sizeof("") - 1));
+	s_record_149 s_return_1507 = s_MirLowerString(s_string_retain(v_result), s_string_from_bytes("", sizeof("") - 1));
 	s_string_release(v_result);
 	s_string_release(v_text);
-	return s_return_1482;
+	return s_return_1507;
 	s_string_release(v_result);
 }
 
-s_record_145 s_mir_lower_expression(s_record_144 v_state, int64_t v_id)
+s_record_147 s_mir_lower_expression(s_record_146 v_state, int64_t v_id)
 {
-	if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-		s_record_145 s_return_1483 = s_MirLowerExpr(s_record_144_copy(v_state), (-1));
-		s_record_144_drop(v_state);
-		return s_return_1483;
+	if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+		s_record_147 s_return_1508 = s_MirLowerExpr(s_record_146_copy(v_state), (-1));
+		s_record_146_drop(v_state);
+		return s_return_1508;
 	}
-	s_record_101 v_node = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_state))), v_id);
-	S_String * v_text = s_hir_ast_text(s_record_144_get_tree_take(s_record_144_copy(v_state)), v_id);
-	s_record_144 v_next = s_record_144_copy(v_state);
+	s_record_101 v_node = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_state))), v_id);
+	S_String * v_text = s_hir_ast_text(s_record_146_get_tree_take(s_record_146_copy(v_state)), v_id);
+	s_record_146 v_next = s_record_146_copy(v_state);
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 29))
 	{
-		if ((s_mir_lower_type(s_record_144_copy(v_state), v_id, 3) == 0))
+		if ((s_mir_lower_type(s_record_146_copy(v_state), v_id, 3) == 0))
 		{
-			s_record_145 s_return_1484 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_state), s_string_from_bytes("missing typed name", sizeof("missing typed name") - 1)), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1509 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_state), s_string_from_bytes("missing typed name", sizeof("missing typed name") - 1)), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1484;
+			s_record_146_drop(v_state);
+			return s_return_1509;
 		}
-		const int64_t v_register = s_mir_lower_binding(s_record_144_copy(v_state), s_string_retain(v_text));
+		const int64_t v_register = s_mir_lower_binding(s_record_146_copy(v_state), s_string_retain(v_text));
 		if ((v_register < 0))
 		{
-			s_record_145 s_return_1485 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_state), s_string_concat_take(s_string_concat_take(s_string_from_bytes("unknown MIR binding '", sizeof("unknown MIR binding '") - 1), s_string_retain(v_text)), s_string_from_bytes("'", sizeof("'") - 1))), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1510 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_state), s_string_concat_take(s_string_concat_take(s_string_from_bytes("unknown MIR binding '", sizeof("unknown MIR binding '") - 1), s_string_retain(v_text)), s_string_from_bytes("'", sizeof("'") - 1))), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1485;
+			s_record_146_drop(v_state);
+			return s_return_1510;
 		}
-		s_record_145 s_return_1486 = s_MirLowerExpr(s_record_144_copy(v_state), v_register);
-		s_record_144_drop(v_next);
+		s_record_147 s_return_1511 = s_MirLowerExpr(s_record_146_copy(v_state), v_register);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1486;
+		s_record_146_drop(v_state);
+		return s_return_1511;
+	}
+	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 33))
+	{
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_next), v_id, 7);
+		if (((!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_next)), v_type_id)) || (s_record_105_get_tag_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_146_get_types_take(s_record_146_copy(v_next))), v_type_id)) != 6)))
+		{
+			s_record_147 s_return_1512 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("missing typed record", sizeof("missing typed record") - 1)), (-1));
+			s_record_146_drop(v_next);
+			s_string_release(v_text);
+			s_record_101_drop(v_node);
+			s_record_146_drop(v_state);
+			return s_return_1512;
+		}
+		S_Array * v_evaluated = s_ga_10145_make_take(0, NULL);
+		for (int64_t v_i = 0, s_bound_1513 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1513; ++v_i)
+		{
+			const int64_t v_field = s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, v_i);
+			if ((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_field)) != 19))
+			{
+				s_record_147 s_return_1514 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("MIR record spread/delete is not supported yet", sizeof("MIR record spread/delete is not supported yet") - 1)), (-1));
+				s_array_release(v_evaluated);
+				s_record_146_drop(v_next);
+				s_string_release(v_text);
+				s_record_101_drop(v_node);
+				s_record_146_drop(v_state);
+				return s_return_1514;
+			}
+			s_record_147 v_expression = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_field, 0));
+			s_record_146 s_value_1515 = s_record_147_get_state_take(s_record_147_copy(v_expression));
+			s_record_146_drop(v_next);
+			v_next = s_value_1515;
+			if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+				s_record_147 s_return_1516 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+				s_record_147_drop(v_expression);
+				s_array_release(v_evaluated);
+				s_record_146_drop(v_next);
+				s_string_release(v_text);
+				s_record_101_drop(v_node);
+				s_record_146_drop(v_state);
+				return s_return_1516;
+			}
+			s_record_145 s_item_1517 = s_MirLowerField(s_hir_ast_text(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_field), s_record_147_get_slot_take(s_record_147_copy(v_expression)));
+			v_evaluated = s_ga_10145_append_take(v_evaluated, s_item_1517);
+			s_record_147_drop(v_expression);
+		}
+		S_Array * v_layout = s_record_105_get_fields_take(s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_146_get_types_take(s_record_146_copy(v_next))), v_type_id));
+		S_Array_i64 * v_inputs = s_array_i64_make(0, NULL);
+		{
+			S_Array * v_s_iter_1518 = s_array_retain(v_layout);
+			for (int64_t s_index_1518 = 0; s_index_1518 < (int64_t)s_array_length(v_s_iter_1518); ++s_index_1518)
+			{
+				s_record_104 v_field = s_ga_10104_get_borrow(v_s_iter_1518, s_index_1518);
+				int64_t v_source = (-1);
+				{
+					S_Array * v_s_iter_1519 = s_array_retain(v_evaluated);
+					for (int64_t s_index_1519 = 0; s_index_1519 < (int64_t)s_array_length(v_s_iter_1519); ++s_index_1519)
+					{
+						s_record_145 v_candidate = s_ga_10145_get_borrow(v_s_iter_1519, s_index_1519);
+						if ((s_string_compare_take(s_record_145_get_name_take(s_record_145_copy(v_candidate)), s_record_104_get_name_take(s_record_104_copy(v_field))) == 0))
+						{
+							v_source = s_record_145_get_slot_take(s_record_145_copy(v_candidate));
+						}
+						s_record_145_drop(v_candidate);
+					}
+					s_array_release(v_s_iter_1519);
+				}
+				if ((v_source < 0))
+				{
+					s_record_147 s_return_1520 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("missing canonical MIR record field", sizeof("missing canonical MIR record field") - 1)), (-1));
+					s_record_104_drop(v_field);
+					s_array_release(v_s_iter_1518);
+					s_array_i64_release(v_inputs);
+					s_array_release(v_layout);
+					s_array_release(v_evaluated);
+					s_record_146_drop(v_next);
+					s_string_release(v_text);
+					s_record_101_drop(v_node);
+					s_record_146_drop(v_state);
+					return s_return_1520;
+				}
+				int64_t s_item_1521 = v_source;
+				v_inputs = s_array_i64_append_take(v_inputs, s_item_1521);
+				s_record_104_drop(v_field);
+			}
+			s_array_release(v_s_iter_1518);
+		}
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1522 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1522;
+		s_record_146 s_value_1523 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_record_new(v_dst, s_array_i64_retain(v_inputs)));
+		s_record_146_drop(v_next);
+		v_next = s_value_1523;
+		s_record_147 s_return_1524 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_array_i64_release(v_inputs);
+		s_array_release(v_layout);
+		s_array_release(v_evaluated);
+		s_record_146_drop(v_next);
+		s_string_release(v_text);
+		s_record_101_drop(v_node);
+		s_record_146_drop(v_state);
+		return s_return_1524;
+		s_array_i64_release(v_inputs);
+		s_array_release(v_layout);
+		s_array_release(v_evaluated);
+	}
+	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 4))
+	{
+		s_record_147 v_owner = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0));
+		s_record_146 s_value_1525 = s_record_147_get_state_take(s_record_147_copy(v_owner));
+		s_record_146_drop(v_next);
+		v_next = s_value_1525;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_147 s_return_1526 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+			s_record_147_drop(v_owner);
+			s_record_146_drop(v_next);
+			s_string_release(v_text);
+			s_record_101_drop(v_node);
+			s_record_146_drop(v_state);
+			return s_return_1526;
+		}
+		const int64_t v_field_type = s_mir_lower_type(s_record_146_copy(v_next), v_id, 1);
+		const int64_t v_index = s_mir_lower_field_index(s_record_146_copy(v_next), v_id);
+		if (((v_index < 0) || (!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_next)), v_field_type))))
+		{
+			s_record_147 s_return_1527 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("missing typed MIR record field", sizeof("missing typed MIR record field") - 1)), (-1));
+			s_record_147_drop(v_owner);
+			s_record_146_drop(v_next);
+			s_string_release(v_text);
+			s_record_101_drop(v_node);
+			s_record_146_drop(v_state);
+			return s_return_1527;
+		}
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1528 = s_mir_lower_register(s_record_146_copy(v_next), v_field_type);
+		s_record_146_drop(v_next);
+		v_next = s_value_1528;
+		s_record_146 s_value_1529 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_record_get(v_dst, s_record_147_get_slot_take(s_record_147_copy(v_owner)), v_index));
+		s_record_146_drop(v_next);
+		v_next = s_value_1529;
+		s_record_147 s_return_1530 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_record_147_drop(v_owner);
+		s_record_146_drop(v_next);
+		s_string_release(v_text);
+		s_record_101_drop(v_node);
+		s_record_146_drop(v_state);
+		return s_return_1530;
+		s_record_147_drop(v_owner);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 37))
 	{
-		if ((s_mir_lower_type(s_record_144_copy(v_next), v_id, 4) != 4))
+		if ((s_mir_lower_type(s_record_146_copy(v_next), v_id, 4) != 4))
 		{
-			s_record_145 s_return_1487 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("missing typed string literal", sizeof("missing typed string literal") - 1)), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1531 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("missing typed string literal", sizeof("missing typed string literal") - 1)), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1487;
+			s_record_146_drop(v_state);
+			return s_return_1531;
 		}
-		s_record_147 v_decoded = s_mir_lower_string(s_string_retain(v_text));
-		if ((s_string_compare_take(s_record_147_get_error_take(s_record_147_copy(v_decoded)), s_string_from_bytes("", sizeof("") - 1)) != 0))
+		s_record_149 v_decoded = s_mir_lower_string(s_string_retain(v_text));
+		if ((s_string_compare_take(s_record_149_get_error_take(s_record_149_copy(v_decoded)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 		{
-			s_record_145 s_return_1488 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_record_147_get_error_take(s_record_147_copy(v_decoded))), (-1));
-			s_record_147_drop(v_decoded);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1532 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_record_149_get_error_take(s_record_149_copy(v_decoded))), (-1));
+			s_record_149_drop(v_decoded);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1488;
+			s_record_146_drop(v_state);
+			return s_return_1532;
 		}
-		const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-		s_record_144 s_value_1489 = s_mir_lower_register(s_record_144_copy(v_next), 4);
-		s_record_144_drop(v_next);
-		v_next = s_value_1489;
-		s_record_144 s_value_1490 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_string(v_dst, s_record_147_get_value_take(s_record_147_copy(v_decoded))));
-		s_record_144_drop(v_next);
-		v_next = s_value_1490;
-		s_record_145 s_return_1491 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-		s_record_147_drop(v_decoded);
-		s_record_144_drop(v_next);
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1533 = s_mir_lower_register(s_record_146_copy(v_next), 4);
+		s_record_146_drop(v_next);
+		v_next = s_value_1533;
+		s_record_146 s_value_1534 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_string(v_dst, s_record_149_get_value_take(s_record_149_copy(v_decoded))));
+		s_record_146_drop(v_next);
+		v_next = s_value_1534;
+		s_record_147 s_return_1535 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_record_149_drop(v_decoded);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1491;
-		s_record_147_drop(v_decoded);
+		s_record_146_drop(v_state);
+		return s_return_1535;
+		s_record_149_drop(v_decoded);
 	}
 	if (((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 24) || (s_record_101_get_kind_take(s_record_101_copy(v_node)) == 8)))
 	{
-		const int64_t v_type_id = s_mir_lower_type(s_record_144_copy(v_state), v_id, 4);
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_state), v_id, 4);
 		if ((v_type_id == 0))
 		{
-			s_record_145 s_return_1492 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_state), s_string_from_bytes("missing typed literal", sizeof("missing typed literal") - 1)), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1536 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_state), s_string_from_bytes("missing typed literal", sizeof("missing typed literal") - 1)), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1492;
+			s_record_146_drop(v_state);
+			return s_return_1536;
 		}
-		const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-		s_record_144 s_value_1493 = s_mir_lower_register(s_record_144_copy(v_next), v_type_id);
-		s_record_144_drop(v_next);
-		v_next = s_value_1493;
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1537 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1537;
 		int64_t v_immediate = 0;
 		int64_t v_opcode = 2;
 		if ((v_type_id == 1))
@@ -21472,140 +22182,140 @@ s_record_145 s_mir_lower_expression(s_record_144 v_state, int64_t v_id)
 		{
 			v_immediate = 1;
 		}
-		s_record_144 s_value_1494 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(v_opcode, v_dst, (-1), (-1), v_immediate));
-		s_record_144_drop(v_next);
-		v_next = s_value_1494;
-		s_record_145 s_return_1495 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-		s_record_144_drop(v_next);
+		s_record_146 s_value_1538 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(v_opcode, v_dst, (-1), (-1), v_immediate));
+		s_record_146_drop(v_next);
+		v_next = s_value_1538;
+		s_record_147 s_return_1539 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1495;
+		s_record_146_drop(v_state);
+		return s_return_1539;
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 10))
 	{
-		const int64_t v_callee = s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0);
-		if ((((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_next))), v_callee)) == 29) && (s_string_compare_take(s_hir_ast_text(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_callee), s_string_from_bytes("len", sizeof("len") - 1)) == 0)) && (s_record_101_get_count_take(s_record_101_copy(v_node)) == 2)))
+		const int64_t v_callee = s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0);
+		if ((((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_callee)) == 29) && (s_string_compare_take(s_hir_ast_text(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_callee), s_string_from_bytes("len", sizeof("len") - 1)) == 0)) && (s_record_101_get_count_take(s_record_101_copy(v_node)) == 2)))
 		{
-			s_record_145 v_value = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 1));
-			s_record_144 s_value_1496 = s_record_145_get_state_take(s_record_145_copy(v_value));
-			s_record_144_drop(v_next);
-			v_next = s_value_1496;
-			if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-				s_record_145 s_return_1497 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-				s_record_145_drop(v_value);
-				s_record_144_drop(v_next);
+			s_record_147 v_value = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 1));
+			s_record_146 s_value_1540 = s_record_147_get_state_take(s_record_147_copy(v_value));
+			s_record_146_drop(v_next);
+			v_next = s_value_1540;
+			if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+				s_record_147 s_return_1541 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+				s_record_147_drop(v_value);
+				s_record_146_drop(v_next);
 				s_string_release(v_text);
 				s_record_101_drop(v_node);
-				s_record_144_drop(v_state);
-				return s_return_1497;
+				s_record_146_drop(v_state);
+				return s_return_1541;
 			}
-			if (((s_array_i64_get_checked_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)), s_record_145_get_slot_take(s_record_145_copy(v_value))) == 4) && (s_mir_lower_type(s_record_144_copy(v_next), v_id, 6) == 1)))
+			if (((s_array_i64_get_checked_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)), s_record_147_get_slot_take(s_record_147_copy(v_value))) == 4) && (s_mir_lower_type(s_record_146_copy(v_next), v_id, 6) == 1)))
 			{
-				const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-				s_record_144 s_value_1498 = s_mir_lower_register(s_record_144_copy(v_next), 1);
-				s_record_144_drop(v_next);
-				v_next = s_value_1498;
-				s_record_144 s_value_1499 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(21, v_dst, s_record_145_get_slot_take(s_record_145_copy(v_value)), (-1), 0));
-				s_record_144_drop(v_next);
-				v_next = s_value_1499;
-				s_record_145 s_return_1500 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-				s_record_145_drop(v_value);
-				s_record_144_drop(v_next);
+				const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+				s_record_146 s_value_1542 = s_mir_lower_register(s_record_146_copy(v_next), 1);
+				s_record_146_drop(v_next);
+				v_next = s_value_1542;
+				s_record_146 s_value_1543 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(21, v_dst, s_record_147_get_slot_take(s_record_147_copy(v_value)), (-1), 0));
+				s_record_146_drop(v_next);
+				v_next = s_value_1543;
+				s_record_147 s_return_1544 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+				s_record_147_drop(v_value);
+				s_record_146_drop(v_next);
 				s_string_release(v_text);
 				s_record_101_drop(v_node);
-				s_record_144_drop(v_state);
-				return s_return_1500;
+				s_record_146_drop(v_state);
+				return s_return_1544;
 			}
-			s_record_145_drop(v_value);
+			s_record_147_drop(v_value);
 		}
 		int64_t v_callee_id = (-1);
 		{
-			S_Array * v_s_iter_1501 = s_record_144_get_call_targets_take(s_record_144_copy(v_next));
-			for (int64_t s_index_1501 = 0; s_index_1501 < (int64_t)s_array_length(v_s_iter_1501); ++s_index_1501)
+			S_Array * v_s_iter_1545 = s_record_146_get_call_targets_take(s_record_146_copy(v_next));
+			for (int64_t s_index_1545 = 0; s_index_1545 < (int64_t)s_array_length(v_s_iter_1545); ++s_index_1545)
 			{
-				s_record_133 v_target = s_ga_10133_get_borrow(v_s_iter_1501, s_index_1501);
+				s_record_133 v_target = s_ga_10133_get_borrow(v_s_iter_1545, s_index_1545);
 				if ((s_record_133_get_source_take(s_record_133_copy(v_target)) == v_id))
 				{
 					v_callee_id = s_record_133_get_specialization_take(s_record_133_copy(v_target));
 				}
 				s_record_133_drop(v_target);
 			}
-			s_array_release(v_s_iter_1501);
+			s_array_release(v_s_iter_1545);
 		}
 		if ((v_callee_id < 0))
 		{
-			s_record_145 s_return_1502 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported MIR call target", sizeof("unsupported MIR call target") - 1)), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1546 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported MIR call target", sizeof("unsupported MIR call target") - 1)), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1502;
+			s_record_146_drop(v_state);
+			return s_return_1546;
 		}
-		const int64_t v_type_id = s_mir_lower_type(s_record_144_copy(v_next), v_id, 6);
-		if ((!s_mir_supported_type(v_type_id)))
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_next), v_id, 6);
+		if ((!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_next)), v_type_id)))
 		{
-			s_record_145 s_return_1503 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported MIR call result type", sizeof("unsupported MIR call result type") - 1)), (-1));
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1547 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported MIR call result type", sizeof("unsupported MIR call result type") - 1)), (-1));
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1503;
+			s_record_146_drop(v_state);
+			return s_return_1547;
 		}
 		S_Array_i64 * v_inputs = s_array_i64_make(0, NULL);
-		for (int64_t v_i = 1, s_bound_1504 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1504; ++v_i)
+		for (int64_t v_i = 1, s_bound_1548 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1548; ++v_i)
 		{
-			s_record_145 v_argument = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, v_i));
-			s_record_144 s_value_1505 = s_record_145_get_state_take(s_record_145_copy(v_argument));
-			s_record_144_drop(v_next);
-			v_next = s_value_1505;
-			if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-				s_record_145 s_return_1506 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-				s_record_145_drop(v_argument);
+			s_record_147 v_argument = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, v_i));
+			s_record_146 s_value_1549 = s_record_147_get_state_take(s_record_147_copy(v_argument));
+			s_record_146_drop(v_next);
+			v_next = s_value_1549;
+			if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+				s_record_147 s_return_1550 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+				s_record_147_drop(v_argument);
 				s_array_i64_release(v_inputs);
-				s_record_144_drop(v_next);
+				s_record_146_drop(v_next);
 				s_string_release(v_text);
 				s_record_101_drop(v_node);
-				s_record_144_drop(v_state);
-				return s_return_1506;
+				s_record_146_drop(v_state);
+				return s_return_1550;
 			}
-			int64_t s_item_1507 = s_record_145_get_slot_take(s_record_145_copy(v_argument));
-			v_inputs = s_array_i64_append_take(v_inputs, s_item_1507);
-			s_record_145_drop(v_argument);
+			int64_t s_item_1551 = s_record_147_get_slot_take(s_record_147_copy(v_argument));
+			v_inputs = s_array_i64_append_take(v_inputs, s_item_1551);
+			s_record_147_drop(v_argument);
 		}
-		const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-		s_record_144 s_value_1508 = s_mir_lower_register(s_record_144_copy(v_next), v_type_id);
-		s_record_144_drop(v_next);
-		v_next = s_value_1508;
-		s_record_144 s_value_1509 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_call(v_dst, v_callee_id, s_array_i64_retain(v_inputs)));
-		s_record_144_drop(v_next);
-		v_next = s_value_1509;
-		s_record_145 s_return_1510 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1552 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1552;
+		s_record_146 s_value_1553 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_call(v_dst, v_callee_id, s_array_i64_retain(v_inputs)));
+		s_record_146_drop(v_next);
+		v_next = s_value_1553;
+		s_record_147 s_return_1554 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
 		s_array_i64_release(v_inputs);
-		s_record_144_drop(v_next);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1510;
+		s_record_146_drop(v_state);
+		return s_return_1554;
 		s_array_i64_release(v_inputs);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 39))
 	{
-		s_record_145 v_operand = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0));
-		s_record_144 s_value_1511 = s_record_145_get_state_take(s_record_145_copy(v_operand));
-		s_record_144_drop(v_next);
-		v_next = s_value_1511;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_145 s_return_1512 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-			s_record_145_drop(v_operand);
-			s_record_144_drop(v_next);
+		s_record_147 v_operand = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0));
+		s_record_146 s_value_1555 = s_record_147_get_state_take(s_record_147_copy(v_operand));
+		s_record_146_drop(v_next);
+		v_next = s_value_1555;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_147 s_return_1556 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+			s_record_147_drop(v_operand);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1512;
+			s_record_146_drop(v_state);
+			return s_return_1556;
 		}
-		const int64_t v_type_id = s_mir_lower_type(s_record_144_copy(v_next), v_id, 5);
-		const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_next), v_id, 5);
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
 		int64_t v_opcode = 14;
 		if ((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("not", sizeof("not") - 1)) == 0))
 		{
@@ -21613,155 +22323,155 @@ s_record_145 s_mir_lower_expression(s_record_144 v_state, int64_t v_id)
 		}
 		else if ((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("+", sizeof("+") - 1)) == 0))
 		{
-			s_record_145 s_return_1513 = s_MirLowerExpr(s_record_144_copy(v_next), s_record_145_get_slot_take(s_record_145_copy(v_operand)));
-			s_record_145_drop(v_operand);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1557 = s_MirLowerExpr(s_record_146_copy(v_next), s_record_147_get_slot_take(s_record_147_copy(v_operand)));
+			s_record_147_drop(v_operand);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1513;
+			s_record_146_drop(v_state);
+			return s_return_1557;
 		}
 		else if ((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("-", sizeof("-") - 1)) != 0))
 		{
-			s_record_145 s_return_1514 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported unary MIR operator", sizeof("unsupported unary MIR operator") - 1)), (-1));
-			s_record_145_drop(v_operand);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1558 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported unary MIR operator", sizeof("unsupported unary MIR operator") - 1)), (-1));
+			s_record_147_drop(v_operand);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1514;
+			s_record_146_drop(v_state);
+			return s_return_1558;
 		}
 		if ((!s_mir_supported_type(v_type_id)))
 		{
-			s_record_145 s_return_1515 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported unary MIR type", sizeof("unsupported unary MIR type") - 1)), (-1));
-			s_record_145_drop(v_operand);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1559 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported unary MIR type", sizeof("unsupported unary MIR type") - 1)), (-1));
+			s_record_147_drop(v_operand);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1515;
+			s_record_146_drop(v_state);
+			return s_return_1559;
 		}
-		s_record_144 s_value_1516 = s_mir_lower_register(s_record_144_copy(v_next), v_type_id);
-		s_record_144_drop(v_next);
-		v_next = s_value_1516;
-		s_record_144 s_value_1517 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(v_opcode, v_dst, s_record_145_get_slot_take(s_record_145_copy(v_operand)), (-1), 0));
-		s_record_144_drop(v_next);
-		v_next = s_value_1517;
-		s_record_145 s_return_1518 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-		s_record_145_drop(v_operand);
-		s_record_144_drop(v_next);
+		s_record_146 s_value_1560 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1560;
+		s_record_146 s_value_1561 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(v_opcode, v_dst, s_record_147_get_slot_take(s_record_147_copy(v_operand)), (-1), 0));
+		s_record_146_drop(v_next);
+		v_next = s_value_1561;
+		s_record_147 s_return_1562 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_record_147_drop(v_operand);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1518;
-		s_record_145_drop(v_operand);
+		s_record_146_drop(v_state);
+		return s_return_1562;
+		s_record_147_drop(v_operand);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 5))
 	{
-		s_record_145 v_left = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0));
-		s_record_144 s_value_1519 = s_record_145_get_state_take(s_record_145_copy(v_left));
-		s_record_144_drop(v_next);
-		v_next = s_value_1519;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_145 s_return_1520 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+		s_record_147 v_left = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0));
+		s_record_146 s_value_1563 = s_record_147_get_state_take(s_record_147_copy(v_left));
+		s_record_146_drop(v_next);
+		v_next = s_value_1563;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_147 s_return_1564 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1520;
+			s_record_146_drop(v_state);
+			return s_return_1564;
 		}
-		const int64_t v_type_id = s_mir_lower_type(s_record_144_copy(v_next), v_id, 2);
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_next), v_id, 2);
 		if ((!s_mir_supported_type(v_type_id)))
 		{
-			s_record_145 s_return_1521 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported binary MIR type", sizeof("unsupported binary MIR type") - 1)), (-1));
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1565 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported binary MIR type", sizeof("unsupported binary MIR type") - 1)), (-1));
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1521;
+			s_record_146_drop(v_state);
+			return s_return_1565;
 		}
 		if (((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("and", sizeof("and") - 1)) == 0) || (s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("or", sizeof("or") - 1)) == 0)))
 		{
-			const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-			s_record_144 s_value_1522 = s_mir_lower_register(s_record_144_copy(v_next), 3);
-			s_record_144_drop(v_next);
-			v_next = s_value_1522;
-			s_record_144 s_value_1523 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(3, v_dst, s_record_145_get_slot_take(s_record_145_copy(v_left)), (-1), 0));
-			s_record_144_drop(v_next);
-			v_next = s_value_1523;
-			const int64_t v_condition_block = s_record_144_get_active_take(s_record_144_copy(v_next));
-			s_record_144 s_value_1524 = s_mir_lower_block(s_record_144_copy(v_next));
-			s_record_144_drop(v_next);
-			v_next = s_value_1524;
-			const int64_t v_evaluate = s_record_144_get_active_take(s_record_144_copy(v_next));
-			s_record_144 s_value_1525 = s_mir_lower_block(s_record_144_copy(v_next));
-			s_record_144_drop(v_next);
-			v_next = s_value_1525;
-			const int64_t v_done = s_record_144_get_active_take(s_record_144_copy(v_next));
+			const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+			s_record_146 s_value_1566 = s_mir_lower_register(s_record_146_copy(v_next), 3);
+			s_record_146_drop(v_next);
+			v_next = s_value_1566;
+			s_record_146 s_value_1567 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(3, v_dst, s_record_147_get_slot_take(s_record_147_copy(v_left)), (-1), 0));
+			s_record_146_drop(v_next);
+			v_next = s_value_1567;
+			const int64_t v_condition_block = s_record_146_get_active_take(s_record_146_copy(v_next));
+			s_record_146 s_value_1568 = s_mir_lower_block(s_record_146_copy(v_next));
+			s_record_146_drop(v_next);
+			v_next = s_value_1568;
+			const int64_t v_evaluate = s_record_146_get_active_take(s_record_146_copy(v_next));
+			s_record_146 s_value_1569 = s_mir_lower_block(s_record_146_copy(v_next));
+			s_record_146_drop(v_next);
+			v_next = s_value_1569;
+			const int64_t v_done = s_record_146_get_active_take(s_record_146_copy(v_next));
 			v_next.active = v_condition_block;
 			if ((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("and", sizeof("and") - 1)) == 0))
 			{
-				s_record_144 s_value_1526 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_branch(s_record_145_get_slot_take(s_record_145_copy(v_left)), v_evaluate, v_done));
-				s_record_144_drop(v_next);
-				v_next = s_value_1526;
+				s_record_146 s_value_1570 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_branch(s_record_147_get_slot_take(s_record_147_copy(v_left)), v_evaluate, v_done));
+				s_record_146_drop(v_next);
+				v_next = s_value_1570;
 			}
 			else
 			{
-				s_record_144 s_value_1527 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_branch(s_record_145_get_slot_take(s_record_145_copy(v_left)), v_done, v_evaluate));
-				s_record_144_drop(v_next);
-				v_next = s_value_1527;
+				s_record_146 s_value_1571 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_branch(s_record_147_get_slot_take(s_record_147_copy(v_left)), v_done, v_evaluate));
+				s_record_146_drop(v_next);
+				v_next = s_value_1571;
 			}
 			v_next.active = v_evaluate;
-			s_record_145 v_right = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 1));
-			s_record_144 s_value_1528 = s_record_145_get_state_take(s_record_145_copy(v_right));
-			s_record_144_drop(v_next);
-			v_next = s_value_1528;
-			if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-				s_record_145 s_return_1529 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-				s_record_145_drop(v_right);
-				s_record_145_drop(v_left);
-				s_record_144_drop(v_next);
+			s_record_147 v_right = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 1));
+			s_record_146 s_value_1572 = s_record_147_get_state_take(s_record_147_copy(v_right));
+			s_record_146_drop(v_next);
+			v_next = s_value_1572;
+			if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+				s_record_147 s_return_1573 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+				s_record_147_drop(v_right);
+				s_record_147_drop(v_left);
+				s_record_146_drop(v_next);
 				s_string_release(v_text);
 				s_record_101_drop(v_node);
-				s_record_144_drop(v_state);
-				return s_return_1529;
+				s_record_146_drop(v_state);
+				return s_return_1573;
 			}
-			s_record_144 s_value_1530 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(3, v_dst, s_record_145_get_slot_take(s_record_145_copy(v_right)), (-1), 0));
-			s_record_144_drop(v_next);
-			v_next = s_value_1530;
-			s_record_144 s_value_1531 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_jump(v_done));
-			s_record_144_drop(v_next);
-			v_next = s_value_1531;
+			s_record_146 s_value_1574 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(3, v_dst, s_record_147_get_slot_take(s_record_147_copy(v_right)), (-1), 0));
+			s_record_146_drop(v_next);
+			v_next = s_value_1574;
+			s_record_146 s_value_1575 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_jump(v_done));
+			s_record_146_drop(v_next);
+			v_next = s_value_1575;
 			v_next.active = v_done;
-			s_record_145 s_return_1532 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-			s_record_145_drop(v_right);
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1576 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+			s_record_147_drop(v_right);
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1532;
-			s_record_145_drop(v_right);
+			s_record_146_drop(v_state);
+			return s_return_1576;
+			s_record_147_drop(v_right);
 		}
-		s_record_145 v_right = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 1));
-		s_record_144 s_value_1533 = s_record_145_get_state_take(s_record_145_copy(v_right));
-		s_record_144_drop(v_next);
-		v_next = s_value_1533;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_145 s_return_1534 = s_MirLowerExpr(s_record_144_copy(v_next), (-1));
-			s_record_145_drop(v_right);
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+		s_record_147 v_right = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 1));
+		s_record_146 s_value_1577 = s_record_147_get_state_take(s_record_147_copy(v_right));
+		s_record_146_drop(v_next);
+		v_next = s_value_1577;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_147 s_return_1578 = s_MirLowerExpr(s_record_146_copy(v_next), (-1));
+			s_record_147_drop(v_right);
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1534;
+			s_record_146_drop(v_state);
+			return s_return_1578;
 		}
 		int64_t v_opcode = 0;
-		const int64_t v_first = s_record_145_get_slot_take(s_record_145_copy(v_left));
-		const int64_t v_second = s_record_145_get_slot_take(s_record_145_copy(v_right));
+		const int64_t v_first = s_record_147_get_slot_take(s_record_147_copy(v_left));
+		const int64_t v_second = s_record_147_get_slot_take(s_record_147_copy(v_right));
 		bool v_negate = false;
 		if ((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("+", sizeof("+") - 1)) == 0))
 		{
@@ -21793,7 +22503,7 @@ s_record_145 s_mir_lower_expression(s_record_144 v_state, int64_t v_id)
 		else if (((s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("==", sizeof("==") - 1)) == 0) || (s_string_compare_take(s_string_retain(v_text), s_string_from_bytes("!=", sizeof("!=") - 1)) == 0)))
 		{
 			v_opcode = 9;
-			if ((s_array_i64_get_checked_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)), v_first) == 3))
+			if ((s_array_i64_get_checked_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)), v_first) == 3))
 			{
 				v_opcode = 13;
 			}
@@ -21811,316 +22521,316 @@ s_record_145 s_mir_lower_expression(s_record_144 v_state, int64_t v_id)
 		}
 		if ((v_opcode == 0))
 		{
-			s_record_145 s_return_1535 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported binary MIR operator", sizeof("unsupported binary MIR operator") - 1)), (-1));
-			s_record_145_drop(v_right);
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+			s_record_147 s_return_1579 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported binary MIR operator", sizeof("unsupported binary MIR operator") - 1)), (-1));
+			s_record_147_drop(v_right);
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1535;
+			s_record_146_drop(v_state);
+			return s_return_1579;
 		}
-		const int64_t v_dst = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-		s_record_144 s_value_1536 = s_mir_lower_register(s_record_144_copy(v_next), v_type_id);
-		s_record_144_drop(v_next);
-		v_next = s_value_1536;
-		s_record_144 s_value_1537 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(v_opcode, v_dst, v_first, v_second, 0));
-		s_record_144_drop(v_next);
-		v_next = s_value_1537;
+		const int64_t v_dst = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1580 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1580;
+		s_record_146 s_value_1581 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(v_opcode, v_dst, v_first, v_second, 0));
+		s_record_146_drop(v_next);
+		v_next = s_value_1581;
 		if (v_negate)
 		{
-			const int64_t v_inverted = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-			s_record_144 s_value_1538 = s_mir_lower_register(s_record_144_copy(v_next), 3);
-			s_record_144_drop(v_next);
-			v_next = s_value_1538;
-			s_record_144 s_value_1539 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(12, v_inverted, v_dst, (-1), 0));
-			s_record_144_drop(v_next);
-			v_next = s_value_1539;
-			s_record_145 s_return_1540 = s_MirLowerExpr(s_record_144_copy(v_next), v_inverted);
-			s_record_145_drop(v_right);
-			s_record_145_drop(v_left);
-			s_record_144_drop(v_next);
+			const int64_t v_inverted = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+			s_record_146 s_value_1582 = s_mir_lower_register(s_record_146_copy(v_next), 3);
+			s_record_146_drop(v_next);
+			v_next = s_value_1582;
+			s_record_146 s_value_1583 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(12, v_inverted, v_dst, (-1), 0));
+			s_record_146_drop(v_next);
+			v_next = s_value_1583;
+			s_record_147 s_return_1584 = s_MirLowerExpr(s_record_146_copy(v_next), v_inverted);
+			s_record_147_drop(v_right);
+			s_record_147_drop(v_left);
+			s_record_146_drop(v_next);
 			s_string_release(v_text);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1540;
+			s_record_146_drop(v_state);
+			return s_return_1584;
 		}
-		s_record_145 s_return_1541 = s_MirLowerExpr(s_record_144_copy(v_next), v_dst);
-		s_record_145_drop(v_right);
-		s_record_145_drop(v_left);
-		s_record_144_drop(v_next);
+		s_record_147 s_return_1585 = s_MirLowerExpr(s_record_146_copy(v_next), v_dst);
+		s_record_147_drop(v_right);
+		s_record_147_drop(v_left);
+		s_record_146_drop(v_next);
 		s_string_release(v_text);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1541;
-		s_record_145_drop(v_right);
-		s_record_145_drop(v_left);
+		s_record_146_drop(v_state);
+		return s_return_1585;
+		s_record_147_drop(v_right);
+		s_record_147_drop(v_left);
 	}
-	s_record_145 s_return_1542 = s_MirLowerExpr(s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported source expression for MIR", sizeof("unsupported source expression for MIR") - 1)), (-1));
-	s_record_144_drop(v_next);
+	s_record_147 s_return_1586 = s_MirLowerExpr(s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported source expression for MIR", sizeof("unsupported source expression for MIR") - 1)), (-1));
+	s_record_146_drop(v_next);
 	s_string_release(v_text);
 	s_record_101_drop(v_node);
-	s_record_144_drop(v_state);
-	return s_return_1542;
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1586;
+	s_record_146_drop(v_next);
 	s_string_release(v_text);
 	s_record_101_drop(v_node);
 }
 
-s_record_144 s_mir_lower_statements(s_record_144 v_state, int64_t v_block_id)
+s_record_146 s_mir_lower_statements(s_record_146 v_state, int64_t v_block_id)
 {
-	s_record_144 v_next = s_record_144_copy(v_state);
-	const int64_t v_initial = s_generic_array_length_take(s_record_144_get_bindings_take(s_record_144_copy(v_state)));
+	s_record_146 v_next = s_record_146_copy(v_state);
+	const int64_t v_initial = s_generic_array_length_take(s_record_146_get_bindings_take(s_record_146_copy(v_state)));
 	v_next.depth += 1;
-	s_record_101 v_block = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_next))), v_block_id);
-	for (int64_t v_i = 0, s_bound_1543 = s_record_101_get_count_take(s_record_101_copy(v_block)); v_i < s_bound_1543; ++v_i)
+	s_record_101 v_block = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_block_id);
+	for (int64_t v_i = 0, s_bound_1587 = s_record_101_get_count_take(s_record_101_copy(v_block)); v_i < s_bound_1587; ++v_i)
 	{
-		if (s_mir_lower_ended(s_record_144_copy(v_next)))
+		if (s_mir_lower_ended(s_record_146_copy(v_next)))
 		{
 			break;
 		}
-		s_record_144 s_value_1544 = s_mir_lower_statement(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_block_id, v_i));
-		s_record_144_drop(v_next);
-		v_next = s_value_1544;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_144 s_return_1545 = s_record_144_copy(v_next);
+		s_record_146 s_value_1588 = s_mir_lower_statement(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_block_id, v_i));
+		s_record_146_drop(v_next);
+		v_next = s_value_1588;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_146 s_return_1589 = s_record_146_copy(v_next);
 			s_record_101_drop(v_block);
-			s_record_144_drop(v_next);
-			s_record_144_drop(v_state);
-			return s_return_1545;
+			s_record_146_drop(v_next);
+			s_record_146_drop(v_state);
+			return s_return_1589;
 		}
 	}
-	S_Array * v_kept = s_ga_10143_make_take(0, NULL);
-	for (int64_t v_i = 0, s_bound_1546 = v_initial; v_i < s_bound_1546; ++v_i)
+	S_Array * v_kept = s_ga_10144_make_take(0, NULL);
+	for (int64_t v_i = 0, s_bound_1590 = v_initial; v_i < s_bound_1590; ++v_i)
 	{
-		s_record_143 s_item_1547 = s_ga_10143_get_checked_take(s_record_144_get_bindings_take(s_record_144_copy(v_next)), v_i);
-		v_kept = s_ga_10143_append_take(v_kept, s_item_1547);
+		s_record_144 s_item_1591 = s_ga_10144_get_checked_take(s_record_146_get_bindings_take(s_record_146_copy(v_next)), v_i);
+		v_kept = s_ga_10144_append_take(v_kept, s_item_1591);
 	}
-	S_Array * s_field_1548 = s_array_retain(v_kept);
+	S_Array * s_field_1592 = s_array_retain(v_kept);
 	s_array_release(v_next.bindings);
-	v_next.bindings = s_field_1548;
+	v_next.bindings = s_field_1592;
 	v_next.depth -= 1;
-	s_record_144 s_return_1549 = s_record_144_copy(v_next);
+	s_record_146 s_return_1593 = s_record_146_copy(v_next);
 	s_array_release(v_kept);
 	s_record_101_drop(v_block);
-	s_record_144_drop(v_next);
-	s_record_144_drop(v_state);
-	return s_return_1549;
+	s_record_146_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1593;
 	s_array_release(v_kept);
 	s_record_101_drop(v_block);
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_next);
 }
 
-s_record_144 s_mir_lower_statement(s_record_144 v_state, int64_t v_id)
+s_record_146 s_mir_lower_statement(s_record_146 v_state, int64_t v_id)
 {
-	if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-		s_record_144 s_return_1550 = s_record_144_copy(v_state);
-		s_record_144_drop(v_state);
-		return s_return_1550;
+	if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+		s_record_146 s_return_1594 = s_record_146_copy(v_state);
+		s_record_146_drop(v_state);
+		return s_return_1594;
 	}
-	s_record_101 v_node = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_state))), v_id);
-	s_record_144 v_next = s_record_144_copy(v_state);
+	s_record_101 v_node = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_state))), v_id);
+	s_record_146 v_next = s_record_146_copy(v_state);
 	if (((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 26) || (s_record_101_get_kind_take(s_record_101_copy(v_node)) == 40)))
 	{
 		int64_t v_initializer = (-1);
-		for (int64_t v_i = 0, s_bound_1551 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1551; ++v_i)
+		for (int64_t v_i = 0, s_bound_1595 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1595; ++v_i)
 		{
-			const int64_t v_child = s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, v_i);
-			if ((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_next))), v_child)) != 38))
+			const int64_t v_child = s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, v_i);
+			if ((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_child)) != 38))
 			{
 				v_initializer = v_child;
 			}
 		}
 		if ((v_initializer < 0))
 		{
-			s_record_144 s_return_1552 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("MIR requires an initializer", sizeof("MIR requires an initializer") - 1));
-			s_record_144_drop(v_next);
+			s_record_146 s_return_1596 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("MIR requires an initializer", sizeof("MIR requires an initializer") - 1));
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1552;
+			s_record_146_drop(v_state);
+			return s_return_1596;
 		}
-		s_record_145 v_value = s_mir_lower_expression(s_record_144_copy(v_next), v_initializer);
-		s_record_144 s_value_1553 = s_record_145_get_state_take(s_record_145_copy(v_value));
-		s_record_144_drop(v_next);
-		v_next = s_value_1553;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_144 s_return_1554 = s_record_144_copy(v_next);
-			s_record_145_drop(v_value);
-			s_record_144_drop(v_next);
+		s_record_147 v_value = s_mir_lower_expression(s_record_146_copy(v_next), v_initializer);
+		s_record_146 s_value_1597 = s_record_147_get_state_take(s_record_147_copy(v_value));
+		s_record_146_drop(v_next);
+		v_next = s_value_1597;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_146 s_return_1598 = s_record_146_copy(v_next);
+			s_record_147_drop(v_value);
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1554;
+			s_record_146_drop(v_state);
+			return s_return_1598;
 		}
-		const int64_t v_type_id = s_mir_lower_type(s_record_144_copy(v_next), v_id, 9);
-		if ((!s_mir_supported_type(v_type_id)))
+		const int64_t v_type_id = s_mir_lower_type(s_record_146_copy(v_next), v_id, 9);
+		if ((!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_next)), v_type_id)))
 		{
-			s_record_144 s_return_1555 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported MIR binding type", sizeof("unsupported MIR binding type") - 1));
-			s_record_145_drop(v_value);
-			s_record_144_drop(v_next);
+			s_record_146 s_return_1599 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported MIR binding type", sizeof("unsupported MIR binding type") - 1));
+			s_record_147_drop(v_value);
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1555;
+			s_record_146_drop(v_state);
+			return s_return_1599;
 		}
-		const int64_t v_register = s_array_i64_length_take(s_record_144_get_register_types_take(s_record_144_copy(v_next)));
-		s_record_144 s_value_1556 = s_mir_lower_register(s_record_144_copy(v_next), v_type_id);
-		s_record_144_drop(v_next);
-		v_next = s_value_1556;
-		s_record_144 s_value_1557 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(3, v_register, s_record_145_get_slot_take(s_record_145_copy(v_value)), (-1), 0));
-		s_record_144_drop(v_next);
-		v_next = s_value_1557;
-		s_record_143 s_item_1558 = s_MirSourceBinding(s_hir_ast_text(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id), v_register, s_record_144_get_depth_take(s_record_144_copy(v_next)));
-		v_next.bindings = s_ga_10143_append_take(v_next.bindings, s_item_1558);
-		s_record_144 s_return_1559 = s_record_144_copy(v_next);
-		s_record_145_drop(v_value);
-		s_record_144_drop(v_next);
+		const int64_t v_register = s_array_i64_length_take(s_record_146_get_register_types_take(s_record_146_copy(v_next)));
+		s_record_146 s_value_1600 = s_mir_lower_register(s_record_146_copy(v_next), v_type_id);
+		s_record_146_drop(v_next);
+		v_next = s_value_1600;
+		s_record_146 s_value_1601 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(3, v_register, s_record_147_get_slot_take(s_record_147_copy(v_value)), (-1), 0));
+		s_record_146_drop(v_next);
+		v_next = s_value_1601;
+		s_record_144 s_item_1602 = s_MirSourceBinding(s_hir_ast_text(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id), v_register, s_record_146_get_depth_take(s_record_146_copy(v_next)));
+		v_next.bindings = s_ga_10144_append_take(v_next.bindings, s_item_1602);
+		s_record_146 s_return_1603 = s_record_146_copy(v_next);
+		s_record_147_drop(v_value);
+		s_record_146_drop(v_next);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1559;
-		s_record_145_drop(v_value);
+		s_record_146_drop(v_state);
+		return s_return_1603;
+		s_record_147_drop(v_value);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 3))
 	{
-		const int64_t v_target = s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0);
-		if ((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_next))), v_target)) != 29))
+		const int64_t v_target = s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0);
+		if ((s_record_101_get_kind_take(s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_target)) != 29))
 		{
-			s_record_144 s_return_1560 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported MIR assignment target", sizeof("unsupported MIR assignment target") - 1));
-			s_record_144_drop(v_next);
+			s_record_146 s_return_1604 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported MIR assignment target", sizeof("unsupported MIR assignment target") - 1));
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1560;
+			s_record_146_drop(v_state);
+			return s_return_1604;
 		}
-		const int64_t v_register = s_mir_lower_binding(s_record_144_copy(v_next), s_hir_ast_text(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_target));
+		const int64_t v_register = s_mir_lower_binding(s_record_146_copy(v_next), s_hir_ast_text(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_target));
 		if ((v_register < 0))
 		{
-			s_record_144 s_return_1561 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unknown MIR assignment target", sizeof("unknown MIR assignment target") - 1));
-			s_record_144_drop(v_next);
+			s_record_146 s_return_1605 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unknown MIR assignment target", sizeof("unknown MIR assignment target") - 1));
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1561;
+			s_record_146_drop(v_state);
+			return s_return_1605;
 		}
-		s_record_145 v_value = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 1));
-		s_record_144 s_value_1562 = s_record_145_get_state_take(s_record_145_copy(v_value));
-		s_record_144_drop(v_next);
-		v_next = s_value_1562;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_144 s_return_1563 = s_record_144_copy(v_next);
-			s_record_145_drop(v_value);
-			s_record_144_drop(v_next);
+		s_record_147 v_value = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 1));
+		s_record_146 s_value_1606 = s_record_147_get_state_take(s_record_147_copy(v_value));
+		s_record_146_drop(v_next);
+		v_next = s_value_1606;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_146 s_return_1607 = s_record_146_copy(v_next);
+			s_record_147_drop(v_value);
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1563;
+			s_record_146_drop(v_state);
+			return s_return_1607;
 		}
-		s_record_144 s_return_1564 = s_mir_lower_emit(s_record_144_copy(v_next), s_mir_op(3, v_register, s_record_145_get_slot_take(s_record_145_copy(v_value)), (-1), 0));
-		s_record_145_drop(v_value);
-		s_record_144_drop(v_next);
+		s_record_146 s_return_1608 = s_mir_lower_emit(s_record_146_copy(v_next), s_mir_op(3, v_register, s_record_147_get_slot_take(s_record_147_copy(v_value)), (-1), 0));
+		s_record_147_drop(v_value);
+		s_record_146_drop(v_next);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1564;
-		s_record_145_drop(v_value);
+		s_record_146_drop(v_state);
+		return s_return_1608;
+		s_record_147_drop(v_value);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 35))
 	{
 		if ((s_record_101_get_count_take(s_record_101_copy(v_node)) != 1))
 		{
-			s_record_144 s_return_1565 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("MIR requires a return value", sizeof("MIR requires a return value") - 1));
-			s_record_144_drop(v_next);
+			s_record_146 s_return_1609 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("MIR requires a return value", sizeof("MIR requires a return value") - 1));
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1565;
+			s_record_146_drop(v_state);
+			return s_return_1609;
 		}
-		s_record_145 v_value = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0));
-		s_record_144 s_value_1566 = s_record_145_get_state_take(s_record_145_copy(v_value));
-		s_record_144_drop(v_next);
-		v_next = s_value_1566;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_144 s_return_1567 = s_record_144_copy(v_next);
-			s_record_145_drop(v_value);
-			s_record_144_drop(v_next);
+		s_record_147 v_value = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0));
+		s_record_146 s_value_1610 = s_record_147_get_state_take(s_record_147_copy(v_value));
+		s_record_146_drop(v_next);
+		v_next = s_value_1610;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_146 s_return_1611 = s_record_146_copy(v_next);
+			s_record_147_drop(v_value);
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1567;
+			s_record_146_drop(v_state);
+			return s_return_1611;
 		}
-		s_record_144 s_return_1568 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_return(s_record_145_get_slot_take(s_record_145_copy(v_value))));
-		s_record_145_drop(v_value);
-		s_record_144_drop(v_next);
+		s_record_146 s_return_1612 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_return(s_record_147_get_slot_take(s_record_147_copy(v_value))));
+		s_record_147_drop(v_value);
+		s_record_146_drop(v_next);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1568;
-		s_record_145_drop(v_value);
+		s_record_146_drop(v_state);
+		return s_return_1612;
+		s_record_147_drop(v_value);
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 22))
 	{
 		int64_t v_after = (-1);
 		bool v_can_fallthrough = false;
 		bool v_has_else = false;
-		for (int64_t v_i = 0, s_bound_1569 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1569; ++v_i)
+		for (int64_t v_i = 0, s_bound_1613 = s_record_101_get_count_take(s_record_101_copy(v_node)); v_i < s_bound_1613; ++v_i)
 		{
-			const int64_t v_arm_id = s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, v_i);
-			s_record_101 v_arm = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_144_get_tree_take(s_record_144_copy(v_next))), v_arm_id);
+			const int64_t v_arm_id = s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, v_i);
+			s_record_101 v_arm = s_ga_10101_get_checked_take(s_record_102_get_nodes_take(s_record_146_get_tree_take(s_record_146_copy(v_next))), v_arm_id);
 			if ((s_record_101_get_kind_take(s_record_101_copy(v_arm)) == 16))
 			{
 				v_has_else = true;
-				s_record_144 s_value_1570 = s_mir_lower_statements(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_arm_id, 0));
-				s_record_144_drop(v_next);
-				v_next = s_value_1570;
+				s_record_146 s_value_1614 = s_mir_lower_statements(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_arm_id, 0));
+				s_record_146_drop(v_next);
+				v_next = s_value_1614;
 			}
 			else
 			{
-				s_record_145 v_cond = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_arm_id, 0));
-				s_record_144 s_value_1571 = s_record_145_get_state_take(s_record_145_copy(v_cond));
-				s_record_144_drop(v_next);
-				v_next = s_value_1571;
-				if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-					s_record_144 s_return_1572 = s_record_144_copy(v_next);
-					s_record_145_drop(v_cond);
+				s_record_147 v_cond = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_arm_id, 0));
+				s_record_146 s_value_1615 = s_record_147_get_state_take(s_record_147_copy(v_cond));
+				s_record_146_drop(v_next);
+				v_next = s_value_1615;
+				if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+					s_record_146 s_return_1616 = s_record_146_copy(v_next);
+					s_record_147_drop(v_cond);
 					s_record_101_drop(v_arm);
-					s_record_144_drop(v_next);
+					s_record_146_drop(v_next);
 					s_record_101_drop(v_node);
-					s_record_144_drop(v_state);
-					return s_return_1572;
+					s_record_146_drop(v_state);
+					return s_return_1616;
 				}
-				const int64_t v_cond_block = s_record_144_get_active_take(s_record_144_copy(v_next));
-				s_record_144 s_value_1573 = s_mir_lower_block(s_record_144_copy(v_next));
-				s_record_144_drop(v_next);
-				v_next = s_value_1573;
-				const int64_t v_yes = s_record_144_get_active_take(s_record_144_copy(v_next));
-				s_record_144 s_value_1574 = s_mir_lower_block(s_record_144_copy(v_next));
-				s_record_144_drop(v_next);
-				v_next = s_value_1574;
-				const int64_t v_no = s_record_144_get_active_take(s_record_144_copy(v_next));
+				const int64_t v_cond_block = s_record_146_get_active_take(s_record_146_copy(v_next));
+				s_record_146 s_value_1617 = s_mir_lower_block(s_record_146_copy(v_next));
+				s_record_146_drop(v_next);
+				v_next = s_value_1617;
+				const int64_t v_yes = s_record_146_get_active_take(s_record_146_copy(v_next));
+				s_record_146 s_value_1618 = s_mir_lower_block(s_record_146_copy(v_next));
+				s_record_146_drop(v_next);
+				v_next = s_value_1618;
+				const int64_t v_no = s_record_146_get_active_take(s_record_146_copy(v_next));
 				v_next.active = v_cond_block;
-				s_record_144 s_value_1575 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_branch(s_record_145_get_slot_take(s_record_145_copy(v_cond)), v_yes, v_no));
-				s_record_144_drop(v_next);
-				v_next = s_value_1575;
+				s_record_146 s_value_1619 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_branch(s_record_147_get_slot_take(s_record_147_copy(v_cond)), v_yes, v_no));
+				s_record_146_drop(v_next);
+				v_next = s_value_1619;
 				v_next.active = v_yes;
-				s_record_144 s_value_1576 = s_mir_lower_statements(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_arm_id, 1));
-				s_record_144_drop(v_next);
-				v_next = s_value_1576;
-				const int64_t v_body_end = s_record_144_get_active_take(s_record_144_copy(v_next));
+				s_record_146 s_value_1620 = s_mir_lower_statements(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_arm_id, 1));
+				s_record_146_drop(v_next);
+				v_next = s_value_1620;
+				const int64_t v_body_end = s_record_146_get_active_take(s_record_146_copy(v_next));
 				if ((v_after < 0))
 				{
-					s_record_144 s_value_1577 = s_mir_lower_block(s_record_144_copy(v_next));
-					s_record_144_drop(v_next);
-					v_next = s_value_1577;
-					v_after = s_record_144_get_active_take(s_record_144_copy(v_next));
+					s_record_146 s_value_1621 = s_mir_lower_block(s_record_146_copy(v_next));
+					s_record_146_drop(v_next);
+					v_next = s_value_1621;
+					v_after = s_record_146_get_active_take(s_record_146_copy(v_next));
 				}
 				v_next.active = v_body_end;
-				if ((!s_mir_lower_ended(s_record_144_copy(v_next))))
+				if ((!s_mir_lower_ended(s_record_146_copy(v_next))))
 				{
 					v_can_fallthrough = true;
-					s_record_144 s_value_1578 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_jump(v_after));
-					s_record_144_drop(v_next);
-					v_next = s_value_1578;
+					s_record_146 s_value_1622 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_jump(v_after));
+					s_record_146_drop(v_next);
+					v_next = s_value_1622;
 				}
 				v_next.active = v_no;
-				s_record_145_drop(v_cond);
+				s_record_147_drop(v_cond);
 			}
-			if ((((v_i == (s_record_101_get_count_take(s_record_101_copy(v_node)) - 1)) && (v_after >= 0)) && (!s_mir_lower_ended(s_record_144_copy(v_next)))))
+			if ((((v_i == (s_record_101_get_count_take(s_record_101_copy(v_node)) - 1)) && (v_after >= 0)) && (!s_mir_lower_ended(s_record_146_copy(v_next)))))
 			{
 				v_can_fallthrough = true;
-				s_record_144 s_value_1579 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_jump(v_after));
-				s_record_144_drop(v_next);
-				v_next = s_value_1579;
+				s_record_146 s_value_1623 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_jump(v_after));
+				s_record_146_drop(v_next);
+				v_next = s_value_1623;
 			}
 			s_record_101_drop(v_arm);
 		}
@@ -22129,156 +22839,173 @@ s_record_144 s_mir_lower_statement(s_record_144 v_state, int64_t v_id)
 			v_next.active = v_after;
 			if (((!v_can_fallthrough) && v_has_else))
 			{
-				s_record_144 s_value_1580 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_panic(s_string_from_bytes("unreachable", sizeof("unreachable") - 1)));
-				s_record_144_drop(v_next);
-				v_next = s_value_1580;
+				s_record_146 s_value_1624 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_panic(s_string_from_bytes("unreachable", sizeof("unreachable") - 1)));
+				s_record_146_drop(v_next);
+				v_next = s_value_1624;
 			}
 		}
-		s_record_144 s_return_1581 = s_record_144_copy(v_next);
-		s_record_144_drop(v_next);
+		s_record_146 s_return_1625 = s_record_146_copy(v_next);
+		s_record_146_drop(v_next);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1581;
+		s_record_146_drop(v_state);
+		return s_return_1625;
 	}
 	if ((s_record_101_get_kind_take(s_record_101_copy(v_node)) == 41))
 	{
-		const int64_t v_previous = s_record_144_get_active_take(s_record_144_copy(v_next));
-		s_record_144 s_value_1582 = s_mir_lower_block(s_record_144_copy(v_next));
-		s_record_144_drop(v_next);
-		v_next = s_value_1582;
-		const int64_t v_condition_block = s_record_144_get_active_take(s_record_144_copy(v_next));
+		const int64_t v_previous = s_record_146_get_active_take(s_record_146_copy(v_next));
+		s_record_146 s_value_1626 = s_mir_lower_block(s_record_146_copy(v_next));
+		s_record_146_drop(v_next);
+		v_next = s_value_1626;
+		const int64_t v_condition_block = s_record_146_get_active_take(s_record_146_copy(v_next));
 		v_next.active = v_previous;
-		s_record_144 s_value_1583 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_jump(v_condition_block));
-		s_record_144_drop(v_next);
-		v_next = s_value_1583;
+		s_record_146 s_value_1627 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_jump(v_condition_block));
+		s_record_146_drop(v_next);
+		v_next = s_value_1627;
 		v_next.active = v_condition_block;
-		s_record_145 v_cond = s_mir_lower_expression(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 0));
-		s_record_144 s_value_1584 = s_record_145_get_state_take(s_record_145_copy(v_cond));
-		s_record_144_drop(v_next);
-		v_next = s_value_1584;
-		if (!((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
-			s_record_144 s_return_1585 = s_record_144_copy(v_next);
-			s_record_145_drop(v_cond);
-			s_record_144_drop(v_next);
+		s_record_147 v_cond = s_mir_lower_expression(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 0));
+		s_record_146 s_value_1628 = s_record_147_get_state_take(s_record_147_copy(v_cond));
+		s_record_146_drop(v_next);
+		v_next = s_value_1628;
+		if (!((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_next)), s_string_from_bytes("", sizeof("") - 1)) == 0))) {
+			s_record_146 s_return_1629 = s_record_146_copy(v_next);
+			s_record_147_drop(v_cond);
+			s_record_146_drop(v_next);
 			s_record_101_drop(v_node);
-			s_record_144_drop(v_state);
-			return s_return_1585;
+			s_record_146_drop(v_state);
+			return s_return_1629;
 		}
-		const int64_t v_decision_block = s_record_144_get_active_take(s_record_144_copy(v_next));
-		s_record_144 s_value_1586 = s_mir_lower_block(s_record_144_copy(v_next));
-		s_record_144_drop(v_next);
-		v_next = s_value_1586;
-		const int64_t v_body_block = s_record_144_get_active_take(s_record_144_copy(v_next));
-		s_record_144 s_value_1587 = s_mir_lower_block(s_record_144_copy(v_next));
-		s_record_144_drop(v_next);
-		v_next = s_value_1587;
-		const int64_t v_exit_block = s_record_144_get_active_take(s_record_144_copy(v_next));
+		const int64_t v_decision_block = s_record_146_get_active_take(s_record_146_copy(v_next));
+		s_record_146 s_value_1630 = s_mir_lower_block(s_record_146_copy(v_next));
+		s_record_146_drop(v_next);
+		v_next = s_value_1630;
+		const int64_t v_body_block = s_record_146_get_active_take(s_record_146_copy(v_next));
+		s_record_146 s_value_1631 = s_mir_lower_block(s_record_146_copy(v_next));
+		s_record_146_drop(v_next);
+		v_next = s_value_1631;
+		const int64_t v_exit_block = s_record_146_get_active_take(s_record_146_copy(v_next));
 		v_next.active = v_decision_block;
-		s_record_144 s_value_1588 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_branch(s_record_145_get_slot_take(s_record_145_copy(v_cond)), v_body_block, v_exit_block));
-		s_record_144_drop(v_next);
-		v_next = s_value_1588;
+		s_record_146 s_value_1632 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_branch(s_record_147_get_slot_take(s_record_147_copy(v_cond)), v_body_block, v_exit_block));
+		s_record_146_drop(v_next);
+		v_next = s_value_1632;
 		v_next.active = v_body_block;
-		s_record_144 s_value_1589 = s_mir_lower_statements(s_record_144_copy(v_next), s_hir_ast_child(s_record_144_get_tree_take(s_record_144_copy(v_next)), v_id, 1));
-		s_record_144_drop(v_next);
-		v_next = s_value_1589;
-		if ((!s_mir_lower_ended(s_record_144_copy(v_next))))
+		s_record_146 s_value_1633 = s_mir_lower_statements(s_record_146_copy(v_next), s_hir_ast_child(s_record_146_get_tree_take(s_record_146_copy(v_next)), v_id, 1));
+		s_record_146_drop(v_next);
+		v_next = s_value_1633;
+		if ((!s_mir_lower_ended(s_record_146_copy(v_next))))
 		{
-			s_record_144 s_value_1590 = s_mir_lower_end(s_record_144_copy(v_next), s_mir_jump(v_condition_block));
-			s_record_144_drop(v_next);
-			v_next = s_value_1590;
+			s_record_146 s_value_1634 = s_mir_lower_end(s_record_146_copy(v_next), s_mir_jump(v_condition_block));
+			s_record_146_drop(v_next);
+			v_next = s_value_1634;
 		}
 		v_next.active = v_exit_block;
-		s_record_144 s_return_1591 = s_record_144_copy(v_next);
-		s_record_145_drop(v_cond);
-		s_record_144_drop(v_next);
+		s_record_146 s_return_1635 = s_record_146_copy(v_next);
+		s_record_147_drop(v_cond);
+		s_record_146_drop(v_next);
 		s_record_101_drop(v_node);
-		s_record_144_drop(v_state);
-		return s_return_1591;
-		s_record_145_drop(v_cond);
+		s_record_146_drop(v_state);
+		return s_return_1635;
+		s_record_147_drop(v_cond);
 	}
-	s_record_144 s_return_1592 = s_mir_lower_error(s_record_144_copy(v_next), s_string_from_bytes("unsupported source statement for MIR", sizeof("unsupported source statement for MIR") - 1));
-	s_record_144_drop(v_next);
+	s_record_146 s_return_1636 = s_mir_lower_error(s_record_146_copy(v_next), s_string_from_bytes("unsupported source statement for MIR", sizeof("unsupported source statement for MIR") - 1));
+	s_record_146_drop(v_next);
 	s_record_101_drop(v_node);
-	s_record_144_drop(v_state);
-	return s_return_1592;
-	s_record_144_drop(v_next);
+	s_record_146_drop(v_state);
+	return s_return_1636;
+	s_record_146_drop(v_next);
 	s_record_101_drop(v_node);
 }
 
-s_record_146 s_mir_lower_function_calls(s_record_102 v_tree, s_record_117 v_header, S_Array * v_hir, S_Array_i64 * v_arguments, int64_t v_return_type, S_Array * v_targets)
+s_record_148 s_mir_lower_function_typed(s_record_102 v_tree, s_record_117 v_header, S_Array * v_hir, S_Array_i64 * v_arguments, int64_t v_return_type, S_Array * v_targets, s_record_106 v_types)
 {
-	s_record_144 v_state = s_MirLowerState(s_record_102_copy(v_tree), s_array_retain(v_hir));
-	S_Array * s_field_1593 = s_array_retain(v_targets);
+	s_record_146 v_state = s_MirLowerState(s_record_102_copy(v_tree), s_array_retain(v_hir));
+	s_record_106 s_field_1637 = s_record_106_copy(v_types);
+	s_record_106_drop(v_state.types);
+	v_state.types = s_field_1637;
+	S_Array * s_field_1638 = s_array_retain(v_targets);
 	s_array_release(v_state.call_targets);
-	v_state.call_targets = s_field_1593;
-	s_record_144 s_value_1594 = s_mir_lower_block(s_record_144_copy(v_state));
-	s_record_144_drop(v_state);
-	v_state = s_value_1594;
-	int64_t s_left_1595 = s_array_i64_length_take(s_array_i64_retain(v_arguments));
-	int64_t s_right_1596 = s_generic_array_length_take(s_record_117_get_parameters_take(s_record_117_copy(v_header)));
-	if (((!s_mir_supported_type(v_return_type)) || (s_left_1595 != s_right_1596)))
+	v_state.call_targets = s_field_1638;
+	s_record_146 s_value_1639 = s_mir_lower_block(s_record_146_copy(v_state));
+	s_record_146_drop(v_state);
+	v_state = s_value_1639;
+	int64_t s_left_1640 = s_array_i64_length_take(s_array_i64_retain(v_arguments));
+	int64_t s_right_1641 = s_generic_array_length_take(s_record_117_get_parameters_take(s_record_117_copy(v_header)));
+	if (((!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_state)), v_return_type)) || (s_left_1640 != s_right_1641)))
 	{
-		s_record_146 s_return_1597 = s_MirLowerResult(s_MirFunction(0, v_return_type, s_record_144_get_register_types_take(s_record_144_copy(v_state)), s_record_144_get_blocks_take(s_record_144_copy(v_state)), 0), s_string_from_bytes("unsupported MIR function signature", sizeof("unsupported MIR function signature") - 1));
-		s_record_144_drop(v_state);
+		s_record_148 s_return_1642 = s_MirLowerResult(s_MirFunction(0, v_return_type, s_record_146_get_register_types_take(s_record_146_copy(v_state)), s_record_146_get_blocks_take(s_record_146_copy(v_state)), 0), s_string_from_bytes("unsupported MIR function signature", sizeof("unsupported MIR function signature") - 1));
+		s_record_146_drop(v_state);
+		s_record_106_drop(v_types);
 		s_array_release(v_targets);
 		s_array_i64_release(v_arguments);
 		s_array_release(v_hir);
 		s_record_117_drop(v_header);
 		s_record_102_drop(v_tree);
-		return s_return_1597;
+		return s_return_1642;
 	}
-	for (int64_t v_i = 0, s_bound_1598 = s_array_i64_length_take(s_array_i64_retain(v_arguments)); v_i < s_bound_1598; ++v_i)
+	for (int64_t v_i = 0, s_bound_1643 = s_array_i64_length_take(s_array_i64_retain(v_arguments)); v_i < s_bound_1643; ++v_i)
 	{
-		if ((!s_mir_supported_type(s_array_i64_get_checked_take(s_array_i64_retain(v_arguments), v_i))))
+		if ((!s_mir_type_supported(s_record_146_get_types_take(s_record_146_copy(v_state)), s_array_i64_get_checked_take(s_array_i64_retain(v_arguments), v_i))))
 		{
-			s_record_146 s_return_1599 = s_MirLowerResult(s_MirFunction(0, v_return_type, s_record_144_get_register_types_take(s_record_144_copy(v_state)), s_record_144_get_blocks_take(s_record_144_copy(v_state)), 0), s_string_from_bytes("unsupported MIR parameter type", sizeof("unsupported MIR parameter type") - 1));
-			s_record_144_drop(v_state);
+			s_record_148 s_return_1644 = s_MirLowerResult(s_MirFunction(0, v_return_type, s_record_146_get_register_types_take(s_record_146_copy(v_state)), s_record_146_get_blocks_take(s_record_146_copy(v_state)), 0), s_string_from_bytes("unsupported MIR parameter type", sizeof("unsupported MIR parameter type") - 1));
+			s_record_146_drop(v_state);
+			s_record_106_drop(v_types);
 			s_array_release(v_targets);
 			s_array_i64_release(v_arguments);
 			s_array_release(v_hir);
 			s_record_117_drop(v_header);
 			s_record_102_drop(v_tree);
-			return s_return_1599;
+			return s_return_1644;
 		}
-		s_record_144 s_value_1600 = s_mir_lower_register(s_record_144_copy(v_state), s_array_i64_get_checked_take(s_array_i64_retain(v_arguments), v_i));
-		s_record_144_drop(v_state);
-		v_state = s_value_1600;
-		s_record_143 s_item_1601 = s_MirSourceBinding(s_record_116_get_name_take(s_ga_10116_get_checked_take(s_record_117_get_parameters_take(s_record_117_copy(v_header)), v_i)), v_i, 0);
-		v_state.bindings = s_ga_10143_append_take(v_state.bindings, s_item_1601);
+		s_record_146 s_value_1645 = s_mir_lower_register(s_record_146_copy(v_state), s_array_i64_get_checked_take(s_array_i64_retain(v_arguments), v_i));
+		s_record_146_drop(v_state);
+		v_state = s_value_1645;
+		s_record_144 s_item_1646 = s_MirSourceBinding(s_record_116_get_name_take(s_ga_10116_get_checked_take(s_record_117_get_parameters_take(s_record_117_copy(v_header)), v_i)), v_i, 0);
+		v_state.bindings = s_ga_10144_append_take(v_state.bindings, s_item_1646);
 	}
-	s_record_144 s_value_1602 = s_mir_lower_statements(s_record_144_copy(v_state), s_record_117_get_body_take(s_record_117_copy(v_header)));
-	s_record_144_drop(v_state);
-	v_state = s_value_1602;
-	if (((s_string_compare_take(s_record_144_get_error_take(s_record_144_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0) && (!s_mir_lower_ended(s_record_144_copy(v_state)))))
+	s_record_146 s_value_1647 = s_mir_lower_statements(s_record_146_copy(v_state), s_record_117_get_body_take(s_record_117_copy(v_header)));
+	s_record_146_drop(v_state);
+	v_state = s_value_1647;
+	if (((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_state)), s_string_from_bytes("", sizeof("") - 1)) == 0) && (!s_mir_lower_ended(s_record_146_copy(v_state)))))
 	{
-		s_record_144 s_value_1603 = s_mir_lower_error(s_record_144_copy(v_state), s_string_from_bytes("missing MIR return", sizeof("missing MIR return") - 1));
-		s_record_144_drop(v_state);
-		v_state = s_value_1603;
+		s_record_146 s_value_1648 = s_mir_lower_error(s_record_146_copy(v_state), s_string_from_bytes("missing MIR return", sizeof("missing MIR return") - 1));
+		s_record_146_drop(v_state);
+		v_state = s_value_1648;
 	}
-	s_record_146 s_return_1604 = s_MirLowerResult(s_MirFunction(s_array_i64_length_take(s_array_i64_retain(v_arguments)), v_return_type, s_record_144_get_register_types_take(s_record_144_copy(v_state)), s_record_144_get_blocks_take(s_record_144_copy(v_state)), 0), s_record_144_get_error_take(s_record_144_copy(v_state)));
-	s_record_144_drop(v_state);
+	s_record_148 s_return_1649 = s_MirLowerResult(s_MirFunction(s_array_i64_length_take(s_array_i64_retain(v_arguments)), v_return_type, s_record_146_get_register_types_take(s_record_146_copy(v_state)), s_record_146_get_blocks_take(s_record_146_copy(v_state)), 0), s_record_146_get_error_take(s_record_146_copy(v_state)));
+	s_record_146_drop(v_state);
+	s_record_106_drop(v_types);
 	s_array_release(v_targets);
 	s_array_i64_release(v_arguments);
 	s_array_release(v_hir);
 	s_record_117_drop(v_header);
 	s_record_102_drop(v_tree);
-	return s_return_1604;
-	s_record_144_drop(v_state);
+	return s_return_1649;
+	s_record_146_drop(v_state);
 }
 
-s_record_146 s_mir_lower_function(s_record_102 v_tree, s_record_117 v_header, S_Array * v_hir, S_Array_i64 * v_arguments, int64_t v_return_type)
+s_record_148 s_mir_lower_function_calls(s_record_102 v_tree, s_record_117 v_header, S_Array * v_hir, S_Array_i64 * v_arguments, int64_t v_return_type, S_Array * v_targets)
 {
-	s_record_146 s_return_1605 = s_mir_lower_function_calls(s_record_102_copy(v_tree), s_record_117_copy(v_header), s_array_retain(v_hir), s_array_i64_retain(v_arguments), v_return_type, s_ga_10133_make_take(0, NULL));
+	s_record_148 s_return_1650 = s_mir_lower_function_typed(s_record_102_copy(v_tree), s_record_117_copy(v_header), s_array_retain(v_hir), s_array_i64_retain(v_arguments), v_return_type, s_array_retain(v_targets), s_new_type_table());
+	s_array_release(v_targets);
 	s_array_i64_release(v_arguments);
 	s_array_release(v_hir);
 	s_record_117_drop(v_header);
 	s_record_102_drop(v_tree);
-	return s_return_1605;
+	return s_return_1650;
 }
 
-s_record_148 s_MirProgramBuild(s_record_140 v_program, s_record_112 v_registry, S_Array * v_analyses, int64_t v_entry, S_String * v_error)
+s_record_148 s_mir_lower_function(s_record_102 v_tree, s_record_117 v_header, S_Array * v_hir, S_Array_i64 * v_arguments, int64_t v_return_type)
 {
-	s_record_148 s_constructor_result = {0};
+	s_record_148 s_return_1651 = s_mir_lower_function_calls(s_record_102_copy(v_tree), s_record_117_copy(v_header), s_array_retain(v_hir), s_array_i64_retain(v_arguments), v_return_type, s_ga_10133_make_take(0, NULL));
+	s_array_i64_release(v_arguments);
+	s_array_release(v_hir);
+	s_record_117_drop(v_header);
+	s_record_102_drop(v_tree);
+	return s_return_1651;
+}
+
+s_record_150 s_MirProgramBuild(s_record_140 v_program, s_record_112 v_registry, S_Array * v_analyses, int64_t v_entry, S_String * v_error)
+{
+	s_record_150 s_constructor_result = {0};
 	s_constructor_result.program = v_program;
 	s_constructor_result.registry = v_registry;
 	s_constructor_result.analyses = v_analyses;
@@ -22287,87 +23014,90 @@ s_record_148 s_MirProgramBuild(s_record_140 v_program, s_record_112 v_registry, 
 	return s_constructor_result;
 }
 
-s_record_148 s_mir_build_program(s_record_102 v_tree, s_record_118 v_declarations, S_String * v_name, S_Array_i64 * v_arguments)
+s_record_150 s_mir_build_program(s_record_102 v_tree, s_record_118 v_declarations, S_String * v_name, S_Array_i64 * v_arguments)
 {
 	s_record_135 v_analyzed = s_hir_specialize_program(s_record_102_copy(v_tree), s_record_118_copy(v_declarations), s_string_retain(v_name), s_array_i64_retain(v_arguments));
 	S_Array * v_functions = s_ga_10139_make_take(0, NULL);
 	if ((s_string_compare_take(s_record_135_get_error_take(s_record_135_copy(v_analyzed)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
-		s_record_148 s_return_1606 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_record_135_get_error_take(s_record_135_copy(v_analyzed)));
+		s_record_150 s_return_1652 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_record_135_get_error_take(s_record_135_copy(v_analyzed)));
 		s_array_release(v_functions);
 		s_record_135_drop(v_analyzed);
 		s_array_i64_release(v_arguments);
 		s_string_release(v_name);
 		s_record_118_drop(v_declarations);
 		s_record_102_drop(v_tree);
-		return s_return_1606;
+		return s_return_1652;
 	}
 	{
-		S_Array * v_s_iter_1607 = s_record_135_get_bodies_take(s_record_135_copy(v_analyzed));
-		for (int64_t s_index_1607 = 0; s_index_1607 < (int64_t)s_array_length(v_s_iter_1607); ++s_index_1607)
+		S_Array * v_s_iter_1653 = s_record_135_get_bodies_take(s_record_135_copy(v_analyzed));
+		for (int64_t s_index_1653 = 0; s_index_1653 < (int64_t)s_array_length(v_s_iter_1653); ++s_index_1653)
 		{
-			s_record_134 v_body = s_ga_10134_get_borrow(v_s_iter_1607, s_index_1607);
+			s_record_134 v_body = s_ga_10134_get_borrow(v_s_iter_1653, s_index_1653);
 			s_record_111 v_spec = s_ga_10111_get_checked_take(s_record_112_get_entries_take(s_record_135_get_registry_take(s_record_135_copy(v_analyzed))), s_record_134_get_specialization_take(s_record_134_copy(v_body)));
 			const int64_t v_definition = s_hir_definition(s_record_118_get_functions_take(s_record_118_copy(v_declarations)), s_record_111_get_definition_take(s_record_111_copy(v_spec)));
 			s_record_117 v_header = s_ga_10117_get_checked_take(s_record_118_get_functions_take(s_record_118_copy(v_declarations)), v_definition);
-			if ((!s_mir_supported_type(s_record_134_get_return_type_take(s_record_134_copy(v_body)))))
+			if ((!s_mir_type_supported(s_record_135_get_types_take(s_record_135_copy(v_analyzed)), s_record_134_get_return_type_take(s_record_134_copy(v_body)))))
 			{
-				s_record_148 s_return_1608 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_string_from_bytes("MIR specialization requires a scalar return type", sizeof("MIR specialization requires a scalar return type") - 1));
+				s_record_150 s_return_1654 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_string_from_bytes("MIR specialization requires a scalar return type", sizeof("MIR specialization requires a scalar return type") - 1));
 				s_record_117_drop(v_header);
 				s_record_111_drop(v_spec);
 				s_record_134_drop(v_body);
-				s_array_release(v_s_iter_1607);
+				s_array_release(v_s_iter_1653);
 				s_array_release(v_functions);
 				s_record_135_drop(v_analyzed);
 				s_array_i64_release(v_arguments);
 				s_string_release(v_name);
 				s_record_118_drop(v_declarations);
 				s_record_102_drop(v_tree);
-				return s_return_1608;
+				return s_return_1654;
 			}
 			S_Array * v_targets = s_ga_10133_make_take(0, NULL);
 			{
-				S_Array * v_s_iter_1609 = s_record_134_get_calls_take(s_record_134_copy(v_body));
-				for (int64_t s_index_1609 = 0; s_index_1609 < (int64_t)s_array_length(v_s_iter_1609); ++s_index_1609)
+				S_Array * v_s_iter_1655 = s_record_134_get_calls_take(s_record_134_copy(v_body));
+				for (int64_t s_index_1655 = 0; s_index_1655 < (int64_t)s_array_length(v_s_iter_1655); ++s_index_1655)
 				{
-					s_record_133 v_call = s_ga_10133_get_borrow(v_s_iter_1609, s_index_1609);
-					s_record_133 s_item_1610 = s_MirCallTarget(s_record_133_get_source_take(s_record_133_copy(v_call)), s_record_133_get_specialization_take(s_record_133_copy(v_call)));
-					v_targets = s_ga_10133_append_take(v_targets, s_item_1610);
+					s_record_133 v_call = s_ga_10133_get_borrow(v_s_iter_1655, s_index_1655);
+					s_record_133 s_item_1656 = s_MirCallTarget(s_record_133_get_source_take(s_record_133_copy(v_call)), s_record_133_get_specialization_take(s_record_133_copy(v_call)));
+					v_targets = s_ga_10133_append_take(v_targets, s_item_1656);
 					s_record_133_drop(v_call);
 				}
-				s_array_release(v_s_iter_1609);
+				s_array_release(v_s_iter_1655);
 			}
-			s_record_146 v_lowered = s_mir_lower_function_calls(s_record_102_copy(v_tree), s_record_117_copy(v_header), s_record_134_get_nodes_take(s_record_134_copy(v_body)), s_record_111_get_arguments_take(s_record_111_copy(v_spec)), s_record_134_get_return_type_take(s_record_134_copy(v_body)), s_array_retain(v_targets));
-			if ((s_string_compare_take(s_record_146_get_error_take(s_record_146_copy(v_lowered)), s_string_from_bytes("", sizeof("") - 1)) != 0))
+			s_record_148 v_lowered = s_mir_lower_function_typed(s_record_102_copy(v_tree), s_record_117_copy(v_header), s_record_134_get_nodes_take(s_record_134_copy(v_body)), s_record_111_get_arguments_take(s_record_111_copy(v_spec)), s_record_134_get_return_type_take(s_record_134_copy(v_body)), s_array_retain(v_targets), s_record_135_get_types_take(s_record_135_copy(v_analyzed)));
+			if ((s_string_compare_take(s_record_148_get_error_take(s_record_148_copy(v_lowered)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 			{
-				s_record_148 s_return_1611 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_record_146_get_error_take(s_record_146_copy(v_lowered)));
-				s_record_146_drop(v_lowered);
+				s_record_150 s_return_1657 = s_MirProgramBuild(s_MirProgram(s_array_retain(v_functions)), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_record_148_get_error_take(s_record_148_copy(v_lowered)));
+				s_record_148_drop(v_lowered);
 				s_array_release(v_targets);
 				s_record_117_drop(v_header);
 				s_record_111_drop(v_spec);
 				s_record_134_drop(v_body);
-				s_array_release(v_s_iter_1607);
+				s_array_release(v_s_iter_1653);
 				s_array_release(v_functions);
 				s_record_135_drop(v_analyzed);
 				s_array_i64_release(v_arguments);
 				s_string_release(v_name);
 				s_record_118_drop(v_declarations);
 				s_record_102_drop(v_tree);
-				return s_return_1611;
+				return s_return_1657;
 			}
-			s_record_139 s_item_1612 = s_record_146_get_function_take(s_record_146_copy(v_lowered));
-			v_functions = s_ga_10139_append_take(v_functions, s_item_1612);
-			s_record_146_drop(v_lowered);
+			s_record_139 s_item_1658 = s_record_148_get_function_take(s_record_148_copy(v_lowered));
+			v_functions = s_ga_10139_append_take(v_functions, s_item_1658);
+			s_record_148_drop(v_lowered);
 			s_array_release(v_targets);
 			s_record_117_drop(v_header);
 			s_record_111_drop(v_spec);
 			s_record_134_drop(v_body);
 		}
-		s_array_release(v_s_iter_1607);
+		s_array_release(v_s_iter_1653);
 	}
 	s_record_140 v_program = s_MirProgram(s_array_retain(v_functions));
+	s_record_106 s_field_1659 = s_record_135_get_types_take(s_record_135_copy(v_analyzed));
+	s_record_106_drop(v_program.types);
+	v_program.types = s_field_1659;
 	S_String * v_verified = s_mir_verify(s_record_140_copy(v_program));
-	s_record_148 s_return_1613 = s_MirProgramBuild(s_record_140_copy(v_program), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_string_retain(v_verified));
+	s_record_150 s_return_1660 = s_MirProgramBuild(s_record_140_copy(v_program), s_record_135_get_registry_take(s_record_135_copy(v_analyzed)), s_record_135_get_bodies_take(s_record_135_copy(v_analyzed)), s_record_135_get_entry_take(s_record_135_copy(v_analyzed)), s_string_retain(v_verified));
 	s_string_release(v_verified);
 	s_record_140_drop(v_program);
 	s_array_release(v_functions);
@@ -22376,7 +23106,7 @@ s_record_148 s_mir_build_program(s_record_102 v_tree, s_record_118 v_declaration
 	s_string_release(v_name);
 	s_record_118_drop(v_declarations);
 	s_record_102_drop(v_tree);
-	return s_return_1613;
+	return s_return_1660;
 	s_string_release(v_verified);
 	s_record_140_drop(v_program);
 	s_array_release(v_functions);
@@ -22392,6 +23122,10 @@ S_String * s_mir_c_type(int64_t v_type_id)
 	if ((v_type_id == 4))
 	{
 		return s_string_from_bytes("S_String *", sizeof("S_String *") - 1);
+	}
+	if ((v_type_id >= 6))
+	{
+		return s_string_from_bytes("S_MirRecord *", sizeof("S_MirRecord *") - 1);
 	}
 	return s_string_from_bytes("int64_t", sizeof("int64_t") - 1);
 }
@@ -22409,52 +23143,52 @@ S_String * s_mir_c_function(int64_t v_index)
 S_String * s_mir_c_signature(s_record_139 v_function, int64_t v_index)
 {
 	S_Array * v_args = s_ga_8_make_take(0, NULL);
-	for (int64_t v_i = 0, s_bound_1614 = s_record_139_get_argument_count_take(s_record_139_copy(v_function)); v_i < s_bound_1614; ++v_i)
+	for (int64_t v_i = 0, s_bound_1661 = s_record_139_get_argument_count_take(s_record_139_copy(v_function)); v_i < s_bound_1661; ++v_i)
 	{
-		S_String * s_item_1615 = s_string_concat_take(s_string_concat_take(s_mir_c_type(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i)), s_string_from_bytes(" a", sizeof(" a") - 1)), s_string_from_i64(v_i));
-		v_args = s_ga_8_append_take(v_args, s_item_1615);
+		S_String * s_item_1662 = s_string_concat_take(s_string_concat_take(s_mir_c_type(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i)), s_string_from_bytes(" a", sizeof(" a") - 1)), s_string_from_i64(v_i));
+		v_args = s_ga_8_append_take(v_args, s_item_1662);
 	}
 	if ((s_generic_array_length_take(s_array_retain(v_args)) == 0))
 	{
-		S_String * s_return_1616 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("static ", sizeof("static ") - 1), s_mir_c_type(s_record_139_get_return_type_take(s_record_139_copy(v_function)))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_function(v_index)), s_string_from_bytes("(void)", sizeof("(void)") - 1));
+		S_String * s_return_1663 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("static ", sizeof("static ") - 1), s_mir_c_type(s_record_139_get_return_type_take(s_record_139_copy(v_function)))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_function(v_index)), s_string_from_bytes("(void)", sizeof("(void)") - 1));
 		s_array_release(v_args);
 		s_record_139_drop(v_function);
-		return s_return_1616;
+		return s_return_1663;
 	}
-	S_String * s_left_1617 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("static ", sizeof("static ") - 1), s_mir_c_type(s_record_139_get_return_type_take(s_record_139_copy(v_function)))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_function(v_index)), s_string_from_bytes("(", sizeof("(") - 1));
-	S_String * s_right_1618 = s_string_join_take(s_string_from_bytes(", ", sizeof(", ") - 1), s_array_retain(v_args));
-	S_String * s_return_1619 = s_string_concat_take(s_string_concat_take(s_left_1617, s_right_1618), s_string_from_bytes(")", sizeof(")") - 1));
+	S_String * s_left_1664 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("static ", sizeof("static ") - 1), s_mir_c_type(s_record_139_get_return_type_take(s_record_139_copy(v_function)))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_function(v_index)), s_string_from_bytes("(", sizeof("(") - 1));
+	S_String * s_right_1665 = s_string_join_take(s_string_from_bytes(", ", sizeof(", ") - 1), s_array_retain(v_args));
+	S_String * s_return_1666 = s_string_concat_take(s_string_concat_take(s_left_1664, s_right_1665), s_string_from_bytes(")", sizeof(")") - 1));
 	s_array_release(v_args);
 	s_record_139_drop(v_function);
-	return s_return_1619;
+	return s_return_1666;
 	s_array_release(v_args);
 }
 
 S_String * s_mir_c_string(S_String * v_value)
 {
 	S_String * v_result = s_string_from_bytes("\"", sizeof("\"") - 1);
-	for (int64_t v_i = 0, s_bound_1620 = s_string_length_take(s_string_retain(v_value)); v_i < s_bound_1620; ++v_i)
+	for (int64_t v_i = 0, s_bound_1667 = s_string_length_take(s_string_retain(v_value)); v_i < s_bound_1667; ++v_i)
 	{
-		S_Optional_i64 s_option_1621 = s_string_byte_at_take(s_string_retain(v_value), v_i);
-		int64_t s_fallback_1621;
-		if (s_option_1621.has_value) {
-			s_fallback_1621 = s_option_1621.value;
+		S_Optional_i64 s_option_1668 = s_string_byte_at_take(s_string_retain(v_value), v_i);
+		int64_t s_fallback_1668;
+		if (s_option_1668.has_value) {
+			s_fallback_1668 = s_option_1668.value;
 		} else {
-			s_fallback_1621 = 0;
+			s_fallback_1668 = 0;
 		}
-		const int64_t v_byte = s_fallback_1621;
-		S_String * s_left_1622 = s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\\", sizeof("\\") - 1)), s_string_from_i64((v_byte / 64)));
-		S_String * s_right_1623 = s_string_from_i64(((v_byte / 8) % 8));
-		S_String * s_left_1624 = s_string_concat_take(s_left_1622, s_right_1623);
-		S_String * s_right_1625 = s_string_from_i64((v_byte % 8));
-		S_String *s_value_1626 = s_string_concat_take(s_left_1624, s_right_1625);
+		const int64_t v_byte = s_fallback_1668;
+		S_String * s_left_1669 = s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\\", sizeof("\\") - 1)), s_string_from_i64((v_byte / 64)));
+		S_String * s_right_1670 = s_string_from_i64(((v_byte / 8) % 8));
+		S_String * s_left_1671 = s_string_concat_take(s_left_1669, s_right_1670);
+		S_String * s_right_1672 = s_string_from_i64((v_byte % 8));
+		S_String *s_value_1673 = s_string_concat_take(s_left_1671, s_right_1672);
 		s_string_release(v_result);
-		v_result = s_value_1626;
+		v_result = s_value_1673;
 	}
-	S_String * s_return_1627 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\"", sizeof("\"") - 1));
+	S_String * s_return_1674 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\"", sizeof("\"") - 1));
 	s_string_release(v_result);
 	s_string_release(v_value);
-	return s_return_1627;
+	return s_return_1674;
 	s_string_release(v_result);
 }
 
@@ -22463,36 +23197,140 @@ S_String * s_mir_c_check(int64_t v_index)
 	return s_string_concat_take(s_string_concat_take(s_string_from_bytes("\tif (!init", sizeof("\tif (!init") - 1), s_string_from_i64(v_index)), s_string_from_bytes(") s_panic(\"uninitialized register\");\n", sizeof(") s_panic(\"uninitialized register\");\n") - 1));
 }
 
-S_String * s_mir_c_store_string(int64_t v_dst, S_String * v_expression)
+S_String * s_mir_c_release_value(int64_t v_type_id, S_String * v_value)
+{
+	if ((v_type_id == 4))
+	{
+		S_String * s_return_1675 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_release(", sizeof("s_string_release(") - 1), s_string_retain(v_value)), s_string_from_bytes(")", sizeof(")") - 1));
+		s_string_release(v_value);
+		return s_return_1675;
+	}
+	S_String * s_return_1676 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_mir_record_release(", sizeof("s_mir_record_release(") - 1), s_string_retain(v_value)), s_string_from_bytes(")", sizeof(")") - 1));
+	s_string_release(v_value);
+	return s_return_1676;
+}
+
+S_String * s_mir_c_retain_value(int64_t v_type_id, S_String * v_value)
+{
+	if ((v_type_id == 4))
+	{
+		S_String * s_return_1677 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_retain(", sizeof("s_string_retain(") - 1), s_string_retain(v_value)), s_string_from_bytes(")", sizeof(")") - 1));
+		s_string_release(v_value);
+		return s_return_1677;
+	}
+	S_String * s_return_1678 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_mir_record_retain(", sizeof("s_mir_record_retain(") - 1), s_string_retain(v_value)), s_string_from_bytes(")", sizeof(")") - 1));
+	s_string_release(v_value);
+	return s_return_1678;
+}
+
+bool s_mir_c_managed(int64_t v_type_id)
+{
+	return ((v_type_id == 4) || (v_type_id >= 6));
+}
+
+S_String * s_mir_c_store_owned(int64_t v_dst, int64_t v_type_id, S_String * v_expression)
 {
 	S_String * v_name = s_mir_c_register(v_dst);
-	S_String * s_left_1628 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("\t{ S_String *owned = ", sizeof("\t{ S_String *owned = ") - 1), s_string_retain(v_expression)), s_string_from_bytes("; if (init", sizeof("; if (init") - 1)), s_string_from_i64(v_dst)), s_string_from_bytes(") s_string_release(", sizeof(") s_string_release(") - 1)), s_string_retain(v_name)), s_string_from_bytes("); ", sizeof("); ") - 1)), s_string_retain(v_name)), s_string_from_bytes(" = owned; init", sizeof(" = owned; init") - 1));
-	S_String * s_right_1629 = s_string_from_i64(v_dst);
-	S_String * s_return_1630 = s_string_concat_take(s_string_concat_take(s_left_1628, s_right_1629), s_string_from_bytes(" = true; }\n", sizeof(" = true; }\n") - 1));
+	S_String * s_left_1679 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("\t{ ", sizeof("\t{ ") - 1), s_mir_c_type(v_type_id)), s_string_from_bytes(" owned = ", sizeof(" owned = ") - 1)), s_string_retain(v_expression)), s_string_from_bytes("; if (init", sizeof("; if (init") - 1)), s_string_from_i64(v_dst)), s_string_from_bytes(") ", sizeof(") ") - 1)), s_mir_c_release_value(v_type_id, s_string_retain(v_name))), s_string_from_bytes("; ", sizeof("; ") - 1)), s_string_retain(v_name)), s_string_from_bytes(" = owned; init", sizeof(" = owned; init") - 1));
+	S_String * s_right_1680 = s_string_from_i64(v_dst);
+	S_String * s_return_1681 = s_string_concat_take(s_string_concat_take(s_left_1679, s_right_1680), s_string_from_bytes(" = true; }\n", sizeof(" = true; }\n") - 1));
 	s_string_release(v_name);
 	s_string_release(v_expression);
-	return s_return_1630;
+	return s_return_1681;
 	s_string_release(v_name);
 }
 
-S_String * s_mir_c_release_strings(s_record_139 v_function, int64_t v_except)
+S_String * s_mir_c_release_managed(s_record_139 v_function, int64_t v_except)
 {
 	S_String * v_result = s_string_from_bytes("", sizeof("") - 1);
-	for (int64_t v_i = 0, s_bound_1631 = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function))); v_i < s_bound_1631; ++v_i)
+	for (int64_t v_i = 0, s_bound_1682 = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function))); v_i < s_bound_1682; ++v_i)
 	{
-		if (((v_i != v_except) && (s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i) == 4)))
+		const int64_t v_type_id = s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i);
+		if (((v_i != v_except) && s_mir_c_managed(v_type_id)))
 		{
-			S_String * s_left_1632 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (init", sizeof("\tif (init") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(") s_string_release(", sizeof(") s_string_release(") - 1));
-			S_String * s_right_1633 = s_mir_c_register(v_i);
-			S_String *s_value_1634 = s_string_concat_take(s_string_concat_take(s_left_1632, s_right_1633), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+			S_String * s_left_1683 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (init", sizeof("\tif (init") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(") ", sizeof(") ") - 1));
+			S_String * s_right_1684 = s_mir_c_release_value(v_type_id, s_mir_c_register(v_i));
+			S_String *s_value_1685 = s_string_concat_take(s_string_concat_take(s_left_1683, s_right_1684), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 			s_string_release(v_result);
-			v_result = s_value_1634;
+			v_result = s_value_1685;
 		}
 	}
-	S_String * s_return_1635 = s_string_retain(v_result);
+	S_String * s_return_1686 = s_string_retain(v_result);
 	s_string_release(v_result);
 	s_record_139_drop(v_function);
-	return s_return_1635;
+	return s_return_1686;
+	s_string_release(v_result);
+}
+
+S_String * s_mir_c_record_runtime(s_record_106 v_types)
+{
+	S_String * v_result = s_string_from_bytes("typedef struct S_MirRecord S_MirRecord;\n", sizeof("typedef struct S_MirRecord S_MirRecord;\n") - 1);
+	S_String *s_value_1687 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n", sizeof("typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1687;
+	S_String *s_value_1688 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("struct S_MirRecord { int64_t type_id; size_t refs; S_MirField fields[]; };\n", sizeof("struct S_MirRecord { int64_t type_id; size_t refs; S_MirField fields[]; };\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1688;
+	S_String *s_value_1689 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n", sizeof("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1689;
+	S_String *s_value_1690 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n", sizeof("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1690;
+	S_String *s_value_1691 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; return r;\n}\n", sizeof("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; return r;\n}\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1691;
+	S_String *s_value_1692 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n", sizeof("static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1692;
+	S_String *s_value_1693 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n", sizeof("static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1693;
+	for (int64_t v_i = 0, s_bound_1694 = s_generic_array_length_take(s_record_106_get_entries_take(s_record_106_copy(v_types))); v_i < s_bound_1694; ++v_i)
+	{
+		s_record_105 v_type_desc = s_ga_10105_get_checked_take(s_record_106_get_entries_take(s_record_106_copy(v_types)), v_i);
+		if ((s_record_105_get_tag_take(s_record_105_copy(v_type_desc)) == 6))
+		{
+			S_String *s_value_1695 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tcase ", sizeof("\tcase ") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(":\n", sizeof(":\n") - 1));
+			s_string_release(v_result);
+			v_result = s_value_1695;
+			for (int64_t v_j = 0, s_bound_1696 = s_generic_array_length_take(s_record_105_get_fields_take(s_record_105_copy(v_type_desc))); v_j < s_bound_1696; ++v_j)
+			{
+				const int64_t v_field_type = s_record_104_get_kind_take(s_ga_10104_get_checked_take(s_record_105_get_fields_take(s_record_105_copy(v_type_desc)), v_j));
+				if (s_mir_c_managed(v_field_type))
+				{
+					S_String * v_field = s_string_concat_take(s_string_concat_take(s_string_from_bytes("r->fields[", sizeof("r->fields[") - 1), s_string_from_i64(v_j)), s_string_from_bytes("]", sizeof("]") - 1));
+					if ((v_field_type == 4))
+					{
+						S_String *s_value_1697 = s_string_concat_take(s_string_retain(v_field), s_string_from_bytes(".text", sizeof(".text") - 1));
+						s_string_release(v_field);
+						v_field = s_value_1697;
+					}
+					else
+					{
+						S_String *s_value_1698 = s_string_concat_take(s_string_retain(v_field), s_string_from_bytes(".record", sizeof(".record") - 1));
+						s_string_release(v_field);
+						v_field = s_value_1698;
+					}
+					S_String *s_value_1699 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t\t", sizeof("\t\t") - 1)), s_mir_c_release_value(v_field_type, s_string_retain(v_field))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+					s_string_release(v_result);
+					v_result = s_value_1699;
+					s_string_release(v_field);
+				}
+			}
+			S_String *s_value_1700 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t\tbreak;\n", sizeof("\t\tbreak;\n") - 1));
+			s_string_release(v_result);
+			v_result = s_value_1700;
+		}
+		s_record_105_drop(v_type_desc);
+	}
+	S_String *s_value_1701 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tdefault: s_panic(\"unknown record type\");\n\t}\n\tfree(r);\n}\n\n", sizeof("\tdefault: s_panic(\"unknown record type\");\n\t}\n\tfree(r);\n}\n\n") - 1));
+	s_string_release(v_result);
+	v_result = s_value_1701;
+	S_String * s_return_1702 = s_string_retain(v_result);
+	s_string_release(v_result);
+	s_record_106_drop(v_types);
+	return s_return_1702;
 	s_string_release(v_result);
 }
 
@@ -22502,50 +23340,51 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 	S_String * v_result = s_string_from_bytes("", sizeof("") - 1);
 	if ((((v_op != 1) && (v_op != 2)) && (v_op != 17)))
 	{
-		if ((v_op == 15))
+		if (((v_op == 15) || (v_op == 23)))
 		{
 			{
-				S_Array_i64 * v_s_iter_1636 = s_record_136_get_inputs_take(s_record_136_copy(v_instruction));
-				for (int64_t s_index_1636 = 0; s_index_1636 < (int64_t)v_s_iter_1636->length; ++s_index_1636)
+				S_Array_i64 * v_s_iter_1703 = s_record_136_get_inputs_take(s_record_136_copy(v_instruction));
+				for (int64_t s_index_1703 = 0; s_index_1703 < (int64_t)v_s_iter_1703->length; ++s_index_1703)
 				{
-					int64_t v_arg = s_array_i64_get_checked(v_s_iter_1636, s_index_1636);
-					S_String *s_value_1637 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(v_arg));
+					int64_t v_arg = s_array_i64_get_checked(v_s_iter_1703, s_index_1703);
+					S_String *s_value_1704 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(v_arg));
 					s_string_release(v_result);
-					v_result = s_value_1637;
+					v_result = s_value_1704;
 				}
-				s_array_i64_release(v_s_iter_1636);
+				s_array_i64_release(v_s_iter_1703);
 			}
 		}
 		else
 		{
-			S_String *s_value_1638 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_first_take(s_record_136_copy(v_instruction))));
+			S_String *s_value_1705 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_first_take(s_record_136_copy(v_instruction))));
 			s_string_release(v_result);
-			v_result = s_value_1638;
+			v_result = s_value_1705;
 			if ((((v_op >= 4) && (v_op <= 11)) || (v_op == 13)))
 			{
-				S_String *s_value_1639 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_second_take(s_record_136_copy(v_instruction))));
+				S_String *s_value_1706 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_second_take(s_record_136_copy(v_instruction))));
 				s_string_release(v_result);
-				v_result = s_value_1639;
+				v_result = s_value_1706;
 			}
 		}
 	}
 	if ((v_op == 16))
 	{
-		S_String * s_return_1640 = s_string_retain(v_result);
+		S_String * s_return_1707 = s_string_retain(v_result);
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_136_drop(v_instruction);
-		return s_return_1640;
+		return s_return_1707;
 	}
 	S_String * v_dst = s_mir_c_register(s_record_136_get_dst_take(s_record_136_copy(v_instruction)));
 	S_String * v_expr = s_string_from_bytes("", sizeof("") - 1);
 	S_String * v_first = s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)));
 	S_String * v_second = s_mir_c_register(s_record_136_get_second_take(s_record_136_copy(v_instruction)));
+	const int64_t v_dst_type = s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_136_get_dst_take(s_record_136_copy(v_instruction)));
 	if ((v_op == 17))
 	{
-		S_String * s_left_1641 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_from_bytes(", sizeof("s_string_from_bytes(") - 1), s_mir_c_string(s_record_136_get_text_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(", ", sizeof(", ") - 1));
-		S_String * s_right_1642 = s_string_from_i64(s_string_length_take(s_record_136_get_text_take(s_record_136_copy(v_instruction))));
-		S_String * s_return_1643 = s_mir_c_store_string(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), s_string_concat_take(s_string_concat_take(s_left_1641, s_right_1642), s_string_from_bytes(")", sizeof(")") - 1)));
+		S_String * s_left_1708 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_from_bytes(", sizeof("s_string_from_bytes(") - 1), s_mir_c_string(s_record_136_get_text_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(", ", sizeof(", ") - 1));
+		S_String * s_right_1709 = s_string_from_i64(s_string_length_take(s_record_136_get_text_take(s_record_136_copy(v_instruction))));
+		S_String * s_return_1710 = s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), 4, s_string_concat_take(s_string_concat_take(s_left_1708, s_right_1709), s_string_from_bytes(")", sizeof(")") - 1)));
 		s_string_release(v_second);
 		s_string_release(v_first);
 		s_string_release(v_expr);
@@ -22553,45 +23392,76 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_136_drop(v_instruction);
-		return s_return_1643;
+		return s_return_1710;
 	}
-	if ((v_op == 20))
+	if ((v_op == 23))
 	{
-		S_String * s_return_1644 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\ts_string_release(", sizeof("\ts_string_release(") - 1)), s_string_retain(v_dst)), s_string_from_bytes("); ", sizeof("); ") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = NULL; init", sizeof(" = NULL; init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = false;\n", sizeof(" = false;\n") - 1));
-		s_string_release(v_second);
-		s_string_release(v_first);
-		s_string_release(v_expr);
-		s_string_release(v_dst);
-		s_string_release(v_result);
-		s_record_139_drop(v_function);
-		s_record_136_drop(v_instruction);
-		return s_return_1644;
-	}
-	if ((v_op == 19))
-	{
-		S_String * v_transfer = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t{ S_String *owned = ", sizeof("\t{ S_String *owned = ") - 1)), s_string_retain(v_first)), s_string_from_bytes("; ", sizeof("; ") - 1)), s_string_retain(v_first)), s_string_from_bytes(" = NULL; init", sizeof(" = NULL; init") - 1)), s_string_from_i64(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = false; ", sizeof(" = false; ") - 1));
-		S_String * s_left_1645 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_transfer), s_string_from_bytes("if (init", sizeof("if (init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(") s_string_release(", sizeof(") s_string_release(") - 1)), s_string_retain(v_dst)), s_string_from_bytes("); ", sizeof("); ") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = owned; init", sizeof(" = owned; init") - 1));
-		S_String * s_right_1646 = s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)));
-		S_String *s_value_1647 = s_string_concat_take(s_string_concat_take(s_left_1645, s_right_1646), s_string_from_bytes(" = true; }\n", sizeof(" = true; }\n") - 1));
-		s_string_release(v_transfer);
-		v_transfer = s_value_1647;
-		S_String * s_return_1648 = s_string_retain(v_transfer);
-		s_string_release(v_transfer);
-		s_string_release(v_second);
-		s_string_release(v_first);
-		s_string_release(v_expr);
-		s_string_release(v_dst);
-		s_string_release(v_result);
-		s_record_139_drop(v_function);
-		s_record_136_drop(v_instruction);
-		return s_return_1648;
-		s_string_release(v_transfer);
-	}
-	if (((v_op == 3) || (v_op == 18)))
-	{
-		if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_136_get_dst_take(s_record_136_copy(v_instruction))) == 4))
+		S_String * s_left_1711 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t{ S_MirRecord *record = s_mir_record_new(", sizeof("\t{ S_MirRecord *record = s_mir_record_new(") - 1)), s_string_from_i64(v_dst_type)), s_string_from_bytes(", ", sizeof(", ") - 1));
+		S_String * s_right_1712 = s_string_from_i64(s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_instruction))));
+		S_String * v_code = s_string_concat_take(s_string_concat_take(s_left_1711, s_right_1712), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+		for (int64_t v_i = 0, s_bound_1713 = s_array_i64_length_take(s_record_136_get_inputs_take(s_record_136_copy(v_instruction))); v_i < s_bound_1713; ++v_i)
 		{
-			S_String * s_return_1649 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_string(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_retain(", sizeof("s_string_retain(") - 1), s_string_retain(v_first)), s_string_from_bytes(")", sizeof(")") - 1))));
+			const int64_t v_arg = s_array_i64_get_checked_take(s_record_136_get_inputs_take(s_record_136_copy(v_instruction)), v_i);
+			const int64_t v_kind = s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_arg);
+			S_String * v_field = s_string_from_bytes("bits", sizeof("bits") - 1);
+			S_String * v_value = s_mir_c_register(v_arg);
+			if ((v_kind == 4))
+			{
+				S_String *s_value_1714 = s_string_from_bytes("text", sizeof("text") - 1);
+				s_string_release(v_field);
+				v_field = s_value_1714;
+				S_String *s_value_1715 = s_mir_c_retain_value(v_kind, s_string_retain(v_value));
+				s_string_release(v_value);
+				v_value = s_value_1715;
+			}
+			else if ((v_kind >= 6))
+			{
+				S_String *s_value_1716 = s_string_from_bytes("record", sizeof("record") - 1);
+				s_string_release(v_field);
+				v_field = s_value_1716;
+				S_String *s_value_1717 = s_mir_c_retain_value(v_kind, s_string_retain(v_value));
+				s_string_release(v_value);
+				v_value = s_value_1717;
+			}
+			S_String *s_value_1718 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_string_from_bytes("\t\trecord->fields[", sizeof("\t\trecord->fields[") - 1)), s_string_from_i64(v_i)), s_string_from_bytes("].", sizeof("].") - 1)), s_string_retain(v_field)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_value)), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+			s_string_release(v_code);
+			v_code = s_value_1718;
+			s_string_release(v_value);
+			s_string_release(v_field);
+		}
+		S_String * s_return_1719 = s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), v_dst_type, s_string_from_bytes("record", sizeof("record") - 1))), s_string_from_bytes("\t}\n", sizeof("\t}\n") - 1));
+		s_string_release(v_code);
+		s_string_release(v_second);
+		s_string_release(v_first);
+		s_string_release(v_expr);
+		s_string_release(v_dst);
+		s_string_release(v_result);
+		s_record_139_drop(v_function);
+		s_record_136_drop(v_instruction);
+		return s_return_1719;
+		s_string_release(v_code);
+	}
+	if ((v_op == 24))
+	{
+		S_String * v_field = s_string_from_bytes("bits", sizeof("bits") - 1);
+		if ((v_dst_type == 4))
+		{
+			S_String *s_value_1720 = s_string_from_bytes("text", sizeof("text") - 1);
+			s_string_release(v_field);
+			v_field = s_value_1720;
+		}
+		else if ((v_dst_type >= 6))
+		{
+			S_String *s_value_1721 = s_string_from_bytes("record", sizeof("record") - 1);
+			s_string_release(v_field);
+			v_field = s_value_1721;
+		}
+		S_String * v_value = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_first), s_string_from_bytes("->fields[", sizeof("->fields[") - 1)), s_string_from_i64(s_record_136_get_immediate_take(s_record_136_copy(v_instruction)))), s_string_from_bytes("].", sizeof("].") - 1)), s_string_retain(v_field));
+		if (s_mir_c_managed(v_dst_type))
+		{
+			S_String * s_return_1722 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), v_dst_type, s_mir_c_retain_value(v_dst_type, s_string_retain(v_value))));
+			s_string_release(v_value);
+			s_string_release(v_field);
 			s_string_release(v_second);
 			s_string_release(v_first);
 			s_string_release(v_expr);
@@ -22599,15 +23469,75 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 			s_string_release(v_result);
 			s_record_139_drop(v_function);
 			s_record_136_drop(v_instruction);
-			return s_return_1649;
+			return s_return_1722;
+		}
+		S_String * s_return_1723 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_value)), s_string_from_bytes("; init", sizeof("; init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
+		s_string_release(v_value);
+		s_string_release(v_field);
+		s_string_release(v_second);
+		s_string_release(v_first);
+		s_string_release(v_expr);
+		s_string_release(v_dst);
+		s_string_release(v_result);
+		s_record_139_drop(v_function);
+		s_record_136_drop(v_instruction);
+		return s_return_1723;
+		s_string_release(v_value);
+		s_string_release(v_field);
+	}
+	if ((v_op == 20))
+	{
+		S_String * s_return_1724 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_release_value(v_dst_type, s_string_retain(v_dst))), s_string_from_bytes("; ", sizeof("; ") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = NULL; init", sizeof(" = NULL; init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = false;\n", sizeof(" = false;\n") - 1));
+		s_string_release(v_second);
+		s_string_release(v_first);
+		s_string_release(v_expr);
+		s_string_release(v_dst);
+		s_string_release(v_result);
+		s_record_139_drop(v_function);
+		s_record_136_drop(v_instruction);
+		return s_return_1724;
+	}
+	if ((v_op == 19))
+	{
+		S_String * v_transfer = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t{ ", sizeof("\t{ ") - 1)), s_mir_c_type(v_dst_type)), s_string_from_bytes(" owned = ", sizeof(" owned = ") - 1)), s_string_retain(v_first)), s_string_from_bytes("; ", sizeof("; ") - 1)), s_string_retain(v_first)), s_string_from_bytes(" = NULL; init", sizeof(" = NULL; init") - 1)), s_string_from_i64(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = false; ", sizeof(" = false; ") - 1));
+		S_String * s_left_1725 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_transfer), s_string_from_bytes("if (init", sizeof("if (init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(") ", sizeof(") ") - 1)), s_mir_c_release_value(v_dst_type, s_string_retain(v_dst))), s_string_from_bytes("; ", sizeof("; ") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = owned; init", sizeof(" = owned; init") - 1));
+		S_String * s_right_1726 = s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)));
+		S_String *s_value_1727 = s_string_concat_take(s_string_concat_take(s_left_1725, s_right_1726), s_string_from_bytes(" = true; }\n", sizeof(" = true; }\n") - 1));
+		s_string_release(v_transfer);
+		v_transfer = s_value_1727;
+		S_String * s_return_1728 = s_string_retain(v_transfer);
+		s_string_release(v_transfer);
+		s_string_release(v_second);
+		s_string_release(v_first);
+		s_string_release(v_expr);
+		s_string_release(v_dst);
+		s_string_release(v_result);
+		s_record_139_drop(v_function);
+		s_record_136_drop(v_instruction);
+		return s_return_1728;
+		s_string_release(v_transfer);
+	}
+	if (((v_op == 3) || (v_op == 18)))
+	{
+		if (s_mir_c_managed(v_dst_type))
+		{
+			S_String * s_return_1729 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), v_dst_type, s_mir_c_retain_value(v_dst_type, s_string_retain(v_first))));
+			s_string_release(v_second);
+			s_string_release(v_first);
+			s_string_release(v_expr);
+			s_string_release(v_dst);
+			s_string_release(v_result);
+			s_record_139_drop(v_function);
+			s_record_136_drop(v_instruction);
+			return s_return_1729;
 		}
 	}
 	if ((v_op == 22))
 	{
-		S_String *s_value_1650 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_second_take(s_record_136_copy(v_instruction))));
+		S_String *s_value_1730 = s_string_concat_take(s_string_retain(v_result), s_mir_c_check(s_record_136_get_second_take(s_record_136_copy(v_instruction))));
 		s_string_release(v_result);
-		v_result = s_value_1650;
-		S_String * s_return_1651 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_string(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_concat(", sizeof("s_string_concat(") - 1), s_string_retain(v_first)), s_string_from_bytes(", ", sizeof(", ") - 1)), s_string_retain(v_second)), s_string_from_bytes(")", sizeof(")") - 1))));
+		v_result = s_value_1730;
+		S_String * s_return_1731 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), 4, s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_concat(", sizeof("s_string_concat(") - 1), s_string_retain(v_first)), s_string_from_bytes(", ", sizeof(", ") - 1)), s_string_retain(v_second)), s_string_from_bytes(")", sizeof(")") - 1))));
 		s_string_release(v_second);
 		s_string_release(v_first);
 		s_string_release(v_expr);
@@ -22615,11 +23545,11 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_136_drop(v_instruction);
-		return s_return_1651;
+		return s_return_1731;
 	}
 	if ((v_op == 21))
 	{
-		S_String * s_return_1652 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = (int64_t)s_string_length(", sizeof(" = (int64_t)s_string_length(") - 1)), s_string_retain(v_first)), s_string_from_bytes("); init", sizeof("); init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
+		S_String * s_return_1732 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = (int64_t)s_string_length(", sizeof(" = (int64_t)s_string_length(") - 1)), s_string_retain(v_first)), s_string_from_bytes("); init", sizeof("); init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
 		s_string_release(v_second);
 		s_string_release(v_first);
 		s_string_release(v_expr);
@@ -22627,81 +23557,81 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_136_drop(v_instruction);
-		return s_return_1652;
+		return s_return_1732;
 	}
 	if ((v_op == 1))
 	{
-		S_String *s_value_1653 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("INT64_C(", sizeof("INT64_C(") - 1), s_string_from_i64(s_record_136_get_immediate_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(")", sizeof(")") - 1));
+		S_String *s_value_1733 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("INT64_C(", sizeof("INT64_C(") - 1), s_string_from_i64(s_record_136_get_immediate_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(")", sizeof(")") - 1));
 		s_string_release(v_expr);
-		v_expr = s_value_1653;
+		v_expr = s_value_1733;
 	}
 	else if ((v_op == 2))
 	{
 		if ((s_record_136_get_immediate_take(s_record_136_copy(v_instruction)) == 1))
 		{
-			S_String *s_value_1654 = s_string_from_bytes("true", sizeof("true") - 1);
+			S_String *s_value_1734 = s_string_from_bytes("true", sizeof("true") - 1);
 			s_string_release(v_expr);
-			v_expr = s_value_1654;
+			v_expr = s_value_1734;
 		}
 		else
 		{
-			S_String *s_value_1655 = s_string_from_bytes("false", sizeof("false") - 1);
+			S_String *s_value_1735 = s_string_from_bytes("false", sizeof("false") - 1);
 			s_string_release(v_expr);
-			v_expr = s_value_1655;
+			v_expr = s_value_1735;
 		}
 	}
 	else if ((v_op == 3))
 	{
-		S_String *s_value_1656 = s_string_retain(v_first);
+		S_String *s_value_1736 = s_string_retain(v_first);
 		s_string_release(v_expr);
-		v_expr = s_value_1656;
+		v_expr = s_value_1736;
 	}
 	else if ((v_op == 14))
 	{
-		S_String *s_value_1657 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("(-", sizeof("(-") - 1), s_string_retain(v_first)), s_string_from_bytes(")", sizeof(")") - 1));
+		S_String *s_value_1737 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("(-", sizeof("(-") - 1), s_string_retain(v_first)), s_string_from_bytes(")", sizeof(")") - 1));
 		s_string_release(v_expr);
-		v_expr = s_value_1657;
+		v_expr = s_value_1737;
 	}
 	else if ((v_op == 12))
 	{
-		S_String *s_value_1658 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("(!", sizeof("(!") - 1), s_string_retain(v_first)), s_string_from_bytes(")", sizeof(")") - 1));
+		S_String *s_value_1738 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("(!", sizeof("(!") - 1), s_string_retain(v_first)), s_string_from_bytes(")", sizeof(")") - 1));
 		s_string_release(v_expr);
-		v_expr = s_value_1658;
+		v_expr = s_value_1738;
 	}
 	else if ((v_op == 15))
 	{
 		S_Array * v_arguments = s_ga_8_make_take(0, NULL);
 		{
-			S_Array_i64 * v_s_iter_1659 = s_record_136_get_inputs_take(s_record_136_copy(v_instruction));
-			for (int64_t s_index_1659 = 0; s_index_1659 < (int64_t)v_s_iter_1659->length; ++s_index_1659)
+			S_Array_i64 * v_s_iter_1739 = s_record_136_get_inputs_take(s_record_136_copy(v_instruction));
+			for (int64_t s_index_1739 = 0; s_index_1739 < (int64_t)v_s_iter_1739->length; ++s_index_1739)
 			{
-				int64_t v_arg = s_array_i64_get_checked(v_s_iter_1659, s_index_1659);
+				int64_t v_arg = s_array_i64_get_checked(v_s_iter_1739, s_index_1739);
 				S_String * v_value = s_mir_c_register(v_arg);
-				if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_arg) == 4))
+				if (s_mir_c_managed(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_arg)))
 				{
-					S_String *s_value_1660 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("s_string_retain(", sizeof("s_string_retain(") - 1), s_string_retain(v_value)), s_string_from_bytes(")", sizeof(")") - 1));
+					S_String *s_value_1740 = s_mir_c_retain_value(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_arg), s_string_retain(v_value));
 					s_string_release(v_value);
-					v_value = s_value_1660;
+					v_value = s_value_1740;
 				}
-				S_String * s_item_1661 = s_string_retain(v_value);
-				v_arguments = s_ga_8_append_take(v_arguments, s_item_1661);
+				S_String * s_item_1741 = s_string_retain(v_value);
+				v_arguments = s_ga_8_append_take(v_arguments, s_item_1741);
 				s_string_release(v_value);
 			}
-			s_array_i64_release(v_s_iter_1659);
+			s_array_i64_release(v_s_iter_1739);
 		}
 		if ((s_generic_array_length_take(s_array_retain(v_arguments)) == 0))
 		{
-			S_String *s_value_1662 = s_string_concat_take(s_mir_c_function(s_record_136_get_immediate_take(s_record_136_copy(v_instruction))), s_string_from_bytes("()", sizeof("()") - 1));
+			S_String *s_value_1742 = s_string_concat_take(s_mir_c_function(s_record_136_get_immediate_take(s_record_136_copy(v_instruction))), s_string_from_bytes("()", sizeof("()") - 1));
 			s_string_release(v_expr);
-			v_expr = s_value_1662;
+			v_expr = s_value_1742;
 		}
 		else
 		{
-			S_String * s_left_1663 = s_string_concat_take(s_mir_c_function(s_record_136_get_immediate_take(s_record_136_copy(v_instruction))), s_string_from_bytes("(", sizeof("(") - 1));
-			S_String * s_right_1664 = s_string_join_take(s_string_from_bytes(", ", sizeof(", ") - 1), s_array_retain(v_arguments));
-			S_String *s_value_1665 = s_string_concat_take(s_string_concat_take(s_left_1663, s_right_1664), s_string_from_bytes(")", sizeof(")") - 1));
+			S_String * s_left_1743 = s_string_concat_take(s_mir_c_function(s_record_136_get_immediate_take(s_record_136_copy(v_instruction))), s_string_from_bytes("(", sizeof("(") - 1));
+			S_String * s_right_1744 = s_string_join_take(s_string_from_bytes(", ", sizeof(", ") - 1), s_array_retain(v_arguments));
+			S_String *s_value_1745 = s_string_concat_take(s_string_concat_take(s_left_1743, s_right_1744), s_string_from_bytes(")", sizeof(")") - 1));
 			s_string_release(v_expr);
-			v_expr = s_value_1665;
+			v_expr = s_value_1745;
 		}
 		s_array_release(v_arguments);
 	}
@@ -22710,69 +23640,69 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 		S_String * v_symbol = s_string_from_bytes("", sizeof("") - 1);
 		if ((v_op == 4))
 		{
-			S_String *s_value_1666 = s_string_from_bytes("+", sizeof("+") - 1);
+			S_String *s_value_1746 = s_string_from_bytes("+", sizeof("+") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1666;
+			v_symbol = s_value_1746;
 		}
 		else if ((v_op == 5))
 		{
-			S_String *s_value_1667 = s_string_from_bytes("-", sizeof("-") - 1);
+			S_String *s_value_1747 = s_string_from_bytes("-", sizeof("-") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1667;
+			v_symbol = s_value_1747;
 		}
 		else if ((v_op == 6))
 		{
-			S_String *s_value_1668 = s_string_from_bytes("*", sizeof("*") - 1);
+			S_String *s_value_1748 = s_string_from_bytes("*", sizeof("*") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1668;
+			v_symbol = s_value_1748;
 		}
 		else if ((v_op == 7))
 		{
-			S_String *s_value_1669 = s_string_from_bytes("/", sizeof("/") - 1);
+			S_String *s_value_1749 = s_string_from_bytes("/", sizeof("/") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1669;
+			v_symbol = s_value_1749;
 		}
 		else if ((v_op == 8))
 		{
-			S_String *s_value_1670 = s_string_from_bytes("%", sizeof("%") - 1);
+			S_String *s_value_1750 = s_string_from_bytes("%", sizeof("%") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1670;
+			v_symbol = s_value_1750;
 		}
 		else if (((v_op == 9) || (v_op == 13)))
 		{
-			S_String *s_value_1671 = s_string_from_bytes("==", sizeof("==") - 1);
+			S_String *s_value_1751 = s_string_from_bytes("==", sizeof("==") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1671;
+			v_symbol = s_value_1751;
 		}
 		else if ((v_op == 10))
 		{
-			S_String *s_value_1672 = s_string_from_bytes("<", sizeof("<") - 1);
+			S_String *s_value_1752 = s_string_from_bytes("<", sizeof("<") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1672;
+			v_symbol = s_value_1752;
 		}
 		else if ((v_op == 11))
 		{
-			S_String *s_value_1673 = s_string_from_bytes("<=", sizeof("<=") - 1);
+			S_String *s_value_1753 = s_string_from_bytes("<=", sizeof("<=") - 1);
 			s_string_release(v_symbol);
-			v_symbol = s_value_1673;
+			v_symbol = s_value_1753;
 		}
 		if (((v_op == 7) || (v_op == 8)))
 		{
-			S_String *s_value_1674 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (", sizeof("\tif (") - 1)), s_string_retain(v_second)), s_string_from_bytes(" == 0) s_panic(\"division by zero\");\n", sizeof(" == 0) s_panic(\"division by zero\");\n") - 1));
+			S_String *s_value_1754 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (", sizeof("\tif (") - 1)), s_string_retain(v_second)), s_string_from_bytes(" == 0) s_panic(\"division by zero\");\n", sizeof(" == 0) s_panic(\"division by zero\");\n") - 1));
 			s_string_release(v_result);
-			v_result = s_value_1674;
-			S_String *s_value_1675 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (", sizeof("\tif (") - 1)), s_string_retain(v_first)), s_string_from_bytes(" == INT64_MIN && ", sizeof(" == INT64_MIN && ") - 1)), s_string_retain(v_second)), s_string_from_bytes(" == -1) s_panic(\"integer overflow\");\n", sizeof(" == -1) s_panic(\"integer overflow\");\n") - 1));
+			v_result = s_value_1754;
+			S_String *s_value_1755 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tif (", sizeof("\tif (") - 1)), s_string_retain(v_first)), s_string_from_bytes(" == INT64_MIN && ", sizeof(" == INT64_MIN && ") - 1)), s_string_retain(v_second)), s_string_from_bytes(" == -1) s_panic(\"integer overflow\");\n", sizeof(" == -1) s_panic(\"integer overflow\");\n") - 1));
 			s_string_release(v_result);
-			v_result = s_value_1675;
+			v_result = s_value_1755;
 		}
-		S_String *s_value_1676 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("(", sizeof("(") - 1), s_string_retain(v_first)), s_string_from_bytes(" ", sizeof(" ") - 1)), s_string_retain(v_symbol)), s_string_from_bytes(" ", sizeof(" ") - 1)), s_string_retain(v_second)), s_string_from_bytes(")", sizeof(")") - 1));
+		S_String *s_value_1756 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("(", sizeof("(") - 1), s_string_retain(v_first)), s_string_from_bytes(" ", sizeof(" ") - 1)), s_string_retain(v_symbol)), s_string_from_bytes(" ", sizeof(" ") - 1)), s_string_retain(v_second)), s_string_from_bytes(")", sizeof(")") - 1));
 		s_string_release(v_expr);
-		v_expr = s_value_1676;
+		v_expr = s_value_1756;
 		s_string_release(v_symbol);
 	}
-	if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_136_get_dst_take(s_record_136_copy(v_instruction))) == 4))
+	if (s_mir_c_managed(v_dst_type))
 	{
-		S_String * s_return_1677 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_string(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), s_string_retain(v_expr)));
+		S_String * s_return_1757 = s_string_concat_take(s_string_retain(v_result), s_mir_c_store_owned(s_record_136_get_dst_take(s_record_136_copy(v_instruction)), v_dst_type, s_string_retain(v_expr)));
 		s_string_release(v_second);
 		s_string_release(v_first);
 		s_string_release(v_expr);
@@ -22780,9 +23710,9 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_136_drop(v_instruction);
-		return s_return_1677;
+		return s_return_1757;
 	}
-	S_String * s_return_1678 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_expr)), s_string_from_bytes("; init", sizeof("; init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
+	S_String * s_return_1758 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_string_retain(v_dst)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_expr)), s_string_from_bytes("; init", sizeof("; init") - 1)), s_string_from_i64(s_record_136_get_dst_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
 	s_string_release(v_second);
 	s_string_release(v_first);
 	s_string_release(v_expr);
@@ -22790,7 +23720,7 @@ S_String * s_mir_c_instruction(s_record_136 v_instruction, s_record_139 v_functi
 	s_string_release(v_result);
 	s_record_139_drop(v_function);
 	s_record_136_drop(v_instruction);
-	return s_return_1678;
+	return s_return_1758;
 	s_string_release(v_second);
 	s_string_release(v_first);
 	s_string_release(v_expr);
@@ -22802,207 +23732,210 @@ S_String * s_mir_c_terminator(s_record_137 v_term, s_record_139 v_function)
 {
 	if ((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 1))
 	{
-		S_String * s_return_1679 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("\tgoto block", sizeof("\tgoto block") - 1), s_string_from_i64(s_record_137_get_target_take(s_record_137_copy(v_term)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+		S_String * s_return_1759 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("\tgoto block", sizeof("\tgoto block") - 1), s_string_from_i64(s_record_137_get_target_take(s_record_137_copy(v_term)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_record_139_drop(v_function);
 		s_record_137_drop(v_term);
-		return s_return_1679;
+		return s_return_1759;
 	}
 	if ((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 2))
 	{
-		S_String * s_left_1680 = s_string_concat_take(s_mir_c_check(s_record_137_get_operand_take(s_record_137_copy(v_term))), s_string_from_bytes("\tif (", sizeof("\tif (") - 1));
-		S_String * s_right_1681 = s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)));
-		S_String * s_left_1682 = s_string_concat_take(s_string_concat_take(s_left_1680, s_right_1681), s_string_from_bytes(") goto block", sizeof(") goto block") - 1));
-		S_String * s_right_1683 = s_string_from_i64(s_record_137_get_target_take(s_record_137_copy(v_term)));
-		S_String * s_left_1684 = s_string_concat_take(s_string_concat_take(s_left_1682, s_right_1683), s_string_from_bytes(";\n\tgoto block", sizeof(";\n\tgoto block") - 1));
-		S_String * s_right_1685 = s_string_from_i64(s_record_137_get_alternative_take(s_record_137_copy(v_term)));
-		S_String * s_return_1686 = s_string_concat_take(s_string_concat_take(s_left_1684, s_right_1685), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+		S_String * s_left_1760 = s_string_concat_take(s_mir_c_check(s_record_137_get_operand_take(s_record_137_copy(v_term))), s_string_from_bytes("\tif (", sizeof("\tif (") - 1));
+		S_String * s_right_1761 = s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)));
+		S_String * s_left_1762 = s_string_concat_take(s_string_concat_take(s_left_1760, s_right_1761), s_string_from_bytes(") goto block", sizeof(") goto block") - 1));
+		S_String * s_right_1763 = s_string_from_i64(s_record_137_get_target_take(s_record_137_copy(v_term)));
+		S_String * s_left_1764 = s_string_concat_take(s_string_concat_take(s_left_1762, s_right_1763), s_string_from_bytes(";\n\tgoto block", sizeof(";\n\tgoto block") - 1));
+		S_String * s_right_1765 = s_string_from_i64(s_record_137_get_alternative_take(s_record_137_copy(v_term)));
+		S_String * s_return_1766 = s_string_concat_take(s_string_concat_take(s_left_1764, s_right_1765), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_record_139_drop(v_function);
 		s_record_137_drop(v_term);
-		return s_return_1686;
+		return s_return_1766;
 	}
 	if ((s_record_137_get_kind_take(s_record_137_copy(v_term)) == 3))
 	{
 		S_String * v_result = s_mir_c_check(s_record_137_get_operand_take(s_record_137_copy(v_term)));
-		if ((s_record_139_get_return_type_take(s_record_139_copy(v_function)) == 4))
+		if (s_mir_c_managed(s_record_139_get_return_type_take(s_record_139_copy(v_function))))
 		{
-			S_String *s_value_1687 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\tS_String *returned = ", sizeof("\tS_String *returned = ") - 1)), s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+			S_String *s_value_1767 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_type(s_record_139_get_return_type_take(s_record_139_copy(v_function)))), s_string_from_bytes(" returned = ", sizeof(" returned = ") - 1)), s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 			s_string_release(v_result);
-			v_result = s_value_1687;
-			S_String *s_value_1688 = s_string_concat_take(s_string_retain(v_result), s_mir_c_release_strings(s_record_139_copy(v_function), s_record_137_get_operand_take(s_record_137_copy(v_term))));
+			v_result = s_value_1767;
+			S_String *s_value_1768 = s_string_concat_take(s_string_retain(v_result), s_mir_c_release_managed(s_record_139_copy(v_function), s_record_137_get_operand_take(s_record_137_copy(v_term))));
 			s_string_release(v_result);
-			v_result = s_value_1688;
-			S_String * s_return_1689 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\treturn returned;\n", sizeof("\treturn returned;\n") - 1));
+			v_result = s_value_1768;
+			S_String * s_return_1769 = s_string_concat_take(s_string_retain(v_result), s_string_from_bytes("\treturn returned;\n", sizeof("\treturn returned;\n") - 1));
 			s_string_release(v_result);
 			s_record_139_drop(v_function);
 			s_record_137_drop(v_term);
-			return s_return_1689;
+			return s_return_1769;
 		}
-		S_String * s_left_1690 = s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_mir_c_release_strings(s_record_139_copy(v_function), (-1))), s_string_from_bytes("\treturn ", sizeof("\treturn ") - 1));
-		S_String * s_right_1691 = s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)));
-		S_String * s_return_1692 = s_string_concat_take(s_string_concat_take(s_left_1690, s_right_1691), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+		S_String * s_left_1770 = s_string_concat_take(s_string_concat_take(s_string_retain(v_result), s_mir_c_release_managed(s_record_139_copy(v_function), (-1))), s_string_from_bytes("\treturn ", sizeof("\treturn ") - 1));
+		S_String * s_right_1771 = s_mir_c_register(s_record_137_get_operand_take(s_record_137_copy(v_term)));
+		S_String * s_return_1772 = s_string_concat_take(s_string_concat_take(s_left_1770, s_right_1771), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_string_release(v_result);
 		s_record_139_drop(v_function);
 		s_record_137_drop(v_term);
-		return s_return_1692;
+		return s_return_1772;
 		s_string_release(v_result);
 	}
-	S_String * s_return_1693 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("\ts_panic(", sizeof("\ts_panic(") - 1), s_mir_c_string(s_record_137_get_message_take(s_record_137_copy(v_term)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+	S_String * s_return_1773 = s_string_concat_take(s_string_concat_take(s_string_from_bytes("\ts_panic(", sizeof("\ts_panic(") - 1), s_mir_c_string(s_record_137_get_message_take(s_record_137_copy(v_term)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
 	s_record_139_drop(v_function);
 	s_record_137_drop(v_term);
-	return s_return_1693;
+	return s_return_1773;
 }
 
 S_String * s_mir_c_definition(s_record_139 v_function, int64_t v_index)
 {
 	S_String * v_output = s_string_concat_take(s_mir_c_signature(s_record_139_copy(v_function), v_index), s_string_from_bytes("\n{\n", sizeof("\n{\n") - 1));
-	for (int64_t v_i = 0, s_bound_1694 = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function))); v_i < s_bound_1694; ++v_i)
+	for (int64_t v_i = 0, s_bound_1774 = s_array_i64_length_take(s_record_139_get_register_types_take(s_record_139_copy(v_function))); v_i < s_bound_1774; ++v_i)
 	{
 		S_String * v_initial = s_string_from_bytes("0", sizeof("0") - 1);
-		if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i) == 4))
+		if (s_mir_c_managed(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i)))
 		{
-			S_String *s_value_1695 = s_string_from_bytes("NULL", sizeof("NULL") - 1);
+			S_String *s_value_1775 = s_string_from_bytes("NULL", sizeof("NULL") - 1);
 			s_string_release(v_initial);
-			v_initial = s_value_1695;
+			v_initial = s_value_1775;
 		}
-		S_String *s_value_1696 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_type(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_register(v_i)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_initial)), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+		S_String *s_value_1776 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_type(s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), v_i))), s_string_from_bytes(" ", sizeof(" ") - 1)), s_mir_c_register(v_i)), s_string_from_bytes(" = ", sizeof(" = ") - 1)), s_string_retain(v_initial)), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_string_release(v_output);
-		v_output = s_value_1696;
-		S_String *s_value_1697 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\tbool init", sizeof("\tbool init") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(" = false;\n", sizeof(" = false;\n") - 1));
+		v_output = s_value_1776;
+		S_String *s_value_1777 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\tbool init", sizeof("\tbool init") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(" = false;\n", sizeof(" = false;\n") - 1));
 		s_string_release(v_output);
-		v_output = s_value_1697;
-		S_String * s_left_1698 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t(void)", sizeof("\t(void)") - 1)), s_mir_c_register(v_i)), s_string_from_bytes("; (void)init", sizeof("; (void)init") - 1));
-		S_String * s_right_1699 = s_string_from_i64(v_i);
-		S_String *s_value_1700 = s_string_concat_take(s_string_concat_take(s_left_1698, s_right_1699), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+		v_output = s_value_1777;
+		S_String * s_left_1778 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t(void)", sizeof("\t(void)") - 1)), s_mir_c_register(v_i)), s_string_from_bytes("; (void)init", sizeof("; (void)init") - 1));
+		S_String * s_right_1779 = s_string_from_i64(v_i);
+		S_String *s_value_1780 = s_string_concat_take(s_string_concat_take(s_left_1778, s_right_1779), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_string_release(v_output);
-		v_output = s_value_1700;
+		v_output = s_value_1780;
 		s_string_release(v_initial);
 	}
-	for (int64_t v_i = 0, s_bound_1701 = s_record_139_get_argument_count_take(s_record_139_copy(v_function)); v_i < s_bound_1701; ++v_i)
+	for (int64_t v_i = 0, s_bound_1781 = s_record_139_get_argument_count_take(s_record_139_copy(v_function)); v_i < s_bound_1781; ++v_i)
 	{
-		S_String * s_left_1702 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_register(v_i)), s_string_from_bytes(" = a", sizeof(" = a") - 1));
-		S_String * s_right_1703 = s_string_from_i64(v_i);
-		S_String * s_left_1704 = s_string_concat_take(s_string_concat_take(s_left_1702, s_right_1703), s_string_from_bytes("; init", sizeof("; init") - 1));
-		S_String * s_right_1705 = s_string_from_i64(v_i);
-		S_String *s_value_1706 = s_string_concat_take(s_string_concat_take(s_left_1704, s_right_1705), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
+		S_String * s_left_1782 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\t", sizeof("\t") - 1)), s_mir_c_register(v_i)), s_string_from_bytes(" = a", sizeof(" = a") - 1));
+		S_String * s_right_1783 = s_string_from_i64(v_i);
+		S_String * s_left_1784 = s_string_concat_take(s_string_concat_take(s_left_1782, s_right_1783), s_string_from_bytes("; init", sizeof("; init") - 1));
+		S_String * s_right_1785 = s_string_from_i64(v_i);
+		S_String *s_value_1786 = s_string_concat_take(s_string_concat_take(s_left_1784, s_right_1785), s_string_from_bytes(" = true;\n", sizeof(" = true;\n") - 1));
 		s_string_release(v_output);
-		v_output = s_value_1706;
+		v_output = s_value_1786;
 	}
-	S_String *s_value_1707 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\tgoto block", sizeof("\tgoto block") - 1)), s_string_from_i64(s_record_139_get_entry_take(s_record_139_copy(v_function)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
+	S_String *s_value_1787 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\tgoto block", sizeof("\tgoto block") - 1)), s_string_from_i64(s_record_139_get_entry_take(s_record_139_copy(v_function)))), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 	s_string_release(v_output);
-	v_output = s_value_1707;
-	for (int64_t v_i = 0, s_bound_1708 = s_generic_array_length_take(s_record_139_get_blocks_take(s_record_139_copy(v_function))); v_i < s_bound_1708; ++v_i)
+	v_output = s_value_1787;
+	for (int64_t v_i = 0, s_bound_1788 = s_generic_array_length_take(s_record_139_get_blocks_take(s_record_139_copy(v_function))); v_i < s_bound_1788; ++v_i)
 	{
 		s_record_138 v_block = s_ga_10138_get_checked_take(s_record_139_get_blocks_take(s_record_139_copy(v_function)), v_i);
-		S_String *s_value_1709 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("block", sizeof("block") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(": ;\n", sizeof(": ;\n") - 1));
+		S_String *s_value_1789 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("block", sizeof("block") - 1)), s_string_from_i64(v_i)), s_string_from_bytes(": ;\n", sizeof(": ;\n") - 1));
 		s_string_release(v_output);
-		v_output = s_value_1709;
+		v_output = s_value_1789;
 		{
-			S_Array * v_s_iter_1710 = s_record_138_get_instructions_take(s_record_138_copy(v_block));
-			for (int64_t s_index_1710 = 0; s_index_1710 < (int64_t)s_array_length(v_s_iter_1710); ++s_index_1710)
+			S_Array * v_s_iter_1790 = s_record_138_get_instructions_take(s_record_138_copy(v_block));
+			for (int64_t s_index_1790 = 0; s_index_1790 < (int64_t)s_array_length(v_s_iter_1790); ++s_index_1790)
 			{
-				s_record_136 v_instruction = s_ga_10136_get_borrow(v_s_iter_1710, s_index_1710);
+				s_record_136 v_instruction = s_ga_10136_get_borrow(v_s_iter_1790, s_index_1790);
 				if ((s_record_136_get_op_take(s_record_136_copy(v_instruction)) == 16))
 				{
-					S_String *s_value_1711 = s_string_concat_take(s_string_retain(v_output), s_mir_c_check(s_record_136_get_first_take(s_record_136_copy(v_instruction))));
+					S_String *s_value_1791 = s_string_concat_take(s_string_retain(v_output), s_mir_c_check(s_record_136_get_first_take(s_record_136_copy(v_instruction))));
 					s_string_release(v_output);
-					v_output = s_value_1711;
+					v_output = s_value_1791;
 					if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_136_get_first_take(s_record_136_copy(v_instruction))) == 3))
 					{
-						S_String *s_value_1712 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_bool(", sizeof("\ts_print_bool(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+						S_String *s_value_1792 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_bool(", sizeof("\ts_print_bool(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
 						s_string_release(v_output);
-						v_output = s_value_1712;
+						v_output = s_value_1792;
 					}
 					else if ((s_array_i64_get_checked_take(s_record_139_get_register_types_take(s_record_139_copy(v_function)), s_record_136_get_first_take(s_record_136_copy(v_instruction))) == 4))
 					{
-						S_String *s_value_1713 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_string(", sizeof("\ts_print_string(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+						S_String *s_value_1793 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_string(", sizeof("\ts_print_string(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
 						s_string_release(v_output);
-						v_output = s_value_1713;
+						v_output = s_value_1793;
 					}
 					else
 					{
-						S_String *s_value_1714 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_i64(", sizeof("\ts_print_i64(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
+						S_String *s_value_1794 = s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("\ts_print_i64(", sizeof("\ts_print_i64(") - 1)), s_mir_c_register(s_record_136_get_first_take(s_record_136_copy(v_instruction)))), s_string_from_bytes(");\n", sizeof(");\n") - 1));
 						s_string_release(v_output);
-						v_output = s_value_1714;
+						v_output = s_value_1794;
 					}
 				}
 				else
 				{
-					S_String *s_value_1715 = s_string_concat_take(s_string_retain(v_output), s_mir_c_instruction(s_record_136_copy(v_instruction), s_record_139_copy(v_function)));
+					S_String *s_value_1795 = s_string_concat_take(s_string_retain(v_output), s_mir_c_instruction(s_record_136_copy(v_instruction), s_record_139_copy(v_function)));
 					s_string_release(v_output);
-					v_output = s_value_1715;
+					v_output = s_value_1795;
 				}
 				s_record_136_drop(v_instruction);
 			}
-			s_array_release(v_s_iter_1710);
+			s_array_release(v_s_iter_1790);
 		}
-		S_String *s_value_1716 = s_string_concat_take(s_string_retain(v_output), s_mir_c_terminator(s_record_138_get_terminator_take(s_record_138_copy(v_block)), s_record_139_copy(v_function)));
+		S_String *s_value_1796 = s_string_concat_take(s_string_retain(v_output), s_mir_c_terminator(s_record_138_get_terminator_take(s_record_138_copy(v_block)), s_record_139_copy(v_function)));
 		s_string_release(v_output);
-		v_output = s_value_1716;
+		v_output = s_value_1796;
 		s_record_138_drop(v_block);
 	}
-	S_String * s_return_1717 = s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("}\n", sizeof("}\n") - 1));
+	S_String * s_return_1797 = s_string_concat_take(s_string_retain(v_output), s_string_from_bytes("}\n", sizeof("}\n") - 1));
 	s_string_release(v_output);
 	s_record_139_drop(v_function);
-	return s_return_1717;
+	return s_return_1797;
 	s_string_release(v_output);
 }
 
-s_record_149 s_MirCResult(S_String * v_code, S_String * v_error)
+s_record_151 s_MirCResult(S_String * v_code, S_String * v_error)
 {
-	s_record_149 s_constructor_result = {0};
+	s_record_151 s_constructor_result = {0};
 	s_constructor_result.code = v_code;
 	s_constructor_result.error = v_error;
 	return s_constructor_result;
 }
 
-s_record_149 s_mir_emit_c(s_record_140 v_program, int64_t v_entry)
+s_record_151 s_mir_emit_c(s_record_140 v_program, int64_t v_entry)
 {
 	S_String * v_error = s_mir_verify(s_record_140_copy(v_program));
 	if ((s_string_compare_take(s_string_retain(v_error), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
-		s_record_149 s_return_1718 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_retain(v_error));
+		s_record_151 s_return_1798 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_retain(v_error));
 		s_string_release(v_error);
 		s_record_140_drop(v_program);
-		return s_return_1718;
+		return s_return_1798;
 	}
 	if (((v_entry < 0) || (v_entry >= s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))))))
 	{
-		s_record_149 s_return_1719 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("invalid entry function", sizeof("invalid entry function") - 1));
+		s_record_151 s_return_1799 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("invalid entry function", sizeof("invalid entry function") - 1));
 		s_string_release(v_error);
 		s_record_140_drop(v_program);
-		return s_return_1719;
+		return s_return_1799;
 	}
 	s_record_139 v_main = s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), v_entry);
 	if (((s_record_139_get_argument_count_take(s_record_139_copy(v_main)) != 0) || (s_record_139_get_return_type_take(s_record_139_copy(v_main)) != 1)))
 	{
-		s_record_149 s_return_1720 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("MIR C entry must be main() -> i64", sizeof("MIR C entry must be main() -> i64") - 1));
+		s_record_151 s_return_1800 = s_MirCResult(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("MIR C entry must be main() -> i64", sizeof("MIR C entry must be main() -> i64") - 1));
 		s_record_139_drop(v_main);
 		s_string_release(v_error);
 		s_record_140_drop(v_program);
-		return s_return_1720;
+		return s_return_1800;
 	}
-	S_String * v_code = s_string_from_bytes("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include \"sirius_runtime.h\"\n\n", sizeof("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include \"sirius_runtime.h\"\n\n") - 1);
-	for (int64_t v_i = 0, s_bound_1721 = s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))); v_i < s_bound_1721; ++v_i)
-	{
-		S_String *s_value_1722 = s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_mir_c_signature(s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), v_i), v_i)), s_string_from_bytes(";\n", sizeof(";\n") - 1));
-		s_string_release(v_code);
-		v_code = s_value_1722;
-	}
-	S_String *s_value_1723 = s_string_concat_take(s_string_retain(v_code), s_string_from_bytes("\n", sizeof("\n") - 1));
+	S_String * v_code = s_string_from_bytes("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n", sizeof("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n") - 1);
+	S_String *s_value_1801 = s_string_concat_take(s_string_retain(v_code), s_mir_c_record_runtime(s_record_140_get_types_take(s_record_140_copy(v_program))));
 	s_string_release(v_code);
-	v_code = s_value_1723;
-	for (int64_t v_i = 0, s_bound_1724 = s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))); v_i < s_bound_1724; ++v_i)
+	v_code = s_value_1801;
+	for (int64_t v_i = 0, s_bound_1802 = s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))); v_i < s_bound_1802; ++v_i)
 	{
-		S_String *s_value_1725 = s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_mir_c_definition(s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), v_i), v_i)), s_string_from_bytes("\n", sizeof("\n") - 1));
+		S_String *s_value_1803 = s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_mir_c_signature(s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), v_i), v_i)), s_string_from_bytes(";\n", sizeof(";\n") - 1));
 		s_string_release(v_code);
-		v_code = s_value_1725;
+		v_code = s_value_1803;
 	}
-	s_record_149 s_return_1726 = s_MirCResult(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_string_from_bytes("int main(void) { return (int)", sizeof("int main(void) { return (int)") - 1)), s_mir_c_function(v_entry)), s_string_from_bytes("(); }\n", sizeof("(); }\n") - 1)), s_string_from_bytes("", sizeof("") - 1));
+	S_String *s_value_1804 = s_string_concat_take(s_string_retain(v_code), s_string_from_bytes("\n", sizeof("\n") - 1));
+	s_string_release(v_code);
+	v_code = s_value_1804;
+	for (int64_t v_i = 0, s_bound_1805 = s_generic_array_length_take(s_record_140_get_functions_take(s_record_140_copy(v_program))); v_i < s_bound_1805; ++v_i)
+	{
+		S_String *s_value_1806 = s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_mir_c_definition(s_ga_10139_get_checked_take(s_record_140_get_functions_take(s_record_140_copy(v_program)), v_i), v_i)), s_string_from_bytes("\n", sizeof("\n") - 1));
+		s_string_release(v_code);
+		v_code = s_value_1806;
+	}
+	s_record_151 s_return_1807 = s_MirCResult(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_retain(v_code), s_string_from_bytes("int main(void) { return (int)", sizeof("int main(void) { return (int)") - 1)), s_mir_c_function(v_entry)), s_string_from_bytes("(); }\n", sizeof("(); }\n") - 1)), s_string_from_bytes("", sizeof("") - 1));
 	s_string_release(v_code);
 	s_record_139_drop(v_main);
 	s_string_release(v_error);
 	s_record_140_drop(v_program);
-	return s_return_1726;
+	return s_return_1807;
 	s_string_release(v_code);
 	s_record_139_drop(v_main);
 	s_string_release(v_error);
@@ -23013,40 +23946,40 @@ s_record_128 s_compile_c_mir(S_String * v_source)
 	s_record_103 v_parsed = s_parse_module(s_string_retain(v_source));
 	if ((s_string_compare_take(s_record_102_get_error_take(s_record_103_get_state_take(s_record_103_copy(v_parsed))), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
-		s_record_128 s_return_1727 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_102_get_error_take(s_record_103_get_state_take(s_record_103_copy(v_parsed))), s_record_102_get_error_line_take(s_record_103_get_state_take(s_record_103_copy(v_parsed))));
+		s_record_128 s_return_1808 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_102_get_error_take(s_record_103_get_state_take(s_record_103_copy(v_parsed))), s_record_102_get_error_line_take(s_record_103_get_state_take(s_record_103_copy(v_parsed))));
 		s_record_103_drop(v_parsed);
 		s_string_release(v_source);
-		return s_return_1727;
+		return s_return_1808;
 	}
 	s_record_118 v_declarations = s_hir_module_declarations(s_record_103_get_state_take(s_record_103_copy(v_parsed)), s_record_103_get_node_take(s_record_103_copy(v_parsed)));
 	if ((s_string_compare_take(s_record_118_get_error_take(s_record_118_copy(v_declarations)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
-		s_record_128 s_return_1728 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_118_get_error_take(s_record_118_copy(v_declarations)), s_record_118_get_error_line_take(s_record_118_copy(v_declarations)));
+		s_record_128 s_return_1809 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_118_get_error_take(s_record_118_copy(v_declarations)), s_record_118_get_error_line_take(s_record_118_copy(v_declarations)));
 		s_record_118_drop(v_declarations);
 		s_record_103_drop(v_parsed);
 		s_string_release(v_source);
-		return s_return_1728;
+		return s_return_1809;
 	}
-	s_record_148 v_lowered = s_mir_build_program(s_record_103_get_state_take(s_record_103_copy(v_parsed)), s_record_118_copy(v_declarations), s_string_from_bytes("main", sizeof("main") - 1), s_array_i64_make(0, NULL));
-	if ((s_string_compare_take(s_record_148_get_error_take(s_record_148_copy(v_lowered)), s_string_from_bytes("", sizeof("") - 1)) != 0))
+	s_record_150 v_lowered = s_mir_build_program(s_record_103_get_state_take(s_record_103_copy(v_parsed)), s_record_118_copy(v_declarations), s_string_from_bytes("main", sizeof("main") - 1), s_array_i64_make(0, NULL));
+	if ((s_string_compare_take(s_record_150_get_error_take(s_record_150_copy(v_lowered)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
-		s_record_128 s_return_1729 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_148_get_error_take(s_record_148_copy(v_lowered)), 1);
-		s_record_148_drop(v_lowered);
+		s_record_128 s_return_1810 = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_record_150_get_error_take(s_record_150_copy(v_lowered)), 1);
+		s_record_150_drop(v_lowered);
 		s_record_118_drop(v_declarations);
 		s_record_103_drop(v_parsed);
 		s_string_release(v_source);
-		return s_return_1729;
+		return s_return_1810;
 	}
-	s_record_149 v_emitted = s_mir_emit_c(s_record_148_get_program_take(s_record_148_copy(v_lowered)), s_record_148_get_entry_take(s_record_148_copy(v_lowered)));
-	s_record_128 s_return_1730 = s_CompileResult(s_record_149_get_code_take(s_record_149_copy(v_emitted)), s_record_149_get_error_take(s_record_149_copy(v_emitted)), 1);
-	s_record_149_drop(v_emitted);
-	s_record_148_drop(v_lowered);
+	s_record_151 v_emitted = s_mir_emit_c(s_record_150_get_program_take(s_record_150_copy(v_lowered)), s_record_150_get_entry_take(s_record_150_copy(v_lowered)));
+	s_record_128 s_return_1811 = s_CompileResult(s_record_151_get_code_take(s_record_151_copy(v_emitted)), s_record_151_get_error_take(s_record_151_copy(v_emitted)), 1);
+	s_record_151_drop(v_emitted);
+	s_record_150_drop(v_lowered);
 	s_record_118_drop(v_declarations);
 	s_record_103_drop(v_parsed);
 	s_string_release(v_source);
-	return s_return_1730;
-	s_record_149_drop(v_emitted);
-	s_record_148_drop(v_lowered);
+	return s_return_1811;
+	s_record_151_drop(v_emitted);
+	s_record_150_drop(v_lowered);
 	s_record_118_drop(v_declarations);
 	s_record_103_drop(v_parsed);
 }
@@ -23064,54 +23997,54 @@ int64_t s_main()
 	else if ((s_generic_array_length_take(s_array_retain(v_args)) != 3))
 	{
 		s_print_string_take(s_string_from_bytes("usage: emit_c [--mir-c] input.sirius output.c", sizeof("usage: emit_c [--mir-c] input.sirius output.c") - 1));
-		int64_t s_return_1731 = 2;
+		int64_t s_return_1812 = 2;
 		s_array_release(v_args);
-		return s_return_1731;
+		return s_return_1812;
 	}
-	S_Optional_string s_option_1732 = s_read_text_take(s_ga_8_get_checked_take(s_array_retain(v_args), v_input_index));
-	S_String * s_fallback_1732;
-	if (s_option_1732.has_value) {
-		s_fallback_1732 = s_option_1732.value;
+	S_Optional_string s_option_1813 = s_read_text_take(s_ga_8_get_checked_take(s_array_retain(v_args), v_input_index));
+	S_String * s_fallback_1813;
+	if (s_option_1813.has_value) {
+		s_fallback_1813 = s_option_1813.value;
 	} else {
-		s_fallback_1732 = s_string_from_bytes("", sizeof("") - 1);
+		s_fallback_1813 = s_string_from_bytes("", sizeof("") - 1);
 	}
-	S_String * v_source = s_fallback_1732;
+	S_String * v_source = s_fallback_1813;
 	s_record_128 v_result = s_CompileResult(s_string_from_bytes("", sizeof("") - 1), s_string_from_bytes("", sizeof("") - 1), 0);
 	if (v_mir_backend)
 	{
-		s_record_128 s_value_1733 = s_compile_c_mir(s_string_retain(v_source));
+		s_record_128 s_value_1814 = s_compile_c_mir(s_string_retain(v_source));
 		s_record_128_drop(v_result);
-		v_result = s_value_1733;
+		v_result = s_value_1814;
 	}
 	else
 	{
-		s_record_128 s_value_1734 = s_compile_c(s_string_retain(v_source));
+		s_record_128 s_value_1815 = s_compile_c(s_string_retain(v_source));
 		s_record_128_drop(v_result);
-		v_result = s_value_1734;
+		v_result = s_value_1815;
 	}
 	if ((s_string_compare_take(s_record_128_get_error_take(s_record_128_copy(v_result)), s_string_from_bytes("", sizeof("") - 1)) != 0))
 	{
 		s_print_string_take(s_string_concat_take(s_string_concat_take(s_string_concat_take(s_string_from_bytes("ERROR ", sizeof("ERROR ") - 1), s_string_from_i64(s_record_128_get_line_take(s_record_128_copy(v_result)))), s_string_from_bytes(": ", sizeof(": ") - 1)), s_record_128_get_error_take(s_record_128_copy(v_result))));
-		int64_t s_return_1735 = 1;
+		int64_t s_return_1816 = 1;
 		s_record_128_drop(v_result);
 		s_string_release(v_source);
 		s_array_release(v_args);
-		return s_return_1735;
+		return s_return_1816;
 	}
 	if ((!s_write_text_take(s_ga_8_get_checked_take(s_array_retain(v_args), (v_input_index + 1)), s_record_128_get_code_take(s_record_128_copy(v_result)))))
 	{
 		s_print_string_take(s_string_from_bytes("cannot write output", sizeof("cannot write output") - 1));
-		int64_t s_return_1736 = 2;
+		int64_t s_return_1817 = 2;
 		s_record_128_drop(v_result);
 		s_string_release(v_source);
 		s_array_release(v_args);
-		return s_return_1736;
+		return s_return_1817;
 	}
-	int64_t s_return_1737 = 0;
+	int64_t s_return_1818 = 0;
 	s_record_128_drop(v_result);
 	s_string_release(v_source);
 	s_array_release(v_args);
-	return s_return_1737;
+	return s_return_1818;
 	s_record_128_drop(v_result);
 	s_string_release(v_source);
 	s_array_release(v_args);

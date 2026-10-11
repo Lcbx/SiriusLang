@@ -83,13 +83,13 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Implement a first executable scalar CFG MIR, structural/type verifier, and unoptimized Sirius-written interpreter, independently tested with hand-built MIR (`src/mir.sirius`, `src/mir_interpreter.sirius`, `tools/test_mir.py`). Now also connected to the HIR specialization worklist and experimental C backend for scalar/string operations.
 - [ ] After shared source-to-MIR lowering and C emission exist, expose shared behavioral tests with `--backend=c|both` (`INTERPRETER.md`).
 
-**Available then:** typed HIR, indexed records/arrays, scalar indices, and normal imperative loops. Represent MIR as flat arrays of blocks and instructions; no generalized pattern matching or heap graph is required.
+**Available then:** typed HIR, indexed records/arrays, scalar indices, and normal imperative loops. Represent MIR as flat arrays of blocks and instructions; no generalized pattern matching is required; the interpreter now has a small acyclic record heap.
 
 - [ ] Give each MIR instruction typed operands and a destination; represent `Branch`, `Jump`, `Switch`, `Return` and `Panic` as terminators.
 - [ ] Evaluate expressions into explicit temporaries in source order, including calls, record fields, nested updates, and constructor publications.
-- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar tests (`tools/test_mir_c.py`). The default legacy C emitter does not yet use MIR; neither MIR path lowers `for` or non-string managed values.
+- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar/string/record tests (`tools/test_mir_c.py`). The default legacy C emitter does not yet use MIR; neither MIR path lowers `for`, arrays or dictionaries.
 - [ ] Lower `recur` to parallel assignment into temporaries followed by a backedge, even for managed values once ownership is implemented.
-- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with native scalar/string differential cases and direct print/panic/register and string-ownership checks.
+- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with native scalar/string/record differential cases, direct print/panic/register checks and managed-string/record ownership tests.
 
 **Done when:** complex optional/boolean combinations and branch-local evaluation work without special-case rejection; no semantic checks depend on generated C expressions.
 
@@ -136,7 +136,8 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Add managed `string` registers and explicit MIR retain/copy, move and release operations in Sirius, with runtime invalidation checks.
 - [x] Make both the Sirius MIR interpreter and opt-in MIR→C backend execute the same string operations; C uses ARC credits across calls and returns.
 - [x] Lower string literals, concatenation and `len(string)` from typed HIR; extend differential and ownership-specific tests.
-- [ ] Generalize ownership to structural records, including nested managed fields, then arrays/dictionaries and CoW updates.
+- [x] Generalize managed register ownership to immutable structural records, including nested strings/records. `MIR_RECORD_NEW`/`MIR_RECORD_GET` consume canonical layouts; interpreter and generated C handle copy/move/retain/release and recursive destruction. See `tools/test_mir_records.py` and record cases in `tools/test_mir_c.py`.
+- [ ] Add record spreads/updates, arrays/dictionaries, and CoW updates; add ownership data-flow validation for all CFG exits.
 - [ ] Insert conservative retain/release operations in a dedicated CFG lifetime pass, including exceptional and loop exits; verify ownership data-flow statically.
 - [ ] Expand interpreter/native differential testing to every managed construct and migrate the default C backend only after coverage is sufficient.
 

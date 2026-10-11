@@ -1,0 +1,95 @@
+# Canonical nested-record MIR: interpreted execution and C emission.
+def record_test_program(invalidate: bool) -> MirProgram
+	let inner = intern_record_type(new_type_table(), [RecordField("name", TYPE_TAG_STRING), RecordField("count", TYPE_TAG_I64)])
+	let outer = intern_record_type(inner.table, [RecordField("title", TYPE_TAG_STRING), RecordField("inner", inner.id)])
+	let get_name = MirFunction(1, TYPE_TAG_STRING, [inner.id, TYPE_TAG_STRING], [MirBlock([mir_record_get(1, 0, 1)], mir_return(1))], 0)
+	var instructions = Array[MirInstruction]()
+	instructions = instructions.append(mir_op(MIR_CONST_I64, 0, -1, -1, 7))
+	instructions = instructions.append(mir_string(1, "Ada"))
+	instructions = instructions.append(mir_record_new(2, [0, 1]))
+	instructions = instructions.append(mir_string(3, "outer"))
+	instructions = instructions.append(mir_record_new(4, [2, 3]))
+	# Self-copy must retain the incoming owner before releasing the old slot.
+	instructions = instructions.append(mir_op(MIR_COPY, 4, 4, -1, 0))
+	instructions = instructions.append(mir_op(MIR_COPY, 5, 4, -1, 0))
+	if invalidate
+		instructions = instructions.append(mir_op(MIR_RELEASE, 5, 5, -1, 0))
+	instructions = instructions.append(mir_record_get(6, 5, 0))
+	instructions = instructions.append(mir_op(MIR_MOVE, 7, 6, -1, 0))
+	instructions = instructions.append(mir_call(8, 1, [7]))
+	instructions = instructions.append(mir_op(MIR_PRINT, -1, 8, -1, 0))
+	instructions = instructions.append(mir_op(MIR_STRING_LENGTH, 9, 8, -1, 0))
+	instructions = instructions.append(mir_record_get(10, 4, 1))
+	instructions = instructions.append(mir_op(MIR_STRING_LENGTH, 11, 10, -1, 0))
+	instructions = instructions.append(mir_op(MIR_ADD_I64, 12, 9, 11, 0))
+	if not invalidate
+		instructions = instructions.append(mir_op(MIR_RELEASE, 5, 5, -1, 0))
+		instructions = instructions.append(mir_op(MIR_RELEASE, 7, 7, -1, 0))
+	let runner = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64, TYPE_TAG_STRING, inner.id, TYPE_TAG_STRING, outer.id, outer.id, inner.id, inner.id, TYPE_TAG_STRING, TYPE_TAG_I64, TYPE_TAG_STRING, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(instructions, mir_return(12))], 0)
+	var program = MirProgram([runner, get_name])
+	program.types = outer.table
+	return program
+
+def record_return_program() -> MirProgram
+	let typed = intern_record_type(new_type_table(), [RecordField("name", TYPE_TAG_STRING), RecordField("count", TYPE_TAG_I64)])
+	var making = Array[MirInstruction]()
+	making = making.append(mir_op(MIR_CONST_I64, 0, -1, -1, 9))
+	making = making.append(mir_string(1, "held"))
+	making = making.append(mir_record_new(2, [0, 1]))
+	let maker = MirFunction(0, typed.id, [TYPE_TAG_I64, TYPE_TAG_STRING, typed.id], [MirBlock(making, mir_return(2))], 0)
+	var reading = Array[MirInstruction]()
+	reading = reading.append(mir_call(0, 1, Array[i64]()))
+	reading = reading.append(mir_record_get(1, 0, 1))
+	reading = reading.append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+	let caller = MirFunction(0, TYPE_TAG_I64, [typed.id, TYPE_TAG_STRING, TYPE_TAG_I64], [MirBlock(reading, mir_return(2))], 0)
+	var program = MirProgram([caller, maker])
+	program.types = typed.table
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	let program = record_test_program(false)
+	if mir_verify(program) != ""
+		print(mir_verify(program))
+		return 2
+	let result = mir_execute(program, 0, Array[MirValue](), 200, 10)
+	if result.error != "" or result.value.bits != 8
+		print(result.error)
+		return 3
+	for record in result.heap
+		if record.refs != 0
+			return 4
+	let native = mir_emit_c(program, 0)
+	if native.error != "" or not write_text(args[!1], native.code)
+		print(native.error)
+		return 5
+	var wrong_layout = record_test_program(false)
+	var broken = wrong_layout.functions[!0]
+	var first = broken.blocks[!0]
+	first.instructions[!2] = mir_record_new(2, [1, 0])
+	broken.blocks[!0] = first
+	wrong_layout.functions[!0] = broken
+	if mir_verify(wrong_layout) != "record constructor field type mismatch"
+		return 9
+	let return_test = record_return_program()
+	let returned = mir_execute(return_test, 0, Array[MirValue](), 200, 10)
+	if returned.error != "" or returned.value.bits != 4
+		return 10
+	for record in returned.heap
+		if record.refs != 0
+			return 11
+	let c_return = mir_emit_c(return_test, 0)
+	if c_return.error != "" or not write_text(args[!3], c_return.code)
+		return 12
+	let invalid = record_test_program(true)
+	let stopped = mir_execute(invalid, 0, Array[MirValue](), 200, 10)
+	if stopped.error != "uninitialized record"
+		print(stopped.error)
+		return 6
+	let native_bad = mir_emit_c(invalid, 0)
+	if native_bad.error != "" or not write_text(args[!2], native_bad.code)
+		return 7
+	print("PASS record MIR")
+	return 0

@@ -1,15 +1,50 @@
-# Unoptimized execution of verified scalar MIR. This is not a source-level
+# Unoptimized execution of verified typed MIR. This is not a source-level
 # backend until the compiler lowers its typed HIR into this same representation.
 
 def mir_failure(error: string, steps: i64) -> MirOutcome
 	return MirOutcome(MirValue(TYPE_TAG_INVALID, 0, ""), error, steps)
 
-def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64) -> MirOutcome
+def mir_success(value: MirValue, steps: i64, heap: Array[MirHeapRecord]) -> MirOutcome
+	var result = MirOutcome(value, "", steps)
+	result.heap = heap
+	return result
+
+def mir_heap_retain(heap: Array[MirHeapRecord], index: i64) -> Array[MirHeapRecord]
+	var next = heap
+	var record = next[!index]
+	record.refs += 1
+	next[!index] = record
+	return next
+
+# Records own their fields. Releasing the last owner recursively drops fields.
+def mir_heap_release(types: TypeTable, heap: Array[MirHeapRecord], index: i64) -> Array[MirHeapRecord]
+	var next = heap
+	var record = next[!index]
+	record.refs -= 1
+	next[!index] = record
+	if record.refs == 0
+		for field in record.fields
+			if types.entries[!field.type_id].tag == TYPE_TAG_RECORD
+				next = mir_heap_release(types, next, field.bits)
+	return next
+
+def mir_heap_drop(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
+	if value.type_id != TYPE_TAG_INVALID and types.entries[!value.type_id].tag == TYPE_TAG_RECORD
+		return mir_heap_release(types, heap, value.bits)
+	return heap
+
+def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
+	if value.type_id != TYPE_TAG_INVALID and types.entries[!value.type_id].tag == TYPE_TAG_RECORD
+		return mir_heap_retain(heap, value.bits)
+	return heap
+
+def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord]) -> MirOutcome
 	if depth >= max_depth
 		return mir_failure("call depth limit exceeded", 0)
 	let function = program.functions[!function_id]
 	if len(arguments) != function.argument_count
 		return mir_failure("wrong argument count", 0)
+	var heap = input_heap
 	var registers = Array[MirValue]()
 	while len(registers) < len(function.register_types)
 		registers = registers.append(MirValue(TYPE_TAG_INVALID, 0, ""))
@@ -19,6 +54,7 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			return mir_failure("argument type mismatch", 0)
 		if argument.type_id == TYPE_TAG_BOOL and argument.bits != 0 and argument.bits != 1
 			return mir_failure("invalid boolean value", 0)
+		heap = mir_heap_copy(program.types, heap, argument)
 		registers[!i] = argument
 	var block_id = function.entry
 	var steps = 0
@@ -28,6 +64,30 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
+			if ins.op == MIR_RECORD_NEW
+				var fields = Array[MirValue]()
+				for input in ins.inputs
+					let field = registers[!input]
+					if field.type_id == TYPE_TAG_INVALID
+						return mir_failure("uninitialized record field", steps)
+					fields = fields.append(field)
+				for field in fields
+					heap = mir_heap_copy(program.types, heap, field)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == MIR_RECORD_GET
+				let owner = registers[!ins.first]
+				if owner.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized record", steps)
+				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
+					return mir_failure("invalid record handle", steps)
+				let field = heap[!owner.bits].fields[!ins.immediate]
+				heap = mir_heap_copy(program.types, heap, field)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = field
+				continue
 			if ins.op == MIR_CONST_I64
 				registers[!ins.dst] = MirValue(TYPE_TAG_I64, ins.immediate, "")
 				continue
@@ -42,11 +102,15 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				if value.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized register", steps)
 				if ins.op == MIR_COPY or ins.op == MIR_RETAIN
+					heap = mir_heap_copy(program.types, heap, value)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = value
 				elif ins.op == MIR_MOVE
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = value
 					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
 				elif ins.op == MIR_RELEASE
+					heap = mir_heap_drop(program.types, heap, value)
 					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
 				elif ins.op == MIR_STRING_LENGTH
 					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(value.text), "")
@@ -71,10 +135,12 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 					if argument.type_id == TYPE_TAG_INVALID
 						return mir_failure("uninitialized register", steps)
 					call_args = call_args.append(argument)
-				let outcome = mir_execute_function(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1)
+				let outcome = mir_execute_function(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1, heap)
 				steps += outcome.steps
 				if outcome.error != ""
 					return mir_failure(outcome.error, steps)
+				heap = outcome.heap
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = outcome.value
 				continue
 			let left = registers[!ins.first]
@@ -121,7 +187,10 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			let result = registers[!term.operand]
 			if result.type_id == TYPE_TAG_INVALID
 				return mir_failure("uninitialized return register", steps)
-			return MirOutcome(result, "", steps)
+			registers[!term.operand] = MirValue(TYPE_TAG_INVALID, 0, "")
+			for value in registers
+				heap = mir_heap_drop(program.types, heap, value)
+			return mir_success(result, steps, heap)
 		if term.kind == MIR_PANIC
 			return mir_failure(term.message, steps)
 		if term.kind == MIR_JUMP
@@ -144,4 +213,8 @@ def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue
 		return mir_failure("invalid entry function", 0)
 	if max_steps <= 0 or max_depth <= 0
 		return mir_failure("invalid execution limits", 0)
-	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0)
+	# External callers cannot fabricate record handles without the execution heap.
+	for argument in arguments
+		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD
+			return mir_failure("record arguments require an execution heap", 0)
+	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord]())
