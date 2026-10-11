@@ -402,6 +402,10 @@ let HIR_ARRAY = 11
 let HIR_INDEX = 12
 let HIR_UNWRAP = 13
 
+# Specialization requests are discovered while analyzing a concrete function.
+# source is the call AST node; definition is the callee's declaration body ID.
+rec HirSpecializationRequest(source: i64, definition: i64, arguments: Array[i64])
+
 rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string])
 	pub symbols = Array[SymbolInfo]()
 	pub nodes = Array[HirNode]()
@@ -413,6 +417,8 @@ rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string
 	pub functions = Array[HirFunctionDecl]()
 	pub active_functions = Array[string]()
 	pub inferred_return = TYPE_TAG_INVALID
+	pub collect_calls = false
+	pub requests = Array[HirSpecializationRequest]()
 
 rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
 
@@ -497,6 +503,15 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 			result.types = annotation.table
 			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != args[!i]
 				return hir_body_error(result, id, "expected " + hir_type_name(result.types, annotation.type_id) + ", found " + hir_type_name(result.types, args[!i]))
+	# In concrete-specialization mode, register calls for the HIR worklist.
+	# Do not recursively analyze callees from inside an expression.
+	if result.collect_calls and not function.constructor
+		result.requests = result.requests.append(HirSpecializationRequest(id, function.body, args))
+		if function.result_type_node >= 0
+			let declared = hir_body_type_reference(result.types, result.tree, function.result_type_node)
+			result.types = declared.table
+			result.last_type = declared.type_id
+		return result
 	if function.constructor
 		var nested = HirBodyState(state.tree, state.names, state.constants)
 		nested.types = result.types

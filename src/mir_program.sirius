@@ -1,0 +1,26 @@
+# Convert the HIR-owned specialization worklist to a complete scalar MIR
+# program. Function indices exactly match HIR specialization IDs.
+
+rec MirProgramBuild(program: MirProgram, registry: HirSpecializationRegistry, analyses: Array[HirSpecializedFunction], entry: i64, error: string)
+
+def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild
+	let analyzed = hir_specialize_program(tree, declarations, name, arguments)
+	var functions = Array[MirFunction]()
+	if analyzed.error != ""
+		return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, analyzed.error)
+	for body in analyzed.bodies
+		let spec = analyzed.registry.entries[!body.specialization]
+		let definition = hir_definition(declarations.functions, spec.definition)
+		let header = declarations.functions[!definition]
+		if not mir_supported_type(body.return_type)
+			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, "MIR specialization requires a scalar return type")
+		var targets = Array[MirCallTarget]()
+		for call in body.calls
+			targets = targets.append(MirCallTarget(call.source, call.specialization))
+		let lowered = mir_lower_function_calls(tree, header, body.nodes, spec.arguments, body.return_type, targets)
+		if lowered.error != ""
+			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, lowered.error)
+		functions = functions.append(lowered.function)
+	let program = MirProgram(functions)
+	let verified = mir_verify(program)
+	return MirProgramBuild(program, analyzed.registry, analyzed.bodies, analyzed.entry, verified)

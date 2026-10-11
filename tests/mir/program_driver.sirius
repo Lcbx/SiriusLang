@@ -1,0 +1,49 @@
+# HIR-owned concrete specialization worklist -> MIR -> execution.
+def check(source: string, expected: i64, count: i64) -> bool
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		print(parsed.state.error)
+		return false
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		print(declarations.error)
+		return false
+	let result = mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	if result.error != ""
+		print(result.error)
+		return false
+	if len(result.registry.entries) != count or len(result.program.functions) != count or len(result.analyses) != count
+		return false
+	for i in 0..count
+		if result.registry.entries[!i].status != HIR_SPEC_COMPLETE or result.analyses[!i].specialization != i
+			return false
+	let executed = mir_execute(result.program, result.entry, Array[MirValue](), 50000, 30)
+	if executed.error != "" or executed.value.bits != expected
+		print(executed.error)
+		return false
+	return true
+
+def main() -> i64
+	let repeat = "def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n"
+	if not check(repeat, 42, 2)
+		return 1
+	let recursive = "def factorial(n: i64) -> i64\n\tif n <= 1\n\t\treturn 1\n\treturn n * factorial(n - 1)\ndef main() -> i64\n\treturn factorial(5)\n"
+	if not check(recursive, 120, 2)
+		return 2
+	let mutual = "def even(n: i64) -> bool\n\tif n == 0\n\t\treturn true\n\treturn odd(n - 1)\ndef odd(n: i64) -> bool\n\tif n == 0\n\t\treturn false\n\treturn even(n - 1)\ndef main() -> i64\n\tif even(6)\n\t\treturn 42\n\treturn 0\n"
+	if not check(mutual, 42, 3)
+		return 3
+	let multitype = "def discard(x) -> i64\n\treturn 1\ndef main() -> i64\n\treturn discard(0) + discard(true)\n"
+	if not check(multitype, 2, 3)
+		return 4
+	let nested = "def inc(n: i64) -> i64\n\treturn n + 1\ndef twice(n: i64) -> i64\n\treturn inc(inc(n))\ndef main() -> i64\n\treturn twice(40)\n"
+	if not check(nested, 42, 3)
+		return 5
+	# Unannotated callee return types must not silently become invalid MIR.
+	let bad = parse_module("def ident(x)\n\treturn x\ndef main() -> i64\n\treturn ident(1)\n")
+	let bad_declarations = hir_module_declarations(bad.state, bad.node)
+	let unsupported = mir_build_program(bad.state, bad_declarations, "main", Array[i64]())
+	if unsupported.error != "HIR worklist calls require an explicit return type"
+		return 6
+	print("PASS HIR specialization worklist and MIR calls")
+	return 0

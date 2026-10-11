@@ -3,6 +3,7 @@
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
 rec MirSourceBinding(name: string, slot: i64, depth: i64)
+rec MirCallTarget(source: i64, specialization: i64)
 
 rec MirLowerState(tree: ParseState, hir: Array[HirNode])
 	pub register_types = Array[i64]()
@@ -11,6 +12,7 @@ rec MirLowerState(tree: ParseState, hir: Array[HirNode])
 	pub bindings = Array[MirSourceBinding]()
 	pub depth = 0
 	pub error = ""
+	pub call_targets = Array[MirCallTarget]()
 
 rec MirLowerExpr(state: MirLowerState, slot: i64)
 rec MirLowerResult(function: MirFunction, error: string)
@@ -92,6 +94,26 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		elif text == "true"
 			immediate = 1
 		next = mir_lower_emit(next, mir_op(opcode, dst, -1, -1, immediate))
+		return MirLowerExpr(next, dst)
+	if node.kind == NODE_CALL
+		var callee_id = -1
+		for target in next.call_targets
+			if target.source == id
+				callee_id = target.specialization
+		if callee_id < 0
+			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call target"), -1)
+		let type_id = mir_lower_type(next, id, HIR_CALL)
+		if not mir_supported_type(type_id)
+			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call result type"), -1)
+		var inputs = Array[i64]()
+		for i in 1..node.count
+			let argument = mir_lower_expression(next, hir_ast_child(next.tree, id, i))
+			next = argument.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			inputs = inputs.append(argument.slot)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, type_id)
+		next = mir_lower_emit(next, mir_call(dst, callee_id, inputs))
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_UNARY
 		let operand = mir_lower_expression(next, hir_ast_child(next.tree, id, 0))
@@ -305,8 +327,9 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 		return next
 	return mir_lower_error(next, "unsupported source statement for MIR")
 
-def mir_lower_function(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64) -> MirLowerResult
+def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget]) -> MirLowerResult
 	var state = MirLowerState(tree, hir)
+	state.call_targets = targets
 	state = mir_lower_block(state)
 	if not mir_supported_type(return_type) or len(arguments) != len(header.parameters)
 		return MirLowerResult(MirFunction(0, return_type, state.register_types, state.blocks, 0), "unsupported MIR function signature")
@@ -319,3 +342,7 @@ def mir_lower_function(tree: ParseState, header: HirFunctionDecl, hir: Array[Hir
 	if state.error == "" and not mir_lower_ended(state)
 		state = mir_lower_error(state, "missing MIR return")
 	return MirLowerResult(MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)
+
+# Retain the simple single-function entry point for existing tests.
+def mir_lower_function(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64) -> MirLowerResult
+	return mir_lower_function_calls(tree, header, hir, arguments, return_type, Array[MirCallTarget]())
