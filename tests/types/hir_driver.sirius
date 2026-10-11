@@ -37,5 +37,39 @@ def main() -> i64
 		return 12
 	if resolve_hir_unary(table, TYPE_TAG_STRING, "-").error == ""
 		return 13
+	let typed_array = intern_array_type(table, TYPE_TAG_STRING)
+	let str_join = resolve_hir_string_call(typed_array.table, TYPE_TAG_STRING, "join", [typed_array.id])
+	if str_join.error != "" or str_join.type_id != TYPE_TAG_STRING
+		return 14
+	if resolve_hir_string_call(typed_array.table, TYPE_TAG_STRING, "slice", [TYPE_TAG_I64]).error != "string method argument count mismatch"
+		return 15
+	if resolve_hir_string_call(typed_array.table, TYPE_TAG_STRING, "join", [TYPE_TAG_I64]).error != "expected Array[string], found i64"
+		return 16
+	let file_read = resolve_hir_builtin_call(typed_array.table, "read_text", [TYPE_TAG_STRING])
+	if file_read.error != "" or file_read.table.entries[file_read.type_id?]!.tag != TYPE_TAG_OPTIONAL
+		return 17
+	if resolve_hir_builtin_call(typed_array.table, "write_text", [TYPE_TAG_STRING, TYPE_TAG_I64]).error != "expected string, found i64"
+		return 18
+	if resolve_hir_builtin_call(typed_array.table, "len", [typed_array.id]).type_id != TYPE_TAG_I64
+		return 19
+	if resolve_hir_builtin_call(typed_array.table, "print", [typed_array.id]).error != "cannot print this type"
+		return 20
+	let appended = resolve_hir_collection_call(typed_array.table, typed_array.id, "append", [TYPE_TAG_STRING])
+	if appended.error != "" or appended.type_id != typed_array.id
+		return 21
+	if resolve_hir_collection_call(typed_array.table, typed_array.id, "append", [TYPE_TAG_I64]).error != "expected string, found i64"
+		return 22
+	let dict = intern_dict_type(typed_array.table, TYPE_TAG_STRING, typed_array.id)
+	let get = resolve_hir_collection_call(dict.table, dict.id, "get", [TYPE_TAG_STRING])
+	if get.error != "" or get.table.entries[get.type_id?]!.first != typed_array.id
+		return 23
+	if resolve_hir_collection_call(dict.table, dict.id, "insert", [TYPE_TAG_I64, typed_array.id]).error != "expected string, found i64"
+		return 24
+	if resolve_hir_function_call(dict.table, "f", [typed_array.id], [typed_array.id], TYPE_TAG_BOOL).type_id != TYPE_TAG_BOOL
+		return 25
+	if resolve_hir_function_call(dict.table, "f", [TYPE_TAG_BOOL], [typed_array.id], TYPE_TAG_BOOL).error != "expected Array[string], found bool"
+		return 26
+	if resolve_hir_function_call(dict.table, "f", [TYPE_TAG_I64], [TYPE_TAG_INVALID], TYPE_TAG_INVALID).error != ""
+		return 27
 	print("PASS typed HIR resolution")
 	return 0
