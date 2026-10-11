@@ -250,7 +250,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
-	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING
+	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING and op != MIR_RELEASE_IF_INIT
 		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
@@ -421,6 +421,8 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		if mir_c_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
 		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_RELEASE_IF_INIT
+		return "\tif (init" + str(instruction.dst) + ") { " + mir_c_release_value(dst_type, dst) + "; " + dst + " = NULL; init" + str(instruction.dst) + " = false; }\n"
 	if op == MIR_RELEASE
 		return result + "\t" + mir_c_release_value(dst_type, dst) + "; " + dst + " = NULL; init" + str(instruction.dst) + " = false;\n"
 	if op == MIR_MOVE

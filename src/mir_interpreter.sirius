@@ -69,6 +69,11 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
+			if ins.op == MIR_RELEASE_IF_INIT
+				if registers[!ins.dst].type_id != TYPE_TAG_INVALID
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = MirValue(TYPE_TAG_INVALID, 0, "")
+				continue
 			if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
 				var fields = Array[MirValue]()
 				if ins.op == MIR_OPTIONAL_SOME

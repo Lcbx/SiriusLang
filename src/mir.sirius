@@ -40,6 +40,7 @@ let MIR_OPTIONAL_HAS = 35
 let MIR_OPTIONAL_UNWRAP = 36
 let MIR_ARRAY_GET_OPTIONAL = 37
 let MIR_DICT_GET_OPTIONAL = 38
+let MIR_RELEASE_IF_INIT = 39
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -146,7 +147,7 @@ def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
 
 def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 	var reads = Array[i64]()
-	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE
+	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_RELEASE_IF_INIT
 		return reads
 	if ins.op == MIR_CALL or ins.op == MIR_RECORD_NEW or ins.op == MIR_ARRAY_NEW
 		return ins.inputs
@@ -310,7 +311,7 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		if ins.op == MIR_MOVE and (ins.dst == ins.first or not mir_managed_type(program.types, dst_type))
 			return "move requires distinct managed registers"
 		return ""
-	if ins.op == MIR_RELEASE
+	if ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
 		if not mir_managed_type(program.types, dst_type) or ins.first != ins.dst
 			return "release requires a managed register"
 		return ""

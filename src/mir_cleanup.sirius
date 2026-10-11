@@ -52,6 +52,7 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
 	let exit_reached = mir_ownership_reachable(edged)
 	let exit_states = mir_ownership_states(edged)
+	let exit_maybe = mir_ownership_maybe_states(edged)
 	for i in 0..len(blocks)
 		if exit_reached[!i] != 0
 			let block = blocks[!i]
@@ -60,11 +61,14 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 				var preserved = -1
 				if term.kind == MIR_RETURN
 					preserved = term.operand
-				let releases = mir_cleanup_releases(program, edged, exit_states[!i].outgoing, Array[i64](), preserved)
 				var instructions = block.instructions
-				for release in releases
-					instructions = instructions.append(release)
-					count += 1
+				for register in 0..len(edged.register_types)
+					if register != preserved and mir_managed_type(program.types, edged.register_types[!register]) and exit_maybe[!i].outgoing[!register] != 0
+						var operation = MIR_RELEASE_IF_INIT
+						if exit_states[!i].outgoing[!register] != 0
+							operation = MIR_RELEASE
+						instructions = instructions.append(mir_op(operation, register, register, -1, 0))
+						count += 1
 				blocks[!i] = MirBlock(instructions, term)
 	return MirCleanupFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
 
@@ -80,4 +84,4 @@ def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
 		count += cleaned.releases
 	var result = MirProgram(functions)
 	result.types = program.types
-	return MirCleanupResult(result, count, mir_check_ownership(result))
+	return MirCleanupResult(result, count, mir_check_balance(result))
