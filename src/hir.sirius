@@ -223,3 +223,60 @@ def resolve_hir_collection_call(types: TypeTable, receiver: i64, method: string,
 		let optional = intern_optional_type(types, descriptor.second)
 		return hir_call_arguments(optional.table, args, [descriptor.first], optional.id, "dictionary method argument count mismatch")
 	return HirCallCheck(types, TYPE_TAG_INVALID, "unknown collection method")
+
+
+# Record construction is a semantic operation. The editor carries canonical
+# TypeIds, independent of source-level field ordering and C field expressions.
+let HIR_RECORD = 7
+let HIR_CONSTRUCTOR = 8
+
+rec HirRecordEdit(fields: Array[RecordField], index: i64, error: string)
+
+def hir_record_field(fields: Array[RecordField], name: string) -> i64
+	for i in 0..len(fields)
+		if fields[i?]!.name == name
+			return i
+	return -1
+
+def hir_record_put(fields: Array[RecordField], name: string, type_id: i64) -> HirRecordEdit
+	if type_id == TYPE_TAG_INVALID or type_id == TYPE_TAG_VOID
+		return HirRecordEdit(fields, -1, "invalid record field type")
+	let index = hir_record_field(fields, name)
+	var result = fields
+	if index >= 0
+		result[index?]! = RecordField(name, type_id)
+	else
+		result = result.append(RecordField(name, type_id))
+	return HirRecordEdit(result, index, "")
+
+def hir_record_delete(fields: Array[RecordField], name: string) -> HirRecordEdit
+	let index = hir_record_field(fields, name)
+	if index < 0
+		return HirRecordEdit(fields, -1, "unknown deleted field '" + name + "'")
+	var result = Array[RecordField]()
+	for i in 0..len(fields)
+		if i != index
+			result = result.append(fields[i?]!)
+	return HirRecordEdit(result, index, "")
+
+def hir_record_spread(types: TypeTable, fields: Array[RecordField], owner: i64) -> HirRecordEdit
+	if owner < 0 or owner >= len(types.entries)
+		return HirRecordEdit(fields, -1, "record spread expects a record")
+	let descriptor = types.entries[owner?]!
+	if descriptor.tag != TYPE_TAG_RECORD
+		return HirRecordEdit(fields, -1, "record spread expects a record")
+	var result = fields
+	for field in descriptor.fields
+		result = hir_record_put(result, field.name, field.kind).fields
+	return HirRecordEdit(result, -1, "")
+
+def resolve_hir_record(types: TypeTable, fields: Array[RecordField]) -> HirCallCheck
+	if len(fields) == 0
+		return HirCallCheck(types, TYPE_TAG_INVALID, "empty records are not supported yet")
+	let interned = intern_record_type(types, fields)
+	return HirCallCheck(interned.table, interned.id, "")
+
+def hir_constructor_publish(fields: Array[RecordField], name: string, type_id: i64) -> HirRecordEdit
+	if hir_record_field(fields, name) >= 0
+		return HirRecordEdit(fields, -1, "constructor field overrides are not supported yet")
+	return hir_record_put(fields, name, type_id)

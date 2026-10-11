@@ -1,0 +1,14 @@
+rec Tagged(a: i64, b: i64)
+	pub total = a + b
+
+def main() -> i64
+	let original = Tagged(2, 3)
+	let updated = {
+		original.*
+		del b
+		a = 11
+		total = 14
+	}
+	print(original.total)
+	print(updated.a + updated.total)
+	return 0

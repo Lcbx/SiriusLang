@@ -71,5 +71,34 @@ def main() -> i64
 		return 26
 	if resolve_hir_function_call(dict.table, "f", [TYPE_TAG_I64], [TYPE_TAG_INVALID], TYPE_TAG_INVALID).error != ""
 		return 27
+	let first = hir_record_put(Array[RecordField](), "z", TYPE_TAG_I64)
+	if first.error != "" or first.index != -1 or len(first.fields) != 1
+		return 28
+	let second = hir_record_put(first.fields, "name", TYPE_TAG_STRING)
+	if second.error != "" or len(second.fields) != 2
+		return 29
+	let override = hir_record_put(second.fields, "z", TYPE_TAG_BOOL)
+	if override.index != 0 or override.fields[0?]!.kind != TYPE_TAG_BOOL
+		return 30
+	let restored = hir_record_put(override.fields, "z", TYPE_TAG_I64)
+	let same_record = resolve_hir_record(table, restored.fields)
+	if same_record.error != "" or same_record.type_id != left.id
+		return 31
+	let deleted = hir_record_delete(restored.fields, "z")
+	if deleted.index != 0 or len(deleted.fields) != 1
+		return 32
+	if hir_record_delete(deleted.fields, "missing").error != "unknown deleted field 'missing'"
+		return 33
+	let spread = hir_record_spread(same_record.table, deleted.fields, left.id)
+	if spread.error != "" or len(spread.fields) != 2
+		return 34
+	if hir_record_spread(table, deleted.fields, TYPE_TAG_I64).error != "record spread expects a record"
+		return 35
+	if hir_constructor_publish(first.fields, "z", TYPE_TAG_I64).error != "constructor field overrides are not supported yet"
+		return 36
+	if hir_constructor_publish(first.fields, "other", TYPE_TAG_STRING).error != ""
+		return 37
+	if resolve_hir_record(table, Array[RecordField]()).error != "empty records are not supported yet"
+		return 38
 	print("PASS typed HIR resolution")
 	return 0

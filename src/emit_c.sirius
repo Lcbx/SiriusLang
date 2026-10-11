@@ -874,6 +874,7 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 	if entry.kind == NODE_RECORD
 		var next = state
 		var fields = Array[RecordField]()
+		var semantic_fields = Array[RecordField]()
 		var initializers = Array[string]()
 		var effects = 0
 		var touches = ""
@@ -887,8 +888,12 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					return ExprCode(emit_error(next, field_id, "unknown spread source '" + name + "'"), "", TYPE_INVALID)
 				touches = touches + "(void)v_" + name + ", "
 				let kind = next.symbols[symbol?]!.kind
-				if kind < TYPE_RECORD_START or kind >= TYPE_ARRAY_RECORD_START
-					return ExprCode(emit_error(next, field_id, "record spread expects a record"), "", TYPE_INVALID)
+				let owner = canonical_kind(next.types, next.records, kind)
+				next.types = owner.table
+				let edit = hir_record_spread(next.types, semantic_fields, owner.id)
+				if edit.error != ""
+					return ExprCode(emit_error(next, field_id, edit.error), "", TYPE_INVALID)
+				semantic_fields = edit.fields
 				for member in next.records[kind - TYPE_RECORD_START?]!.fields
 					var found = -1
 					for j in 0..len(fields)
@@ -903,17 +908,16 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 						initializers = initializers.append(code)
 			elif field.kind == NODE_DELETE
 				let name = ast_text(state.tree, field_id)
-				var found = false
+				let edit = hir_record_delete(semantic_fields, name)
+				if edit.error != ""
+					return ExprCode(emit_error(next, field_id, edit.error), "", TYPE_INVALID)
+				semantic_fields = edit.fields
 				var kept = Array[RecordField]()
 				var values = Array[string]()
 				for j in 0..len(fields)
-					if fields[j?]!.name == name
-						found = true
-					else
+					if j != edit.index
 						kept = kept.append(fields[j?]!)
 						values = values.append(initializers[j?]!)
-				if not found
-					return ExprCode(emit_error(next, field_id, "unknown deleted field '" + name + "'"), "", TYPE_INVALID)
 				fields = kept
 				initializers = values
 			elif field.kind == NODE_FIELD
@@ -923,17 +927,17 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 					effects += 1
 				let result = emit_expr(next, value_id)
 				next = result.state
-				if result.kind == TYPE_INVALID or result.kind == TYPE_VOID
-					return ExprCode(emit_error(next, field_id, "invalid record field type"), "", TYPE_INVALID)
-				var found = -1
-				for j in 0..len(fields)
-					if fields[j?]!.name == name
-						found = j
+				let canonical = canonical_kind(next.types, next.records, result.kind)
+				next.types = canonical.table
+				let edit = hir_record_put(semantic_fields, name, canonical.id)
+				if edit.error != ""
+					return ExprCode(emit_error(next, field_id, edit.error), "", TYPE_INVALID)
+				semantic_fields = edit.fields
 				let member = RecordField(name, result.kind)
 				let code = "." + name + " = " + result.text
-				if found >= 0
-					fields[found?]! = member
-					initializers[found?]! = code
+				if edit.index >= 0
+					fields[edit.index?]! = member
+					initializers[edit.index?]! = code
 				else
 					fields = fields.append(member)
 					initializers = initializers.append(code)
@@ -941,10 +945,14 @@ def emit_expr(state: EmitState, id: i64) -> ExprCode
 				return ExprCode(emit_error(next, field_id, "invalid record field"), "", TYPE_INVALID)
 		if effects > 0 and entry.count > 1
 			return ExprCode(emit_error(next, id, "record initializer requires ordered evaluation"), "", TYPE_INVALID)
-		if len(fields) == 0
-			return ExprCode(emit_error(next, id, "empty records are not supported yet"), "", TYPE_INVALID)
+		let semantic = resolve_hir_record(next.types, semantic_fields)
+		if semantic.error != ""
+			return ExprCode(emit_error(next, id, semantic.error), "", TYPE_INVALID)
+		next.types = semantic.table
 		let record = intern_record(next, fields)
-		return ExprCode(record.state, "(" + touches + "((" + c_type(record.kind) + "){ " + ", ".join(initializers) + " }))", record.kind)
+		var typed = record.state
+		typed.hir = typed.hir.append(HirNode(id, HIR_RECORD, semantic.type_id, -1))
+		return ExprCode(typed, "(" + touches + "((" + c_type(record.kind) + "){ " + ", ".join(initializers) + " }))", record.kind)
 	if entry.kind == NODE_ATTR
 		let receiver = emit_expr(state, ast_child(state.tree, id, 0))
 		let owner = canonical_kind(receiver.state.types, receiver.state.records, receiver.kind)
@@ -1724,6 +1732,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		var probe = state
 		probe.symbols = Array[SymbolInfo]()
 		var fields = Array[RecordField]()
+		var semantic_fields = Array[RecordField]()
 		for param in params
 			probe = append_symbol(probe, id, param.name, param.kind, false)
 		for i in 0..body.count
@@ -1747,16 +1756,24 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 				if probe.error != ""
 					return probe
 				kind = value.kind
-			if kind == TYPE_INVALID or kind == TYPE_VOID
+			let canonical = canonical_kind(probe.types, probe.records, kind)
+			probe.types = canonical.table
+			if canonical.id == TYPE_TAG_INVALID or canonical.id == TYPE_TAG_VOID
 				return emit_error(state, pub_id, "constructor fields currently require unmanaged values")
-			for previous in fields
-				if previous.name == field_name
-					return emit_error(state, pub_id, "constructor field overrides are not supported yet")
+			let edit = hir_constructor_publish(semantic_fields, field_name, canonical.id)
+			if edit.error != ""
+				return emit_error(state, pub_id, edit.error)
+			semantic_fields = edit.fields
 			fields = fields.append(RecordField(field_name, kind))
 		if len(fields) == 0
 			return emit_error(state, id, "constructor must publish at least one field")
+		let resolved = resolve_hir_record(probe.types, semantic_fields)
+		if resolved.error != ""
+			return emit_error(state, id, resolved.error)
+		probe.types = resolved.table
 		let record = intern_record(probe, fields)
 		next = record.state
+		next.hir = next.hir.append(HirNode(id, HIR_CONSTRUCTOR, resolved.type_id, -1))
 		result = record.kind
 	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor, "s_" + name))
 	return next
