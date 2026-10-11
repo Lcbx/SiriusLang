@@ -17,7 +17,7 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	cases = (
 		('canonical', ('src/types.sirius', 'tests/types/driver.sirius'), 'PASS canonical type descriptors\n'),
-		('emitter', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/emit_c.sirius', 'tests/types/emitter_driver.sirius'), 'PASS canonical emitter types\n'),
+		('emitter', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/compile_common.sirius', 'src/hir.sirius', 'src/emit_c.sirius', 'tests/types/emitter_driver.sirius'), 'PASS canonical emitter types\n'),
 		('hir', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'tests/types/hir_driver.sirius'), 'PASS typed HIR resolution\n'),
 		('specializations', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'tests/types/specialization_driver.sirius'), 'PASS HIR specialization registry\n'),
 		('worklist', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/hir_specialize.sirius', 'tests/types/worklist_driver.sirius'), 'PASS HIR worklist without backend\n'),

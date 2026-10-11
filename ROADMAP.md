@@ -171,3 +171,14 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - `target_ir.py`: exploratory Python dataclasses only, not a runtime dependency or mandatory implementation blueprint.
 
 Update this roadmap at **phase milestones**, not with an entry for every small patch; the commit history and test fixtures provide the incremental development record.
+
+## MIR-only compilation migration
+
+- [x] Extract `CompileResult` from the legacy emitter.
+- [x] Share MIR entry validation and managed TypeId classification in `mir_common.sirius`.
+- [x] Add an explicit self-hosting coverage probe for the MIR backend.
+- [ ] Support all concrete return annotations and specializations needed to analyze the compiler in HIR.
+- [ ] Complete HIR→MIR lowering for remaining compiler syntax and builtins.
+- [ ] Achieve a stage-2/stage-3 fixed point when compiling the compiler through MIR.
+- [ ] Run the full execution and diagnostic suites with MIR as the default.
+- [ ] Remove the legacy C emitter and retire the `--mir-c` switch.

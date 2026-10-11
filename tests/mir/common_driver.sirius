@@ -1,0 +1,18 @@
+# Both the interpreter and C backend must agree on entry validation and
+# ownership classification of canonical primitive/managed TypeIds.
+def main() -> i64
+	let compilation = CompileResult("ok", "", 0)
+	if compilation.code != "ok" or compilation.error != ""
+		return 5
+	let empty = MirProgram(Array[MirFunction]())
+	if mir_common_entry_error(empty, 0) != "invalid entry function"
+		return 1
+	if mir_common_managed(TYPE_TAG_I64) or mir_common_managed(TYPE_TAG_BOOL)
+		return 2
+	if not mir_common_managed(TYPE_TAG_STRING) or not mir_common_managed(TYPE_TAG_RECORD)
+		return 3
+	let record = intern_record_type(new_type_table(), Array[RecordField]())
+	if not mir_common_managed(record.id)
+		return 4
+	print("PASS MIR backend common semantics")
+	return 0

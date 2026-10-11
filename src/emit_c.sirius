@@ -129,7 +129,6 @@ rec EmitState(tree: ParseState)
 
 rec ExprCode(state: EmitState, text: string, kind: i64)
 
-rec CompileResult(code: string, error: string, line: i64)
 
 def ast_node(tree: ParseState, id: i64) -> Node
 	return tree.nodes[!id]

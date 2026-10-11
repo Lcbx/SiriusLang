@@ -12,7 +12,7 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	output = check_sirius_driver(cache, 'mir-lower', (
 		'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
-		'src/hir.sirius', 'src/mir.sirius', 'src/mir_interpreter.sirius',
+		'src/hir.sirius', 'src/mir.sirius', 'src/mir_common.sirius', 'src/mir_interpreter.sirius',
 		'src/mir_lower.sirius', 'tests/mir/lowering_driver.sirius',
 	), 'PASS typed HIR scalar CFG lowering\n')
 	print(output, end='')

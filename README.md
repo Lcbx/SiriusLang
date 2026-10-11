@@ -103,6 +103,20 @@ target_ir.py          Illustrative Python IR dataclasses; not used by the compil
 
 Source modules in `src/` are currently **concatenated in a fixed order**, along with `tests/emitter/driver.sirius` using `tools/sirius_sources.py`, to build the compiler. Sirius imports are not implemented yet. `tools/sirius_sources.py` centralizes the ordered source manifest; `tools/emitter_cases.py` contains the shared stage-1/fixed-point regression inventory.
 
+## MIR backend migration (in progress)
+
+`src/compile_common.sirius` now owns the shared `CompileResult`, independently
+of `emit_c.sirius`. `src/mir_common.sirius` centralizes the canonical managed
+TypeId classification and MIR entry validation used by the interpreter and C
+backend. The MIR backend is **not yet the default**: the HIR specialization
+worklist cannot compile all current compiler sources (currently fails resolving
+a specialized callee return type). The legacy backend is required for both
+ordinary builds and self-hosting until this is resolved and tested.
+
+Run `python tools/check_mir_bootstrap.py` to report the current MIR compiler
+coverage blocker; `--require-ready` makes it fail if the MIR path is incomplete.
+The `--mir-c` flag remains explicit and has no legacy fallback.
+
 ## Current scope and limitations
 
 The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published; `def` constructors rejected), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.

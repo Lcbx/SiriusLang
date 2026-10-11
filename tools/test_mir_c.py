@@ -80,9 +80,9 @@ def main() -> None:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')
 		print('PASS MIR-C unsupported construct rejected')
 		driver = cache.sirius('mir-c-direct', (
-			'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
+			'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/compile_common.sirius',
 			'src/hir.sirius', 'src/emit_c.sirius', 'src/hir_specialize.sirius',
-			'src/mir.sirius', 'src/mir_lower.sirius', 'src/mir_ownership.sirius', 'src/mir_guard.sirius', 'src/mir_lifetime.sirius', 'src/mir_cleanup.sirius', 'src/mir_program.sirius',
+			'src/mir.sirius', 'src/mir_common.sirius', 'src/mir_lower.sirius', 'src/mir_ownership.sirius', 'src/mir_guard.sirius', 'src/mir_lifetime.sirius', 'src/mir_cleanup.sirius', 'src/mir_program.sirius',
 			'src/mir_emit_c.sirius', 'tests/mir/c_driver.sirius',
 		))
 		generated = [work / f'direct-{name}.c' for name in ('print', 'panic', 'uninitialized')]

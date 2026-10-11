@@ -7,10 +7,12 @@ TOKENIZER_SOURCES = ('src/tokenizer.sirius',)
 PARSER_SOURCES = TOKENIZER_SOURCES + ('src/parser.sirius',)
 COMPILER_SOURCES = PARSER_SOURCES + (
 	'src/types.sirius',
+	'src/compile_common.sirius',
 	'src/hir.sirius',
 	'src/emit_c.sirius',
 	'src/hir_specialize.sirius',
 	'src/mir.sirius',
+	'src/mir_common.sirius',
 	'src/mir_lower.sirius',
 	'src/mir_ownership.sirius',
 	'src/mir_guard.sirius',

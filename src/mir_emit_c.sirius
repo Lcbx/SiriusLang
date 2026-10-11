@@ -47,9 +47,6 @@ def mir_c_retain_value(type_id: i64, value: string) -> string
 		return "s_string_retain(" + value + ")"
 	return "s_mir_record_retain(" + value + ")"
 
-def mir_c_managed(type_id: i64) -> bool
-	return type_id == TYPE_TAG_STRING or type_id >= TYPE_TAG_RECORD
-
 # Evaluate the incoming value before dropping dst, including self-copies.
 def mir_c_store_owned(dst: i64, type_id: i64, expression: string) -> string
 	let name = mir_c_register(dst)
@@ -59,7 +56,7 @@ def mir_c_release_managed(function: MirFunction, except: i64) -> string
 	var result = ""
 	for i in 0..len(function.register_types)
 		let type_id = function.register_types[!i]
-		if i != except and mir_c_managed(type_id)
+		if i != except and mir_common_managed(type_id)
 			result = result + "\tif (init" + str(i) + ") " + mir_c_release_value(type_id, mir_c_register(i)) + ";\n"
 	return result
 
@@ -78,7 +75,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 			result = result + "\tcase " + str(i) + ":\n"
 			for j in 0..len(type_desc.fields)
 				let field_type = type_desc.fields[!j].kind
-				if mir_c_managed(field_type)
+				if mir_common_managed(field_type)
 					var field = "r->fields[" + str(j) + "]"
 					if field_type == TYPE_TAG_STRING
 						field = field + ".text"
@@ -88,7 +85,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 			result = result + "\t\tbreak;\n"
 		elif type_desc.tag == TYPE_TAG_OPTIONAL
 			result = result + "\tcase " + str(i) + ":\n"
-			if mir_c_managed(type_desc.first)
+			if mir_common_managed(type_desc.first)
 				var field = "r->fields[0]"
 				if type_desc.first == TYPE_TAG_STRING
 					field = field + ".text"
@@ -104,7 +101,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				if part == 1
 					kind = type_desc.second
 					offset = "1"
-				if mir_c_managed(kind)
+				if mir_common_managed(kind)
 					var field = "r->fields[j + " + offset + "]"
 					if kind == TYPE_TAG_STRING
 						field = field + ".text"
@@ -115,7 +112,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 		elif type_desc.tag == TYPE_TAG_ARRAY
 			let element_type = type_desc.first
 			result = result + "\tcase " + str(i) + ":\n"
-			if mir_c_managed(element_type)
+			if mir_common_managed(element_type)
 				var field = "r->fields[j]"
 				if element_type == TYPE_TAG_STRING
 					field = field + ".text"
@@ -133,7 +130,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
 			result = result + "\t\tcase " + str(i) + ":\n"
-			if mir_c_managed(desc.first)
+			if mir_common_managed(desc.first)
 				var field = "copy->fields[j]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
@@ -148,7 +145,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
 			result = result + "\tcase " + str(i) + ":\n"
-			if mir_c_managed(desc.first)
+			if mir_common_managed(desc.first)
 				var field = "array->fields[index]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
@@ -177,7 +174,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				if part == 1
 					kind = desc.second
 					offset = "1"
-				if mir_c_managed(kind)
+				if mir_common_managed(kind)
 					var field = "copy->fields[j + " + offset + "]"
 					if kind == TYPE_TAG_STRING
 						field = field + ".text"
@@ -203,7 +200,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				if part == 1
 					kind = desc.second
 					offset = "1"
-				if mir_c_managed(kind)
+				if mir_common_managed(kind)
 					var field = "dict->fields[at + " + offset + "]"
 					if kind == TYPE_TAG_STRING
 						field = field + ".text"
@@ -220,7 +217,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_OPTIONAL
 			result = result + "\tcase " + str(i) + ": "
-			if mir_c_managed(desc.first)
+			if mir_common_managed(desc.first)
 				var field = "optional->fields[0]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
@@ -236,7 +233,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_OPTIONAL
 			result = result + "\tcase " + str(i) + ": "
-			if mir_c_managed(desc.first)
+			if mir_common_managed(desc.first)
 				var field = "optional->fields[0]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
@@ -281,7 +278,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		if payload_type == TYPE_TAG_STRING
 			field = "text"
 			value = mir_c_retain_value(payload_type, value)
-		elif mir_c_managed(payload_type)
+		elif mir_common_managed(payload_type)
 			field = "record"
 			value = mir_c_retain_value(payload_type, value)
 		let code = result + "\t{ S_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", 1);\n"
@@ -298,11 +295,11 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		var field = "bits"
 		if dst_type == TYPE_TAG_STRING
 			field = "text"
-		elif mir_c_managed(dst_type)
+		elif mir_common_managed(dst_type)
 			field = "record"
 		let value = first + "->fields[0]." + field
 		result = result + "\tif (!" + first + "->length) s_panic(\"missing optional value\");\n"
-		if mir_c_managed(dst_type)
+		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
 		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_DICT_NEW
@@ -318,7 +315,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if kind == TYPE_TAG_STRING
 				field = "text"
 				value = mir_c_retain_value(kind, value)
-			elif mir_c_managed(kind)
+			elif mir_common_managed(kind)
 				field = "record"
 				value = mir_c_retain_value(kind, value)
 			fields = fields.append(field + " = " + value)
@@ -346,13 +343,13 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		var value_field = "bits"
 		if dst_type == TYPE_TAG_STRING
 			value_field = "text"
-		elif mir_c_managed(dst_type)
+		elif mir_common_managed(dst_type)
 			value_field = "record"
 		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
 		code = code + "\t\tint64_t at = s_mir_dict_find(" + first + ", " + str(key_type) + ", key);\n"
 		let fallback = mir_c_register(instruction.immediate)
 		let value = "(at < 0 ? " + fallback + " : " + first + "->fields[at + 1]." + value_field + ")"
-		if mir_c_managed(dst_type)
+		if mir_common_managed(dst_type)
 			return code + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value)) + "\t}\n"
 		return code + "\t\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true; }\n"
 	if op == MIR_ARRAY_NEW
@@ -365,7 +362,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if kind == TYPE_TAG_STRING
 				field = "text"
 				value = mir_c_retain_value(kind, value)
-			elif mir_c_managed(kind)
+			elif mir_common_managed(kind)
 				field = "record"
 				value = mir_c_retain_value(kind, value)
 			code = code + "\t\tarray->fields[" + str(i) + "]." + field + " = " + value + ";\n"
@@ -380,10 +377,10 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		var field = "bits"
 		if dst_type == TYPE_TAG_STRING
 			field = "text"
-		elif mir_c_managed(dst_type)
+		elif mir_common_managed(dst_type)
 			field = "record"
 		let value = first + "->fields[" + second + "]." + field
-		if mir_c_managed(dst_type)
+		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
 		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_ARRAY_SET
@@ -393,7 +390,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		if element_type == TYPE_TAG_STRING
 			field = "text"
 			value = mir_c_retain_value(element_type, value)
-		elif mir_c_managed(element_type)
+		elif mir_common_managed(element_type)
 			field = "record"
 			value = mir_c_retain_value(element_type, value)
 		var code = result + "\t{ S_MirField replacement = {0}; replacement." + field + " = " + value + ";\n"
@@ -424,7 +421,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		elif dst_type >= TYPE_TAG_RECORD
 			field = "record"
 		let value = first + "->fields[" + str(instruction.immediate) + "]." + field
-		if mir_c_managed(dst_type)
+		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
 		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_RELEASE_IF_INIT
@@ -436,7 +433,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		transfer = transfer + "if (init" + str(instruction.dst) + ") " + mir_c_release_value(dst_type, dst) + "; " + dst + " = owned; init" + str(instruction.dst) + " = true; }\n"
 		return transfer
 	if op == MIR_COPY or op == MIR_RETAIN
-		if mir_c_managed(dst_type)
+		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, first))
 	if op == MIR_STRING_CONCAT
 		result = result + mir_c_check(instruction.second)
@@ -463,7 +460,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		var arguments = Array[string]()
 		for arg in instruction.inputs
 			var value = mir_c_register(arg)
-			if mir_c_managed(function.register_types[!arg])
+			if mir_common_managed(function.register_types[!arg])
 				value = mir_c_retain_value(function.register_types[!arg], value)
 			arguments = arguments.append(value)
 		if len(arguments) == 0
@@ -492,7 +489,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			result = result + "\tif (" + second + " == 0) s_panic(\"division by zero\");\n"
 			result = result + "\tif (" + first + " == INT64_MIN && " + second + " == -1) s_panic(\"integer overflow\");\n"
 		expr = "(" + first + " " + symbol + " " + second + ")"
-	if mir_c_managed(dst_type)
+	if mir_common_managed(dst_type)
 		return result + mir_c_store_owned(instruction.dst, dst_type, expr)
 	return result + "\t" + dst + " = " + expr + "; init" + str(instruction.dst) + " = true;\n"
 
@@ -503,7 +500,7 @@ def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
 		return mir_c_check(term.operand) + "\tif (" + mir_c_register(term.operand) + ") goto block" + str(term.target) + ";\n\tgoto block" + str(term.alternative) + ";\n"
 	if term.kind == MIR_RETURN
 		var result = mir_c_check(term.operand)
-		if mir_c_managed(function.return_type)
+		if mir_common_managed(function.return_type)
 			result = result + "\t" + mir_c_type(function.return_type) + " returned = " + mir_c_register(term.operand) + ";\n"
 			result = result + mir_c_release_managed(function, term.operand)
 			return result + "\treturn returned;\n"
@@ -514,7 +511,7 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 	var output = mir_c_signature(function, index) + "\n{\n"
 	for i in 0..len(function.register_types)
 		var initial = "0"
-		if mir_c_managed(function.register_types[!i])
+		if mir_common_managed(function.register_types[!i])
 			initial = "NULL"
 		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n"
 		output = output + "\tbool init" + str(i) + " = false;\n"
@@ -542,11 +539,9 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 rec MirCResult(code: string, error: string)
 
 def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
-	let error = mir_verify(program)
+	let error = mir_common_entry_error(program, entry)
 	if error != ""
 		return MirCResult("", error)
-	if entry < 0 or entry >= len(program.functions)
-		return MirCResult("", "invalid entry function")
 	let main = program.functions[!entry]
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")

@@ -24,17 +24,17 @@ def mir_heap_release(types: TypeTable, heap: Array[MirHeapRecord], index: i64) -
 	next[!index] = record
 	if record.refs == 0
 		for field in record.fields
-			if mir_managed_type(types, field.type_id) and field.type_id != TYPE_TAG_STRING
+			if mir_common_managed(field.type_id) and field.type_id != TYPE_TAG_STRING
 				next = mir_heap_release(types, next, field.bits)
 	return next
 
 def mir_heap_drop(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and mir_managed_type(types, value.type_id) and value.type_id != TYPE_TAG_STRING
+	if value.type_id != TYPE_TAG_INVALID and mir_common_managed(value.type_id) and value.type_id != TYPE_TAG_STRING
 		return mir_heap_release(types, heap, value.bits)
 	return heap
 
 def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and mir_managed_type(types, value.type_id) and value.type_id != TYPE_TAG_STRING
+	if value.type_id != TYPE_TAG_INVALID and mir_common_managed(value.type_id) and value.type_id != TYPE_TAG_STRING
 		return mir_heap_retain(heap, value.bits)
 	return heap
 
@@ -409,11 +409,9 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 	return mir_failure("unreachable", steps)
 
 def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64) -> MirOutcome
-	let error = mir_verify(program)
+	let error = mir_common_entry_error(program, function_id)
 	if error != ""
 		return mir_failure(error, 0)
-	if function_id < 0 or function_id >= len(program.functions)
-		return mir_failure("invalid entry function", 0)
 	if max_steps <= 0 or max_depth <= 0
 		return mir_failure("invalid execution limits", 0)
 	# External callers cannot fabricate record handles without the execution heap.
