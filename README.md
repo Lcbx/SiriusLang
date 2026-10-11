@@ -66,6 +66,7 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_mir_lower.py` | Checked HIR → scalar CFG MIR lowering; branching, loops, short-circuit evaluation, and execution |
 | `python tools/test_hir_worklist.py` | Backend-independent concrete HIR specialization worklist, including canonical array type signatures |
 | `python tools/test_mir_program.py` | HIR worklist → linked scalar MIR program; nested, repeated and recursive calls |
+| `python tools/test_mir_optional.py` | Managed optional values and missing-value control flow in Sirius interpreter and native C |
 | `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings and dictionaries), plus direct MIR checks |
 | `python tools/test_mir_managed.py` | Shared interpreted/native managed-string MIR, retain/move/release, calls and invalidated-register checks |
 | `python tools/test_mir_dict.py` | MIR dictionaries: CoW insertion, string keys, nested arrays and consuming updates (interpreter/native) |
@@ -109,3 +110,5 @@ Other design features—including modules, general operator overloads, universal
 See [ROADMAP.md](ROADMAP.md) for **prioritized debt, incremental implementation steps, acceptance criteria, and design alignment**. See [IR_DESIGN.md](IR_DESIGN.md) for the intended intermediate representations. Regenerate changed bootstrap C with `python tools/test_selfhost.py --update-bootstrap`, then verify with `python tools/test_selfhost.py`; never edit generated C manually.
 
 The experimental MIR backend now includes `Dict[i64 | string, T]` storage (keys are separately typed as either `i64` or `string`), with empty construction, `insert`, and `len` lowered from supported Sirius source. Direct MIR additionally provides an eager `MIR_DICT_GET_OR` primitive. Source-level `get(...)`/optional fallback is **not yet lowered** because it requires lazy optional control flow. MIR dictionaries currently use a simple linear key scan; this is a correctness-oriented baseline, not a production hash-table implementation.
+
+The experimental `--mir-c` backend supports optional rank-1 array indexing (`a[?i]`), dictionary `.get(key)`, postfix unwrap (`!`), lazy `or` fallback, and `let x = optional else return expr`. The legacy C backend remains the default.

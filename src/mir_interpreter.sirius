@@ -69,12 +69,44 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
+			if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
+				var fields = Array[MirValue]()
+				if ins.op == MIR_OPTIONAL_SOME
+					let payload = registers[!ins.first]
+					if payload.type_id == TYPE_TAG_INVALID
+						return mir_failure("uninitialized optional payload", steps)
+					fields = fields.append(payload)
+					heap = mir_heap_copy(program.types, heap, payload)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == MIR_OPTIONAL_HAS or ins.op == MIR_OPTIONAL_UNWRAP
+				let wrapped = registers[!ins.first]
+				if wrapped.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized optional", steps)
+				if wrapped.bits < 0 or wrapped.bits >= len(heap) or heap[!wrapped.bits].refs <= 0
+					return mir_failure("invalid optional handle", steps)
+				let fields = heap[!wrapped.bits].fields
+				if ins.op == MIR_OPTIONAL_HAS
+					var present = 0
+					if len(fields) == 1
+						present = 1
+					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, present, "")
+					continue
+				if len(fields) == 0
+					return mir_failure("missing optional value", steps)
+				let payload = fields[!0]
+				heap = mir_heap_copy(program.types, heap, payload)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = payload
+				continue
 			if ins.op == MIR_DICT_NEW
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], Array[MirValue](), 1))
 				continue
-			if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH
+			if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH or ins.op == MIR_DICT_GET_OPTIONAL
 				let owner = registers[!ins.first]
 				if owner.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized dictionary", steps)
@@ -95,6 +127,16 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 					if mir_dict_equal(dict.fields[!i * 2], key)
 						at = i
 						break
+				if ins.op == MIR_DICT_GET_OPTIONAL
+					var fields = Array[MirValue]()
+					if at >= 0
+						let payload = dict.fields[!at * 2 + 1]
+						heap = mir_heap_copy(program.types, heap, payload)
+						fields = fields.append(payload)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+					continue
 				if ins.op == MIR_DICT_GET_OR
 					var selected = registers[!ins.immediate]
 					if at >= 0
@@ -146,7 +188,7 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], values, 1))
 				continue
-			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET
+			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL
 				let owner = registers[!ins.first]
 				if owner.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized array", steps)
@@ -159,6 +201,16 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				let index = registers[!ins.second]
 				if index.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized array index", steps)
+				if ins.op == MIR_ARRAY_GET_OPTIONAL
+					var fields = Array[MirValue]()
+					if index.bits >= 0 and index.bits < len(array.fields)
+						let payload = array.fields[!index.bits]
+						heap = mir_heap_copy(program.types, heap, payload)
+						fields = fields.append(payload)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+					continue
 				if index.bits < 0 or index.bits >= len(array.fields)
 					return mir_failure("array index out of bounds", steps)
 				if ins.op == MIR_ARRAY_GET
@@ -339,6 +391,6 @@ def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue
 		return mir_failure("invalid execution limits", 0)
 	# External callers cannot fabricate record handles without the execution heap.
 	for argument in arguments
-		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == TYPE_TAG_ARRAY)
+		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == TYPE_TAG_ARRAY or program.types.entries[!argument.type_id].tag == TYPE_TAG_DICT or program.types.entries[!argument.type_id].tag == TYPE_TAG_OPTIONAL)
 			return mir_failure("managed collection arguments require an execution heap", 0)
 	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord]())

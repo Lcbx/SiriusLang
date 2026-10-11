@@ -34,6 +34,12 @@ let MIR_DICT_NEW = 29
 let MIR_DICT_INSERT = 30
 let MIR_DICT_GET_OR = 31
 let MIR_DICT_LENGTH = 32
+let MIR_OPTIONAL_NONE = 33
+let MIR_OPTIONAL_SOME = 34
+let MIR_OPTIONAL_HAS = 35
+let MIR_OPTIONAL_UNWRAP = 36
+let MIR_ARRAY_GET_OPTIONAL = 37
+let MIR_DICT_GET_OPTIONAL = 38
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -98,6 +104,24 @@ def mir_dict_get_or(dst: i64, owner: i64, key: i64, fallback: i64) -> MirInstruc
 def mir_dict_length(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_DICT_LENGTH, dst, owner, -1, 0)
 
+def mir_optional_none(dst: i64) -> MirInstruction
+	return mir_op(MIR_OPTIONAL_NONE, dst, -1, -1, 0)
+
+def mir_optional_some(dst: i64, value: i64) -> MirInstruction
+	return mir_op(MIR_OPTIONAL_SOME, dst, value, -1, 0)
+
+def mir_optional_has(dst: i64, owner: i64) -> MirInstruction
+	return mir_op(MIR_OPTIONAL_HAS, dst, owner, -1, 0)
+
+def mir_optional_unwrap(dst: i64, owner: i64) -> MirInstruction
+	return mir_op(MIR_OPTIONAL_UNWRAP, dst, owner, -1, 0)
+
+def mir_array_get_optional(dst: i64, owner: i64, index: i64) -> MirInstruction
+	return mir_op(MIR_ARRAY_GET_OPTIONAL, dst, owner, index, 0)
+
+def mir_dict_get_optional(dst: i64, owner: i64, key: i64) -> MirInstruction
+	return mir_op(MIR_DICT_GET_OPTIONAL, dst, owner, key, 0)
+
 def mir_jump(target: i64) -> MirTerminator
 	return MirTerminator(MIR_JUMP, -1, target, -1, "")
 
@@ -122,13 +146,13 @@ def mir_type_supported(types: TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT
+	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
 
 def mir_managed_type(types: TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT
+	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
 
 def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
 	let types = function.register_types
@@ -151,11 +175,29 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		if dst_type != TYPE_TAG_STRING
 			return "string constant destination must be string"
 		return ""
+	if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_OPTIONAL
+			return "optional constructor requires Optional destination"
+		if ins.op == MIR_OPTIONAL_SOME and not mir_register_valid(types, ins.first, desc.first)
+			return "optional payload type mismatch"
+		return ""
+	if ins.op == MIR_OPTIONAL_HAS or ins.op == MIR_OPTIONAL_UNWRAP
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid optional source"
+		let desc = program.types.entries[!types[!ins.first]]
+		if desc.tag != TYPE_TAG_OPTIONAL
+			return "optional operation requires Optional"
+		if ins.op == MIR_OPTIONAL_HAS and dst_type != TYPE_TAG_BOOL
+			return "optional presence destination must be bool"
+		if ins.op == MIR_OPTIONAL_UNWRAP and dst_type != desc.first
+			return "optional unwrap type mismatch"
+		return ""
 	if ins.op == MIR_DICT_NEW
 		if program.types.entries[!dst_type].tag != TYPE_TAG_DICT
 			return "dictionary construction requires Dict destination"
 		return ""
-	if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH
+	if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH or ins.op == MIR_DICT_GET_OPTIONAL
 		if ins.first < 0 or ins.first >= len(types)
 			return "invalid dictionary source"
 		let owner = types[!ins.first]
@@ -171,6 +213,11 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 				return "dictionary insert signature mismatch"
 			if not mir_register_valid(types, ins.inputs[!0], desc.first) or not mir_register_valid(types, ins.inputs[!1], desc.second)
 				return "dictionary insert key/value type mismatch"
+			return ""
+		if ins.op == MIR_DICT_GET_OPTIONAL
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != desc.second or not mir_register_valid(types, ins.second, desc.first)
+				return "dictionary optional lookup signature mismatch"
 			return ""
 		if not mir_register_valid(types, ins.second, desc.first) or not mir_register_valid(types, ins.immediate, desc.second) or dst_type != desc.second
 			return "dictionary get-or signature mismatch"
@@ -193,7 +240,7 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 			if not mir_register_valid(types, input, desc.first)
 				return "array constructor element type mismatch"
 		return ""
-	if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET
+	if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL
 		if ins.first < 0 or ins.first >= len(types)
 			return "invalid array source"
 		let source_type = types[!ins.first]
@@ -206,7 +253,11 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 			return ""
 		if not mir_register_valid(types, ins.second, TYPE_TAG_I64)
 			return "array index must be i64"
-		if ins.op == MIR_ARRAY_GET
+		if ins.op == MIR_ARRAY_GET_OPTIONAL
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != desc.first
+				return "array optional index type mismatch"
+		elif ins.op == MIR_ARRAY_GET
 			if dst_type != desc.first
 				return "array element destination type mismatch"
 		elif dst_type != source_type or not mir_register_valid(types, ins.immediate, desc.first)
@@ -283,6 +334,9 @@ def mir_verify(program: MirProgram) -> string
 	# Reject malformed/noncanonical type descriptors before accessing field tables.
 	for i in 0..len(program.types.entries)
 		let entry = program.types.entries[!i]
+		if entry.tag == TYPE_TAG_OPTIONAL
+			if entry.first < 0 or entry.first >= i or not mir_type_supported(program.types, entry.first)
+				return "invalid or cyclic optional type"
 		if entry.tag == TYPE_TAG_DICT
 			if entry.first < 0 or entry.first >= i or entry.second < 0 or entry.second >= i
 				return "invalid or cyclic dictionary type"
@@ -300,7 +354,7 @@ def mir_verify(program: MirProgram) -> string
 					return "unsupported record field type"
 				if j > 0 and entry.fields[!j - 1].name >= field.name
 					return "record field order is not canonical"
-				if (program.types.entries[!field.kind].tag == TYPE_TAG_RECORD or program.types.entries[!field.kind].tag == TYPE_TAG_ARRAY) and field.kind >= i
+				if (program.types.entries[!field.kind].tag == TYPE_TAG_RECORD or program.types.entries[!field.kind].tag == TYPE_TAG_ARRAY or program.types.entries[!field.kind].tag == TYPE_TAG_DICT or program.types.entries[!field.kind].tag == TYPE_TAG_OPTIONAL) and field.kind >= i
 					return "cyclic record type descriptor"
 	# Validate signatures first: call validation may inspect any callee.
 	for function in program.functions

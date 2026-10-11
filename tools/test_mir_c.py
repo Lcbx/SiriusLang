@@ -32,6 +32,18 @@ CASES = {
 	'dict_chained': 'def main() -> i64\n\tlet first = Dict[string,i64]().insert("a", 3)\n\tlet second = first.insert("b", 4)\n\treturn len(first) * 10 + len(second)\n',
 	'dict_array_value': 'def main() -> i64\n\tlet xs = [1, 2]\n\tlet d = Dict[i64,Array[i64]]().insert(7, xs)\n\treturn len(d)\n',
 	'array_record': 'def main() -> i64\n\tlet item = {name = "X", count = 4}\n\tvar array = [item]\n\tlet old = array\n\tarray[!0] = {name = "long", count = 5}\n\treturn old[!0].count + len(array[!0].name)\n',
+	'optional_hit': 'def main() -> i64\n\tlet a = [4, 6]\n\treturn a[?1] or 20\n',
+	'optional_miss': 'def main() -> i64\n\tlet a = [4, 6]\n\treturn a[?9] or 20\n',
+	'optional_lazy': 'def main() -> i64\n\tlet a = [42]\n\tlet zero = 0\n\treturn a[?0] or (1 / zero)\n',
+	'optional_unwrap': 'def main() -> i64\n\tlet a = [13]\n\treturn a[?0]!\n',
+	'optional_return_hit': 'def get(index: i64) -> i64\n\tlet x = [12][?index] else return 31\n\treturn x\ndef main() -> i64\n\treturn get(0)\n',
+	'optional_return_miss': 'def get(index: i64) -> i64\n\tlet x = [12][?index] else return 31\n\treturn x\ndef main() -> i64\n\treturn get(4)\n',
+	'optional_dict_hit': 'def main() -> i64\n\tlet d = Dict[i64,i64]().insert(2, 7)\n\treturn d.get(2) or 15\n',
+	'optional_dict_miss': 'def main() -> i64\n\tlet d = Dict[i64,i64]().insert(2, 7)\n\treturn d.get(3) or 15\n',
+	'optional_string_hit': 'def main() -> i64\n\tlet a = ["hello"]\n\tlet x = a[?0] or "missing"\n\treturn len(x)\n',
+	'optional_string_miss': 'def main() -> i64\n\tlet a = ["hello"]\n\tlet x = a[?3] or "missing"\n\treturn len(x)\n',
+	'optional_nested': 'def main() -> i64\n\tlet d = Dict[i64,Array[i64]]().insert(2, [7, 8])\n\tlet x = d.get(2) or [1]\n\treturn x[!1]\n',
+
 
 }
 
@@ -62,7 +74,7 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet obj = Dict[i64, i64]()\n\treturn obj.get(1) or 0\n')
+		input_path.write_text('def main() -> i64\n\treturn str(42).byte_at(0) or 0\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
 		if result.returncode == 0 or 'unsupported' not in result.stdout:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')

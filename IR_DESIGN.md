@@ -139,3 +139,9 @@ HIR generic specialization lookup and lifecycle, symbol binding metadata and str
 ## Implemented experimental dictionary MIR
 
 `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` operate on canonical `Dict[K,V]` descriptors. `K` is currently `i64` or `string`; `V` can be any MIR-supported type, including managed arrays/records/dictionaries. Storage is reference-counted and unoptimized (linear key scan, insertion order). `MIR_DICT_INSERT` consumes its owner, reuses a unique allocation, or clones a shared dictionary while retaining nested values. Existing keys are replaced without changing entry count. The verifier checks key/value/result types. `MIR_DICT_GET_OR` accepts an already evaluated fallback register, **not** an `Optional` result, and must not be used as a direct lowering of lazy source `or`. Source `Dict[K,V]()`, `.insert`, and `len(dict)` are supported experimentally; source `.get` remains deferred pending optional CFG lowering.
+
+## Implemented experimental optional MIR
+
+Canonical `Optional[T]` values use zero/one owned payload fields, including nested managed values. `MIR_OPTIONAL_NONE`, `MIR_OPTIONAL_SOME`, `MIR_OPTIONAL_HAS`, `MIR_OPTIONAL_UNWRAP`, `MIR_ARRAY_GET_OPTIONAL` and `MIR_DICT_GET_OPTIONAL` are verified and executed by both the Sirius MIR interpreter and the MIR-C backend. The interpreter maintains reference counts; C uses the existing managed-record runtime with descriptor-directed nested release.
+
+HIR-to-MIR lowering now handles `a[?i]`, `dict.get(key)`, postfix `!`, `optional or fallback` and `let x = optional else return value`. The latter two produce actual CFG branches, so fallback expressions execute only for absent values. The older `MIR_DICT_GET_OR` remains explicitly eager and must not be used to lower source-level `or`. This does **not** replace the pending CFG ownership/lifetime pass. See `tools/test_mir_optional.py` and differential cases in `tools/test_mir_c.py`.

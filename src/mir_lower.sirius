@@ -135,7 +135,7 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		next = mir_lower_register(next, type_id)
 		next = mir_lower_emit(next, mir_array_new(dst, inputs))
 		return MirLowerExpr(next, dst)
-	if node.kind == NODE_CHECKED_INDEX
+	if node.kind == NODE_OPTIONAL_INDEX or node.kind == NODE_CHECKED_INDEX
 		let owner = mir_lower_expression(next, hir_ast_child(next.tree, id, 0))
 		next = owner.state
 		next.error == "" else return MirLowerExpr(next, -1)
@@ -147,7 +147,21 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR index expression"), -1)
 		let dst = len(next.register_types)
 		next = mir_lower_register(next, type_id)
-		next = mir_lower_emit(next, mir_array_get(dst, owner.slot, index.slot))
+		if node.kind == NODE_OPTIONAL_INDEX
+			next = mir_lower_emit(next, mir_array_get_optional(dst, owner.slot, index.slot))
+		else
+			next = mir_lower_emit(next, mir_array_get(dst, owner.slot, index.slot))
+		return MirLowerExpr(next, dst)
+	if node.kind == NODE_UNWRAP
+		let wrapped = mir_lower_expression(next, hir_ast_child(next.tree, id, 0))
+		next = wrapped.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		let type_id = mir_lower_type(next, id, HIR_UNWRAP)
+		if not mir_type_supported(next.types, type_id)
+			return MirLowerExpr(mir_lower_error(next, "missing typed optional unwrap"), -1)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, type_id)
+		next = mir_lower_emit(next, mir_optional_unwrap(dst, wrapped.slot))
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_RECORD
 		let type_id = mir_lower_type(next, id, HIR_RECORD)
@@ -222,6 +236,21 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 				let dst = len(next.register_types)
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, mir_dict_new(dst))
+				return MirLowerExpr(next, dst)
+		if next.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(next.tree, callee) == "get" and node.count == 2
+			let type_id = mir_lower_type(next, id, HIR_CALL)
+			if mir_type_supported(next.types, type_id) and next.types.entries[!type_id].tag == TYPE_TAG_OPTIONAL
+				let owner = mir_lower_expression(next, hir_ast_child(next.tree, callee, 0))
+				next = owner.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				if next.types.entries[!next.register_types[!owner.slot]].tag != TYPE_TAG_DICT
+					return MirLowerExpr(mir_lower_error(next, "optional get requires Dict"), -1)
+				let key = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+				next = key.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, type_id)
+				next = mir_lower_emit(next, mir_dict_get_optional(dst, owner.slot, key.slot))
 				return MirLowerExpr(next, dst)
 		if next.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(next.tree, callee) == "insert" and node.count == 3
 			let type_id = mir_lower_type(next, id, HIR_CALL)
@@ -303,6 +332,37 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		next = left.state
 		next.error == "" else return MirLowerExpr(next, -1)
 		let type_id = mir_lower_type(next, id, HIR_BINARY)
+		if text == "or" and next.types.entries[!next.register_types[!left.slot]].tag == TYPE_TAG_OPTIONAL
+			if not mir_type_supported(next.types, type_id)
+				return MirLowerExpr(mir_lower_error(next, "unsupported optional fallback type"), -1)
+			let result = len(next.register_types)
+			next = mir_lower_register(next, type_id)
+			let present = len(next.register_types)
+			next = mir_lower_register(next, TYPE_TAG_BOOL)
+			next = mir_lower_emit(next, mir_optional_has(present, left.slot))
+			let condition = next.active
+			next = mir_lower_block(next)
+			let has_value = next.active
+			next = mir_lower_block(next)
+			let missing = next.active
+			next = mir_lower_block(next)
+			let done = next.active
+			next.active = condition
+			next = mir_lower_end(next, mir_branch(present, has_value, missing))
+			next.active = has_value
+			let unwrapped = len(next.register_types)
+			next = mir_lower_register(next, type_id)
+			next = mir_lower_emit(next, mir_optional_unwrap(unwrapped, left.slot))
+			next = mir_lower_emit(next, mir_op(MIR_COPY, result, unwrapped, -1, 0))
+			next = mir_lower_end(next, mir_jump(done))
+			next.active = missing
+			let fallback = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+			next = fallback.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			next = mir_lower_emit(next, mir_op(MIR_COPY, result, fallback.slot, -1, 0))
+			next = mir_lower_end(next, mir_jump(done))
+			next.active = done
+			return MirLowerExpr(next, result)
 		if not mir_supported_type(type_id)
 			return MirLowerExpr(mir_lower_error(next, "unsupported binary MIR type"), -1)
 		if text == "and" or text == "or"
@@ -395,21 +455,49 @@ def mir_lower_statement(state: MirLowerState, id: i64) -> MirLowerState
 	var next = state
 	if node.kind == NODE_LET or node.kind == NODE_VAR
 		var initializer = -1
+		var fallback = -1
 		for i in 0..node.count
 			let child = hir_ast_child(next.tree, id, i)
-			if next.tree.nodes[!child].kind != NODE_TYPE
+			if next.tree.nodes[!child].kind == NODE_ELSE_RETURN
+				fallback = hir_ast_child(next.tree, child, 0)
+			elif next.tree.nodes[!child].kind != NODE_TYPE
 				initializer = child
 		if initializer < 0
 			return mir_lower_error(next, "MIR requires an initializer")
 		let value = mir_lower_expression(next, initializer)
 		next = value.state
 		next.error == "" else return next
+		var value_slot = value.slot
+		if fallback >= 0
+			let wrapped_type = next.register_types[!value.slot]
+			if next.types.entries[!wrapped_type].tag != TYPE_TAG_OPTIONAL
+				return mir_lower_error(next, "else return requires Optional")
+			let present = len(next.register_types)
+			next = mir_lower_register(next, TYPE_TAG_BOOL)
+			next = mir_lower_emit(next, mir_optional_has(present, value.slot))
+			let condition = next.active
+			next = mir_lower_block(next)
+			let has_value = next.active
+			next = mir_lower_block(next)
+			let missing = next.active
+			next.active = condition
+			next = mir_lower_end(next, mir_branch(present, has_value, missing))
+			next.active = missing
+			let returned = mir_lower_expression(next, fallback)
+			next = returned.state
+			next.error == "" else return next
+			next = mir_lower_end(next, mir_return(returned.slot))
+			next.active = has_value
+			let unwrapped = len(next.register_types)
+			next = mir_lower_register(next, next.types.entries[!wrapped_type].first)
+			next = mir_lower_emit(next, mir_optional_unwrap(unwrapped, value.slot))
+			value_slot = unwrapped
 		let type_id = mir_lower_type(next, id, HIR_BINDING)
 		if not mir_type_supported(next.types, type_id)
 			return mir_lower_error(next, "unsupported MIR binding type")
 		let register = len(next.register_types)
 		next = mir_lower_register(next, type_id)
-		next = mir_lower_emit(next, mir_op(MIR_COPY, register, value.slot, -1, 0))
+		next = mir_lower_emit(next, mir_op(MIR_COPY, register, value_slot, -1, 0))
 		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(next.tree, id), register, next.depth))
 		return next
 	if node.kind == NODE_ASSIGN

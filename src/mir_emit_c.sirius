@@ -86,6 +86,16 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".record"
 					result = result + "\t\t" + mir_c_release_value(field_type, field) + ";\n"
 			result = result + "\t\tbreak;\n"
+		elif type_desc.tag == TYPE_TAG_OPTIONAL
+			result = result + "\tcase " + str(i) + ":\n"
+			if mir_c_managed(type_desc.first)
+				var field = "r->fields[0]"
+				if type_desc.first == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + "\t\tif (r->length) " + mir_c_release_value(type_desc.first, field) + ";\n"
+			result = result + "\t\tbreak;\n"
 		elif type_desc.tag == TYPE_TAG_DICT
 			result = result + "\tcase " + str(i) + ":\n"
 			for part in 0..2
@@ -202,13 +212,46 @@ def mir_c_record_runtime(types: TypeTable) -> string
 					result = result + "\t\t\t" + mir_c_release_value(kind, field) + ";\n"
 			result = result + "\t\t\tbreak;\n"
 	result = result + "\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n\t}\n"
-	return result + "\tdict->fields[at] = key; dict->fields[at + 1] = value; return dict;\n}\n\n"
+	result = result + "\tdict->fields[at] = key; dict->fields[at + 1] = value; return dict;\n}\n\n"
+	result = result + "static inline S_MirRecord *s_mir_optional_from_array(S_MirRecord *array, int64_t index, int64_t optional_type) {\n"
+	result = result + "\tS_MirRecord *optional = s_mir_record_new(optional_type, index < 0 || (uint64_t)index >= array->length ? 0 : 1);\n"
+	result = result + "\tif (optional->length) { optional->fields[0] = array->fields[index]; switch (optional_type) {\n"
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == TYPE_TAG_OPTIONAL
+			result = result + "\tcase " + str(i) + ": "
+			if mir_c_managed(desc.first)
+				var field = "optional->fields[0]"
+				if desc.first == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + mir_c_retain_value(desc.first, field) + "; "
+			result = result + "break;\n"
+	result = result + "\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n"
+	result = result + "static inline S_MirRecord *s_mir_optional_from_dict(S_MirRecord *dict, int64_t at, int64_t optional_type) {\n"
+	result = result + "\tS_MirRecord *optional = s_mir_record_new(optional_type, at < 0 ? 0 : 1);\n"
+	result = result + "\tif (at >= 0) { optional->fields[0] = dict->fields[at + 1]; switch (optional_type) {\n"
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == TYPE_TAG_OPTIONAL
+			result = result + "\tcase " + str(i) + ": "
+			if mir_c_managed(desc.first)
+				var field = "optional->fields[0]"
+				if desc.first == TYPE_TAG_STRING
+					field = field + ".text"
+				else
+					field = field + ".record"
+				result = result + mir_c_retain_value(desc.first, field) + "; "
+			result = result + "break;\n"
+	result = result + "\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n"
+	return result
 
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
 	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING
-		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW
+		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
 		else
@@ -216,7 +259,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if op == MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL
 				result = result + mir_c_check(instruction.second)
 			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR
 				result = result + mir_c_check(instruction.immediate)
@@ -229,6 +272,33 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	let dst_type = function.register_types[!instruction.dst]
 	if op == MIR_CONST_STRING
 		return mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+	if op == MIR_OPTIONAL_NONE
+		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)")
+	if op == MIR_OPTIONAL_SOME
+		let payload_type = function.register_types[!instruction.first]
+		var field = "bits"
+		var value = first
+		if payload_type == TYPE_TAG_STRING
+			field = "text"
+			value = mir_c_retain_value(payload_type, value)
+		elif mir_c_managed(payload_type)
+			field = "record"
+			value = mir_c_retain_value(payload_type, value)
+		let code = result + "\t{ S_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", 1);\n"
+		return code + "\t\toptional->fields[0]." + field + " = " + value + ";\n" + mir_c_store_owned(instruction.dst, dst_type, "optional") + "\t}\n"
+	if op == MIR_OPTIONAL_HAS
+		return result + "\t" + dst + " = (" + first + "->length != 0); init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_OPTIONAL_UNWRAP
+		var field = "bits"
+		if dst_type == TYPE_TAG_STRING
+			field = "text"
+		elif mir_c_managed(dst_type)
+			field = "record"
+		let value = first + "->fields[0]." + field
+		result = result + "\tif (!" + first + "->length) s_panic(\"missing optional value\");\n"
+		if mir_c_managed(dst_type)
+			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value))
+		return result + "\t" + dst + " = " + value + "; init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_DICT_NEW
 		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)")
 	if op == MIR_DICT_LENGTH
@@ -253,6 +323,15 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		if instruction.dst == instruction.first
 			return code + "\t\t" + dst + " = updated; init" + str(instruction.dst) + " = true; }\n"
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated") + "\t}\n"
+	if op == MIR_DICT_GET_OPTIONAL
+		let key_type = function.register_types[!instruction.second]
+		var key_field = "bits"
+		if key_type == TYPE_TAG_STRING
+			key_field = "text"
+		# The helper retains the dictionary payload using its canonical Optional type.
+		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
+		code = code + "\t\tint64_t at = s_mir_dict_find(" + first + ", " + str(key_type) + ", key);\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_dict(" + first + ", at, " + str(dst_type) + ")") + "\t}\n"
 	if op == MIR_DICT_GET_OR
 		let key_type = function.register_types[!instruction.second]
 		var key_field = "bits"
@@ -287,6 +366,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		return code + mir_c_store_owned(instruction.dst, dst_type, "array") + "\t}\n"
 	if op == MIR_ARRAY_LENGTH
 		return result + "\t" + dst + " = (int64_t)" + first + "->length; init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_ARRAY_GET_OPTIONAL
+		# The helper retains the array element using the canonical Optional type.
+		return result + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_array(" + first + ", " + second + ", " + str(dst_type) + ")")
 	if op == MIR_ARRAY_GET
 		result = result + "\tif (" + second + " < 0 || (uint64_t)" + second + " >= " + first + "->length) s_panic(\"array index out of bounds\");\n"
 		var field = "bits"
