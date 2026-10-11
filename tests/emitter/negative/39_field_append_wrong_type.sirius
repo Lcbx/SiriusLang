@@ -1,0 +1,6 @@
+rec Store(values: Array[i64])
+
+def main() -> i64
+	var store = Store([1])
+	store.values = store.values.append("wrong")
+	return 0

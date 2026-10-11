@@ -47,6 +47,7 @@ ERRORS = {
 	'36_guard_exit': 'guard else requires return, break, or continue',
 	'37_unwrap_type': 'unboxing requires an Optional',
 	'38_legacy_index': "expected ']', found '?'",
+	'39_field_append_wrong_type': 'expected i64, found string',
 
 }
 

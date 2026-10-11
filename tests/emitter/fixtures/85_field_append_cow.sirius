@@ -1,0 +1,21 @@
+rec Store(values: Array[i64])
+rec Entry(label: string, code: i64)
+rec Shelf(items: Array[Entry])
+
+def main() -> i64
+	var store = Store([1, 2])
+	store.values = store.values.append(3)
+	print(store.values[!2])
+	let original = store
+	store.values = store.values.append(store.values[!0])
+	print(store.values[!3])
+	print(len(original.values))
+	print(len(store.values))
+	var shelf = Shelf([Entry("alpha", 1)])
+	shelf.items = shelf.items.append(Entry("beta", 2))
+	let previous = shelf
+	shelf.items = shelf.items.append(shelf.items[!0])
+	print(shelf.items[!1].label)
+	print(shelf.items[!2].label)
+	print(len(previous.items))
+	return 0

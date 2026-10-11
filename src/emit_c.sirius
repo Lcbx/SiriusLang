@@ -614,8 +614,15 @@ def generic_array_declarations(state: EmitState) -> string
 			output = output + "static inline void " + prefix + "_drop(void *value) { " + record_drop(element, "*(" + type + " *)value") + " }\n"
 			copy = prefix + "_copy"
 			drop = prefix + "_drop"
+		# Dictionaries also use the generated callbacks, even for plain records.
+		# Only arrays can bypass trivial callbacks and clone through memcpy.
+		var array_copy = copy
+		var array_drop = drop
+		if plain_record(state, element)
+			array_copy = "NULL"
+			array_drop = "NULL"
 		output = output + "static inline S_Array *" + prefix + "_make_take(size_t count, " + type + " *items) {\n"
-		output = output + "\tS_Array *result = s_array_make(count, items, sizeof(" + type + "), " + copy + ", " + drop + ");\n"
+		output = output + "\tS_Array *result = s_array_make(count, items, sizeof(" + type + "), " + array_copy + ", " + array_drop + ");\n"
 		if abi.copy != ""
 			output = output + "\tfor (size_t i = 0; i < count; ++i) " + record_drop(element, "items[i]") + "\n"
 		output = output + "\treturn result;\n}\n"
@@ -1465,7 +1472,30 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 			if member < 0
 				return emit_error(state, target, "unknown record field '" + field + "'")
 			let kind = state.records[!symbol.kind - TYPE_RECORD_START].fields[!member].kind
-			let result = emit_expr(state, ast_child(state.tree, id, 1))
+			# Transfer an array field directly into its own append. A normal field read
+			# retains the array before append, forcing a needless CoW clone.
+			# Evaluate the new element first so it may safely read the old field.
+			let rhs = ast_child(state.tree, id, 1)
+			if ast_text(state.tree, id) == "=" and array_element(kind) != TYPE_INVALID and ast_node(state.tree, rhs).kind == NODE_CALL
+				let call = ast_node(state.tree, rhs)
+				if call.count == 2
+					let method = ast_child(state.tree, rhs, 0)
+					if ast_node(state.tree, method).kind == NODE_ATTR and ast_text(state.tree, method) == "append"
+						let receiver = ast_child(state.tree, method, 0)
+						if ast_node(state.tree, receiver).kind == NODE_ATTR and ast_text(state.tree, receiver) == field
+							let receiver_root = ast_child(state.tree, receiver, 0)
+							if ast_node(state.tree, receiver_root).kind == NODE_NAME and ast_text(state.tree, receiver_root) == name
+								let element = emit_expr(state, ast_child(state.tree, rhs, 1))
+								var next = check_type(element.state, id, element.kind, array_element(kind))
+								next.error == "" else return next
+								let temp = "s_item_" + str(next.counter)
+								next.counter += 1
+								next = line(next, c_type(element.kind) + " " + temp + " = " + element.text + ";")
+								let destination = "v_" + name + "." + field
+								if kind == TYPE_ARRAY_I64
+									return line(next, destination + " = s_array_i64_append_take(" + destination + ", " + temp + ");")
+								return line(next, destination + " = " + array_helper(kind) + "_append_take(" + destination + ", " + temp + ");")
+			let result = emit_expr(state, rhs)
 			var next = check_type(result.state, id, result.kind, kind)
 			let op = ast_text(state.tree, id)
 			if managed(kind)
