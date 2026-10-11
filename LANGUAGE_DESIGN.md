@@ -67,6 +67,23 @@ point.x += 5
 
 **CoW:** Storage may be modified in place when exclusively owned and safe to overwrite; otherwise it is copied. Nested values support structural sharing.
 
+### Record destructuring (design only)
+
+Destructuring names every source field explicitly; binding names need not match:
+
+```python
+let {first = .a, second = .b} = value
+```
+
+Equivalent to `let first = value.a` and `let second = value.b`. The source
+expression is evaluated once. `.a` and `.b` are field selectors relative to
+that source, not positional patterns or standalone expressions. Fields may be
+listed in any order, but implicit/positional destructuring
+(`let {first, second} = value`) is not supported. Missing fields or repeated binding names are
+compile-time errors. Structural typing determines field compatibility; source
+record fields not listed are ignored. Initially restricted to `let` bindings;
+recursive patterns and `var` destructuring are deferred.
+
 Record updates use spreading:
 
 ```python
@@ -395,9 +412,33 @@ export def process(data)
 	return Stats.mean(data)
 ```
 
-Static imports, private-by-default definitions, immutable module constants, and explicitly visible imported overloads. No general runtime module reflection.
+**Module semantics (design only; not yet implemented):**
 
-**Bootstrap implementation:** Module `let` currently accepts compile-time `i64` integer expressions (literals, prior constants, unary signs, `+`, `-`, `*`), with no runtime initialization. Record constants and general compile-time function evaluation are deferred.
+* One statically identified module per `.sirius` source file. A file declares
+  its canonical, case-sensitive `namespace`, which must match its path relative
+  to a configured source root (`Math/Stats.sirius` → `Math.Stats`). Duplicate
+  namespace definitions and ambiguous resolutions are errors.
+* `import Math.Stats alias Stats` binds only the compile-time namespace `Stats`:
+  access is qualified (`Stats.mean(values)`). No runtime module objects,
+  implicit names, wildcard imports, or import-time execution.
+* Declarations are private unless marked `export`; imports do not re-export.
+  Imported overloads are considered only through explicit qualification.
+* Imports form an acyclic dependency graph initially; cycles are errors.
+  Resolution is independent of import statement order, and each module is
+  analyzed once per compilation.
+* Generic functions specialize across module boundaries using canonical
+  structural types. A specialization is identified by its defining module,
+  declaration, and concrete argument types, not just its source name.
+* Module-level `let` values are immutable compile-time constants; no module
+  initialization side effects. `namespace` is a naming/visibility boundary,
+  not a nominal type identity: identically shaped records from different
+  modules remain structurally compatible. Opaque representation hiding would
+  require a separate type feature.
+
+**Bootstrap implementation:** Module `let` currently accepts compile-time
+`i64` integer expressions (literals, prior constants, unary signs, `+`, `-`,
+`*`), with no runtime initialization. Record constants and general
+compile-time function evaluation are deferred.
 
 ## 12. Compiler
 

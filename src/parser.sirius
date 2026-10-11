@@ -170,8 +170,7 @@ def fail(p: ParseState, message: string) -> ParseState
 	return next
 
 def expect(p: ParseState, value: string) -> ParseState
-	if p.error != ""
-		return p
+	p.error == "" else return p
 	if not is_token(p, value)
 		return fail(p, "expected '" + value + "', found '" + word(p) + "'")
 	var next = p
@@ -179,8 +178,7 @@ def expect(p: ParseState, value: string) -> ParseState
 	return next
 
 def expect_kind(p: ParseState, kind: i64, description: string) -> ParseState
-	if p.error != ""
-		return p
+	p.error == "" else return p
 	if not kind_is(p, kind)
 		return fail(p, "expected " + description + ", found '" + word(p) + "'")
 	var next = p

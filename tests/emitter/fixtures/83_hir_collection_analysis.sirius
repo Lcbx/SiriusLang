@@ -1,0 +1,13 @@
+def main() -> i64
+	let values = Dict[string, i64]()
+	let updated = values.insert("answer", 3)
+	let score = updated.get("answer") or -1
+	let item = {score = score, tag = "ok"}
+	let edited = {item.*, del tag, extra = score + 1}
+	let entries = [edited, {edited.*, score = 5}]
+	let maybe = entries[?0]
+	let first = maybe!
+	let more = [score].append(4)
+	more[!1] == 4 else return 1
+	print(first.score)
+	return 0

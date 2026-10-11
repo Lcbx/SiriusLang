@@ -1289,8 +1289,7 @@ def emit_block(state: EmitState, id: i64) -> EmitState
 	let block = ast_node(state.tree, id)
 	for i in 0..block.count
 		next = emit_statement(next, ast_child(next.tree, id, i))
-		if next.error != ""
-			return next
+		next.error == "" else return next
 	for i in count..len(next.symbols)
 		let index = len(next.symbols) + count - i - 1
 		let symbol = next.symbols[!index]
@@ -1356,8 +1355,7 @@ def emit_return_value(state: EmitState, id: i64, value_id: i64) -> EmitState
 	return line(next, "return " + result.text + ";")
 
 def emit_statement(state: EmitState, id: i64) -> EmitState
-	if state.error != ""
-		return state
+	state.error == "" else return state
 	let item = ast_node(state.tree, id)
 	if item.kind == NODE_LET or item.kind == NODE_VAR
 		let name = ast_text(state.tree, id)
@@ -1398,8 +1396,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		if kind == TYPE_INVALID
 			kind = value_kind
 		next = check_type(next, id, value_kind, kind)
-		if next.error != ""
-			return next
+		next.error == "" else return next
 		var declaration = c_type(kind) + " v_" + name + " = " + value_text + ";"
 		if item.kind == NODE_LET and not managed(kind)
 			declaration = "const " + declaration
@@ -1500,8 +1497,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 					if ast_node(state.tree, receiver).kind == NODE_NAME and ast_text(state.tree, receiver) == name
 						let element = emit_expr(state, ast_child(state.tree, rhs, 1))
 						var next = check_type(element.state, id, element.kind, array_element(symbol.kind))
-						if next.error != ""
-							return next
+						next.error == "" else return next
 						let serial = next.counter
 						next.counter += 1
 						let temp = "s_item_" + str(serial)
@@ -1520,8 +1516,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 						let value = emit_expr(key.state, ast_child(state.tree, rhs, 2))
 						var next = check_type(value.state, id, key.kind, dict_key(symbol.kind))
 						next = check_type(next, id, value.kind, dict_value(symbol.kind))
-						if next.error != ""
-							return next
+						next.error == "" else return next
 						let serial = next.counter
 						next.counter += 1
 						let k = "s_key_" + str(serial)
@@ -1610,8 +1605,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		for i in 0..len(params)
 			let arg = emit_expr(next, ast_child(next.tree, call, i + 1))
 			next = check_type(arg.state, id, arg.kind, params[!i].kind)
-			if next.error != ""
-				return next
+			next.error == "" else return next
 			next = line(next, c_type(arg.kind) + " s_tail_" + str(serial) + "_" + str(i) + " = " + arg.text + ";")
 		for i in 0..len(params)
 			next = line(next, "v_" + params[!i].name + " = s_tail_" + str(serial) + "_" + str(i) + ";")
@@ -1619,8 +1613,7 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 	if item.kind == NODE_GUARD
 		let condition = emit_expr(state, ast_child(state.tree, id, 0))
 		var next = check_type(condition.state, id, condition.kind, TYPE_BOOL)
-		if next.error != ""
-			return next
+		next.error == "" else return next
 		next = line(next, "if (!(" + condition.text + ")) {")
 		next.indentation += 1
 		next = emit_statement(next, ast_child(next.tree, id, 1))
@@ -1802,8 +1795,7 @@ def collect_function(state: EmitState, header: HirFunctionDecl) -> EmitState
 					field_name = ast_text(state.tree, value_id)
 				let value = emit_expr(probe, value_id)
 				probe = value.state
-				if probe.error != ""
-					return probe
+				probe.error == "" else return probe
 				kind = value.kind
 			let canonical = canonical_kind(probe.types, probe.records, kind)
 			probe.types = canonical.table
