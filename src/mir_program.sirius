@@ -23,8 +23,14 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 		functions = functions.append(lowered.function)
 	var program = MirProgram(functions)
 	program.types = analyzed.types
-	let owned = mir_insert_lifetimes(program)
+	let guarded = mir_insert_guards(program)
+	if guarded.error != ""
+		return MirProgramBuild(guarded.program, analyzed.registry, analyzed.bodies, analyzed.entry, guarded.error)
+	let owned = mir_insert_lifetimes(guarded.program)
 	if owned.error != ""
 		return MirProgramBuild(owned.program, analyzed.registry, analyzed.bodies, analyzed.entry, owned.error)
 	let cleaned = mir_insert_exit_cleanup(owned.program)
-	return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, cleaned.error)
+	if cleaned.error != ""
+		return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, cleaned.error)
+	let audited = mir_audit_failures(cleaned.program)
+	return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, audited.error)

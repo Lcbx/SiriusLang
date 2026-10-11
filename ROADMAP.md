@@ -99,7 +99,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Define ownership for every argument, result, local, field projection and call (borrow, owned value or transferred value); conservatively retain when in doubt.
 - [ ] Insert `Retain`, `Release`, `Move`, `Borrow` and `CoWSet`-like MIR operations; ensure nested record/array paths are safe under aliasing.
-- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. **Partially done:** `src/mir_cleanup.sirius` inserts path-specific dead-value releases on CFG edges and explicit return/panic cleanup, including unused arguments and path-dependent initialization. `mir_check_balance` now proves no managed register remains possibly owned at a reachable explicit exit; conditional releases are represented explicitly by `MIR_RELEASE_IF_INIT`. `break`, `continue`, and `recur` still need MIR source lowering and coverage. Implicit runtime panics remain non-unwinding.
+- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. **Partially done:** `src/mir_cleanup.sirius` inserts path-specific dead-value releases on CFG edges and explicit return/panic cleanup, including unused arguments and path-dependent initialization. `mir_check_balance` now proves no managed register remains possibly owned at a reachable explicit exit; conditional releases are represented explicitly by `MIR_RELEASE_IF_INIT`. `break`, `continue`, and `recur` still need MIR source lowering and coverage. Division/remainder, checked array reads/writes, and optional unwrap now have explicit guarded panic CFG edges before lifetime/cleanup insertion. Other implicit aborts (including allocation failures) remain non-unwinding.
 - [ ] Test managed records, nested arrays, dictionary values, optionals and unions under repeated aliasing, branch exits and sanitizers.
 - [ ] **Only afterward** add ownership/uniqueness optimization and in-place storage reuse; keep these invisible at language level.
 
@@ -142,8 +142,10 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Add `Optional[T]` storage, optional dictionary lookup/fallback and array indexing, unwrap, and CFG-lazy `or`/`else return` in MIR, with native differential and interpreter ownership tests.
 - [ ] Add array append and record spreads/updates; validate ownership data-flow for all CFG exits.
 - [x] Add a conservative backward CFG liveness pass, integrated into HIR→MIR construction. It inserts last-use `MIR_RELEASE` for managed registers across branches and loops, with idempotency and interpreted/native tests (`tools/test_mir_lifetime.py`).
+- [x] Lower checked division/remainder, array access/CoW updates, and optional unwrap into explicit guarded panic CFG edges before lifetime insertion; exercise both backends and ownership cleanup (`tools/test_mir_guard.py`).
 - [x] Add forward definite-initialization analysis across CFG joins/backedges (`src/mir_ownership.sirius`), rejecting uninitialized reads, use-after-move and double release. Validate both original and lifetime-instrumented MIR, with negative tests (`tools/test_mir_ownership.py`).
-- [ ] Complete ownership verification: path-specific ownership credits, unused argument/branch-exit cleanup and exceptional exits. Retain existing return cleanup until this analysis is complete.
+- [x] Centralize MIR fallibility metadata (`mir_failure_info`) and audit compiler-produced MIR for missing explicit traps (`mir_audit_failures`); enumerate still-non-unwinding operations (`tools/test_mir_failure_contract.py`).
+- [ ] Complete ownership verification: remaining runtime failures and path-specific ownership-credit proofs. Explicit division/bounds/unwrap exits and conditional releases are implemented; retain defensive return cleanup until this analysis is complete.
 - [ ] Expand interpreter/native differential testing to every managed construct and migrate the default C backend only after coverage is sufficient.
 
 ## 5. Consistency with the language design

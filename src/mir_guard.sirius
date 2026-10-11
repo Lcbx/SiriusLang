@@ -1,0 +1,69 @@
+# Convert recoverable arithmetic/index/unwrap checks into explicit CFG panic
+# edges before lifetime insertion. Existing backend checks remain as defensive
+# assertions for manually constructed MIR that has not run this pass.
+
+rec MirGuardFunction(function: MirFunction, guards: i64)
+rec MirGuardResult(program: MirProgram, guards: i64, error: string)
+
+# Checked instructions are marked only after a guard edge is inserted.
+# Re-running the pass leaves the already guarded graph unchanged.
+def mir_guard_function(function: MirFunction) -> MirGuardFunction
+	var blocks = function.blocks
+	var registers = function.register_types
+	var count = 0
+	for i in 0..len(function.blocks)
+		let original = function.blocks[!i]
+		var current = i
+		var instructions = Array[MirInstruction]()
+		for ins in original.instructions
+			var checks = Array[MirInstruction]()
+			var messages = Array[string]()
+			if ins.text != "__mir_guarded" and mir_failure_info(ins.op).guarded
+				if ins.op == MIR_DIV_I64 or ins.op == MIR_REM_I64
+					checks = checks.append(mir_op(MIR_NONZERO_I64, -1, ins.second, -1, 0))
+					messages = messages.append("division by zero")
+					checks = checks.append(mir_op(MIR_DIV_NO_OVERFLOW_I64, -1, ins.first, ins.second, 0))
+					messages = messages.append("integer overflow")
+				elif ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_SET
+					checks = checks.append(mir_op(MIR_ARRAY_INDEX_VALID, -1, ins.first, ins.second, 0))
+					messages = messages.append("array index out of bounds")
+				elif ins.op == MIR_OPTIONAL_UNWRAP
+					checks = checks.append(mir_optional_has(-1, ins.first))
+					messages = messages.append("missing optional value")
+			for j in 0..len(checks)
+				let check = checks[!j]
+				let condition = len(registers)
+				registers = registers.append(TYPE_TAG_BOOL)
+				instructions = instructions.append(MirInstruction(check.op, condition, check.first, check.second, check.immediate, check.inputs, check.text))
+				let continuation = len(blocks)
+				let failure = continuation + 1
+				blocks[!current] = MirBlock(instructions, mir_branch(condition, continuation, failure))
+				blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_jump(continuation)))
+				blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_panic(messages[!j])))
+				current = continuation
+				instructions = Array[MirInstruction]()
+				count += 1
+			if len(checks) > 0
+				instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, ins.immediate, ins.inputs, "__mir_guarded"))
+			else
+				instructions = instructions.append(ins)
+		blocks[!current] = MirBlock(instructions, original.terminator)
+	return MirGuardFunction(MirFunction(function.argument_count, function.return_type, registers, blocks, function.entry), count)
+
+def mir_insert_guards(program: MirProgram) -> MirGuardResult
+	let error = mir_check_ownership(program)
+	if error != ""
+		return MirGuardResult(program, 0, error)
+	var functions = Array[MirFunction]()
+	var count = 0
+	for function in program.functions
+		let guarded = mir_guard_function(function)
+		functions = functions.append(guarded.function)
+		count += guarded.guards
+	var result = MirProgram(functions)
+	result.types = program.types
+	let checked = mir_check_ownership(result)
+	if checked != ""
+		return MirGuardResult(result, count, checked)
+	let audited = mir_audit_failures(result)
+	return MirGuardResult(result, count, audited.error)

@@ -41,11 +41,29 @@ let MIR_OPTIONAL_UNWRAP = 36
 let MIR_ARRAY_GET_OPTIONAL = 37
 let MIR_DICT_GET_OPTIONAL = 38
 let MIR_RELEASE_IF_INIT = 39
+let MIR_NONZERO_I64 = 40
+let MIR_DIV_NO_OVERFLOW_I64 = 41
+let MIR_ARRAY_INDEX_VALID = 42
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
 let MIR_RETURN = 3
 let MIR_PANIC = 4
+
+# Runtime failure contract. Some operations have a recoverable, explicit
+# CFG trap (GUARDED); managed allocations may still terminate in the runtime
+# without unwinding (ABORT). An instruction can have both properties.
+rec MirFailureInfo(guarded: bool, abort: bool)
+rec MirFailureAudit(error: string, guarded: i64, aborts: i64)
+
+def mir_failure_info(op: i64) -> MirFailureInfo
+	if op == MIR_DIV_I64 or op == MIR_REM_I64 or op == MIR_ARRAY_GET or op == MIR_OPTIONAL_UNWRAP
+		return MirFailureInfo(true, false)
+	if op == MIR_ARRAY_SET
+		return MirFailureInfo(true, true)
+	if op == MIR_CALL or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
+		return MirFailureInfo(false, true)
+	return MirFailureInfo(false, false)
 
 # immediate carries literal bits or a function index. A call uses inputs to
 # identify argument registers, in evaluation order. All other operands are
@@ -158,7 +176,7 @@ def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 		return reads
 	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR
 		reads = mir_read_add(reads, ins.immediate)
-	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID
 		reads = mir_read_add(reads, ins.second)
 	return reads
 
@@ -202,6 +220,18 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 	if ins.op == MIR_CONST_STRING
 		if dst_type != TYPE_TAG_STRING
 			return "string constant destination must be string"
+		return ""
+	if ins.op == MIR_NONZERO_I64
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "nonzero guard type mismatch"
+		return ""
+	if ins.op == MIR_DIV_NO_OVERFLOW_I64
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_I64) or not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "division overflow guard type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_INDEX_VALID
+		if dst_type != TYPE_TAG_BOOL or ins.first < 0 or ins.first >= len(types) or program.types.entries[!types[!ins.first]].tag != TYPE_TAG_ARRAY or not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "array index guard type mismatch"
 		return ""
 	if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
 		let desc = program.types.entries[!dst_type]
@@ -357,6 +387,29 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 			return "integer operand type mismatch"
 		return ""
 	return "unsupported MIR opcode"
+
+# Audit only compiler-produced MIR (after guard insertion). Handwritten MIR
+# may deliberately omit guards and rely on the interpreter/C defensive checks.
+# This verifies annotation completeness, not CFG dominance of the checks.
+def mir_audit_failures(program: MirProgram) -> MirFailureAudit
+	let error = mir_verify(program)
+	if error != ""
+		return MirFailureAudit(error, 0, 0)
+	var guarded = 0
+	var aborts = 0
+	for function in program.functions
+		for block in function.blocks
+			for ins in block.instructions
+				let failure = mir_failure_info(ins.op)
+				if failure.guarded
+					if ins.text != "__mir_guarded"
+						return MirFailureAudit("unguarded MIR runtime failure", guarded, aborts)
+					guarded += 1
+				elif ins.text == "__mir_guarded"
+					return MirFailureAudit("guard marker on non-fallible MIR instruction", guarded, aborts)
+				if failure.abort
+					aborts += 1
+	return MirFailureAudit("", guarded, aborts)
 
 def mir_verify(program: MirProgram) -> string
 	# Reject malformed/noncanonical type descriptors before accessing field tables.

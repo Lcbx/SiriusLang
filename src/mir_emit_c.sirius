@@ -259,7 +259,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if op == MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID
 				result = result + mir_c_check(instruction.second)
 			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR
 				result = result + mir_c_check(instruction.immediate)
@@ -286,6 +286,12 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			value = mir_c_retain_value(payload_type, value)
 		let code = result + "\t{ S_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", 1);\n"
 		return code + "\t\toptional->fields[0]." + field + " = " + value + ";\n" + mir_c_store_owned(instruction.dst, dst_type, "optional") + "\t}\n"
+	if op == MIR_NONZERO_I64
+		return result + "\t" + dst + " = (" + first + " != 0); init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_DIV_NO_OVERFLOW_I64
+		return result + "\t" + dst + " = !(" + first + " == INT64_MIN && " + second + " == -1); init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_ARRAY_INDEX_VALID
+		return result + "\t" + dst + " = (" + second + " >= 0 && (uint64_t)" + second + " < " + first + "->length); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_OPTIONAL_HAS
 		return result + "\t" + dst + " = (" + first + "->length != 0); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_OPTIONAL_UNWRAP
@@ -438,7 +444,10 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	if op == MIR_STRING_LENGTH
 		return result + "\t" + dst + " = (int64_t)s_string_length(" + first + "); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_CONST_I64
-		expr = "INT64_C(" + str(instruction.immediate) + ")"
+		if instruction.immediate == (-9223372036854775807 - 1)
+			expr = "INT64_MIN"
+		else
+			expr = "INT64_C(" + str(instruction.immediate) + ")"
 	elif op == MIR_CONST_BOOL
 		if instruction.immediate == 1
 			expr = "true"

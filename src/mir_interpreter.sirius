@@ -86,6 +86,22 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
+			if ins.op == MIR_NONZERO_I64 or ins.op == MIR_DIV_NO_OVERFLOW_I64
+				let first = registers[!ins.first]
+				var valid = 0
+				if first.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized guard operand", steps)
+				if ins.op == MIR_NONZERO_I64
+					if first.bits != 0
+						valid = 1
+				else
+					let second = registers[!ins.second]
+					if second.type_id == TYPE_TAG_INVALID
+						return mir_failure("uninitialized guard operand", steps)
+					if first.bits != (-9223372036854775807 - 1) or second.bits != -1
+						valid = 1
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, valid, "")
+				continue
 			if ins.op == MIR_OPTIONAL_HAS or ins.op == MIR_OPTIONAL_UNWRAP
 				let wrapped = registers[!ins.first]
 				if wrapped.type_id == TYPE_TAG_INVALID
@@ -193,7 +209,7 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], values, 1))
 				continue
-			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL
+			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_INDEX_VALID
 				let owner = registers[!ins.first]
 				if owner.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized array", steps)
@@ -206,6 +222,12 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				let index = registers[!ins.second]
 				if index.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized array index", steps)
+				if ins.op == MIR_ARRAY_INDEX_VALID
+					var valid = 0
+					if index.bits >= 0 and index.bits < len(array.fields)
+						valid = 1
+					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, valid, "")
+					continue
 				if ins.op == MIR_ARRAY_GET_OPTIONAL
 					var fields = Array[MirValue]()
 					if index.bits >= 0 and index.bits < len(array.fields)

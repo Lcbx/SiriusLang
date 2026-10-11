@@ -1,0 +1,109 @@
+# Guard implicit runtime traps with explicit CFG branches and panic cleanup.
+def guard_division_program(dividend: i64, divisor: i64, remainder: bool) -> MirProgram
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "owned"))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, dividend))
+	code = code.append(mir_op(MIR_CONST_I64, 2, -1, -1, divisor))
+	if remainder
+		code = code.append(mir_op(MIR_REM_I64, 3, 1, 2, 0))
+	else
+		code = code.append(mir_op(MIR_DIV_I64, 3, 1, 2, 0))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 4, 0, -1, 0))
+	code = code.append(mir_op(MIR_ADD_I64, 5, 3, 4, 0))
+	return MirProgram([MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_STRING, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(code, mir_return(5))], 0)])
+
+def guard_array_program(index: i64) -> MirProgram
+	let array = intern_array_type(new_type_table(), TYPE_TAG_I64)
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "owned"))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, 7))
+	code = code.append(mir_array_new(2, [1]))
+	code = code.append(mir_op(MIR_CONST_I64, 3, -1, -1, index))
+	code = code.append(mir_array_get(4, 2, 3))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 5, 0, -1, 0))
+	code = code.append(mir_op(MIR_ADD_I64, 6, 4, 5, 0))
+	var program = MirProgram([MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_STRING, TYPE_TAG_I64, array.id, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(code, mir_return(6))], 0)])
+	program.types = array.table
+	return program
+
+def guard_array_set_program(index: i64) -> MirProgram
+	let array = intern_array_type(new_type_table(), TYPE_TAG_I64)
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "owned"))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, 7))
+	code = code.append(mir_array_new(2, [1]))
+	code = code.append(mir_op(MIR_CONST_I64, 3, -1, -1, index))
+	code = code.append(mir_op(MIR_CONST_I64, 4, -1, -1, 10))
+	code = code.append(mir_array_set(2, 2, 3, 4))
+	code = code.append(mir_array_get(5, 2, 3))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 6, 0, -1, 0))
+	code = code.append(mir_op(MIR_ADD_I64, 7, 5, 6, 0))
+	var program = MirProgram([MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_STRING, TYPE_TAG_I64, array.id, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(code, mir_return(7))], 0)])
+	program.types = array.table
+	return program
+
+def guard_optional_program(present: bool) -> MirProgram
+	let optional = intern_optional_type(new_type_table(), TYPE_TAG_I64)
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "owned"))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, 12))
+	if present
+		code = code.append(mir_optional_some(2, 1))
+	else
+		code = code.append(mir_optional_none(2))
+	code = code.append(mir_optional_unwrap(3, 2))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 4, 0, -1, 0))
+	code = code.append(mir_op(MIR_ADD_I64, 5, 3, 4, 0))
+	var program = MirProgram([MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_STRING, TYPE_TAG_I64, optional.id, TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], [MirBlock(code, mir_return(5))], 0)])
+	program.types = optional.table
+	return program
+
+def main() -> i64
+	let paths = arguments()
+	if len(paths) != 11
+		return 1
+	var programs = Array[MirProgram]()
+	programs = programs.append(guard_division_program(42, 2, false))
+	programs = programs.append(guard_division_program(42, 0, false))
+	programs = programs.append(guard_division_program((-9223372036854775807 - 1), -1, false))
+	programs = programs.append(guard_division_program(42, 4, true))
+	programs = programs.append(guard_array_program(0))
+	programs = programs.append(guard_array_program(-1))
+	programs = programs.append(guard_array_set_program(0))
+	programs = programs.append(guard_array_set_program(3))
+	programs = programs.append(guard_optional_program(true))
+	programs = programs.append(guard_optional_program(false))
+	let values = [26, 0, 0, 7, 12, 0, 15, 0, 17, 0]
+	let failures = ["", "division by zero", "integer overflow", "", "", "array index out of bounds", "", "array index out of bounds", "", "missing optional value"]
+	for i in 0..len(programs)
+		let guarded = mir_insert_guards(programs[!i])
+		if guarded.error != "" or guarded.guards == 0
+			print(guarded.error)
+			return 2
+		let repeat = mir_insert_guards(guarded.program)
+		if repeat.error != "" or repeat.guards != 0
+			return 3
+		let lifetime = mir_insert_lifetimes(guarded.program)
+		if lifetime.error != ""
+			print(lifetime.error)
+			return 4
+		let cleanup = mir_insert_exit_cleanup(lifetime.program)
+		if cleanup.error != "" or cleanup.releases == 0
+			print(cleanup.error)
+			return 5
+		let result = mir_execute(cleanup.program, 0, Array[MirValue](), 500, 10)
+		if result.error != failures[!i]
+			print(result.error)
+			return 6
+		if failures[!i] == ""
+			if result.value.bits != values[!i]
+				return 7
+			for entry in result.heap
+				if entry.refs != 0
+					return 8
+		let native = mir_emit_c(cleanup.program, 0)
+		if native.error != "" or not write_text(paths[!i + 1], native.code)
+			print(native.error)
+			return 9
+	print("PASS MIR explicit runtime guards")
+	return 0
