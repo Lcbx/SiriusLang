@@ -29,6 +29,8 @@ python tools/test_selfhost.py
 
 The update command compiles from the **existing** `bootstrap_c/compiler.c`, checks the self-reproducing fixed point and smoke cases, then overwrites the committed C source. Commit that generated C along with the Sirius changes. New compiler source must remain compilable by the prior C seed; add support for new syntax before using it in `src/`.
 
+The HIR declaration index now validates module names, function headers and parameters before C emission. Whole-function semantic checking and ownership lowering are not yet separate passes.
+
 ## Tests
 
 Test runners use `-O0` for disposable C binaries and compile the runtime once
@@ -56,8 +58,8 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 
 | Command | What it checks |
 | --- | --- |
-| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 73 executable cases and 30 expected diagnostics |
-| `python tools/test_emitter.py` | Sirius-written emitter: 73 positive C executions, 30 expected diagnostics |
+| `python tools/test_selfhost.py` | C bootstrap → self-reproducing generated C, committed bootstrap comparison, 75 executable cases and 31 expected diagnostics |
+| `python tools/test_emitter.py` | Sirius-written emitter: 75 positive C executions, 31 expected diagnostics |
 | `python tools/test_parser.py` | Sirius parser: 10 golden cases and syntax smoke tests |
 | `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
 | `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |

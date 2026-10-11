@@ -6,8 +6,8 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 
 - **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap_c/compiler.c`. The emitter still combines semantic analysis and C11 generation.
 - **Historical bootstrap:** `bootstrap_python/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (73 positives and 30 diagnostics). See `tools/test_selfhost.py`.
-- **Coverage:** 70 emitter executions (13 original language cases + 57 emitter-specific fixtures), 29 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (75 positives and 31 diagnostics). See `tools/test_selfhost.py`.
+- **Coverage:** 75 emitter executions (13 original language cases + 62 emitter-specific fixtures), 31 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work
 
@@ -57,7 +57,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Run tokenizer, parser, emitter and self-hosting tests using the committed C bootstrap; keep Python-stage-0 tests explicitly archival.
 - [x] Share expected output, exit codes and diagnostic substrings for the stage-1 and fixed-point compiler suites.
 - [ ] Compare output/diagnostics between successive compiler generations for new language semantics.
-- [x] Run the complete 70-positive/29-negative emitter suite against the fixed-point compiler using `tools/emitter_cases.py`.
+- [x] Run the complete 75-positive/31-negative emitter suite against the fixed-point compiler using `tools/emitter_cases.py`.
 - [ ] Add sanitizer builds (ASan/UBSan where supported) and Windows GCC checks. The C-bootstrap fixed-point/currentness check is already implemented in `tools/test_selfhost.py`.
 - [ ] Extend ownership regression coverage to managed `recur`, nested short-circuit branches, and conditional failures. Three new focused cases cover managed `return`, `break`, and `continue` (55–57); these also passed UBSan.
 
@@ -70,7 +70,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Begin a typed HIR arena with AST source-node IDs, canonical `TypeId`s and resolved field/binding indices (`src/hir.sirius`). This covers basic expressions only; the separate full-program HIR pass is still pending.
 - [x] Introduce a canonical `TypeTable` for primitive, record, `Array`, `Dict`, and `Optional` descriptors; intern by structure with sorted record fields. Register record and bound-value types through the compatibility bridge.
 - [ ] Complete the migration from legacy arithmetic type IDs to canonical `TypeId`s. **Done:** generic specialization cache keys, binding metadata and record-field name lookup now use canonical IDs. **Done in part:** C record-field layout and managed helper selection now derive from canonical descriptor tags and fields. **Remaining:** C naming still uses legacy kinds, as do static type checks and some expression-level ownership operations. Add function/union descriptors when implemented.
-- [ ] Move all lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. **Started:** name lookup, record fields, primitive literals, unary/binary operations and assignment compatibility use C-independent HIR resolvers; call signatures, collection methods, and record/constructor field composition are now checked in HIR; AST traversal, constructor expression evaluation, generic specialization, control flow and lifetime rules still need conversion. HIR nodes preserve syntax AST IDs for source spans.
+- [ ] Move all lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. **Started:** module declarations and parameter syntax/uniqueness are checked in a pre-emission HIR indexing pass; name lookup, record fields, primitive literals, unary/binary operations and assignment compatibility use C-independent HIR resolvers; call signatures, collection methods, and record/constructor field composition are checked in HIR. Whole-function AST traversal, constructor expression evaluation, generic specialization, control flow and lifetime rules still need conversion. HIR nodes preserve syntax AST IDs for source spans.
 - [ ] Move generic monomorphization to an explicit cache keyed by definition ID and concrete `TypeId`s, tracking in-progress specializations.
 - [ ] Lower constructors into typed record-producing operations; make extension calls and built-in operations explicitly resolved.
 - [ ] Temporarily generate C from typed HIR through a compatibility layer; do not require a finished MIR to land this phase.

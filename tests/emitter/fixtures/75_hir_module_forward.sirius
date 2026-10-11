@@ -1,0 +1,9 @@
+def twice(v: i64) -> i64
+	return plus_one(plus_one(v))
+
+def plus_one(v: i64) -> i64
+	return v + 1
+
+def main() -> i64
+	print(twice(3))
+	return 0

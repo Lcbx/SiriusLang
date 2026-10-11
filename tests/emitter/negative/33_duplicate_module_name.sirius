@@ -1,0 +1,7 @@
+let VALUE = 1
+
+def VALUE() -> i64
+	return 0
+
+def main() -> i64
+	return 0

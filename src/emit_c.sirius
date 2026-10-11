@@ -1690,44 +1690,27 @@ def emit_statement(state: EmitState, id: i64) -> EmitState
 		return line(next, "continue;")
 	return emit_error(state, id, "unsupported statement '" + node_kind_name(item.kind) + "'")
 
-def collect_function(state: EmitState, id: i64) -> EmitState
-	let entry = ast_node(state.tree, id)
-	let name = ast_text(state.tree, id)
-	if find_function(state, name) >= 0 or find_constant(state, name) != "" or name == "print"
-		return emit_error(state, id, "duplicate function '" + name + "'")
+def collect_function(state: EmitState, header: HirFunctionDecl) -> EmitState
+	let id = header.source
+	let name = header.name
 	var params = Array[ParameterInfo]()
 	var result = TYPE_INVALID
-	for i in 0..entry.count - 1
-		let part = ast_child(state.tree, id, i)
-		let info = ast_node(state.tree, part)
-		if info.kind == NODE_PARAM
-			var kind = TYPE_INVALID
-			if info.count > 0
-				if info.count != 1 or ast_node(state.tree, ast_child(state.tree, part, 0)).kind != NODE_TYPE
-					return emit_error(state, part, "parameter defaults are not supported yet")
-				kind = resolve_type(state, ast_child(state.tree, part, 0))
-				if kind == TYPE_INVALID or kind == TYPE_VOID
-					return emit_error(state, part, "unsupported parameter type")
-			let parameter_name = ast_text(state.tree, part)
-			for previous in params
-				if previous.name == parameter_name
-					return emit_error(state, part, "duplicate parameter '" + parameter_name + "'")
-			params = params.append(ParameterInfo(parameter_name, kind))
-		elif info.kind == NODE_TYPE
-			result = resolve_type(state, part)
+	for parameter in header.parameters
+		var kind = TYPE_INVALID
+		if parameter.type_node >= 0
+			kind = resolve_type(state, parameter.type_node)
+			if kind == TYPE_INVALID or kind == TYPE_VOID
+				return emit_error(state, parameter.source, "unsupported parameter type")
+		params = params.append(ParameterInfo(parameter.name, kind))
+	if header.result_type_node >= 0
+		result = resolve_type(state, header.result_type_node)
 	var next = state
-	var constructor = entry.kind == NODE_REC
-	let body_id = ast_child(state.tree, id, entry.count - 1)
-	let body = ast_node(state.tree, body_id)
-	if entry.kind == NODE_DEF
-		for i in 0..body.count
-			if ast_node(state.tree, ast_child(state.tree, body_id, i)).kind == NODE_PUB
-				return emit_error(state, id, "def constructors are no longer supported; use rec")
+	let constructor = header.constructor
 	if constructor
 		for param in params
 			if param.kind == TYPE_INVALID
 				return emit_error(state, id, "generic constructors are not supported yet")
-		let body_id = ast_child(state.tree, id, entry.count - 1)
+		let body_id = header.body
 		let body = ast_node(state.tree, body_id)
 		var probe = state
 		probe.symbols = Array[SymbolInfo]()
@@ -1775,7 +1758,7 @@ def collect_function(state: EmitState, id: i64) -> EmitState
 		next = record.state
 		next.hir = next.hir.append(HirNode(id, HIR_CONSTRUCTOR, resolved.type_id, -1))
 		result = record.kind
-	next.functions = next.functions.append(FunctionInfo(name, result, params, ast_child(state.tree, id, entry.count - 1), constructor, "s_" + name))
+	next.functions = next.functions.append(FunctionInfo(name, result, params, header.body, constructor, "s_" + name))
 	return next
 
 def evaluate_constant(state: EmitState, id: i64) -> ExprCode
@@ -1872,13 +1855,18 @@ def compile_c(source: string) -> CompileResult
 	let parsed = parse_module(source)
 	if parsed.state.error != ""
 		return CompileResult("", parsed.state.error, parsed.state.error_line)
+	let module_index = hir_module_declarations(parsed.state, parsed.node)
+	if module_index.error != ""
+		return CompileResult("", module_index.error, module_index.error_line)
 	var state = EmitState(parsed.state)
 	let root = ast_node(state.tree, parsed.node)
+	var function_index = 0
 	for i in 0..root.count
 		let id = ast_child(state.tree, parsed.node, i)
 		let item = ast_node(state.tree, id)
 		if item.kind == NODE_DEF or item.kind == NODE_REC
-			state = collect_function(state, id)
+			state = collect_function(state, module_index.functions[function_index?]!)
+			function_index += 1
 		else
 			state = collect_constant(state, id)
 		if state.error != ""

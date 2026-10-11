@@ -41,6 +41,7 @@ ERRORS = {
 	'30_string_join_wrong_type': 'expected Array[string], found Array[i64]',
 	'31_string_slice_bad_arity': 'string method argument count mismatch',
 	'32_def_constructor': 'def constructors are no longer supported; use rec',
+	'33_duplicate_module_name': "duplicate function 'VALUE'",
 
 }
 

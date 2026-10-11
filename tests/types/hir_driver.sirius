@@ -100,5 +100,26 @@ def main() -> i64
 		return 37
 	if resolve_hir_record(table, Array[RecordField]()).error != "empty records are not supported yet"
 		return 38
+	let parsed = parse_module("def id(x: i64) -> i64\n\treturn x\n\nrec Pair(x: i64, y: i64)\n\nlet LIMIT = 7\n")
+	if parsed.state.error != ""
+		return 39
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != "" or len(declarations.functions) != 2
+		return 40
+	let first_fn = declarations.functions[0?]!
+	if first_fn.name != "id" or first_fn.constructor or len(first_fn.parameters) != 1 or first_fn.result_type_node < 0
+		return 41
+	let second_fn = declarations.functions[1?]!
+	if second_fn.name != "Pair" or not second_fn.constructor or len(second_fn.parameters) != 2 or second_fn.result_type_node >= 0
+		return 42
+	let duplicate = parse_module("def f(x: i64, x: i64) -> i64\n\treturn x\n")
+	if duplicate.state.error != "" or hir_module_declarations(duplicate.state, duplicate.node).error != "duplicate parameter 'x'"
+		return 43
+	let colliding = parse_module("let N = 3\ndef N() -> i64\n\treturn 0\n")
+	if colliding.state.error != "" or hir_module_declarations(colliding.state, colliding.node).error != "duplicate function 'N'"
+		return 44
+	let legacy = parse_module("def Old(x: i64)\n\tpub x\n")
+	if legacy.state.error != "" or hir_module_declarations(legacy.state, legacy.node).error != "def constructors are no longer supported; use rec"
+		return 45
 	print("PASS typed HIR resolution")
 	return 0

@@ -280,3 +280,74 @@ def hir_constructor_publish(fields: Array[RecordField], name: string, type_id: i
 	if hir_record_field(fields, name) >= 0
 		return HirRecordEdit(fields, -1, "constructor field overrides are not supported yet")
 	return hir_record_put(fields, name, type_id)
+
+
+# Pre-emission module declaration pass. Index every function and module constant
+# in source order, and validate declaration syntax before generating any C.
+# Type annotations remain AST references until constructors have been resolved;
+# concrete generic signatures are determined later during specialization.
+rec HirParameterDecl(name: string, source: i64, type_node: i64)
+
+rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl])
+
+rec HirModuleDecl(functions: Array[HirFunctionDecl], error: string, error_line: i64)
+
+def hir_ast_child(tree: ParseState, id: i64, offset: i64) -> i64
+	let node = tree.nodes[id?]!
+	return tree.edges[node.first + offset?]!
+
+def hir_ast_text(tree: ParseState, id: i64) -> string
+	return token_text(tree.source, tree.tokens[tree.nodes[id?]!.token?]!)
+
+def hir_ast_line(tree: ParseState, id: i64) -> i64
+	return tree.tokens[tree.nodes[id?]!.token?]!.line
+
+def hir_declaration_error(functions: Array[HirFunctionDecl], message: string, line: i64) -> HirModuleDecl
+	return HirModuleDecl(functions, message, line)
+
+def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
+	var functions = Array[HirFunctionDecl]()
+	var names = Array[string]()
+	let module = tree.nodes[root?]!
+	for i in 0..module.count
+		let id = hir_ast_child(tree, root, i)
+		let entry = tree.nodes[id?]!
+		let name = hir_ast_text(tree, id)
+		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET
+			return hir_declaration_error(functions, "unsupported module statement", hir_ast_line(tree, id))
+		if name == "print" and (entry.kind == NODE_DEF or entry.kind == NODE_REC)
+			return hir_declaration_error(functions, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+		for seen in names
+			if seen == name
+				if entry.kind == NODE_LET
+					return hir_declaration_error(functions, "duplicate module name", hir_ast_line(tree, id))
+				return hir_declaration_error(functions, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+		names = names.append(name)
+		if entry.kind == NODE_LET
+			continue
+		var parameters = Array[HirParameterDecl]()
+		var return_type = -1
+		for j in 0..entry.count - 1
+			let part = hir_ast_child(tree, id, j)
+			let info = tree.nodes[part?]!
+			if info.kind == NODE_PARAM
+				var annotation = -1
+				if info.count > 0
+					annotation = hir_ast_child(tree, part, 0)
+					if info.count != 1 or tree.nodes[annotation?]!.kind != NODE_TYPE
+						return hir_declaration_error(functions, "parameter defaults are not supported yet", hir_ast_line(tree, part))
+				let pname = hir_ast_text(tree, part)
+				for previous in parameters
+					if previous.name == pname
+						return hir_declaration_error(functions, "duplicate parameter '" + pname + "'", hir_ast_line(tree, part))
+				parameters = parameters.append(HirParameterDecl(pname, part, annotation))
+			elif info.kind == NODE_TYPE
+				return_type = part
+		let body_id = hir_ast_child(tree, id, entry.count - 1)
+		if entry.kind == NODE_DEF
+			let body = tree.nodes[body_id?]!
+			for j in 0..body.count
+				if tree.nodes[hir_ast_child(tree, body_id, j)?]!.kind == NODE_PUB
+					return hir_declaration_error(functions, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
+		functions = functions.append(HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters))
+	return HirModuleDecl(functions, "", 0)
