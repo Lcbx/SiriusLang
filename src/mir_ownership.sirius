@@ -1,0 +1,121 @@
+# Forward CFG analysis of definitely initialized MIR registers.
+# Every reachable predecessor must provide an owned value before a read.
+# This analysis does not transfer ownership at calls or returns: calls borrow
+# arguments (callee receives retained references), returns transfer the result.
+
+rec MirOwnershipBlock(incoming: Array[i64], outgoing: Array[i64])
+
+def mir_ownership_top(count: i64) -> Array[i64]
+	var values = Array[i64]()
+	for i in 0..count
+		values = values.append(1)
+	return values
+
+def mir_ownership_entry(function: MirFunction) -> Array[i64]
+	var values = Array[i64]()
+	for i in 0..len(function.register_types)
+		var initialized = 0
+		if i < function.argument_count
+			initialized = 1
+		values = values.append(initialized)
+	return values
+
+def mir_ownership_intersect(left: Array[i64], right: Array[i64]) -> Array[i64]
+	var values = Array[i64]()
+	for i in 0..len(left)
+		var initialized = 0
+		if left[!i] != 0 and right[!i] != 0
+			initialized = 1
+		values = values.append(initialized)
+	return values
+
+def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
+	if len(left) != len(right)
+		return false
+	for i in 0..len(left)
+		if left[!i] != right[!i]
+			return false
+	return true
+
+def mir_ownership_reachable(function: MirFunction) -> Array[i64]
+	var reached = Array[i64]()
+	for block in function.blocks
+		reached = reached.append(0)
+	reached[!function.entry] = 1
+	var changed = true
+	while changed
+		changed = false
+		for i in 0..len(function.blocks)
+			if reached[!i] != 0
+				let term = function.blocks[!i].terminator
+				if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+					if reached[!term.target] == 0
+						reached[!term.target] = 1
+						changed = true
+				if term.kind == MIR_BRANCH and reached[!term.alternative] == 0
+					reached[!term.alternative] = 1
+					changed = true
+	return reached
+
+def mir_ownership_flows(term: MirTerminator, destination: i64) -> bool
+	if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+		if term.target == destination
+			return true
+	return term.kind == MIR_BRANCH and term.alternative == destination
+
+def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
+	var after = before
+	if ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE
+		after[!ins.first] = 0
+	if ins.op != MIR_PRINT and ins.op != MIR_RELEASE
+		after[!ins.dst] = 1
+	return after
+
+def mir_ownership_function(function: MirFunction) -> string
+	let reached = mir_ownership_reachable(function)
+	let top = mir_ownership_top(len(function.register_types))
+	let entry = mir_ownership_entry(function)
+	var states = Array[MirOwnershipBlock]()
+	for i in 0..len(function.blocks)
+		states = states.append(MirOwnershipBlock(top, top))
+	var changed = true
+	while changed
+		changed = false
+		for i in 0..len(function.blocks)
+			if reached[!i] != 0
+				var incoming = top
+				if i == function.entry
+					incoming = entry
+				for j in 0..len(function.blocks)
+					if reached[!j] != 0 and mir_ownership_flows(function.blocks[!j].terminator, i)
+						incoming = mir_ownership_intersect(incoming, states[!j].outgoing)
+				var outgoing = incoming
+				for ins in function.blocks[!i].instructions
+					outgoing = mir_ownership_after(ins, outgoing)
+				if not mir_ownership_equal(incoming, states[!i].incoming) or not mir_ownership_equal(outgoing, states[!i].outgoing)
+					states[!i] = MirOwnershipBlock(incoming, outgoing)
+					changed = true
+	for i in 0..len(function.blocks)
+		if reached[!i] != 0
+			let block = function.blocks[!i]
+			var available = states[!i].incoming
+			for ins in block.instructions
+				for register in mir_instruction_reads(ins)
+					if register < 0 or register >= len(available) or available[!register] == 0
+						return "MIR read of uninitialized or moved register " + str(register) + " in block " + str(i)
+				available = mir_ownership_after(ins, available)
+			let term = block.terminator
+			if term.kind == MIR_BRANCH or term.kind == MIR_RETURN
+				if available[!term.operand] == 0
+					return "MIR terminator reads uninitialized or moved register " + str(term.operand) + " in block " + str(i)
+	return ""
+
+def mir_check_ownership(program: MirProgram) -> string
+	let error = mir_verify(program)
+	if error != ""
+		return error
+	for i in 0..len(program.functions)
+		let problem = mir_ownership_function(program.functions[!i])
+		if problem != ""
+			return "MIR function " + str(i) + ": " + problem
+	return ""

@@ -134,6 +134,33 @@ def mir_return(source: i64) -> MirTerminator
 def mir_panic(message: string) -> MirTerminator
 	return MirTerminator(MIR_PANIC, -1, -1, -1, message)
 
+# Register operands read by an instruction. Literal immediates are excluded.
+# Shared by backward liveness and forward definite-initialization analyses.
+def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
+	if register < 0
+		return reads
+	for existing in reads
+		if existing == register
+			return reads
+	return reads.append(register)
+
+def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
+	var reads = Array[i64]()
+	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE
+		return reads
+	if ins.op == MIR_CALL or ins.op == MIR_RECORD_NEW or ins.op == MIR_ARRAY_NEW
+		return ins.inputs
+	reads = reads.append(ins.first)
+	if ins.op == MIR_DICT_INSERT
+		for register in ins.inputs
+			reads = mir_read_add(reads, register)
+		return reads
+	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR
+		reads = mir_read_add(reads, ins.immediate)
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL
+		reads = mir_read_add(reads, ins.second)
+	return reads
+
 # Verification is structural and type-directed. Definite register initialization
 # is checked dynamically for now (CFG data-flow analysis comes with lowering).
 def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool

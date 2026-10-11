@@ -38,22 +38,6 @@ def mir_live_equal(left: Array[i64], right: Array[i64]) -> bool
 			return false
 	return true
 
-def mir_live_reads(ins: MirInstruction) -> Array[i64]
-	let op = ins.op
-	var reads = Array[i64]()
-	if op == MIR_CONST_I64 or op == MIR_CONST_BOOL or op == MIR_CONST_STRING or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
-		return reads
-	if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW
-		return ins.inputs
-	reads = mir_live_add(reads, ins.first)
-	if op == MIR_DICT_INSERT
-		return mir_live_union(reads, ins.inputs)
-	if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR
-		reads = mir_live_add(reads, ins.immediate)
-	if (op >= MIR_ADD_I64 and op <= MIR_LE_I64) or op == MIR_EQ_BOOL or op == MIR_STRING_CONCAT or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL
-		reads = mir_live_add(reads, ins.second)
-	return reads
-
 def mir_live_consumes(ins: MirInstruction) -> bool
 	return ins.op == MIR_MOVE or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_RELEASE
 
@@ -63,7 +47,7 @@ def mir_live_before(ins: MirInstruction, after: Array[i64]) -> Array[i64]
 		before = mir_live_remove(before, ins.dst)
 	if mir_live_consumes(ins)
 		before = mir_live_remove(before, ins.first)
-	return mir_live_union(before, mir_live_reads(ins))
+	return mir_live_union(before, mir_instruction_reads(ins))
 
 def mir_live_term(term: MirTerminator, after: Array[i64]) -> Array[i64]
 	if term.kind == MIR_BRANCH or term.kind == MIR_RETURN
@@ -109,7 +93,7 @@ def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
 			if ins.op != MIR_RELEASE
 				if ins.op != MIR_PRINT and not mir_live_contains(live, ins.dst) and mir_managed_type_id(function, ins.dst)
 					dropping = mir_live_add(dropping, ins.dst)
-				for register in mir_live_reads(ins)
+				for register in mir_instruction_reads(ins)
 					if register != ins.dst and not (mir_live_consumes(ins) and register == ins.first) and not mir_live_contains(live, register) and mir_managed_type_id(function, register)
 						dropping = mir_live_add(dropping, register)
 			releases = releases.append(dropping)
@@ -126,7 +110,7 @@ def mir_lifetime_function(function: MirFunction) -> MirLowerLifetime
 
 
 def mir_insert_lifetimes(program: MirProgram) -> MirLifetimeResult
-	let error = mir_verify(program)
+	let error = mir_check_ownership(program)
 	if error != ""
 		return MirLifetimeResult(program, 0, error)
 	var functions = Array[MirFunction]()
@@ -137,4 +121,4 @@ def mir_insert_lifetimes(program: MirProgram) -> MirLifetimeResult
 		count += lowered.releases
 	var result = MirProgram(functions)
 	result.types = program.types
-	return MirLifetimeResult(result, count, mir_verify(result))
+	return MirLifetimeResult(result, count, mir_check_ownership(result))

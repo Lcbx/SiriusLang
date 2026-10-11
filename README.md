@@ -66,6 +66,8 @@ Fixture outputs remain in isolated temporary directories, not in `.build/`.
 | `python tools/test_mir_lower.py` | Checked HIR → scalar CFG MIR lowering; branching, loops, short-circuit evaluation, and execution |
 | `python tools/test_hir_worklist.py` | Backend-independent concrete HIR specialization worklist, including canonical array type signatures |
 | `python tools/test_mir_program.py` | HIR worklist → linked scalar MIR program; nested, repeated and recursive calls |
+| `python tools/test_mir_ownership.py` | Forward CFG definite-initialization and move/release validation |
+| `python tools/test_mir_lifetime.py` | Backward CFG liveness and last-use release insertion |
 | `python tools/test_mir_optional.py` | Managed optional values and missing-value control flow in Sirius interpreter and native C |
 | `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings and dictionaries), plus direct MIR checks |
 | `python tools/test_mir_managed.py` | Shared interpreted/native managed-string MIR, retain/move/release, calls and invalidated-register checks |
@@ -113,4 +115,4 @@ The experimental MIR backend now includes `Dict[i64 | string, T]` storage (keys 
 
 The experimental `--mir-c` backend supports optional rank-1 array indexing (`a[?i]`), dictionary `.get(key)`, postfix unwrap (`!`), lazy `or` fallback, and `let x = optional else return expr`. The legacy C backend remains the default.
 
-The experimental HIR→MIR pipeline now runs a conservative CFG lifetime pass (`src/mir_lifetime.sirius`) that inserts `MIR_RELEASE` after last uses of managed registers, including in branches and loops. Existing return cleanup remains in place for values initialized only on some paths. This is not yet a complete definite-initialization or exceptional-exit ownership proof. Run `python tools/test_mir_lifetime.py` for interpreted/native regression coverage.
+The experimental HIR→MIR pipeline now runs a conservative CFG lifetime pass (`src/mir_lifetime.sirius`) that inserts `MIR_RELEASE` after last uses of managed registers, including in branches and loops. Existing return cleanup remains in place for values initialized only on some paths. A separate forward pass (`src/mir_ownership.sirius`) now rejects reads of registers that are not definitely initialized at reachable CFG joins, including after consuming moves/releases and on loop backedges. Both analyses share the register-read definitions in `src/mir.sirius`. This is not yet a full ownership proof: return cleanup, conditional ownership credits and exceptional-exit behavior still need work. Run `python tools/test_mir_lifetime.py` for interpreted/native regression coverage.

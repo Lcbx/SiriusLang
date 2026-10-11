@@ -1,0 +1,125 @@
+# Forward ownership analysis of register definition and consuming operations.
+
+def ownership_program(blocks: Array[MirBlock], registers: Array[i64], arguments: i64) -> MirProgram
+	return MirProgram([MirFunction(arguments, TYPE_TAG_I64, registers, blocks, 0)])
+
+def ownership_expects_error(program: MirProgram, fragment: string) -> bool
+	let error = mir_check_ownership(program)
+	if error != fragment
+		print(error)
+		return false
+	let lowered = mir_insert_lifetimes(program)
+	return lowered.error == fragment
+
+def ownership_expects_success(program: MirProgram) -> bool
+	let error = mir_check_ownership(program)
+	if error != ""
+		print(error)
+		return false
+	let lowered = mir_insert_lifetimes(program)
+	if lowered.error != ""
+		print(lowered.error)
+		return false
+	return mir_check_ownership(lowered.program) == ""
+
+def ownership_uninitialized() -> MirProgram
+	let code = Array[MirInstruction]().append(mir_op(MIR_ADD_I64, 2, 0, 1, 0))
+	return ownership_program([MirBlock(code, mir_return(2))], [TYPE_TAG_I64, TYPE_TAG_I64, TYPE_TAG_I64], 0)
+
+def ownership_moved() -> MirProgram
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "hi"))
+	code = code.append(mir_op(MIR_MOVE, 1, 0, -1, 0))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 2, 0, -1, 0))
+	return ownership_program([MirBlock(code, mir_return(2))], [TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def ownership_double_release() -> MirProgram
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "hi"))
+	code = code.append(mir_op(MIR_RELEASE, 0, 0, -1, 0))
+	code = code.append(mir_op(MIR_RELEASE, 0, 0, -1, 0))
+	code = code.append(mir_op(MIR_CONST_I64, 1, -1, -1, 0))
+	return ownership_program([MirBlock(code, mir_return(1))], [TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def ownership_partial_join() -> MirProgram
+	let start = Array[MirInstruction]().append(mir_op(MIR_CONST_BOOL, 0, -1, -1, 1))
+	let yes = Array[MirInstruction]().append(mir_string(1, "s"))
+	let use = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+	return ownership_program([MirBlock(start, mir_branch(0, 1, 2)), MirBlock(yes, mir_jump(2)), MirBlock(use, mir_return(2))], [TYPE_TAG_BOOL, TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def ownership_both_branches() -> MirProgram
+	let start = Array[MirInstruction]().append(mir_op(MIR_CONST_BOOL, 0, -1, -1, 1))
+	let yes = Array[MirInstruction]().append(mir_string(1, "s"))
+	let no = Array[MirInstruction]().append(mir_string(1, "abc"))
+	let use = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+	return ownership_program([MirBlock(start, mir_branch(0, 1, 2)), MirBlock(yes, mir_jump(3)), MirBlock(no, mir_jump(3)), MirBlock(use, mir_return(2))], [TYPE_TAG_BOOL, TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def ownership_loop_invalid() -> MirProgram
+	var start = Array[MirInstruction]()
+	start = start.append(mir_string(0, "loop"))
+	start = start.append(mir_op(MIR_CONST_BOOL, 2, -1, -1, 1))
+	let move = Array[MirInstruction]().append(mir_op(MIR_MOVE, 1, 0, -1, 0))
+	let finish = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 3, 0, -1, 0))
+	return ownership_program([MirBlock(start, mir_jump(1)), MirBlock(Array[MirInstruction](), mir_branch(2, 2, 3)), MirBlock(move, mir_jump(1)), MirBlock(finish, mir_return(3))], [TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_BOOL, TYPE_TAG_I64], 0)
+
+def ownership_loop_valid() -> MirProgram
+	var start = Array[MirInstruction]()
+	start = start.append(mir_string(0, "loop"))
+	start = start.append(mir_op(MIR_CONST_BOOL, 2, -1, -1, 1))
+	var move = Array[MirInstruction]()
+	move = move.append(mir_op(MIR_MOVE, 1, 0, -1, 0))
+	move = move.append(mir_op(MIR_MOVE, 0, 1, -1, 0))
+	let finish = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 3, 0, -1, 0))
+	return ownership_program([MirBlock(start, mir_jump(1)), MirBlock(Array[MirInstruction](), mir_branch(2, 2, 3)), MirBlock(move, mir_jump(1)), MirBlock(finish, mir_return(3))], [TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_BOOL, TYPE_TAG_I64], 0)
+
+def ownership_unreachable() -> MirProgram
+	let start = Array[MirInstruction]().append(mir_op(MIR_CONST_I64, 0, -1, -1, 7))
+	let unused = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+	return ownership_program([MirBlock(start, mir_return(0)), MirBlock(unused, mir_return(2))], [TYPE_TAG_I64, TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def ownership_argument() -> MirProgram
+	let code = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 1, 0, -1, 0))
+	return ownership_program([MirBlock(code, mir_return(1))], [TYPE_TAG_STRING, TYPE_TAG_I64], 1)
+
+def ownership_uninitialized_return() -> MirProgram
+	return ownership_program([MirBlock(Array[MirInstruction](), mir_return(0))], [TYPE_TAG_I64], 0)
+
+def ownership_uninitialized_branch() -> MirProgram
+	let good = Array[MirInstruction]().append(mir_op(MIR_CONST_I64, 1, -1, -1, 2))
+	return ownership_program([MirBlock(Array[MirInstruction](), mir_branch(0, 1, 1)), MirBlock(good, mir_return(1))], [TYPE_TAG_BOOL, TYPE_TAG_I64], 0)
+
+def ownership_reinitialize_after_move() -> MirProgram
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "start"))
+	code = code.append(mir_op(MIR_MOVE, 1, 0, -1, 0))
+	code = code.append(mir_string(0, "again"))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 2, 0, -1, 0))
+	return ownership_program([MirBlock(code, mir_return(2))], [TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_I64], 0)
+
+def main() -> i64
+	if not ownership_expects_error(ownership_uninitialized(), "MIR function 0: MIR read of uninitialized or moved register 0 in block 0")
+		return 1
+	if not ownership_expects_error(ownership_moved(), "MIR function 0: MIR read of uninitialized or moved register 0 in block 0")
+		return 2
+	if not ownership_expects_error(ownership_double_release(), "MIR function 0: MIR read of uninitialized or moved register 0 in block 0")
+		return 3
+	if not ownership_expects_error(ownership_partial_join(), "MIR function 0: MIR read of uninitialized or moved register 1 in block 2")
+		return 4
+	if not ownership_expects_error(ownership_loop_invalid(), "MIR function 0: MIR read of uninitialized or moved register 0 in block 2")
+		return 5
+	if not ownership_expects_success(ownership_both_branches())
+		return 6
+	if not ownership_expects_success(ownership_loop_valid())
+		return 7
+	if not ownership_expects_success(ownership_unreachable())
+		return 8
+	if not ownership_expects_success(ownership_argument())
+		return 9
+	if not ownership_expects_error(ownership_uninitialized_return(), "MIR function 0: MIR terminator reads uninitialized or moved register 0 in block 0")
+		return 10
+	if not ownership_expects_error(ownership_uninitialized_branch(), "MIR function 0: MIR terminator reads uninitialized or moved register 0 in block 0")
+		return 11
+	if not ownership_expects_success(ownership_reinitialize_after_move())
+		return 12
+	print("PASS MIR forward ownership checks")
+	return 0

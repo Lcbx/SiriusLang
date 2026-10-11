@@ -12,6 +12,7 @@ COMPILER_SOURCES = PARSER_SOURCES + (
 	'src/hir_specialize.sirius',
 	'src/mir.sirius',
 	'src/mir_lower.sirius',
+	'src/mir_ownership.sirius',
 	'src/mir_lifetime.sirius',
 	'src/mir_program.sirius',
 	'src/mir_emit_c.sirius',
