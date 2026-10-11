@@ -21,7 +21,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 	for i in 0..len(arguments)
 		let parameter = header.parameters[!i]
 		if parameter.type_node >= 0
-			let annotation = hir_module_type_reference(state.types, tree, parameter.type_node, functions)
+			let annotation = hir_module_type_reference_with_constants(state.types, tree, parameter.type_node, functions, constants)
 			state.types = annotation.table
 			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != arguments[!i]
 				state = hir_body_error(state, parameter.source, "specialization argument type mismatch")
@@ -32,7 +32,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 		state = hir_body_block(state, header.body)
 	var result_type = state.inferred_return
 	if state.error == "" and header.result_type_node >= 0
-		let declared = hir_module_type_reference(state.types, tree, header.result_type_node, functions)
+		let declared = hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants)
 		state.types = declared.table
 		if declared.type_id != TYPE_TAG_INVALID
 			if result_type != TYPE_TAG_INVALID and result_type != declared.type_id
@@ -83,10 +83,10 @@ def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: 
 			let callee = declarations.functions[!called]
 			if callee.result_type_node < 0
 				return HirSpecializedProgram(registry, bodies, types, entry, "HIR worklist calls require an explicit return type")
-			let declared = hir_module_type_reference(types, tree, callee.result_type_node, declarations.functions)
+			let declared = hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
 			types = declared.table
 			if declared.type_id == TYPE_TAG_INVALID
-				return HirSpecializedProgram(registry, bodies, types, entry, "cannot resolve specialized callee return type")
+				return HirSpecializedProgram(registry, bodies, types, entry, "cannot resolve specialized callee return type: " + callee.name + " at line " + str(hir_ast_line(tree, request.source)))
 			let started = hir_begin_specialization(registry, request.definition, request.arguments, declared.type_id)
 			registry = started.registry
 			calls = calls.append(HirSpecializedCall(request.source, started.index))

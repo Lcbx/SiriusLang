@@ -74,9 +74,9 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\treturn str(42).byte_at(0) or 0\n')
+		input_path.write_text('def main() -> i64\n\tlet original = {x = 42}\n\tlet copied = {original.*, y = 1}\n\treturn copied.x\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
-		if result.returncode == 0 or 'unsupported' not in result.stdout:
+		if result.returncode == 0 or not ('unsupported' in result.stdout or 'not supported' in result.stdout):
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')
 		print('PASS MIR-C unsupported construct rejected')
 		driver = cache.sirius('mir-c-direct', (

@@ -165,3 +165,20 @@ A second pass (`src/mir_cleanup.sirius`) performs **path-sensitive ownership cle
 `mir_failure_info(op)` is the shared instruction-level contract. `guarded` marks synchronous operations that must be lowered to explicit `Panic` edges; `abort` marks operations that may terminate outside the current function's CFG (notably allocation and callee failures). `MIR_ARRAY_SET` has both properties: bounds failure is guarded, allocation failure during CoW is not unwound.
 
 `mir_audit_failures()` runs after guard insertion and after full source-to-MIR cleanup. It rejects unchecked guarded instructions and misplaced guard markers, while counting non-unwinding operations. It deliberately **does not** prove guard dominance or recover ownership in calling frames. Handwritten MIR can use defensive backend traps without passing the compiler-produced-MIR audit. Numeric overflow semantics (apart from division) remain undecided.
+
+## MIR migration: string methods and record updates
+
+The experimental MIR defines typed string operations for `byte_at`, `slice`,
+`find`, `starts_with`, `ends_with`, `join`, and comparisons. `byte_at`/`find`
+return `Optional[i64]`. Shared operand-read and type-verification rules apply
+to the interpreter and C backend. Compiler guard metadata does not reinterpret
+arbitrary string-literal contents.
+
+Direct record-field assignments and updates to arrays held in record fields
+reconstruct canonical record values, preserving aliases. This is a correct
+value-semantic lowering, but not an in-place CoW optimization. Arbitrarily deep
+projection updates are deferred.
+
+`MIR_ONLY_COMPILER_SOURCES` excludes the legacy emitter to make self-hosting
+coverage measurable independently. The production/default C path is unchanged;
+a complete MIR-only self-hosting fixed point has not been established.

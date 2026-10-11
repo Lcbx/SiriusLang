@@ -68,6 +68,12 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	result = result + "\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n"
 	result = result + "\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; return r;\n}\n"
 	result = result + "static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n"
+	result = result + "static inline S_String *s_mir_string_join(const S_String *sep, const S_MirRecord *parts) {\n"
+	result = result + "\tS_String *out = s_string_from_bytes(\"\", 0);\n"
+	result = result + "\tfor (size_t i = 0; i < parts->length; ++i) {\n"
+	result = result + "\t\tif (i) { S_String *tmp = s_string_concat(out, sep); s_string_release(out); out = tmp; }\n"
+	result = result + "\t\tS_String *tmp = s_string_concat(out, parts->fields[i].text); s_string_release(out); out = tmp;\n"
+	result = result + "\t}\n\treturn out;\n}\n"
 	result = result + "static inline S_MirRecord *s_mir_arguments(int64_t type_id) {\n"
 	result = result + "\tS_Array *args = s_arguments();\n\tsize_t count = s_array_length(args);\n"
 	result = result + "\tS_MirRecord *out = s_mir_record_new(type_id, count);\n"
@@ -282,9 +288,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if op == MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID or (op >= MIR_STRING_SLICE and op <= MIR_LE_STRING)
 				result = result + mir_c_check(instruction.second)
-			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR
+			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate)
 	if op == MIR_PRINT
 		return result
@@ -493,6 +499,29 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		return result + mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_concat(" + first + ", " + second + ")")
 	if op == MIR_STRING_LENGTH
 		return result + "\t" + dst + " = (int64_t)s_string_length(" + first + "); init" + str(instruction.dst) + " = true;\n"
+	if op >= MIR_EQ_STRING and op <= MIR_LE_STRING
+		var comparison = " == 0"
+		if op == MIR_LT_STRING
+			comparison = " < 0"
+		elif op == MIR_LE_STRING
+			comparison = " <= 0"
+		return result + "\t" + dst + " = (s_string_compare(" + first + ", " + second + ")" + comparison + "); init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_STRING_SLICE
+		return result + mir_c_store_owned(instruction.dst, dst_type, "s_string_slice(" + first + ", " + second + ", " + mir_c_register(instruction.immediate) + ")")
+	if op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH
+		var name = "s_string_starts_with"
+		if op == MIR_STRING_ENDS_WITH
+			name = "s_string_ends_with"
+		return result + "\t" + dst + " = " + name + "(" + first + ", " + second + "); init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_STRING_JOIN
+		return result + mir_c_store_owned(instruction.dst, dst_type, "s_mir_string_join(" + first + ", " + second + ")")
+	if op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT
+		var name = "s_string_find"
+		if op == MIR_STRING_BYTE_AT
+			name = "s_string_byte_at"
+		let code = result + "\t{ S_Optional_i64 value = " + name + "(" + first + ", " + second + ");\n"
+		let wrapped = code + "\t\tS_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", value.has_value ? 1 : 0);\n"
+		return wrapped + "\t\tif (value.has_value) optional->fields[0].bits = value.value;\n" + mir_c_store_owned(instruction.dst, dst_type, "optional") + "\t}\n"
 	if op == MIR_CONST_I64
 		if instruction.immediate == (-9223372036854775807 - 1)
 			expr = "INT64_MIN"

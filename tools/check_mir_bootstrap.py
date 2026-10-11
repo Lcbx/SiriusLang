@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from sirius_sources import COMPILER_SOURCES, combined_sources
+from sirius_sources import COMPILER_SOURCES, MIR_ONLY_COMPILER_SOURCES, combined_sources
 from test_build import BuildCache, options, require_cc
 
 
@@ -16,20 +16,20 @@ def main() -> None:
 		help='return a failure status if the MIR self-hosting path is not ready')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	compiler = cache.sirius('mir-bootstrap-coverage', COMPILER_SOURCES, separator=b'')
+	compiler = cache.sirius('mir-migration', COMPILER_SOURCES, separator=b'')
 	with tempfile.TemporaryDirectory() as directory:
 		work = Path(directory)
 		source = work / 'compiler.sirius'
-		source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
+		source.write_bytes(combined_sources(MIR_ONLY_COMPILER_SOURCES, separator=b''))
 		result = subprocess.run([str(compiler), '--mir-c', str(source), str(work / 'compiler.c')],
 			capture_output=True, text=True, encoding='utf-8', errors='replace')
 		if result.returncode:
-			print('BLOCKED MIR self-hosting:')
+			print('BLOCKED MIR-only self-hosting:')
 			print((result.stdout + result.stderr).strip())
 			if args.require_ready:
 				raise SystemExit(1)
 			return
-		print('PASS compiler source emitted through MIR; full MIR bootstrap fixed point is not yet verified')
+		print('PASS MIR-only compiler source emitted through MIR; full bootstrap fixed point is not yet verified')
 
 
 if __name__ == '__main__':

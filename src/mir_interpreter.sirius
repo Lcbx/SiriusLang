@@ -398,6 +398,62 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 					return mir_failure("uninitialized register", steps)
 				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, left.text + right.text)
 				continue
+			if ins.op >= MIR_EQ_STRING and ins.op <= MIR_LE_STRING
+				if left.type_id != TYPE_TAG_STRING or right.type_id != TYPE_TAG_STRING
+					return mir_failure("invalid string comparison operands", steps)
+				var compare = false
+				if ins.op == MIR_EQ_STRING
+					compare = left.text == right.text
+				elif ins.op == MIR_LT_STRING
+					compare = left.text < right.text
+				else
+					compare = left.text <= right.text
+				var bits = 0
+				if compare
+					bits = 1
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, bits, "")
+				continue
+			if ins.op >= MIR_STRING_SLICE and ins.op <= MIR_STRING_JOIN
+				if left.type_id != TYPE_TAG_STRING or right.type_id == TYPE_TAG_INVALID
+					return mir_failure("invalid string operation operands", steps)
+				if ins.op == MIR_STRING_SLICE
+					let end = registers[!ins.immediate]
+					if end.type_id != TYPE_TAG_I64
+						return mir_failure("invalid string slice end", steps)
+					registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, left.text.slice(right.bits, end.bits))
+				elif ins.op == MIR_STRING_STARTS_WITH or ins.op == MIR_STRING_ENDS_WITH
+					var matches = false
+					if ins.op == MIR_STRING_STARTS_WITH
+						matches = left.text.starts_with(right.text)
+					else
+						matches = left.text.ends_with(right.text)
+					var bits = 0
+					if matches
+						bits = 1
+					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, bits, "")
+				elif ins.op == MIR_STRING_JOIN
+					if right.bits < 0 or right.bits >= len(heap)
+						return mir_failure("invalid join array", steps)
+					var joined = ""
+					let parts = heap[!right.bits].fields
+					for i in 0..len(parts)
+						if i > 0
+							joined = joined + left.text
+						joined = joined + parts[!i].text
+					registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, joined)
+				else
+					var index = -1
+					if ins.op == MIR_STRING_BYTE_AT
+						index = left.text.byte_at(right.bits) or -1
+					else
+						index = left.text.find(right.text) or -1
+					var fields = Array[MirValue]()
+					if index >= 0
+						fields = fields.append(MirValue(TYPE_TAG_I64, index, ""))
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
 			if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
 				return mir_failure("uninitialized register", steps)
 			var answer = 0

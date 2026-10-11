@@ -49,6 +49,15 @@ let MIR_READ_TEXT = 44
 let MIR_WRITE_TEXT = 45
 let MIR_STR_I64 = 46
 let MIR_ARRAY_APPEND = 47
+let MIR_STRING_SLICE = 48
+let MIR_STRING_FIND = 49
+let MIR_STRING_BYTE_AT = 50
+let MIR_STRING_STARTS_WITH = 51
+let MIR_STRING_ENDS_WITH = 52
+let MIR_STRING_JOIN = 53
+let MIR_EQ_STRING = 54
+let MIR_LT_STRING = 55
+let MIR_LE_STRING = 56
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -66,7 +75,7 @@ def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(true, false)
 	if op == MIR_ARRAY_SET
 		return MirFailureInfo(true, true)
-	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
+	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
 		return MirFailureInfo(false, true)
 	return MirFailureInfo(false, false)
 
@@ -194,9 +203,9 @@ def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 		for register in ins.inputs
 			reads = mir_read_add(reads, register)
 		return reads
-	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR
+	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_STRING_SLICE
 		reads = mir_read_add(reads, ins.immediate)
-	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND or (ins.op >= MIR_STRING_SLICE and ins.op <= MIR_LE_STRING)
 		reads = mir_read_add(reads, ins.second)
 	return reads
 
@@ -399,6 +408,34 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
 			return "string concat operand type mismatch"
 		return ""
+	if ins.op >= MIR_EQ_STRING and ins.op <= MIR_LE_STRING
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string comparison signature mismatch"
+		return ""
+	if ins.op >= MIR_STRING_SLICE and ins.op <= MIR_STRING_JOIN
+		if not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "string operation requires a string receiver"
+		if ins.op == MIR_STRING_SLICE
+			if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.second, TYPE_TAG_I64) or not mir_register_valid(types, ins.immediate, TYPE_TAG_I64)
+				return "string slice signature mismatch"
+		elif ins.op == MIR_STRING_BYTE_AT
+			if not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+				return "string byte_at argument mismatch"
+		elif ins.op == MIR_STRING_JOIN
+			if ins.second < 0 or ins.second >= len(types)
+				return "invalid string join argument"
+			let array = program.types.entries[!types[!ins.second]]
+			if array.tag != TYPE_TAG_ARRAY or array.first != TYPE_TAG_STRING or dst_type != TYPE_TAG_STRING
+				return "string join signature mismatch"
+		elif not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string operation argument type mismatch"
+		if ins.op == MIR_STRING_BYTE_AT or ins.op == MIR_STRING_FIND
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != TYPE_TAG_I64
+				return "string optional result mismatch"
+		elif (ins.op == MIR_STRING_STARTS_WITH or ins.op == MIR_STRING_ENDS_WITH) and dst_type != TYPE_TAG_BOOL
+			return "string predicate result mismatch"
+		return ""
 	if ins.op == MIR_CALL
 		if ins.immediate < 0 or ins.immediate >= len(program.functions)
 			return "invalid callee"
@@ -451,7 +488,8 @@ def mir_audit_failures(program: MirProgram) -> MirFailureAudit
 					if ins.text != "__mir_guarded"
 						return MirFailureAudit("unguarded MIR runtime failure", guarded, aborts)
 					guarded += 1
-				elif ins.text == "__mir_guarded"
+				elif ins.text == "__mir_guarded" and ins.op != MIR_CONST_STRING
+					# A string literal may contain the marker text; it is not metadata.
 					return MirFailureAudit("guard marker on non-fallible MIR instruction", guarded, aborts)
 				if failure.abort
 					aborts += 1

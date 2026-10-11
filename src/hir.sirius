@@ -517,7 +517,7 @@ def hir_body_type_reference(types: TypeTable, tree: ParseState, id: i64) -> HirC
 
 # Named record annotations refer to a constructor's canonical published shape.
 # The plain resolver above remains useful for type-only clients without a module.
-def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, functions: Array[HirFunctionDecl]) -> HirCallCheck
+def hir_module_type_reference_with_constants(types: TypeTable, tree: ParseState, id: i64, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant]) -> HirCallCheck
 	let resolved = hir_body_type_reference(types, tree, id)
 	if resolved.type_id != TYPE_TAG_INVALID
 		return resolved
@@ -531,7 +531,7 @@ def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, funct
 				for parameter in function.parameters
 					if parameter.type_node < 0
 						return HirCallCheck(current, TYPE_TAG_INVALID, "named record type requires annotated constructor parameters")
-					let argument = hir_module_type_reference(current, tree, parameter.type_node, functions)
+					let argument = hir_module_type_reference_with_constants(current, tree, parameter.type_node, functions, constants)
 					if argument.type_id == TYPE_TAG_INVALID
 						return argument
 					current = argument.table
@@ -539,6 +539,7 @@ def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, funct
 				var state = HirBodyState(tree, Array[string](), Array[string]())
 				state.types = current
 				state.functions = functions
+				state.module_constants = constants
 				let constructed = hir_body_user_call(state, id, name, arguments)
 				return HirCallCheck(constructed.types, constructed.last_type, constructed.error)
 		return resolved
@@ -551,7 +552,7 @@ def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, funct
 		return resolved
 	if (name == "Dict" and node.count != start + 2) or (name != "Dict" and node.count != start + 1)
 		return resolved
-	let first = hir_module_type_reference(types, tree, hir_ast_child(tree, id, start), functions)
+	let first = hir_module_type_reference_with_constants(types, tree, hir_ast_child(tree, id, start), functions, constants)
 	if first.type_id == TYPE_TAG_INVALID
 		return first
 	if name == "Array"
@@ -560,11 +561,15 @@ def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, funct
 	if name == "Optional"
 		let result = intern_optional_type(first.table, first.type_id)
 		return HirCallCheck(result.table, result.id, "")
-	let second = hir_module_type_reference(first.table, tree, hir_ast_child(tree, id, start + 1), functions)
+	let second = hir_module_type_reference_with_constants(first.table, tree, hir_ast_child(tree, id, start + 1), functions, constants)
 	if second.type_id == TYPE_TAG_INVALID
 		return second
 	let result = intern_dict_type(second.table, first.type_id, second.type_id)
 	return HirCallCheck(result.table, result.id, "")
+
+# Compatibility for clients without module constants.
+def hir_module_type_reference(types: TypeTable, tree: ParseState, id: i64, functions: Array[HirFunctionDecl]) -> HirCallCheck
+	return hir_module_type_reference_with_constants(types, tree, id, functions, Array[HirModuleConstant]())
 
 def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id: i64, mutable: bool) -> HirBodyState
 	var result = state
@@ -593,7 +598,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
 		if parameter.type_node >= 0
-			let annotation = hir_module_type_reference(result.types, result.tree, parameter.type_node, result.functions)
+			let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants)
 			result.types = annotation.table
 			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != args[!i]
 				return hir_body_error(result, id, "expected " + hir_type_name(result.types, annotation.type_id) + ", found " + hir_type_name(result.types, args[!i]))
@@ -602,7 +607,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	if result.collect_calls and not function.constructor
 		result.requests = result.requests.append(HirSpecializationRequest(id, function.body, args))
 		if function.result_type_node >= 0
-			let declared = hir_module_type_reference(result.types, result.tree, function.result_type_node, result.functions)
+			let declared = hir_module_type_reference_with_constants(result.types, result.tree, function.result_type_node, result.functions, result.module_constants)
 			result.types = declared.table
 			result.last_type = declared.type_id
 		return result
@@ -610,7 +615,9 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 		var nested = HirBodyState(state.tree, state.names, state.constants)
 		nested.types = result.types
 		nested.functions = state.functions
+		nested.module_constants = state.module_constants
 		nested.active_functions = state.active_functions
+		nested.collect_calls = result.collect_calls
 		for i in 0..len(args)
 			let param = function.parameters[!i]
 			nested = hir_body_binding(nested, param.source, param.name, args[!i], false)
@@ -641,13 +648,15 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 		for typed_node in nested.nodes
 			if typed_node.operation != HIR_BINDING
 				result.nodes = result.nodes.append(typed_node)
+		for request in nested.requests
+			result.requests = result.requests.append(request)
 		if len(fields) > 0
 			let record = intern_record_type(nested.types, fields)
 			result.types = record.table
 			result.last_type = record.id
 		return result
 	if function.result_type_node >= 0
-		let declared = hir_module_type_reference(result.types, result.tree, function.result_type_node, result.functions)
+		let declared = hir_module_type_reference_with_constants(result.types, result.tree, function.result_type_node, result.functions, result.module_constants)
 		result.types = declared.table
 		result.last_type = declared.type_id
 		if declared.type_id != TYPE_TAG_INVALID
@@ -727,7 +736,7 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			args = args.append(result.last_type)
 		result.last_type = TYPE_TAG_INVALID
 		if callee_kind == NODE_INDEX and node.count == 1
-			let typed = hir_module_type_reference(result.types, result.tree, callee, result.functions)
+			let typed = hir_module_type_reference_with_constants(result.types, result.tree, callee, result.functions, result.module_constants)
 			if typed.type_id != TYPE_TAG_INVALID
 				result.types = typed.table
 				result.last_type = typed.type_id
@@ -939,7 +948,7 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			let child = hir_ast_child(state.tree, id, i)
 			let child_kind = state.tree.nodes[!child].kind
 			if child_kind == NODE_TYPE
-				let annotated = hir_module_type_reference(result.types, result.tree, child, result.functions)
+				let annotated = hir_module_type_reference_with_constants(result.types, result.tree, child, result.functions, result.module_constants)
 				result.types = annotated.table
 				declared = annotated.type_id
 			elif child_kind == NODE_ELSE_RETURN
