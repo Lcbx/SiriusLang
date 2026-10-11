@@ -145,3 +145,9 @@ HIR generic specialization lookup and lifecycle, symbol binding metadata and str
 Canonical `Optional[T]` values use zero/one owned payload fields, including nested managed values. `MIR_OPTIONAL_NONE`, `MIR_OPTIONAL_SOME`, `MIR_OPTIONAL_HAS`, `MIR_OPTIONAL_UNWRAP`, `MIR_ARRAY_GET_OPTIONAL` and `MIR_DICT_GET_OPTIONAL` are verified and executed by both the Sirius MIR interpreter and the MIR-C backend. The interpreter maintains reference counts; C uses the existing managed-record runtime with descriptor-directed nested release.
 
 HIR-to-MIR lowering now handles `a[?i]`, `dict.get(key)`, postfix `!`, `optional or fallback` and `let x = optional else return value`. The latter two produce actual CFG branches, so fallback expressions execute only for absent values. The older `MIR_DICT_GET_OR` remains explicitly eager and must not be used to lower source-level `or`. This does **not** replace the pending CFG ownership/lifetime pass. See `tools/test_mir_optional.py` and differential cases in `tools/test_mir_c.py`.
+
+## Experimental CFG lifetime insertion
+
+`src/mir_lifetime.sirius` analyzes each MIR function using backward register liveness to a fixed point across CFG backedges. At a last use or dead definition of a managed register, it inserts `MIR_RELEASE`. Explicit consuming operations (`MIR_MOVE`, `MIR_ARRAY_SET`, `MIR_DICT_INSERT`) do not release consumed sources; copies and calls retain their existing ownership semantics. The pass is run after typed MIR construction and before final verification, and is idempotent.
+
+This first slice does **not** replace the C emitter/interpreter's return cleanup, which handles values that remain conditionally initialized on some paths. Definite-initialization, use-after-move data flow across CFG joins, and exceptional-exit cleanup remain future work. `tests/mir/lifetime_driver.sirius` checks branching, loop-carried references, CoW aliases, nested managed fields and repeated application.

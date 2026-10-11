@@ -141,7 +141,8 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Add a narrow MIR dictionary subset: canonical `Dict[i64|string, T]`, empty construction, consuming CoW insertion, length and eager checked-type `GET_OR`, with both interpreter and native C tests. Source lowering supports construction, `insert`, and `len`; source optional `get` is now supported.
 - [x] Add `Optional[T]` storage, optional dictionary lookup/fallback and array indexing, unwrap, and CFG-lazy `or`/`else return` in MIR, with native differential and interpreter ownership tests.
 - [ ] Add array append and record spreads/updates; validate ownership data-flow for all CFG exits.
-- [ ] Insert conservative retain/release operations in a dedicated CFG lifetime pass, including exceptional and loop exits; verify ownership data-flow statically.
+- [x] Add a conservative backward CFG liveness pass, integrated into HIR→MIR construction. It inserts last-use `MIR_RELEASE` for managed registers across branches and loops, with idempotency and interpreted/native tests (`tools/test_mir_lifetime.py`).
+- [ ] Complete ownership verification: definite initialization and moves across CFG joins, unused argument/branch-exit cleanup, and exceptional exits. Retain existing return cleanup until this analysis is complete.
 - [ ] Expand interpreter/native differential testing to every managed construct and migrate the default C backend only after coverage is sufficient.
 
 ## 5. Consistency with the language design

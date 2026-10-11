@@ -12,6 +12,7 @@ python tools/test_hir_worklist.py       # Test semantic specialization without a
 python tools/test_mir_program.py        # Link HIR specializations into a scalar MIR program
 python tools/test_mir_c.py              # Differential source execution, including optional control flow
 python tools/test_mir_optional.py       # Direct optional MIR tests, interpreter and C
+python tools/test_mir_lifetime.py       # CFG last-use releases, branches, loops, CoW and native equivalence
 python tools/test_mir_managed.py        # Shared interpreted/native managed-string ownership tests
 python tools/test_mir_records.py        # Nested structural records and managed field ownership
 python tools/test_mir_arrays.py         # CoW, bounds, and nested managed arrays
@@ -68,3 +69,7 @@ sirius test --backend=both    # Execute both and check expected output/exit stat
 ### Dictionary limitations
 
 MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for string and integer keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. The baseline uses a linear key scan instead of hashing. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and therefore still needs Optional/CFG lowering. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through `--mir-c`.
+
+## CFG ownership pass (experimental)
+
+The linked HIR specialization program runs `mir_insert_lifetimes` before emission. This computes fixed-point backward liveness over branch and jump edges and inserts an owned `MIR_RELEASE` after the last use of each managed register. The pass respects consuming moves and CoW updates and is idempotent. Return-time conditional cleanup remains enabled in both backends; static definite-initialization/ownership checking and cleanup on exceptional termination are still outstanding.

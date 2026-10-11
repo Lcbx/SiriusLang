@@ -23,5 +23,5 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 		functions = functions.append(lowered.function)
 	var program = MirProgram(functions)
 	program.types = analyzed.types
-	let verified = mir_verify(program)
-	return MirProgramBuild(program, analyzed.registry, analyzed.bodies, analyzed.entry, verified)
+	let owned = mir_insert_lifetimes(program)
+	return MirProgramBuild(owned.program, analyzed.registry, analyzed.bodies, analyzed.entry, owned.error)
