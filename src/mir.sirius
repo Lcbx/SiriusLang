@@ -1,7 +1,6 @@
 # Executable typed CFG MIR. Registers are mutable slots within each call frame.
-# The first interpreter subset supports i64 and bool values; managed values,
-# float/string operations and ownership instructions will be added alongside
-# source-to-MIR lowering.
+# Scalar values and owned strings. Every initialized string register owns one
+# reference; copy/retain duplicates, move transfers, release invalidates.
 
 let MIR_CONST_I64 = 1
 let MIR_CONST_BOOL = 2
@@ -19,6 +18,12 @@ let MIR_EQ_BOOL = 13
 let MIR_NEG_I64 = 14
 let MIR_CALL = 15
 let MIR_PRINT = 16
+let MIR_CONST_STRING = 17
+let MIR_RETAIN = 18
+let MIR_MOVE = 19
+let MIR_RELEASE = 20
+let MIR_STRING_LENGTH = 21
+let MIR_STRING_CONCAT = 22
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -28,7 +33,7 @@ let MIR_PANIC = 4
 # immediate carries literal bits or a function index. A call uses inputs to
 # identify argument registers, in evaluation order. All other operands are
 # register indices. Unused operands are -1.
-rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64])
+rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64], text: string)
 rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
 rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
 rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
@@ -36,14 +41,17 @@ rec MirProgram(functions: Array[MirFunction])
 
 # For the initial scalar subset, an i64 slot stores its integer and a bool slot
 # stores 0/1 in bits. type_id 0 represents an uninitialized register.
-rec MirValue(type_id: i64, bits: i64)
+rec MirValue(type_id: i64, bits: i64, text: string)
 rec MirOutcome(value: MirValue, error: string, steps: i64)
 
 def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
-	return MirInstruction(op, dst, first, second, immediate, Array[i64]())
+	return MirInstruction(op, dst, first, second, immediate, Array[i64](), "")
 
 def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
-	return MirInstruction(MIR_CALL, dst, -1, -1, function_id, inputs)
+	return MirInstruction(MIR_CALL, dst, -1, -1, function_id, inputs, "")
+
+def mir_string(dst: i64, value: string) -> MirInstruction
+	return MirInstruction(MIR_CONST_STRING, dst, -1, -1, 0, Array[i64](), value)
 
 def mir_jump(target: i64) -> MirTerminator
 	return MirTerminator(MIR_JUMP, -1, target, -1, "")
@@ -63,7 +71,7 @@ def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool
 	return register >= 0 and register < len(types) and types[!register] == expected
 
 def mir_supported_type(type_id: i64) -> bool
-	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL
+	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL or type_id == TYPE_TAG_STRING
 
 def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
 	let types = function.register_types
@@ -82,9 +90,29 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 		if dst_type != TYPE_TAG_BOOL or (ins.immediate != 0 and ins.immediate != 1)
 			return "invalid boolean constant"
 		return ""
-	if ins.op == MIR_COPY
+	if ins.op == MIR_CONST_STRING
+		if dst_type != TYPE_TAG_STRING
+			return "string constant destination must be string"
+		return ""
+	if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE
 		if not mir_register_valid(types, ins.first, dst_type)
-			return "copy register type mismatch"
+			return "copy/move register type mismatch"
+		if ins.op == MIR_RETAIN and dst_type != TYPE_TAG_STRING
+			return "retain requires a managed register"
+		if ins.op == MIR_MOVE and (ins.dst == ins.first or dst_type != TYPE_TAG_STRING)
+			return "move requires distinct managed registers"
+		return ""
+	if ins.op == MIR_RELEASE
+		if dst_type != TYPE_TAG_STRING or ins.first != ins.dst
+			return "release requires a string register"
+		return ""
+	if ins.op == MIR_STRING_LENGTH
+		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "string length operand type mismatch"
+		return ""
+	if ins.op == MIR_STRING_CONCAT
+		if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string concat operand type mismatch"
 		return ""
 	if ins.op == MIR_CALL
 		if ins.immediate < 0 or ins.immediate >= len(program.functions)

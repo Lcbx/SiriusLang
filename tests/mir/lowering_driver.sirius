@@ -37,7 +37,7 @@ def main() -> i64
 	if not check(branching, Array[MirValue](), 5)
 		return 3
 	let arguments = "def add(a: i64, b: i64) -> i64\n\treturn a + b\n"
-	if not check(arguments, [MirValue(TYPE_TAG_I64, 3), MirValue(TYPE_TAG_I64, 6)], 9)
+	if not check(arguments, [MirValue(TYPE_TAG_I64, 3, ""), MirValue(TYPE_TAG_I64, 6, "")], 9)
 		return 4
 	let shadow = "def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\treturn x\n"
 	if not check(shadow, Array[MirValue](), 7)

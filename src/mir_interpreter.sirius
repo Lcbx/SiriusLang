@@ -2,7 +2,7 @@
 # backend until the compiler lowers its typed HIR into this same representation.
 
 def mir_failure(error: string, steps: i64) -> MirOutcome
-	return MirOutcome(MirValue(TYPE_TAG_INVALID, 0), error, steps)
+	return MirOutcome(MirValue(TYPE_TAG_INVALID, 0, ""), error, steps)
 
 def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64) -> MirOutcome
 	if depth >= max_depth
@@ -12,7 +12,7 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 		return mir_failure("wrong argument count", 0)
 	var registers = Array[MirValue]()
 	while len(registers) < len(function.register_types)
-		registers = registers.append(MirValue(TYPE_TAG_INVALID, 0))
+		registers = registers.append(MirValue(TYPE_TAG_INVALID, 0, ""))
 	for i in 0..len(arguments)
 		let argument = arguments[!i]
 		if argument.type_id != function.register_types[!i]
@@ -29,21 +29,33 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
 			if ins.op == MIR_CONST_I64
-				registers[!ins.dst] = MirValue(TYPE_TAG_I64, ins.immediate)
+				registers[!ins.dst] = MirValue(TYPE_TAG_I64, ins.immediate, "")
 				continue
 			if ins.op == MIR_CONST_BOOL
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, ins.immediate)
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, ins.immediate, "")
 				continue
-			if ins.op == MIR_COPY or ins.op == MIR_NEG_I64 or ins.op == MIR_NOT_BOOL or ins.op == MIR_PRINT
+			if ins.op == MIR_CONST_STRING
+				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, ins.text)
+				continue
+			if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE or ins.op == MIR_RELEASE or ins.op == MIR_STRING_LENGTH or ins.op == MIR_NEG_I64 or ins.op == MIR_NOT_BOOL or ins.op == MIR_PRINT
 				let value = registers[!ins.first]
 				if value.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized register", steps)
-				if ins.op == MIR_COPY
+				if ins.op == MIR_COPY or ins.op == MIR_RETAIN
 					registers[!ins.dst] = value
+				elif ins.op == MIR_MOVE
+					registers[!ins.dst] = value
+					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				elif ins.op == MIR_RELEASE
+					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				elif ins.op == MIR_STRING_LENGTH
+					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(value.text), "")
 				elif ins.op == MIR_NEG_I64
-					registers[!ins.dst] = MirValue(TYPE_TAG_I64, -value.bits)
+					registers[!ins.dst] = MirValue(TYPE_TAG_I64, -value.bits, "")
 				elif ins.op == MIR_NOT_BOOL
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, 1 - value.bits)
+					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, 1 - value.bits, "")
+				elif value.type_id == TYPE_TAG_STRING
+					print(value.text)
 				elif value.type_id == TYPE_TAG_BOOL
 					if value.bits == 0
 						print(false)
@@ -67,6 +79,11 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				continue
 			let left = registers[!ins.first]
 			let right = registers[!ins.second]
+			if ins.op == MIR_STRING_CONCAT
+				if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
+					return mir_failure("uninitialized register", steps)
+				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, left.text + right.text)
+				continue
 			if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
 				return mir_failure("uninitialized register", steps)
 			var answer = 0
@@ -93,9 +110,9 @@ def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array
 				if left.bits <= right.bits
 					answer = 1
 			if ins.op == MIR_EQ_I64 or ins.op == MIR_EQ_BOOL or ins.op == MIR_LT_I64 or ins.op == MIR_LE_I64
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer)
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer, "")
 			else
-				registers[!ins.dst] = MirValue(TYPE_TAG_I64, answer)
+				registers[!ins.dst] = MirValue(TYPE_TAG_I64, answer, "")
 		if steps >= budget
 			return mir_failure("step limit exceeded", steps)
 		steps += 1

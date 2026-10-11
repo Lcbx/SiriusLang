@@ -68,6 +68,39 @@ def mir_lower_literal(text: string) -> i64
 		value = value * 10 + (text.byte_at(i) or 48) - 48
 	return value
 
+rec MirLowerString(value: string, error: string)
+
+# The parser retains the quotes. Decode the initial supported escape set;
+# unsupported escapes are rejected, never interpreted differently by C.
+def mir_lower_string(text: string) -> MirLowerString
+	var result = ""
+	var i = 1
+	while i < len(text) - 1
+		let byte = text.byte_at(i) or 0
+		if byte == 92
+			i += 1
+			if i >= len(text) - 1
+				return MirLowerString("", "unterminated MIR string escape")
+			let escaped = text.byte_at(i) or 0
+			if escaped == 110
+				result = result + "\n"
+			elif escaped == 116
+				result = result + "\t"
+			elif escaped == 114
+				result = result + "\r"
+			elif escaped == 92
+				result = result + "\\"
+			elif escaped == 34
+				result = result + "\""
+			elif escaped == 39
+				result = result + "'"
+			else
+				return MirLowerString("", "unsupported MIR string escape")
+		else
+			result = result + text.slice(i, i + 1)
+		i += 1
+	return MirLowerString(result, "")
+
 def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 	state.error == "" else return MirLowerExpr(state, -1)
 	let node = state.tree.nodes[!id]
@@ -80,6 +113,16 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		if register < 0
 			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 		return MirLowerExpr(state, register)
+	if node.kind == NODE_STRING
+		if mir_lower_type(next, id, HIR_LITERAL) != TYPE_TAG_STRING
+			return MirLowerExpr(mir_lower_error(next, "missing typed string literal"), -1)
+		let decoded = mir_lower_string(text)
+		if decoded.error != ""
+			return MirLowerExpr(mir_lower_error(next, decoded.error), -1)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_STRING)
+		next = mir_lower_emit(next, mir_string(dst, decoded.value))
+		return MirLowerExpr(next, dst)
 	if node.kind == NODE_INTEGER or node.kind == NODE_BOOL
 		let type_id = mir_lower_type(state, id, HIR_LITERAL)
 		if type_id == TYPE_TAG_INVALID
@@ -96,6 +139,16 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		next = mir_lower_emit(next, mir_op(opcode, dst, -1, -1, immediate))
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_CALL
+		let callee = hir_ast_child(next.tree, id, 0)
+		if next.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(next.tree, callee) == "len" and node.count == 2
+			let value = mir_lower_expression(next, hir_ast_child(next.tree, id, 1))
+			next = value.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			if next.register_types[!value.slot] == TYPE_TAG_STRING and mir_lower_type(next, id, HIR_CALL) == TYPE_TAG_I64
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, TYPE_TAG_I64)
+				next = mir_lower_emit(next, mir_op(MIR_STRING_LENGTH, dst, value.slot, -1, 0))
+				return MirLowerExpr(next, dst)
 		var callee_id = -1
 		for target in next.call_targets
 			if target.source == id
@@ -171,7 +224,10 @@ def mir_lower_expression(state: MirLowerState, id: i64) -> MirLowerExpr
 		let second = right.slot
 		var negate = false
 		if text == "+"
-			opcode = MIR_ADD_I64
+			if type_id == TYPE_TAG_STRING
+				opcode = MIR_STRING_CONCAT
+			else
+				opcode = MIR_ADD_I64
 		elif text == "-"
 			opcode = MIR_SUB_I64
 		elif text == "*"

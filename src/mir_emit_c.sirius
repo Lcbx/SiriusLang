@@ -4,6 +4,8 @@
 def mir_c_type(type_id: i64) -> string
 	if type_id == TYPE_TAG_BOOL
 		return "bool"
+	if type_id == TYPE_TAG_STRING
+		return "S_String *"
 	return "int64_t"
 
 def mir_c_register(index: i64) -> string
@@ -32,10 +34,23 @@ def mir_c_string(value: string) -> string
 def mir_c_check(index: i64) -> string
 	return "\tif (!init" + str(index) + ") s_panic(\"uninitialized register\");\n"
 
-def mir_c_instruction(instruction: MirInstruction) -> string
+# Each managed register owns one reference. Evaluate replacement first to
+# preserve self-copy and calls whose arguments alias the destination.
+def mir_c_store_string(dst: i64, expression: string) -> string
+	let name = mir_c_register(dst)
+	return "\t{ S_String *owned = " + expression + "; if (init" + str(dst) + ") s_string_release(" + name + "); " + name + " = owned; init" + str(dst) + " = true; }\n"
+
+def mir_c_release_strings(function: MirFunction, except: i64) -> string
+	var result = ""
+	for i in 0..len(function.register_types)
+		if i != except and function.register_types[!i] == TYPE_TAG_STRING
+			result = result + "\tif (init" + str(i) + ") s_string_release(" + mir_c_register(i) + ");\n"
+	return result
+
+def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
-	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL
+	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING
 		if op == MIR_CALL
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
@@ -49,6 +64,22 @@ def mir_c_instruction(instruction: MirInstruction) -> string
 	var expr = ""
 	let first = mir_c_register(instruction.first)
 	let second = mir_c_register(instruction.second)
+	if op == MIR_CONST_STRING
+		return mir_c_store_string(instruction.dst, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+	if op == MIR_RELEASE
+		return result + "\ts_string_release(" + dst + "); " + dst + " = NULL; init" + str(instruction.dst) + " = false;\n"
+	if op == MIR_MOVE
+		var transfer = result + "\t{ S_String *owned = " + first + "; " + first + " = NULL; init" + str(instruction.first) + " = false; "
+		transfer = transfer + "if (init" + str(instruction.dst) + ") s_string_release(" + dst + "); " + dst + " = owned; init" + str(instruction.dst) + " = true; }\n"
+		return transfer
+	if op == MIR_COPY or op == MIR_RETAIN
+		if function.register_types[!instruction.dst] == TYPE_TAG_STRING
+			return result + mir_c_store_string(instruction.dst, "s_string_retain(" + first + ")")
+	if op == MIR_STRING_CONCAT
+		result = result + mir_c_check(instruction.second)
+		return result + mir_c_store_string(instruction.dst, "s_string_concat(" + first + ", " + second + ")")
+	if op == MIR_STRING_LENGTH
+		return result + "\t" + dst + " = (int64_t)s_string_length(" + first + "); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_CONST_I64
 		expr = "INT64_C(" + str(instruction.immediate) + ")"
 	elif op == MIR_CONST_BOOL
@@ -65,7 +96,10 @@ def mir_c_instruction(instruction: MirInstruction) -> string
 	elif op == MIR_CALL
 		var arguments = Array[string]()
 		for arg in instruction.inputs
-			arguments = arguments.append(mir_c_register(arg))
+			var value = mir_c_register(arg)
+			if function.register_types[!arg] == TYPE_TAG_STRING
+				value = "s_string_retain(" + value + ")"
+			arguments = arguments.append(value)
 		if len(arguments) == 0
 			expr = mir_c_function(instruction.immediate) + "()"
 		else
@@ -92,21 +126,31 @@ def mir_c_instruction(instruction: MirInstruction) -> string
 			result = result + "\tif (" + second + " == 0) s_panic(\"division by zero\");\n"
 			result = result + "\tif (" + first + " == INT64_MIN && " + second + " == -1) s_panic(\"integer overflow\");\n"
 		expr = "(" + first + " " + symbol + " " + second + ")"
+	if function.register_types[!instruction.dst] == TYPE_TAG_STRING
+		return result + mir_c_store_string(instruction.dst, expr)
 	return result + "\t" + dst + " = " + expr + "; init" + str(instruction.dst) + " = true;\n"
 
-def mir_c_terminator(term: MirTerminator) -> string
+def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
 	if term.kind == MIR_JUMP
 		return "\tgoto block" + str(term.target) + ";\n"
 	if term.kind == MIR_BRANCH
 		return mir_c_check(term.operand) + "\tif (" + mir_c_register(term.operand) + ") goto block" + str(term.target) + ";\n\tgoto block" + str(term.alternative) + ";\n"
 	if term.kind == MIR_RETURN
-		return mir_c_check(term.operand) + "\treturn " + mir_c_register(term.operand) + ";\n"
+		var result = mir_c_check(term.operand)
+		if function.return_type == TYPE_TAG_STRING
+			result = result + "\tS_String *returned = " + mir_c_register(term.operand) + ";\n"
+			result = result + mir_c_release_strings(function, term.operand)
+			return result + "\treturn returned;\n"
+		return result + mir_c_release_strings(function, -1) + "\treturn " + mir_c_register(term.operand) + ";\n"
 	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
 
 def mir_c_definition(function: MirFunction, index: i64) -> string
 	var output = mir_c_signature(function, index) + "\n{\n"
 	for i in 0..len(function.register_types)
-		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = 0;\n"
+		var initial = "0"
+		if function.register_types[!i] == TYPE_TAG_STRING
+			initial = "NULL"
+		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n"
 		output = output + "\tbool init" + str(i) + " = false;\n"
 		output = output + "\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n"
 	for i in 0..function.argument_count
@@ -120,11 +164,13 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 				output = output + mir_c_check(instruction.first)
 				if function.register_types[!instruction.first] == TYPE_TAG_BOOL
 					output = output + "\ts_print_bool(" + mir_c_register(instruction.first) + ");\n"
+				elif function.register_types[!instruction.first] == TYPE_TAG_STRING
+					output = output + "\ts_print_string(" + mir_c_register(instruction.first) + ");\n"
 				else
 					output = output + "\ts_print_i64(" + mir_c_register(instruction.first) + ");\n"
 			else
-				output = output + mir_c_instruction(instruction)
-		output = output + mir_c_terminator(block.terminator)
+				output = output + mir_c_instruction(instruction, function)
+		output = output + mir_c_terminator(block.terminator, function)
 	return output + "}\n"
 
 rec MirCResult(code: string, error: string)

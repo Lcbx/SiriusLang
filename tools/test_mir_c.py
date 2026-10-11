@@ -17,6 +17,9 @@ CASES = {
 	'nested': 'def inc(n: i64) -> i64\n\treturn n + 1\ndef twice(n: i64) -> i64\n\treturn inc(inc(n))\ndef main() -> i64\n\treturn twice(40)\n',
 	'loop': 'def main() -> i64\n\tvar n = 0\n\tvar total = 0\n\twhile n < 5\n\t\tif n == 3\n\t\t\ttotal = total + 10\n\t\telse\n\t\t\ttotal = total + n\n\t\tn = n + 1\n\treturn total\n',
 	'short_circuit': 'def main() -> i64\n\tif false and (1 / 0 > 0)\n\t\treturn 1\n\tif true or (1 / 0 > 0)\n\t\treturn 42\n\treturn 0\n',
+	'string_loop': 'def main() -> i64\n\tvar s = "a"\n\tvar i = 0\n\twhile i < 6\n\t\ts = s + "b"\n\t\ti = i + 1\n\treturn len(s)\n',
+	'string_alias': 'def passthrough(x: string) -> string\n\treturn x\ndef main() -> i64\n\tvar a = "ok"\n\tlet b = passthrough(a)\n\ta = "longer"\n\treturn len(a) + len(b)\n',
+	'strings': 'def decorate(s: string) -> string\n\treturn s + "!"\ndef main() -> i64\n\tvar a = "hi"\n\tlet b = decorate(a)\n\tlet c = b + "\\n"\n\treturn len(a) + len(b) + len(c)\n',
 	'shadow': 'def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\t\tif x == 0\n\t\t\treturn 99\n\treturn x\n',
 }
 
@@ -49,7 +52,7 @@ def main() -> None:
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
 		# Unsupported MIR constructs must fail rather than silently use legacy C.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet name = "text"\n\treturn 1\n')
+		input_path.write_text('def main() -> i64\n\tlet obj = {x = 1}\n\treturn 1\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
 		if result.returncode == 0 or 'unsupported' not in result.stdout:
 			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')

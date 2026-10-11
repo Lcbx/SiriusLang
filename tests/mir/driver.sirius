@@ -99,14 +99,14 @@ def main() -> i64
 	if limited.error != "step limit exceeded"
 		return 2
 	let calls = mir_test_calls()
-	let arg = MirValue(TYPE_TAG_I64, 7)
+	let arg = MirValue(TYPE_TAG_I64, 7, "")
 	let doubled = mir_execute(calls, 1, [arg], 100, 8)
 	if doubled.error != "" or doubled.value.bits != 28
 		return 3
 	let short_depth = mir_execute(calls, 1, [arg], 100, 1)
 	if short_depth.error != "call depth limit exceeded"
 		return 4
-	let bad_arg = MirValue(TYPE_TAG_BOOL, 1)
+	let bad_arg = MirValue(TYPE_TAG_BOOL, 1, "")
 	let wrong_type = mir_execute(calls, 1, [bad_arg], 100, 8)
 	if wrong_type.error != "argument type mismatch"
 		return 5
@@ -172,7 +172,7 @@ def main() -> i64
 	let eq = mir_execute(equal_bool, 0, Array[MirValue](), 50, 2)
 	if eq.error != "" or eq.value.bits != 1
 		return 16
-	let malformed_bool = mir_execute(calls, 1, [MirValue(TYPE_TAG_I64, 7)], 3, 8)
+	let malformed_bool = mir_execute(calls, 1, [MirValue(TYPE_TAG_I64, 7, "")], 3, 8)
 	if malformed_bool.error != "step limit exceeded" or malformed_bool.steps != 3
 		return 17
 	let bad_bool = mir_execute(MirProgram([bool_fn]), 0, Array[MirValue](), 20, 2)
