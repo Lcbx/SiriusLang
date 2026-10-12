@@ -22,14 +22,17 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, lowered.error)
 		functions = functions.append(lowered.function)
 	let program = mir_program_with_types(functions, analyzed.types)
-	let guarded = mir_insert_guards(program)
-	if guarded.error != ""
-		return MirProgramBuild(guarded.program, analyzed.registry, analyzed.bodies, analyzed.entry, guarded.error)
-	let owned = mir_insert_lifetimes(guarded.program)
-	if owned.error != ""
-		return MirProgramBuild(owned.program, analyzed.registry, analyzed.bodies, analyzed.entry, owned.error)
-	let cleaned = mir_insert_exit_cleanup(owned.program)
-	if cleaned.error != ""
-		return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, cleaned.error)
-	let audited = mir_audit_failures(cleaned.program)
+	# Only the public individual passes check MIR at every boundary. The
+	# combined compiler pipeline validates before transformations and after
+	# cleanup, avoiding repeated CFG fixed-point and MIR verifier passes.
+	let error = mir_check_ownership(program)
+	if error != ""
+		return MirProgramBuild(program, analyzed.registry, analyzed.bodies, analyzed.entry, error)
+	let guarded = mir_insert_guards_unchecked(program)
+	let owned = mir_insert_lifetimes_unchecked(guarded.program)
+	let cleaned = mir_insert_exit_cleanup_unchecked(owned.program)
+	let checked = mir_check_balance(cleaned.program)
+	if checked != ""
+		return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, checked)
+	let audited = mir_audit_failures_unchecked(cleaned.program)
 	return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, audited.error)

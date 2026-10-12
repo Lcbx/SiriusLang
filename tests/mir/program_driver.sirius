@@ -12,6 +12,8 @@ def check(source: string, expected: i64, count: i64) -> bool
 	if result.error != ""
 		print(result.error)
 		return false
+	if mir_check_balance(result.program) != "" or mir_audit_failures(result.program).error != ""
+		return false
 	if len(result.registry.entries) != count or len(result.program.functions) != count or len(result.analyses) != count
 		return false
 	for i in 0..count

@@ -50,27 +50,21 @@ def mir_ownership_reachable(function: MirFunction) -> Array[i64]
 	var reached = Array[i64]()
 	for block in function.blocks
 		reached = reached.append(0)
+	var queue = Array[i64]().append(function.entry)
 	reached[!function.entry] = 1
-	var changed = true
-	while changed
-		changed = false
-		for i in 0..len(function.blocks)
-			if reached[!i] != 0
-				let term = function.blocks[!i].terminator
-				if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
-					if reached[!term.target] == 0
-						reached[!term.target] = 1
-						changed = true
-				if term.kind == MIR_BRANCH and reached[!term.alternative] == 0
-					reached[!term.alternative] = 1
-					changed = true
+	var head = 0
+	while head < len(queue)
+		let i = queue[!head]
+		head += 1
+		let term = function.blocks[!i].terminator
+		if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+			if reached[!term.target] == 0
+				reached[!term.target] = 1
+				queue = queue.append(term.target)
+		if term.kind == MIR_BRANCH and reached[!term.alternative] == 0
+			reached[!term.alternative] = 1
+			queue = queue.append(term.alternative)
 	return reached
-
-def mir_ownership_flows(term: MirTerminator, destination: i64) -> bool
-	if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
-		if term.target == destination
-			return true
-	return term.kind == MIR_BRANCH and term.alternative == destination
 
 def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 	var after = before
@@ -83,37 +77,55 @@ def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 # Both forward analyses use the same CFG transfer function. The join is an
 # intersection for definitely initialized registers, or a union for registers
 # that may be initialized along at least one predecessor path.
-def mir_ownership_dataflow(function: MirFunction, maybe: bool) -> Array[MirOwnershipBlock]
-	let reached = mir_ownership_reachable(function)
+# Reuse CFG reachability and predecessors when checking both must- and
+# may-initialization of the same function.
+def mir_ownership_dataflow_cfg(function: MirFunction, maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> Array[MirOwnershipBlock]
 	var initial = mir_ownership_top(len(function.register_types))
 	if maybe
 		for i in 0..len(initial)
 			initial[!i] = 0
 	let entry = mir_ownership_entry(function)
 	var states = Array[MirOwnershipBlock]()
-	for block in function.blocks
+	var queued = Array[i64]()
+	var queue = Array[i64]()
+	for i in 0..len(function.blocks)
 		states = states.append(MirOwnershipBlock(initial, initial))
-	var changed = true
-	while changed
-		changed = false
-		for i in 0..len(function.blocks)
-			if reached[!i] != 0
-				var incoming = initial
-				if i == function.entry
-					incoming = entry
-				for j in 0..len(function.blocks)
-					if reached[!j] != 0 and mir_ownership_flows(function.blocks[!j].terminator, i)
-						if maybe
-							incoming = mir_ownership_union(incoming, states[!j].outgoing)
-						else
-							incoming = mir_ownership_intersect(incoming, states[!j].outgoing)
-				var outgoing = incoming
-				for ins in function.blocks[!i].instructions
-					outgoing = mir_ownership_after(ins, outgoing)
-				if not mir_ownership_equal(incoming, states[!i].incoming) or not mir_ownership_equal(outgoing, states[!i].outgoing)
-					states[!i] = MirOwnershipBlock(incoming, outgoing)
-					changed = true
+		let active = reached[!i] != 0
+		queued = queued.append(reached[!i])
+		if active
+			queue = queue.append(i)
+	var head = 0
+	while head < len(queue)
+		let i = queue[!head]
+		head += 1
+		queued[!i] = 0
+		var incoming = initial
+		if i == function.entry
+			incoming = entry
+		for j in predecessors[!i]
+			if reached[!j] != 0
+				if maybe
+					incoming = mir_ownership_union(incoming, states[!j].outgoing)
+				else
+					incoming = mir_ownership_intersect(incoming, states[!j].outgoing)
+		var outgoing = incoming
+		for ins in function.blocks[!i].instructions
+			outgoing = mir_ownership_after(ins, outgoing)
+		if not mir_ownership_equal(incoming, states[!i].incoming) or not mir_ownership_equal(outgoing, states[!i].outgoing)
+			states[!i] = MirOwnershipBlock(incoming, outgoing)
+			let term = function.blocks[!i].terminator
+			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+				if queued[!term.target] == 0
+					queued[!term.target] = 1
+					queue = queue.append(term.target)
+			if term.kind == MIR_BRANCH and queued[!term.alternative] == 0
+				queued[!term.alternative] = 1
+				queue = queue.append(term.alternative)
 	return states
+
+def mir_ownership_dataflow(function: MirFunction, maybe: bool) -> Array[MirOwnershipBlock]
+	let reached = mir_ownership_reachable(function)
+	return mir_ownership_dataflow_cfg(function, maybe, reached, mir_cfg_predecessors(function))
 
 def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
 	return mir_ownership_dataflow(function, false)
@@ -126,26 +138,37 @@ def mir_ownership_maybe_states(function: MirFunction) -> Array[MirOwnershipBlock
 # Verify that every exit has transferred or released all managed registers.
 # This is a proof about explicit CFG exits, not about implicit runtime panics.
 def mir_check_balance(program: MirProgram) -> string
-	let error = mir_check_ownership(program)
+	let error = mir_verify(program)
 	if error != ""
 		return error
 	for function_id in 0..len(program.functions)
 		let function = program.functions[!function_id]
 		let reached = mir_ownership_reachable(function)
-		let maybe = mir_ownership_maybe_states(function)
+		let predecessors = mir_cfg_predecessors(function)
+		let must = mir_ownership_dataflow_cfg(function, false, reached, predecessors)
+		let problem = mir_ownership_function_states(function, reached, must)
+		if problem != ""
+			return "MIR function " + str(function_id) + ": " + problem
+		var managed = Array[i64]()
+		for register in 0..len(function.register_types)
+			if mir_managed_type(program.types, function.register_types[!register])
+				managed = managed.append(register)
+		if len(managed) == 0
+			continue
+		let maybe = mir_ownership_dataflow_cfg(function, true, reached, predecessors)
 		for block_id in 0..len(function.blocks)
 			if reached[!block_id] != 0
 				let term = function.blocks[!block_id].terminator
 				if term.kind == MIR_RETURN or term.kind == MIR_PANIC
-					for register in 0..len(function.register_types)
-						if maybe[!block_id].outgoing[!register] != 0 and mir_managed_type(program.types, function.register_types[!register])
+					for register in managed
+						if maybe[!block_id].outgoing[!register] != 0
 							if term.kind != MIR_RETURN or register != term.operand
 								return "MIR function " + str(function_id) + ": managed register " + str(register) + " may remain owned at exit block " + str(block_id)
 	return ""
 
-def mir_ownership_function(function: MirFunction) -> string
-	let reached = mir_ownership_reachable(function)
-	let states = mir_ownership_states(function)
+# The public ownership checker and balance checker share the same register
+# read validation; only the latter requires may-ownership at exits.
+def mir_ownership_function_states(function: MirFunction, reached: Array[i64], states: Array[MirOwnershipBlock]) -> string
 	for i in 0..len(function.blocks)
 		if reached[!i] != 0
 			let block = function.blocks[!i]
@@ -160,6 +183,11 @@ def mir_ownership_function(function: MirFunction) -> string
 				if available[!term.operand] == 0
 					return "MIR terminator reads uninitialized or moved register " + str(term.operand) + " in block " + str(i)
 	return ""
+
+def mir_ownership_function(function: MirFunction) -> string
+	let reached = mir_ownership_reachable(function)
+	let states = mir_ownership_dataflow_cfg(function, false, reached, mir_cfg_predecessors(function))
+	return mir_ownership_function_states(function, reached, states)
 
 def mir_check_ownership(program: MirProgram) -> string
 	let error = mir_verify(program)

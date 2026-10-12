@@ -40,7 +40,7 @@ def cleanup_panic_program() -> MirProgram
 
 def cleanup_has_release(block: MirBlock, register: i64) -> bool
 	for instruction in block.instructions
-		if instruction.op == MIR_RELEASE and instruction.dst == register
+		if (instruction.op == MIR_RELEASE or instruction.op == MIR_RELEASE_IF_INIT) and instruction.dst == register
 			return true
 	return false
 

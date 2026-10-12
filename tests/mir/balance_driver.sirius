@@ -36,6 +36,13 @@ def balance_contains(block: MirBlock, op: i64, register: i64) -> bool
 			return true
 	return false
 
+# Balance verification must still reject invalid reads before checking leaks.
+def balance_invalid_read() -> MirProgram
+	let entry = Array[MirInstruction]().append(mir_op(MIR_CONST_BOOL, 0, -1, -1, 1))
+	let yes = Array[MirInstruction]().append(mir_op(MIR_CONST_I64, 1, -1, -1, 7))
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_BOOL, TYPE_TAG_I64], [MirBlock(entry, mir_branch(0, 1, 2)), MirBlock(yes, mir_jump(2)), MirBlock(Array[MirInstruction](), mir_return(1))], 0)
+	return MirProgram([function])
+
 def main() -> i64
 	let args = arguments()
 	if len(args) != 7
@@ -75,5 +82,9 @@ def main() -> i64
 		if generated.error != "" or not write_text(args[!i + 1], generated.code)
 			print(generated.error)
 			return 9
+	let invalid = balance_invalid_read()
+	let ownership_error = mir_check_ownership(invalid)
+	if ownership_error == "" or mir_check_balance(invalid) != ownership_error
+		return 14
 	print("PASS MIR CFG ownership balance")
 	return 0

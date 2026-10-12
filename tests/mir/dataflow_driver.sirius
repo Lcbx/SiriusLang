@@ -1,0 +1,43 @@
+# Exercise dense register sets and both forward/backward worklists on a long CFG.
+def dataflow_program() -> MirProgram
+	var blocks = Array[MirBlock]()
+	var init = Array[MirInstruction]()
+	init = init.append(mir_op(MIR_CONST_BOOL, 0, -1, -1, 1))
+	init = init.append(mir_string(1, "alive"))
+	blocks = blocks.append(MirBlock(init, mir_jump(1)))
+	for i in 1..120
+		let code = Array[MirInstruction]().append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+		var term = mir_jump(i + 1)
+		if i == 119
+			term = mir_return(2)
+		elif i == 75
+			term = mir_branch(0, 30, i + 1)
+		elif i % 5 == 0 and i < 118
+			term = mir_branch(0, i + 1, i + 2)
+		blocks = blocks.append(MirBlock(code, term))
+	return MirProgram([MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_BOOL, TYPE_TAG_STRING, TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	let function = dataflow_program().functions[!0]
+	let reachable = mir_ownership_reachable(function)
+	let must = mir_ownership_states(function)
+	let maybe = mir_ownership_maybe_states(function)
+	let live = mir_lifetime_states(function)
+	if len(must) != 120 or len(live) != 120
+		return 1
+	if reached_check(reachable) == false
+		return 2
+	if must[!119].incoming[!1] != 1 or maybe[!119].outgoing[!1] != 1
+		return 3
+	if live[!0].live_in[!1] != 0 or live[!0].live_out[!1] != 1
+		return 4
+	if live[!30].live_in[!1] != 1 or live[!119].live_in[!1] != 1
+		return 5
+	print("PASS MIR dense worklist CFG")
+	return 0
+
+def reached_check(reached: Array[i64]) -> bool
+	for i in 0..len(reached)
+		if reached[!i] != 1
+			return false
+	return true

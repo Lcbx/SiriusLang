@@ -6,57 +6,59 @@
 rec MirCleanupFunction(function: MirFunction, releases: i64)
 rec MirCleanupResult(program: MirProgram, releases: i64, error: string)
 
-def mir_cleanup_releases(program: MirProgram, function: MirFunction, owned: Array[i64], live: Array[i64], preserved: i64) -> Array[MirInstruction]
+# Conditional releases make it safe to compute all edge cleanups from one
+# ownership snapshot, even when earlier edges have already released a value.
+def mir_cleanup_releases(program: MirProgram, function: MirFunction, possible: Array[i64], live: Array[i64], successor: MirBlock) -> Array[MirInstruction]
 	var releases = Array[MirInstruction]()
 	for register in 0..len(function.register_types)
-		if owned[!register] != 0 and register != preserved and not mir_live_contains(live, register) and mir_managed_type(program.types, function.register_types[!register])
-			releases = releases.append(mir_op(MIR_RELEASE, register, register, -1, 0))
+		if possible[!register] != 0 and not mir_live_contains(live, register) and mir_managed_type(program.types, function.register_types[!register])
+			# A second invocation must not add another release before an
+			# existing cleanup-only edge block.
+			var covered = false
+			for instruction in successor.instructions
+				if instruction.op == MIR_RELEASE or instruction.op == MIR_RELEASE_IF_INIT
+					if instruction.first == register
+						covered = true
+				else
+					break
+			if not covered
+				releases = releases.append(mir_op(MIR_RELEASE_IF_INIT, register, register, -1, 0))
 	return releases
 
 def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirCleanupFunction
 	var blocks = function.blocks
 	var count = 0
-	# Recompute forward state only after an edge rewrite. A release on an
-	# incoming edge must be visible before considering outgoing edges.
-	var reached = mir_ownership_reachable(function)
-	var ownership = mir_ownership_states(function)
-	var liveness = mir_lifetime_states(function)
-	var dirty = false
+	# One snapshot suffices: edge releases are conditional when ownership
+	# differs between incoming paths, so incremental global recomputation
+	# after each edge insertion is unnecessary.
+	let reached = mir_ownership_reachable(function)
+	let possible = mir_ownership_maybe_states(function)
+	let liveness = mir_lifetime_states(function)
 	for i in 0..len(function.blocks)
-		if dirty
-			let current = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
-			reached = mir_ownership_reachable(current)
-			ownership = mir_ownership_states(current)
-			liveness = mir_lifetime_states(current)
-			dirty = false
 		if reached[!i] != 0
 			let original = blocks[!i]
 			let term = original.terminator
-			let owned = ownership[!i].outgoing
+			let may = possible[!i].outgoing
 			var instructions = original.instructions
 			var next = term
 			if term.kind == MIR_JUMP
-				let releases = mir_cleanup_releases(program, function, owned, liveness[!term.target].live_in, -1)
+				let releases = mir_cleanup_releases(program, function, may, liveness[!term.target].live_in, blocks[!term.target])
 				for release in releases
 					instructions = instructions.append(release)
 					count += 1
-				if len(releases) > 0
-					dirty = true
 			elif term.kind == MIR_BRANCH
 				var yes = term.target
 				var no = term.alternative
-				let yes_releases = mir_cleanup_releases(program, function, owned, liveness[!yes].live_in, -1)
+				let yes_releases = mir_cleanup_releases(program, function, may, liveness[!yes].live_in, blocks[!yes])
 				if len(yes_releases) > 0
 					yes = len(blocks)
 					blocks = blocks.append(MirBlock(yes_releases, mir_jump(term.target)))
 					count += len(yes_releases)
-					dirty = true
-				let no_releases = mir_cleanup_releases(program, function, owned, liveness[!no].live_in, -1)
+				let no_releases = mir_cleanup_releases(program, function, may, liveness[!no].live_in, blocks[!no])
 				if len(no_releases) > 0
 					no = len(blocks)
 					blocks = blocks.append(MirBlock(no_releases, mir_jump(term.alternative)))
 					count += len(no_releases)
-					dirty = true
 				next = mir_branch(term.operand, yes, no)
 			blocks[!i] = MirBlock(instructions, next)
 	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
@@ -82,15 +84,19 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 				blocks[!i] = MirBlock(instructions, term)
 	return MirCleanupFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
 
-def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
-	let error = mir_check_ownership(program)
-	if error != ""
-		return MirCleanupResult(program, 0, error)
+# Internal transformation; the caller verifies ownership after all passes.
+def mir_insert_exit_cleanup_unchecked(program: MirProgram) -> MirCleanupResult
 	var functions = Array[MirFunction]()
 	var count = 0
 	for function in program.functions
 		let cleaned = mir_cleanup_function(program, function)
 		functions = functions.append(cleaned.function)
 		count += cleaned.releases
-	let result = mir_program_with_types(functions, program.types)
-	return MirCleanupResult(result, count, mir_check_balance(result))
+	return MirCleanupResult(mir_program_with_types(functions, program.types), count, "")
+
+def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
+	let error = mir_check_ownership(program)
+	if error != ""
+		return MirCleanupResult(program, 0, error)
+	let cleaned = mir_insert_exit_cleanup_unchecked(program)
+	return MirCleanupResult(cleaned.program, cleaned.releases, mir_check_balance(cleaned.program))

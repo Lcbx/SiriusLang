@@ -50,19 +50,24 @@ def mir_guard_function(function: MirFunction) -> MirGuardFunction
 		blocks[!current] = MirBlock(instructions, original.terminator)
 	return MirGuardFunction(MirFunction(function.argument_count, function.return_type, registers, blocks, function.entry), count)
 
-def mir_insert_guards(program: MirProgram) -> MirGuardResult
-	let error = mir_check_ownership(program)
-	if error != ""
-		return MirGuardResult(program, 0, error)
+# Internal transformation: callers must verify the input before using it and
+# validate the resulting program before execution or emission.
+def mir_insert_guards_unchecked(program: MirProgram) -> MirGuardResult
 	var functions = Array[MirFunction]()
 	var count = 0
 	for function in program.functions
 		let guarded = mir_guard_function(function)
 		functions = functions.append(guarded.function)
 		count += guarded.guards
-	let result = mir_program_with_types(functions, program.types)
-	let checked = mir_check_ownership(result)
+	return MirGuardResult(mir_program_with_types(functions, program.types), count, "")
+
+def mir_insert_guards(program: MirProgram) -> MirGuardResult
+	let error = mir_check_ownership(program)
+	if error != ""
+		return MirGuardResult(program, 0, error)
+	let guarded = mir_insert_guards_unchecked(program)
+	let checked = mir_check_ownership(guarded.program)
 	if checked != ""
-		return MirGuardResult(result, count, checked)
-	let audited = mir_audit_failures(result)
-	return MirGuardResult(result, count, audited.error)
+		return MirGuardResult(guarded.program, guarded.guards, checked)
+	let audited = mir_audit_failures_unchecked(guarded.program)
+	return MirGuardResult(guarded.program, guarded.guards, audited.error)

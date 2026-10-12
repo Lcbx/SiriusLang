@@ -175,6 +175,23 @@ def mir_return(source: i64) -> MirTerminator
 def mir_panic(message: string) -> MirTerminator
 	return MirTerminator(MIR_PANIC, -1, -1, -1, message)
 
+# Precompute CFG incoming edges once for forward and backward data flow.
+def mir_cfg_predecessors(function: MirFunction) -> Array[Array[i64]]
+	var predecessors = Array[Array[i64]]()
+	for block in function.blocks
+		predecessors = predecessors.append(Array[i64]())
+	for i in 0..len(function.blocks)
+		let term = function.blocks[!i].terminator
+		if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+			var incoming = predecessors[!term.target]
+			incoming = incoming.append(i)
+			predecessors[!term.target] = incoming
+		if term.kind == MIR_BRANCH and term.alternative != term.target
+			var incoming = predecessors[!term.alternative]
+			incoming = incoming.append(i)
+			predecessors[!term.alternative] = incoming
+	return predecessors
+
 # Consuming instructions invalidate their source register. Shared by
 # forward ownership and backward lifetime analyses.
 def mir_consumes_source(ins: MirInstruction) -> bool
@@ -474,10 +491,9 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 # Audit only compiler-produced MIR (after guard insertion). Handwritten MIR
 # may deliberately omit guards and rely on the interpreter/C defensive checks.
 # This verifies annotation completeness, not CFG dominance of the checks.
-def mir_audit_failures(program: MirProgram) -> MirFailureAudit
-	let error = mir_verify(program)
-	if error != ""
-		return MirFailureAudit(error, 0, 0)
+# The pipeline can reuse a preceding MIR verification; the public audit below
+# still checks arbitrary programs on its own.
+def mir_audit_failures_unchecked(program: MirProgram) -> MirFailureAudit
 	var guarded = 0
 	var aborts = 0
 	for function in program.functions
@@ -494,6 +510,12 @@ def mir_audit_failures(program: MirProgram) -> MirFailureAudit
 				if failure.abort
 					aborts += 1
 	return MirFailureAudit("", guarded, aborts)
+
+def mir_audit_failures(program: MirProgram) -> MirFailureAudit
+	let error = mir_verify(program)
+	if error != ""
+		return MirFailureAudit(error, 0, 0)
+	return mir_audit_failures_unchecked(program)
 
 def mir_verify(program: MirProgram) -> string
 	# Reject malformed/noncanonical type descriptors before accessing field tables.
