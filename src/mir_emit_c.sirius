@@ -64,17 +64,34 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	var parts = Array[string]()
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
 	parts = parts.append("typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n")
-	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length; S_MirField fields[]; };\n")
+	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n")
 	parts = parts.append("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n")
-	parts = parts.append("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; return r;\n}\n")
+	parts = parts.append("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; r->capacity = fields; return r;\n}\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_record_reserve_owned(S_MirRecord *r, size_t need) {\n")
+	parts = parts.append("\tif (need <= r->capacity) return r;\n")
+	parts = parts.append("\tconst size_t limit = (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField);\n")
+	parts = parts.append("\tif (need > limit) s_panic(\"collection too large\");\n")
+	parts = parts.append("\tsize_t capacity = r->capacity ? r->capacity : 4;\n")
+	parts = parts.append("\twhile (capacity < need) capacity = capacity > limit / 2 ? limit : capacity * 2;\n")
+	parts = parts.append("\tS_MirRecord *grown = realloc(r, sizeof(S_MirRecord) + capacity * sizeof(S_MirField));\n")
+	parts = parts.append("\tif (!grown) s_panic(\"out of memory\");\n\tgrown->capacity = capacity; return grown;\n}\n")
 	parts = parts.append("static inline S_String *s_mir_string_join(const S_String *sep, const S_MirRecord *parts) {\n")
-	parts = parts.append("\tS_String *out = s_string_from_bytes(\"\", 0);\n")
+	parts = parts.append("\tsize_t total = 0;\n")
 	parts = parts.append("\tfor (size_t i = 0; i < parts->length; ++i) {\n")
-	parts = parts.append("\t\tif (i) { S_String *tmp = s_string_concat(out, sep); s_string_release(out); out = tmp; }\n")
-	parts = parts.append("\t\tS_String *tmp = s_string_concat(out, parts->fields[i].text); s_string_release(out); out = tmp;\n")
-	parts = parts.append("\t}\n\treturn out;\n}\n")
+	parts = parts.append("\t\tconst size_t n = parts->fields[i].text->length;\n")
+	parts = parts.append("\t\tif (n > SIZE_MAX - total - sizeof(S_String) - 1) s_panic(\"string too large\");\n")
+	parts = parts.append("\t\ttotal += n;\n")
+	parts = parts.append("\t\tif (i) { if (sep->length > SIZE_MAX - total - sizeof(S_String) - 1) s_panic(\"string too large\"); total += sep->length; }\n\t}\n")
+	parts = parts.append("\tS_String *out = malloc(sizeof(S_String) + total + 1);\n")
+	parts = parts.append("\tif (!out) s_panic(\"out of memory\");\n")
+	parts = parts.append("\tout->refcount = 1; out->length = total;\n")
+	parts = parts.append("\tsize_t at = 0;\n\tfor (size_t i = 0; i < parts->length; ++i) {\n")
+	parts = parts.append("\t\tif (i) { memcpy(out->data + at, sep->data, sep->length); at += sep->length; }\n")
+	parts = parts.append("\t\tconst S_String *item = parts->fields[i].text;\n")
+	parts = parts.append("\t\tmemcpy(out->data + at, item->data, item->length); at += item->length;\n")
+	parts = parts.append("\t}\n\tout->data[total] = '\\0';\n\treturn out;\n}\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_arguments(int64_t type_id) {\n")
 	parts = parts.append("\tS_Array *args = s_arguments();\n\tsize_t count = s_array_length(args);\n")
 	parts = parts.append("\tS_MirRecord *out = s_mir_record_new(type_id, count);\n")
@@ -168,24 +185,26 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n")
 	parts = parts.append("\tarray->fields[index] = owned; return array;\n}\n\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_array_append_owned(S_MirRecord *array, S_MirField owned) {\n")
-	parts = parts.append("\tif (array->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 1) s_panic(\"array too large\");\n")
-	parts = parts.append("\tS_MirRecord *grown = s_mir_record_new(array->type_id, array->length + 1);\n")
-	parts = parts.append("\tfor (size_t j = 0; j < array->length; ++j) grown->fields[j] = array->fields[j];\n")
-	parts = parts.append("\tswitch (array->type_id) {\n")
+	parts = parts.append("\tif (array->refs > 1) {\n")
+	parts = parts.append("\t\tS_MirRecord *copy = s_mir_record_new(array->type_id, array->length);\n")
+	parts = parts.append("\t\tfor (size_t j = 0; j < array->length; ++j) copy->fields[j] = array->fields[j];\n")
+	parts = parts.append("\t\tswitch (array->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
-			parts = parts.append("\tcase " + str(i) + ":\n")
+			parts = parts.append("\t\tcase " + str(i) + ":\n")
 			if mir_common_managed(desc.first)
-				var field = "grown->fields[j]"
+				var field = "copy->fields[j]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				parts = parts.append("\t\tfor (size_t j = 0; j < array->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n")
-			parts = parts.append("\t\tbreak;\n")
-	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n")
-	parts = parts.append("\tgrown->fields[array->length] = owned;\n\ts_mir_record_release(array);\n\treturn grown;\n}\n\n")
+				parts = parts.append("\t\t\tfor (size_t j = 0; j < copy->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n")
+			parts = parts.append("\t\t\tbreak;\n")
+	parts = parts.append("\t\tdefault: s_panic(\"invalid array type\");\n\t\t}\n")
+	parts = parts.append("\t\ts_mir_record_release(array); array = copy;\n\t}\n")
+	parts = parts.append("\tarray = s_mir_record_reserve_owned(array, array->length + 1);\n")
+	parts = parts.append("\tarray->fields[array->length++] = owned;\n\treturn array;\n}\n\n")
 	parts = parts.append("static inline bool s_mir_key_equal(int64_t type_id, S_MirField a, S_MirField b) {\n")
 	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n\treturn a.bits == b.bits;\n}\n")
 	parts = parts.append("static inline int64_t s_mir_dict_find(const S_MirRecord *dict, int64_t key_type, S_MirField key) {\n")
@@ -217,8 +236,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\t\ts_mir_record_release(dict); dict = copy;\n\t}\n")
 	parts = parts.append("\tint64_t at = s_mir_dict_find(dict, key_type, key);\n")
 	parts = parts.append("\tif (at < 0) {\n\t\tif (dict->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 2) s_panic(\"dictionary too large\");\n")
-	parts = parts.append("\t\tS_MirRecord *grown = realloc(dict, sizeof(S_MirRecord) + (dict->length + 2) * sizeof(S_MirField));\n")
-	parts = parts.append("\t\tif (!grown) s_panic(\"out of memory\");\n\t\tdict = grown;\n")
+	parts = parts.append("\t\tdict = s_mir_record_reserve_owned(dict, dict->length + 2);\n")
 	parts = parts.append("\t\tat = (int64_t)dict->length; dict->length += 2;\n\t} else {\n")
 	parts = parts.append("\t\tswitch (dict->type_id) {\n")
 	for i in 0..len(types.entries)
@@ -582,12 +600,10 @@ def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
 	if term.kind == MIR_BRANCH
 		return mir_c_check(term.operand) + "\tif (" + mir_c_register(term.operand) + ") goto block" + str(term.target) + ";\n\tgoto block" + str(term.alternative) + ";\n"
 	if term.kind == MIR_RETURN
-		var result = mir_c_check(term.operand)
+		var result = mir_c_check(term.operand) + "\treturned = " + mir_c_register(term.operand) + ";\n"
 		if mir_common_managed(function.return_type)
-			result = result + "\t" + mir_c_type(function.return_type) + " returned = " + mir_c_register(term.operand) + ";\n"
-			result = result + mir_c_release_managed(function, term.operand)
-			return result + "\treturn returned;\n"
-		return result + mir_c_release_managed(function, -1) + "\treturn " + mir_c_register(term.operand) + ";\n"
+			result = result + "\tinit" + str(term.operand) + " = false;\n"
+		return result + "\tgoto exit;\n"
 	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
 
 def mir_c_definition(function: MirFunction, index: i64) -> string
@@ -602,6 +618,12 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 		parts = parts.append("\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n")
 	for i in 0..function.argument_count
 		parts = parts.append("\t" + mir_c_register(i) + " = a" + str(i) + "; init" + str(i) + " = true;\n")
+	var has_return = false
+	for block in function.blocks
+		if block.terminator.kind == MIR_RETURN
+			has_return = true
+	if has_return
+		parts = parts.append("\t" + mir_c_type(function.return_type) + " returned = 0;\n")
 	parts = parts.append("\tgoto block" + str(function.entry) + ";\n")
 	for i in 0..len(function.blocks)
 		let block = function.blocks[!i]
@@ -618,6 +640,10 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 			else
 				parts = parts.append(mir_c_instruction(instruction, function))
 		parts = parts.append(mir_c_terminator(block.terminator, function))
+	if has_return
+		parts = parts.append("exit: ;\n")
+		parts = parts.append(mir_c_release_managed(function, -1))
+		parts = parts.append("\treturn returned;\n")
 	parts = parts.append("}\n")
 	return "".join(parts)
 
@@ -631,7 +657,7 @@ def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")
 	var parts = Array[string]()
-	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n")
+	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include <string.h>\n#include \"sirius_runtime.h\"\n\n")
 	parts = parts.append(mir_c_record_runtime(program.types))
 	for i in 0..len(program.functions)
 		parts = parts.append(mir_c_signature(program.functions[!i], i) + ";\n")

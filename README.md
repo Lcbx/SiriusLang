@@ -46,7 +46,8 @@ Three commands have deliberately different responsibilities:
 | `python tools/test_bootstrap.py` | Verify the fixed point and committed C, then run compiler execution and diagnostic fixtures |
 | `python tools/test_bootstrap.py --fixed-point-only` | Verify self-hosting and committed C without running language fixtures |
 | `python tools/test_compiler.py` | Test the default C emitter built directly from the committed C bootstrap |
-| `python tools/probe_mir_selfhost.py --require-ready` | Probe MIR-only compiler generation; **not** a self-hosting fixed-point test |
+| `python tools/probe_mir_selfhost.py --require-ready` | Quick MIR-only source-generation probe; **not** a fixed-point test |
+| `python tools/test_mir_selfhost.py` | Build the standalone MIR compiler, compile successive native generations and compare their C byte-for-byte; run MIR runtime smoke cases (prefers Clang for the large generated C) |
 
 Normal changes to the Sirius compiler:
 
@@ -82,7 +83,8 @@ Run individual suites as needed:
 | `python tools/test_mir.py` | Hand-constructed executable MIR and verifier |
 | `python tools/test_mir_lower.py` | HIR → MIR lowering and interpreter execution |
 | `python tools/test_mir_program.py` | Linked concrete MIR specializations |
-| `python tools/test_mir_c.py` | Differential MIR-C / legacy-C cases |
+| `python tools/test_mir_c.py` | Differential MIR-C / legacy-C cases, including compound assignments |
+| `python tools/test_mir_selfhost.py` | Native MIR stage-2/3/4 fixed point and targeted runtime regressions |
 | `python tools/test_mir_migration.py` | Source feature parity against legacy emission |
 | `python tools/test_mir_interpreter.py` | MIR interpreter behavior |
 | `tools/test_mir_*.py` | Focused MIR behavior and ownership tests (run scripts individually) |
@@ -128,10 +130,12 @@ specialization lowering, explicit ownership operations, guard insertion, livenes
 last-use release insertion and exit cleanup. It supports numerous source-level
 scalar, string, record, array, dictionary and optional operations. However,
 some nested projection updates, record spreads and inference cases still prevent
-complete MIR-only compilation of the compiler. **No MIR-only self-hosting fixed
-point has been demonstrated.** Arrays use CoW for consuming updates; some
-updates (including `Array.append`) still use conservative copying instead of
-unique-owner reuse. MIR interpreter file-I/O parity is incomplete.
+full MIR/legacy fixture parity. **MIR-only self-hosting reaches a native C
+fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
+emitter in their sources. Arrays use CoW for consuming updates and amortized
+in-place append for unique owners; string join allocates once. The MIR C emitter
+shares managed-value cleanup across return paths to reduce generated C size.
+MIR interpreter file-I/O parity is incomplete.
 
 Modules/imports, multidimensional arrays, broadcasting, full effect/purity
 checking, universal runtime type descriptors and concurrent map are future work.

@@ -10,6 +10,9 @@ from source_manifest import COMPILER_SOURCES, normalize_newlines
 
 
 CASES = {
+	'augmented_local': 'def main() -> i64\n\tvar i = 0\n\tvar total = 0\n\twhile i < 7\n\t\ti += 1\n\t\ttotal += i\n\treturn total\n',
+	'augmented_record': 'rec Counter(value: i64)\n\tpub value\ndef main() -> i64\n\tvar c = Counter(1)\n\tc.value += 2\n\tc.value *= 3\n\treturn c.value\n',
+	'augmented_string': 'def main() -> i64\n\tvar s = "a"\n\ts += "bc"\n\treturn len(s)\n',
 	'arithmetic': 'def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n',
 	'factorial': 'def factorial(n: i64) -> i64\n\tif n <= 1\n\t\treturn 1\n\treturn n * factorial(n - 1)\ndef main() -> i64\n\treturn factorial(5)\n',
 	'mutual': 'def even(n: i64) -> bool\n\tif n == 0\n\t\treturn true\n\treturn odd(n - 1)\ndef odd(n: i64) -> bool\n\tif n == 0\n\t\treturn false\n\treturn even(n - 1)\ndef main() -> i64\n\tif even(6)\n\t\treturn 42\n\treturn 0\n',

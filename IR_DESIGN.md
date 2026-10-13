@@ -6,7 +6,7 @@ The intended pipeline is **tokens → syntax AST → typed/specialized HIR → o
 
 ### Incremental source-to-MIR migration
 
-The HIR worklist now resolves named `rec` return/parameter annotations by canonical published fields, including nested `Array`/`Optional`/`Dict` annotations. Constructor calls are lowered directly into `MIR_RECORD_NEW` in published-field evaluation order, with canonical physical ordering. Top-level integer constants are resolved independently of the C emitter. The lowering additionally supports empty typed arrays, array append (`MIR_ARRAY_APPEND`, consuming owner), array/range `for`, loop control, expression statements, and CLI/file/string conversion intrinsics. Native MIR-C initializes the arguments runtime and converts CLI strings into MIR-owned arrays; MIR interpreter file reads are deferred. All these remain experimental until MIR self-hosting and fixture parity are established.
+The HIR worklist now resolves named `rec` return/parameter annotations by canonical published fields, including nested `Array`/`Optional`/`Dict` annotations. Constructor calls are lowered directly into `MIR_RECORD_NEW` in published-field evaluation order, with canonical physical ordering. Top-level integer constants are resolved independently of the C emitter. The lowering additionally supports empty typed arrays, array append (`MIR_ARRAY_APPEND`, consuming owner), array/range `for`, loop control, expression statements, and CLI/file/string conversion intrinsics. Native MIR-C initializes the arguments runtime and converts CLI strings into MIR-owned arrays; MIR interpreter file reads are deferred. MIR-only native self-hosting now reaches a fixed point; fixture parity remains incomplete.
 
 ### Concrete specialization worklist (implemented subset)
 
@@ -201,4 +201,4 @@ projection updates are deferred.
 
 `MIR_ONLY_COMPILER_SOURCES` excludes the legacy emitter to make self-hosting
 coverage measurable independently. The production/default C path is unchanged;
-a complete MIR-only self-hosting fixed point has not been established.
+a native MIR-only fixed point is verified through generations 2, 3 and 4 by `tools/test_mir_selfhost.py`, though full legacy fixture parity is pending.
