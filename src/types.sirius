@@ -17,35 +17,38 @@ rec RecordField(name: string, kind: i64)
 
 rec TypeDescriptor(tag: i64, first: i64, second: i64, fields: Array[RecordField])
 
-rec TypeTable(entries: Array[TypeDescriptor])
+rec TypeTable(entries: Array[TypeDescriptor], lookup: Dict[string,i64])
 
 rec InternedType(table: TypeTable, id: i64)
 
+# Interned type keys are based on canonical child TypeIds and sorted fields.
+# Identifier names cannot contain the separators, so the encoding is unique.
+def type_descriptor_key(tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> string
+	var parts = Array[string]()
+	parts = parts.append(str(tag) + "|" + str(first) + "|" + str(second) + "|")
+	for field in fields
+		parts = parts.append(str(len(field.name)) + ":" + field.name + ":" + str(field.kind) + ";")
+	return "".join(parts)
+
 def new_type_table() -> TypeTable
 	var entries = Array[TypeDescriptor]()
+	var lookup = Dict[string,i64]()
 	for tag in 0..6
 		entries = entries.append(TypeDescriptor(tag, 0, 0, Array[RecordField]()))
-	return TypeTable(entries)
+		lookup = lookup.insert(type_descriptor_key(tag, 0, 0, Array[RecordField]()), tag)
+	return TypeTable(entries, lookup)
 
-# Input record fields are already sorted by name. Equal descriptors always
-# receive the same TypeId, including when their nested types were interned
-# through different paths.
+# Canonical fields are sorted by the caller. A repeated descriptor reuses its
+# existing TypeId; fresh IDs retain the same deterministic insertion order.
 def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
-	for i in 0..len(table.entries)
-		let entry = table.entries[!i]
-		if entry.tag != tag or entry.first != first or entry.second != second or len(entry.fields) != len(fields)
-			continue
-		var equal = true
-		for j in 0..len(fields)
-			let a = entry.fields[!j]
-			let b = fields[!j]
-			if a.name != b.name or a.kind != b.kind
-				equal = false
-		if equal
-			return InternedType(table, i)
+	let key = type_descriptor_key(tag, first, second, fields)
+	let existing = table.lookup.get(key) or -1
+	if existing >= 0
+		return InternedType(table, existing)
 	var next = table
 	let id = len(next.entries)
 	next.entries = next.entries.append(TypeDescriptor(tag, first, second, fields))
+	next.lookup = next.lookup.insert(key, id)
 	return InternedType(next, id)
 
 def intern_array_type(table: TypeTable, element: i64) -> InternedType

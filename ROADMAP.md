@@ -30,6 +30,15 @@ When the new compiler adds syntax or semantics that the previous seed cannot com
 
 The Python scripts under `tools/` are test/build orchestration and remain permitted; **`bootstrap_python/` itself is archival**.
 
+### HIR/MIR performance sequence
+
+- [x] Index typed HIR annotations by syntax-node ID per specialization (sparse lookup, preserving distinct operations on the same node).
+- [x] Buffer MIR-C output through string fragments and join once per generated section/function/program.
+- [x] Index canonical type descriptors by stable keys, preserving TypeIds. An analogous specialization signature cache was benchmarked and reverted because its key construction made generation slower.
+- [x] Split lowering into read-only `MirLowerContext` and mutable `MirBuilder`, passed separately to expression and statement lowering.
+- [x] Reduce CFG forward ownership CoW copies with cached sparse block write effects and in-place joins; further liveness/packed-bitset work depends on profiling.
+- [ ] Consider compact MIR instruction layout only after the higher-priority improvements.
+
 ## 3. Technical and organizational debt
 
 | Priority | Debt | Evidence / risk | Recommended remedy |
@@ -143,6 +152,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [ ] Add array append and record spreads/updates; validate ownership data-flow for all CFG exits.
 - [x] Replace repeated full-graph ownership/liveness sweeps with queued CFG worklists and precomputed predecessors; store liveness in dense 0/1 register masks. Add a branching/backedge regression (`tools/test_mir_dataflow.py`). Follow up with packed bitsets only if profiling justifies them. Edge cleanup now uses a single may-ownership/liveness snapshot and conditional releases instead of re-solving the full CFG per edge, substantially reducing MIR-only compiler generation time.
 - [x] Eliminate repeated MIR ownership/structure checks between guard, lifetime and exit-cleanup transforms in the combined compiler pipeline, retaining public pass validation and final balance/failure audits. Compare MIR-only generation output byte-for-byte against the previous compiler.
+- [x] Propagate must-initialization and may-ownership in one forward worklist for managed CFG balance checks, retaining must-only and may-only entry points. Test joins, backedges and unreachable blocks (`tools/test_mir_ownership_combined.py`).
 - [x] Share CFG reachability/predecessors and the must-initialization result during final ownership-balance verification; skip may-ownership dataflow for scalar-only functions. Keep standalone ownership checking and invalid-read diagnostics unchanged.
 - [x] Add a conservative backward CFG liveness pass, integrated into HIR→MIR construction. It inserts last-use `MIR_RELEASE` for managed registers across branches and loops, with idempotency and interpreted/native tests (`tools/test_mir_lifetime.py`).
 - [x] Lower checked division/remainder, array access/CoW updates, and optional unwrap into explicit guarded panic CFG edges before lifetime insertion; exercise both backends and ownership cleanup (`tools/test_mir_guard.py`).

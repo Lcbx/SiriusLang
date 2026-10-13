@@ -93,6 +93,22 @@ Indexing uses `a[?i]` for optional reads, `a[!i]` for checked reads/updates, and
 
 The counts describe the current fixtures, not full conformance. The active tokenizer, parser, emitter and bootstrap tests use **only the committed C compiler** as their compiler seed. Python orchestrates tests but does not compile Sirius. The historical `bootstrap_python/` tests may still be run manually for archival comparison.
 
+## HIR/MIR performance work
+
+HIR-to-MIR lowering now builds a per-specialization sparse annotation index keyed
+by syntax-node ID; it no longer scans the typed HIR for each expression. Canonical
+`TypeId` interning uses a descriptor-key cache while preserving insertion-order
+IDs. MIR-C emission buffers runtime sections and function bodies as string
+fragments, joining each result once instead of repeatedly copying accumulated C.
+
+MIR lowering now passes a read-only `MirLowerContext` separately from its
+mutable `MirBuilder`, avoiding repeated CoW ownership of AST/HIR/type metadata.
+Forward CFG ownership analysis caches instruction write effects per block and
+applies each block transfer once per worklist iteration. CFG joins update a
+single CoW-owned register mask instead of allocating a new mask for every
+predecessor. MIR instruction storage remains unchanged; the legacy emitter is
+still the default.
+
 ## Repository map
 
 ```text
@@ -151,6 +167,8 @@ The experimental `--mir-c` backend supports optional rank-1 array indexing (`a[?
 The combined HIR→MIR compiler pipeline validates the initial MIR and the final cleaned CFG (including ownership balance and runtime-failure audit) without repeating verification after every intermediate pass. Public individual guard, lifetime and cleanup functions retain their input/output validation, so they remain safe to use independently. This avoids redundant CFG fixed-point work while producing identical C.
 
 The experimental HIR→MIR pipeline first converts division/remainder, checked array access/mutation and optional unwrap failures into explicit guarded CFG `Panic` exits (`src/mir_guard.sirius`), then runs backward CFG last-use release insertion (`src/mir_lifetime.sirius`), forward definite-initialization/move verification (`src/mir_ownership.sirius`), then path-sensitive exit cleanup (`src/mir_cleanup.sirius`). The cleanup pass releases dead managed values along CFG edges and at explicit `Return`/`Panic` terminators, including unused arguments, while preserving returned references. A forward may-initialization analysis and `MIR_RELEASE_IF_INIT` now handle values present on only some paths; `mir_check_balance` verifies that all managed registers other than a returned value are released at reachable explicit exits. The analyses share register-read definitions; existing backend return cleanup remains defensive. These covered failures now pass through MIR cleanup before panicking; allocation failures, other runtime checks, and arbitrary host panics remain non-unwinding. See `tools/test_mir_lifetime.py`, `tools/test_mir_ownership.py`, and `tools/test_mir_exit_cleanup.py`, and `tools/test_mir_balance.py`.
+
+Final ownership-balance checking now propagates must-initialized and may-initialized masks in a single forward CFG worklist. Standalone ownership/liveness APIs retain selective analysis, avoiding unnecessary may-ownership work for scalar-only functions. `python tools/test_mir_ownership_combined.py` checks joins, backedges and unreachable blocks.
 
 The MIR ownership and lifetime analyses use dense per-register 0/1 arrays and worklist-based CFG fixed points, with shared precomputed predecessor lists. These replace sparse liveness membership scans and repeated whole-graph passes. Edge cleanup also uses a single ownership/liveness snapshot per function, inserting `MIR_RELEASE_IF_INIT` on dead edges rather than recomputing global states after each edit; a final balance check validates the rewritten CFG. The current seed compiler does not accept `Array[bool]` in these record fields, so the masks use `Array[i64]` until that language capability is available. Run `python tools/test_mir_dataflow.py` for the long branching/backedge regression.
 

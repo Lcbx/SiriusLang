@@ -10,6 +10,34 @@ let HIR_UNARY = 5
 
 rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)
 
+# Index source AST node IDs to their typed annotations. Multiple operations may
+# annotate one syntax node; chaining keeps lookup local to that node.
+rec HirAnnotationIndex(heads: Dict[i64,i64], previous: Array[i64], source_count: i64)
+
+def hir_annotation_index(nodes: Array[HirNode], source_count: i64) -> HirAnnotationIndex
+	var heads = Dict[i64,i64]()
+	var previous = Array[i64]()
+	for node in nodes
+		previous = previous.append(-1)
+	# Preserve the first annotation for any repeated (source, operation) pair.
+	for offset in 0..len(nodes)
+		let i = len(nodes) - offset - 1
+		let source = nodes[!i].source
+		if source >= 0 and source < source_count
+			previous[!i] = heads.get(source) or -1
+			heads = heads.insert(source, i)
+	return HirAnnotationIndex(heads, previous, source_count)
+
+def hir_annotation_find(nodes: Array[HirNode], index: HirAnnotationIndex, source: i64, operation: i64) -> i64
+	if source < 0 or source >= index.source_count
+		return -1
+	var at = index.heads.get(source) or -1
+	while at >= 0
+		if nodes[!at].operation == operation
+			return at
+		at = index.previous[!at]
+	return -1
+
 rec HirResolution(type_id: i64, field_index: i64, error: string)
 
 # Bindings belong to semantic resolution; the C backend merely retains their

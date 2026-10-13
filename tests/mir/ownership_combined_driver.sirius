@@ -1,0 +1,55 @@
+# Verify the shared must/may worklist across joins, a backedge, and unreachable code.
+
+def ownership_combined_program() -> MirProgram
+	let yes = Array[MirInstruction]().append(mir_string(1, "owned"))
+	let released = Array[MirInstruction]().append(mir_op(MIR_RELEASE_IF_INIT, 1, 1, -1, 0))
+	var finished = Array[MirInstruction]().append(mir_op(MIR_RELEASE_IF_INIT, 1, 1, -1, 0))
+	finished = finished.append(mir_op(MIR_CONST_I64, 2, -1, -1, 7))
+	let unreachable = Array[MirInstruction]().append(mir_string(1, "unreachable"))
+	var blocks = Array[MirBlock]()
+	blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_branch(0, 1, 2)))
+	blocks = blocks.append(MirBlock(yes, mir_jump(3)))
+	blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_jump(3)))
+	blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_branch(0, 4, 5)))
+	blocks = blocks.append(MirBlock(released, mir_jump(0)))
+	blocks = blocks.append(MirBlock(finished, mir_return(2)))
+	blocks = blocks.append(MirBlock(unreachable, mir_return(2)))
+	return MirProgram([MirFunction(1, TYPE_TAG_I64, [TYPE_TAG_BOOL, TYPE_TAG_STRING, TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	let program = ownership_combined_program()
+	let function = program.functions[!0]
+	let reached = mir_ownership_reachable(function)
+	let predecessors = mir_cfg_predecessors(function)
+	let combined = mir_ownership_analyze_cfg(function, true, true, reached, predecessors)
+	let must = mir_ownership_states(function)
+	let maybe = mir_ownership_maybe_states(function)
+	if reached[!6] != 0 or len(combined.must) != len(function.blocks) or len(combined.maybe) != len(function.blocks)
+		return 1
+	for i in 0..len(function.blocks)
+		if not mir_ownership_equal(combined.must[!i].incoming, must[!i].incoming) or not mir_ownership_equal(combined.must[!i].outgoing, must[!i].outgoing)
+			return 2
+		if not mir_ownership_equal(combined.maybe[!i].incoming, maybe[!i].incoming) or not mir_ownership_equal(combined.maybe[!i].outgoing, maybe[!i].outgoing)
+			return 3
+	if combined.must[!3].incoming[!1] != 0 or combined.maybe[!3].incoming[!1] != 1
+		return 4
+	if combined.must[!4].outgoing[!1] != 0 or combined.maybe[!4].outgoing[!1] != 0
+		return 5
+	if mir_check_balance(program) != ""
+		return 6
+	# Block effects must preserve sequential writes, including reinitialization.
+	var writes = Array[MirInstruction]()
+	writes = writes.append(mir_string(1, "first"))
+	writes = writes.append(mir_op(MIR_MOVE, 2, 1, -1, 0))
+	writes = writes.append(mir_string(1, "again"))
+	writes = writes.append(mir_op(MIR_RELEASE_IF_INIT, 2, 2, -1, 0))
+	let block = MirBlock(writes, mir_return(1))
+	let initial = [1, 0, 0]
+	var sequential = initial
+	for ins in block.instructions
+		sequential = mir_ownership_after(ins, sequential)
+	let summarized = mir_ownership_apply_effects(initial, mir_ownership_effects(block))
+	if not mir_ownership_equal(sequential, summarized)
+		return 7
+	print("PASS MIR combined forward ownership")
+	return 0

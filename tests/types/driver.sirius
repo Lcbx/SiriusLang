@@ -36,5 +36,10 @@ def main() -> i64
 		return 6
 	if len(changed.table.entries) != len(record2.table.entries) + 1
 		return 7
+	# Distinct descriptors must not collide through field-name delimiters.
+	let unusual = intern_record_type(changed.table, [RecordField("a:1;b", TYPE_TAG_I64)])
+	let other = intern_record_type(unusual.table, [RecordField("a", TYPE_TAG_I64), RecordField("b", TYPE_TAG_I64)])
+	if unusual.id == other.id
+		return 8
 	print("PASS canonical type descriptors")
 	return 0

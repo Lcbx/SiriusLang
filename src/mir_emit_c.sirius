@@ -61,29 +61,30 @@ def mir_c_release_managed(function: MirFunction, except: i64) -> string
 	return result
 
 def mir_c_record_runtime(types: TypeTable) -> string
-	var result = "typedef struct S_MirRecord S_MirRecord;\n"
-	result = result + "typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n"
-	result = result + "struct S_MirRecord { int64_t type_id; size_t refs, length; S_MirField fields[]; };\n"
-	result = result + "static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n"
-	result = result + "\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n"
-	result = result + "\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; return r;\n}\n"
-	result = result + "static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n"
-	result = result + "static inline S_String *s_mir_string_join(const S_String *sep, const S_MirRecord *parts) {\n"
-	result = result + "\tS_String *out = s_string_from_bytes(\"\", 0);\n"
-	result = result + "\tfor (size_t i = 0; i < parts->length; ++i) {\n"
-	result = result + "\t\tif (i) { S_String *tmp = s_string_concat(out, sep); s_string_release(out); out = tmp; }\n"
-	result = result + "\t\tS_String *tmp = s_string_concat(out, parts->fields[i].text); s_string_release(out); out = tmp;\n"
-	result = result + "\t}\n\treturn out;\n}\n"
-	result = result + "static inline S_MirRecord *s_mir_arguments(int64_t type_id) {\n"
-	result = result + "\tS_Array *args = s_arguments();\n\tsize_t count = s_array_length(args);\n"
-	result = result + "\tS_MirRecord *out = s_mir_record_new(type_id, count);\n"
-	result = result + "\tfor (size_t i = 0; i < count; ++i) out->fields[i].text = s_string_retain(*(S_String *const *)s_array_at(args, (int64_t)i));\n"
-	result = result + "\ts_array_release(args);\n\treturn out;\n}\n"
-	result = result + "static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n"
+	var parts = Array[string]()
+	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
+	parts = parts.append("typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n")
+	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length; S_MirField fields[]; };\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n")
+	parts = parts.append("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n")
+	parts = parts.append("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; r->length = fields; return r;\n}\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) ++r->refs; return r; }\n")
+	parts = parts.append("static inline S_String *s_mir_string_join(const S_String *sep, const S_MirRecord *parts) {\n")
+	parts = parts.append("\tS_String *out = s_string_from_bytes(\"\", 0);\n")
+	parts = parts.append("\tfor (size_t i = 0; i < parts->length; ++i) {\n")
+	parts = parts.append("\t\tif (i) { S_String *tmp = s_string_concat(out, sep); s_string_release(out); out = tmp; }\n")
+	parts = parts.append("\t\tS_String *tmp = s_string_concat(out, parts->fields[i].text); s_string_release(out); out = tmp;\n")
+	parts = parts.append("\t}\n\treturn out;\n}\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_arguments(int64_t type_id) {\n")
+	parts = parts.append("\tS_Array *args = s_arguments();\n\tsize_t count = s_array_length(args);\n")
+	parts = parts.append("\tS_MirRecord *out = s_mir_record_new(type_id, count);\n")
+	parts = parts.append("\tfor (size_t i = 0; i < count; ++i) out->fields[i].text = s_string_retain(*(S_String *const *)s_array_at(args, (int64_t)i));\n")
+	parts = parts.append("\ts_array_release(args);\n\treturn out;\n}\n")
+	parts = parts.append("static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n")
 	for i in 0..len(types.entries)
 		let type_desc = types.entries[!i]
 		if type_desc.tag == TYPE_TAG_RECORD
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			for j in 0..len(type_desc.fields)
 				let field_type = type_desc.fields[!j].kind
 				if mir_common_managed(field_type)
@@ -92,20 +93,20 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".text"
 					else
 						field = field + ".record"
-					result = result + "\t\t" + mir_c_release_value(field_type, field) + ";\n"
-			result = result + "\t\tbreak;\n"
+					parts = parts.append("\t\t" + mir_c_release_value(field_type, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
 		elif type_desc.tag == TYPE_TAG_OPTIONAL
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			if mir_common_managed(type_desc.first)
 				var field = "r->fields[0]"
 				if type_desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + "\t\tif (r->length) " + mir_c_release_value(type_desc.first, field) + ";\n"
-			result = result + "\t\tbreak;\n"
+				parts = parts.append("\t\tif (r->length) " + mir_c_release_value(type_desc.first, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
 		elif type_desc.tag == TYPE_TAG_DICT
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			for part in 0..2
 				var kind = type_desc.first
 				var offset = "0"
@@ -118,86 +119,86 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".text"
 					else
 						field = field + ".record"
-					result = result + "\t\tfor (size_t j = 0; j < r->length; j += 2) " + mir_c_release_value(kind, field) + ";\n"
-			result = result + "\t\tbreak;\n"
+					parts = parts.append("\t\tfor (size_t j = 0; j < r->length; j += 2) " + mir_c_release_value(kind, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
 		elif type_desc.tag == TYPE_TAG_ARRAY
 			let element_type = type_desc.first
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			if mir_common_managed(element_type)
 				var field = "r->fields[j]"
 				if element_type == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + "\t\tfor (size_t j = 0; j < r->length; ++j) " + mir_c_release_value(element_type, field) + ";\n"
-			result = result + "\t\tbreak;\n"
-	result = result + "\tdefault: s_panic(\"unknown managed type\");\n\t}\n\tfree(r);\n}\n\n"
-	result = result + "static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n"
-	result = result + "\tif (index < 0 || (uint64_t)index >= array->length) s_panic(\"array index out of bounds\");\n"
-	result = result + "\tif (array->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(array->type_id, array->length);\n"
-	result = result + "\t\tfor (size_t j = 0; j < array->length; ++j) copy->fields[j] = array->fields[j];\n"
-	result = result + "\t\tswitch (array->type_id) {\n"
+				parts = parts.append("\t\tfor (size_t j = 0; j < r->length; ++j) " + mir_c_release_value(element_type, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
+	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n\tfree(r);\n}\n\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n")
+	parts = parts.append("\tif (index < 0 || (uint64_t)index >= array->length) s_panic(\"array index out of bounds\");\n")
+	parts = parts.append("\tif (array->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(array->type_id, array->length);\n")
+	parts = parts.append("\t\tfor (size_t j = 0; j < array->length; ++j) copy->fields[j] = array->fields[j];\n")
+	parts = parts.append("\t\tswitch (array->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
-			result = result + "\t\tcase " + str(i) + ":\n"
+			parts = parts.append("\t\tcase " + str(i) + ":\n")
 			if mir_common_managed(desc.first)
 				var field = "copy->fields[j]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + "\t\t\tfor (size_t j = 0; j < copy->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n"
-			result = result + "\t\t\tbreak;\n"
-	result = result + "\t\tdefault: s_panic(\"invalid array type\");\n\t\t}\n"
-	result = result + "\t\ts_mir_record_release(array); array = copy;\n\t}\n"
-	result = result + "\tswitch (array->type_id) {\n"
+				parts = parts.append("\t\t\tfor (size_t j = 0; j < copy->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n")
+			parts = parts.append("\t\t\tbreak;\n")
+	parts = parts.append("\t\tdefault: s_panic(\"invalid array type\");\n\t\t}\n")
+	parts = parts.append("\t\ts_mir_record_release(array); array = copy;\n\t}\n")
+	parts = parts.append("\tswitch (array->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			if mir_common_managed(desc.first)
 				var field = "array->fields[index]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + "\t\t" + mir_c_release_value(desc.first, field) + ";\n"
-			result = result + "\t\tbreak;\n"
-	result = result + "\tdefault: s_panic(\"invalid array type\");\n\t}\n"
-	result = result + "\tarray->fields[index] = owned; return array;\n}\n\n"
-	result = result + "static inline S_MirRecord *s_mir_array_append_owned(S_MirRecord *array, S_MirField owned) {\n"
-	result = result + "\tif (array->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 1) s_panic(\"array too large\");\n"
-	result = result + "\tS_MirRecord *grown = s_mir_record_new(array->type_id, array->length + 1);\n"
-	result = result + "\tfor (size_t j = 0; j < array->length; ++j) grown->fields[j] = array->fields[j];\n"
-	result = result + "\tswitch (array->type_id) {\n"
+				parts = parts.append("\t\t" + mir_c_release_value(desc.first, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n")
+	parts = parts.append("\tarray->fields[index] = owned; return array;\n}\n\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_array_append_owned(S_MirRecord *array, S_MirField owned) {\n")
+	parts = parts.append("\tif (array->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 1) s_panic(\"array too large\");\n")
+	parts = parts.append("\tS_MirRecord *grown = s_mir_record_new(array->type_id, array->length + 1);\n")
+	parts = parts.append("\tfor (size_t j = 0; j < array->length; ++j) grown->fields[j] = array->fields[j];\n")
+	parts = parts.append("\tswitch (array->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_ARRAY
-			result = result + "\tcase " + str(i) + ":\n"
+			parts = parts.append("\tcase " + str(i) + ":\n")
 			if mir_common_managed(desc.first)
 				var field = "grown->fields[j]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + "\t\tfor (size_t j = 0; j < array->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n"
-			result = result + "\t\tbreak;\n"
-	result = result + "\tdefault: s_panic(\"invalid array type\");\n\t}\n"
-	result = result + "\tgrown->fields[array->length] = owned;\n\ts_mir_record_release(array);\n\treturn grown;\n}\n\n"
-	result = result + "static inline bool s_mir_key_equal(int64_t type_id, S_MirField a, S_MirField b) {\n"
-	result = result + "\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n\treturn a.bits == b.bits;\n}\n"
-	result = result + "static inline int64_t s_mir_dict_find(const S_MirRecord *dict, int64_t key_type, S_MirField key) {\n"
-	result = result + "\tfor (size_t j = 0; j < dict->length; j += 2) if (s_mir_key_equal(key_type, dict->fields[j], key)) return (int64_t)j;\n"
-	result = result + "\treturn -1;\n}\n"
-	result = result + "static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *dict, int64_t key_type, S_MirField key, S_MirField value) {\n"
-	result = result + "\tif (dict->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(dict->type_id, dict->length);\n"
-	result = result + "\t\tfor (size_t j = 0; j < dict->length; ++j) copy->fields[j] = dict->fields[j];\n"
-	result = result + "\t\tswitch (dict->type_id) {\n"
+				parts = parts.append("\t\tfor (size_t j = 0; j < array->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n")
+	parts = parts.append("\tgrown->fields[array->length] = owned;\n\ts_mir_record_release(array);\n\treturn grown;\n}\n\n")
+	parts = parts.append("static inline bool s_mir_key_equal(int64_t type_id, S_MirField a, S_MirField b) {\n")
+	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n\treturn a.bits == b.bits;\n}\n")
+	parts = parts.append("static inline int64_t s_mir_dict_find(const S_MirRecord *dict, int64_t key_type, S_MirField key) {\n")
+	parts = parts.append("\tfor (size_t j = 0; j < dict->length; j += 2) if (s_mir_key_equal(key_type, dict->fields[j], key)) return (int64_t)j;\n")
+	parts = parts.append("\treturn -1;\n}\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *dict, int64_t key_type, S_MirField key, S_MirField value) {\n")
+	parts = parts.append("\tif (dict->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(dict->type_id, dict->length);\n")
+	parts = parts.append("\t\tfor (size_t j = 0; j < dict->length; ++j) copy->fields[j] = dict->fields[j];\n")
+	parts = parts.append("\t\tswitch (dict->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_DICT
-			result = result + "\t\tcase " + str(i) + ":\n"
+			parts = parts.append("\t\tcase " + str(i) + ":\n")
 			for part in 0..2
 				var kind = desc.first
 				var offset = "0"
@@ -210,20 +211,20 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".text"
 					else
 						field = field + ".record"
-					result = result + "\t\t\tfor (size_t j = 0; j < copy->length; j += 2) " + mir_c_retain_value(kind, field) + ";\n"
-			result = result + "\t\t\tbreak;\n"
-	result = result + "\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n"
-	result = result + "\t\ts_mir_record_release(dict); dict = copy;\n\t}\n"
-	result = result + "\tint64_t at = s_mir_dict_find(dict, key_type, key);\n"
-	result = result + "\tif (at < 0) {\n\t\tif (dict->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 2) s_panic(\"dictionary too large\");\n"
-	result = result + "\t\tS_MirRecord *grown = realloc(dict, sizeof(S_MirRecord) + (dict->length + 2) * sizeof(S_MirField));\n"
-	result = result + "\t\tif (!grown) s_panic(\"out of memory\");\n\t\tdict = grown;\n"
-	result = result + "\t\tat = (int64_t)dict->length; dict->length += 2;\n\t} else {\n"
-	result = result + "\t\tswitch (dict->type_id) {\n"
+					parts = parts.append("\t\t\tfor (size_t j = 0; j < copy->length; j += 2) " + mir_c_retain_value(kind, field) + ";\n")
+			parts = parts.append("\t\t\tbreak;\n")
+	parts = parts.append("\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n")
+	parts = parts.append("\t\ts_mir_record_release(dict); dict = copy;\n\t}\n")
+	parts = parts.append("\tint64_t at = s_mir_dict_find(dict, key_type, key);\n")
+	parts = parts.append("\tif (at < 0) {\n\t\tif (dict->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 2) s_panic(\"dictionary too large\");\n")
+	parts = parts.append("\t\tS_MirRecord *grown = realloc(dict, sizeof(S_MirRecord) + (dict->length + 2) * sizeof(S_MirField));\n")
+	parts = parts.append("\t\tif (!grown) s_panic(\"out of memory\");\n\t\tdict = grown;\n")
+	parts = parts.append("\t\tat = (int64_t)dict->length; dict->length += 2;\n\t} else {\n")
+	parts = parts.append("\t\tswitch (dict->type_id) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_DICT
-			result = result + "\t\tcase " + str(i) + ":\n"
+			parts = parts.append("\t\tcase " + str(i) + ":\n")
 			for part in 0..2
 				var kind = desc.first
 				var offset = "0"
@@ -236,43 +237,43 @@ def mir_c_record_runtime(types: TypeTable) -> string
 						field = field + ".text"
 					else
 						field = field + ".record"
-					result = result + "\t\t\t" + mir_c_release_value(kind, field) + ";\n"
-			result = result + "\t\t\tbreak;\n"
-	result = result + "\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n\t}\n"
-	result = result + "\tdict->fields[at] = key; dict->fields[at + 1] = value; return dict;\n}\n\n"
-	result = result + "static inline S_MirRecord *s_mir_optional_from_array(S_MirRecord *array, int64_t index, int64_t optional_type) {\n"
-	result = result + "\tS_MirRecord *optional = s_mir_record_new(optional_type, index < 0 || (uint64_t)index >= array->length ? 0 : 1);\n"
-	result = result + "\tif (optional->length) { optional->fields[0] = array->fields[index]; switch (optional_type) {\n"
+					parts = parts.append("\t\t\t" + mir_c_release_value(kind, field) + ";\n")
+			parts = parts.append("\t\t\tbreak;\n")
+	parts = parts.append("\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n\t}\n")
+	parts = parts.append("\tdict->fields[at] = key; dict->fields[at + 1] = value; return dict;\n}\n\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_array(S_MirRecord *array, int64_t index, int64_t optional_type) {\n")
+	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, index < 0 || (uint64_t)index >= array->length ? 0 : 1);\n")
+	parts = parts.append("\tif (optional->length) { optional->fields[0] = array->fields[index]; switch (optional_type) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_OPTIONAL
-			result = result + "\tcase " + str(i) + ": "
+			parts = parts.append("\tcase " + str(i) + ": ")
 			if mir_common_managed(desc.first)
 				var field = "optional->fields[0]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + mir_c_retain_value(desc.first, field) + "; "
-			result = result + "break;\n"
-	result = result + "\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n"
-	result = result + "static inline S_MirRecord *s_mir_optional_from_dict(S_MirRecord *dict, int64_t at, int64_t optional_type) {\n"
-	result = result + "\tS_MirRecord *optional = s_mir_record_new(optional_type, at < 0 ? 0 : 1);\n"
-	result = result + "\tif (at >= 0) { optional->fields[0] = dict->fields[at + 1]; switch (optional_type) {\n"
+				parts = parts.append(mir_c_retain_value(desc.first, field) + "; ")
+			parts = parts.append("break;\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_dict(S_MirRecord *dict, int64_t at, int64_t optional_type) {\n")
+	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, at < 0 ? 0 : 1);\n")
+	parts = parts.append("\tif (at >= 0) { optional->fields[0] = dict->fields[at + 1]; switch (optional_type) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_OPTIONAL
-			result = result + "\tcase " + str(i) + ": "
+			parts = parts.append("\tcase " + str(i) + ": ")
 			if mir_common_managed(desc.first)
 				var field = "optional->fields[0]"
 				if desc.first == TYPE_TAG_STRING
 					field = field + ".text"
 				else
 					field = field + ".record"
-				result = result + mir_c_retain_value(desc.first, field) + "; "
-			result = result + "break;\n"
-	result = result + "\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n"
-	return result
+				parts = parts.append(mir_c_retain_value(desc.first, field) + "; ")
+			parts = parts.append("break;\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
+	return "".join(parts)
 
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
@@ -590,33 +591,35 @@ def mir_c_terminator(term: MirTerminator, function: MirFunction) -> string
 	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
 
 def mir_c_definition(function: MirFunction, index: i64) -> string
-	var output = mir_c_signature(function, index) + "\n{\n"
+	var parts = Array[string]()
+	parts = parts.append(mir_c_signature(function, index) + "\n{\n")
 	for i in 0..len(function.register_types)
 		var initial = "0"
 		if mir_common_managed(function.register_types[!i])
 			initial = "NULL"
-		output = output + "\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n"
-		output = output + "\tbool init" + str(i) + " = false;\n"
-		output = output + "\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n"
+		parts = parts.append("\t" + mir_c_type(function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n")
+		parts = parts.append("\tbool init" + str(i) + " = false;\n")
+		parts = parts.append("\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n")
 	for i in 0..function.argument_count
-		output = output + "\t" + mir_c_register(i) + " = a" + str(i) + "; init" + str(i) + " = true;\n"
-	output = output + "\tgoto block" + str(function.entry) + ";\n"
+		parts = parts.append("\t" + mir_c_register(i) + " = a" + str(i) + "; init" + str(i) + " = true;\n")
+	parts = parts.append("\tgoto block" + str(function.entry) + ";\n")
 	for i in 0..len(function.blocks)
 		let block = function.blocks[!i]
-		output = output + "block" + str(i) + ": ;\n"
+		parts = parts.append("block" + str(i) + ": ;\n")
 		for instruction in block.instructions
 			if instruction.op == MIR_PRINT
-				output = output + mir_c_check(instruction.first)
+				parts = parts.append(mir_c_check(instruction.first))
 				if function.register_types[!instruction.first] == TYPE_TAG_BOOL
-					output = output + "\ts_print_bool(" + mir_c_register(instruction.first) + ");\n"
+					parts = parts.append("\ts_print_bool(" + mir_c_register(instruction.first) + ");\n")
 				elif function.register_types[!instruction.first] == TYPE_TAG_STRING
-					output = output + "\ts_print_string(" + mir_c_register(instruction.first) + ");\n"
+					parts = parts.append("\ts_print_string(" + mir_c_register(instruction.first) + ");\n")
 				else
-					output = output + "\ts_print_i64(" + mir_c_register(instruction.first) + ");\n"
+					parts = parts.append("\ts_print_i64(" + mir_c_register(instruction.first) + ");\n")
 			else
-				output = output + mir_c_instruction(instruction, function)
-		output = output + mir_c_terminator(block.terminator, function)
-	return output + "}\n"
+				parts = parts.append(mir_c_instruction(instruction, function))
+		parts = parts.append(mir_c_terminator(block.terminator, function))
+	parts = parts.append("}\n")
+	return "".join(parts)
 
 rec MirCResult(code: string, error: string)
 
@@ -627,14 +630,16 @@ def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
 	let main = program.functions[!entry]
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")
-	var code = "#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n"
-	code = code + mir_c_record_runtime(program.types)
+	var parts = Array[string]()
+	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include \"sirius_runtime.h\"\n\n")
+	parts = parts.append(mir_c_record_runtime(program.types))
 	for i in 0..len(program.functions)
-		code = code + mir_c_signature(program.functions[!i], i) + ";\n"
-	code = code + "\n"
+		parts = parts.append(mir_c_signature(program.functions[!i], i) + ";\n")
+	parts = parts.append("\n")
 	for i in 0..len(program.functions)
-		code = code + mir_c_definition(program.functions[!i], i) + "\n"
-	return MirCResult(code + "int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)" + mir_c_function(entry) + "(); }\n", "")
+		parts = parts.append(mir_c_definition(program.functions[!i], i) + "\n")
+	parts = parts.append("int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)" + mir_c_function(entry) + "(); }\n")
+	return MirCResult("".join(parts), "")
 
 # Opt-in pipeline: parse -> specialized HIR worklist -> linked CFG MIR -> C.
 # Failure is explicit, never an implicit fallback to the old emitter.

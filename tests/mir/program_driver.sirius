@@ -25,7 +25,29 @@ def check(source: string, expected: i64, count: i64) -> bool
 		return false
 	return true
 
+# Annotation lookup is per source node, not a scan over another function's HIR.
+def check_annotation_index() -> bool
+	var nodes = Array[HirNode]()
+	nodes = nodes.append(HirNode(3, HIR_NAME, TYPE_TAG_I64, -1))
+	nodes = nodes.append(HirNode(7, HIR_FIELD, TYPE_TAG_STRING, 2))
+	nodes = nodes.append(HirNode(3, HIR_FIELD, TYPE_TAG_BOOL, 1))
+	nodes = nodes.append(HirNode(3, HIR_NAME, TYPE_TAG_F64, -1))
+	let index = hir_annotation_index(nodes, 9)
+	if hir_annotation_find(nodes, index, 3, HIR_NAME) != 0
+		return false
+	if hir_annotation_find(nodes, index, 3, HIR_FIELD) != 2
+		return false
+	if hir_annotation_find(nodes, index, 7, HIR_FIELD) != 1
+		return false
+	if hir_annotation_find(nodes, index, 3, HIR_ARRAY) != -1
+		return false
+	if hir_annotation_find(nodes, index, 8, HIR_NAME) != -1
+		return false
+	return hir_annotation_find(nodes, index, -1, HIR_NAME) == -1
+
 def main() -> i64
+	if not check_annotation_index()
+		return 13
 	let repeat = "def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n"
 	if not check(repeat, 42, 2)
 		return 1

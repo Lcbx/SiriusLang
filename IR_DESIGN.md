@@ -18,6 +18,14 @@ The HIR worklist now resolves named `rec` return/parameter annotations by canoni
 
 Both parsers preserve indentation-sensitive blocks, declarations (`let`, `var`), constructors (`pub`), record operations, loops, `match`, indexing modes, and source positions. The Sirius parser uses source byte spans and flat node/edge arrays; future HIR must retain those spans for diagnostics. Expression precedence and short-circuit behavior are semantic obligations, not properties of C emission.
 
+The executable HIR-to-MIR bridge maintains a sparse index from AST node IDs to
+HIR annotation chains. This avoids repeatedly searching the annotation list and
+preserves distinct operations on a node. Canonical `TypeTable` descriptors are
+cached by stable structural keys while keeping insertion-order numeric `TypeId`s.
+The MIR-C emitter now accumulates generated fragments before joining sections,
+function bodies and the full translation unit. These are compiler-internal
+representation changes, not changes to source-language value semantics.
+
 ## Typed HIR
 
 * Each expression has an interned `TypeId`, source `Span`, and resolved symbol/function identity.
@@ -160,7 +168,15 @@ HIR-to-MIR lowering now handles `a[?i]`, `dict.get(key)`, postfix `!`, `optional
 
 A second pass (`src/mir_cleanup.sirius`) performs **path-sensitive ownership cleanup**. Using one snapshot of forward may-ownership and backward liveness, it inserts conditional releases for managed registers dead on each CFG edge, splitting conditional edges as needed. This avoids repeated whole-CFG analysis after every edge rewrite; the rewritten graph is reanalyzed once for exit cleanup and verified for balance. An additional *may-initialized* forward union analysis identifies values owned on **any** path to a return or explicit panic. Exit cleanup uses `MIR_RELEASE` for definitely initialized registers and `MIR_RELEASE_IF_INIT` for conditionally initialized ones, preserving the returned value. `mir_check_balance` rejects reachable exits that may retain any other managed register. The conditional release uses runtime initialization flags (C) or register validity (interpreter); its effect is tracked by both analyses. Cleanup is idempotent. Tests cover branches, joins, nested managed arrays, explicit conditional releases, native/interpreter agreement, and prior lifetime behavior. Covered division, checked indexing/update and unwrap failures now have explicit cleanup exits; allocator failures and other implicit aborts remain non-unwinding. Ownership-credit and full unwinding proofs remain future work.
 
-Final balance verification reuses the same CFG reachability, predecessor lists and definite-initialization states to check both register validity and managed-reference balance. Scalar-only functions skip the may-ownership solver. Public standalone checks keep the same diagnostics.
+Final balance verification propagates must-initialization (intersection) and may-ownership (union) together in one forward worklist, reusing reachability and predecessors and checking register validity before exit balance. Standalone callers can still request one analysis only. Final balance verification reuses the same CFG reachability, predecessor lists and definite-initialization states to check both register validity and managed-reference balance. Scalar-only functions skip the may-ownership solver. Public standalone checks keep the same diagnostics.
+
+MIR lowering keeps source syntax, typed HIR annotations, canonical types, and call
+resolution in a read-only `MirLowerContext`; `MirBuilder` carries only mutable
+registers, CFG blocks, scopes, and loop targets. The forward ownership worklist
+precomputes sparse register write effects for each basic block and applies one
+state transfer per block, preserving sequential move/redefinition behavior.
+Must/may joins update an owned dense mask rather than allocating a new one per
+predecessor. Instruction-level validation still uses ordered reads/writes.
 
 The combined compiler path uses unchecked *internal* guard, lifetime and cleanup transformations between an initial ownership verification and final ownership-balance verification. The final failure audit reuses that verification. Individual public MIR passes still validate their inputs and outputs; intermediate checks are not omitted from standalone tests.
 
