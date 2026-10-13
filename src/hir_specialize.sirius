@@ -15,6 +15,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 	state.types = types
 	state.functions = functions
 	state.module_constants = constants
+	state.active_functions = [header.name]
 	state.collect_calls = true
 	if len(arguments) != len(header.parameters)
 		return HirConcreteBody(state.nodes, state.requests, state.types, TYPE_TAG_INVALID, "specialization argument count mismatch", hir_ast_line(tree, header.source))
@@ -36,7 +37,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 		state.types = declared.table
 		if declared.type_id != TYPE_TAG_INVALID
 			if result_type != TYPE_TAG_INVALID and result_type != declared.type_id
-				state = hir_body_error(state, header.source, "specialization return type mismatch")
+				state = hir_body_error(state, header.source, "expected " + hir_type_name(state.types, declared.type_id) + ", found " + hir_type_name(state.types, result_type))
 			result_type = declared.type_id
 	return HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
 
@@ -81,13 +82,26 @@ def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: 
 			if called < 0
 				return HirSpecializedProgram(registry, bodies, types, entry, "unknown specialized callee")
 			let callee = declarations.functions[!called]
-			if callee.result_type_node < 0
-				return HirSpecializedProgram(registry, bodies, types, entry, "HIR worklist calls require an explicit return type")
-			let declared = hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
-			types = declared.table
-			if declared.type_id == TYPE_TAG_INVALID
-				return HirSpecializedProgram(registry, bodies, types, entry, "cannot resolve specialized callee return type: " + callee.name + " at line " + str(hir_ast_line(tree, request.source)))
-			let started = hir_begin_specialization(registry, request.definition, request.arguments, declared.type_id)
+			var result_type = TYPE_TAG_INVALID
+			var recursive = false
+			if callee.result_type_node >= 0
+				let declared = hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
+				types = declared.table
+				result_type = declared.type_id
+			else
+				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments)
+				types = inferred.types
+				if inferred.error != ""
+					return HirSpecializedProgram(registry, bodies, types, entry, inferred.error)
+				result_type = inferred.return_type
+				for nested in inferred.requests
+					if nested.definition == callee.body
+						recursive = true
+			if result_type == TYPE_TAG_INVALID
+				if recursive
+					return HirSpecializedProgram(registry, bodies, types, entry, "recursive generic call requires an explicit return type")
+				return HirSpecializedProgram(registry, bodies, types, entry, "cannot infer function return type")
+			let started = hir_begin_specialization(registry, request.definition, request.arguments, result_type)
 			registry = started.registry
 			calls = calls.append(HirSpecializedCall(request.source, started.index))
 		bodies = bodies.append(HirSpecializedFunction(cursor, typed.nodes, calls, typed.return_type))

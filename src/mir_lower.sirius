@@ -1,5 +1,5 @@
-# Typed-HIR -> CFG MIR lowering for scalars, strings and simple records.
-# Advanced collections, spreads and mutable projections remain unsupported.
+# Typed-HIR -> CFG MIR lowering, including managed collections, record spreads, and tail recurrence.
+# Deeply nested mutable projections remain unsupported.
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
 rec MirSourceBinding(name: string, slot: i64, depth: i64)
@@ -7,7 +7,7 @@ rec MirCallTarget(source: i64, specialization: i64)
 rec MirLowerField(name: string, slot: i64)
 
 # Source analysis is immutable during lowering; the builder owns only mutable CFG state.
-rec MirLowerContext(tree: ParseState, hir: Array[HirNode], annotation_index: HirAnnotationIndex, types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], call_targets: Array[MirCallTarget])
+rec MirLowerContext(tree: ParseState, hir: Array[HirNode], annotation_index: HirAnnotationIndex, types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], call_targets: Array[MirCallTarget], function_name: string, argument_count: i64)
 
 rec MirBuilder(active: i64)
 	pub register_types = Array[i64]()
@@ -101,10 +101,19 @@ def mir_lower_augmented(state: MirBuilder, operator: string, previous: i64, valu
 		return MirLowerExpr(mir_lower_error(next, "MIR assignment type mismatch"), -1)
 	var opcode = -1
 	if operator == "+="
-		if kind == TYPE_TAG_STRING
+		if kind == TYPE_TAG_F64
+			opcode = MIR_ADD_F64
+		elif kind == TYPE_TAG_STRING
 			opcode = MIR_STRING_CONCAT
 		elif kind == TYPE_TAG_I64
 			opcode = MIR_ADD_I64
+	elif kind == TYPE_TAG_F64
+		if operator == "-="
+			opcode = MIR_SUB_F64
+		elif operator == "*="
+			opcode = MIR_MUL_F64
+		elif operator == "/="
+			opcode = MIR_DIV_F64
 	elif kind == TYPE_TAG_I64
 		if operator == "-="
 			opcode = MIR_SUB_I64
@@ -151,6 +160,8 @@ def mir_lower_string(text: string) -> MirLowerString
 				result = result + "\""
 			elif escaped == 39
 				result = result + "'"
+			elif escaped == 48
+				result = result + "\0"
 			else
 				return MirLowerString("", "unsupported MIR string escape")
 		else
@@ -226,12 +237,36 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		# Evaluate source fields left to right, then lay them out canonically.
 		for i in 0..node.count
 			let field = hir_ast_child(context.tree, id, i)
-			if context.tree.nodes[!field].kind != NODE_FIELD
-				return MirLowerExpr(mir_lower_error(next, "MIR record spread/delete is not supported yet"), -1)
-			let expression = mir_lower_expression(next, context, hir_ast_child(context.tree, field, 0))
-			next = expression.state
-			next.error == "" else return MirLowerExpr(next, -1)
-			evaluated = evaluated.append(MirLowerField(hir_ast_text(context.tree, field), expression.slot))
+			let field_node = context.tree.nodes[!field]
+			if field_node.kind == NODE_SPREAD
+				let owner = mir_lower_binding(next, hir_ast_text(context.tree, field))
+				if owner < 0
+					return MirLowerExpr(mir_lower_error(next, "unknown MIR record spread source"), -1)
+				let owner_type = next.register_types[!owner]
+				if context.types.entries[!owner_type].tag != TYPE_TAG_RECORD
+					return MirLowerExpr(mir_lower_error(next, "MIR spread requires record"), -1)
+				let members = context.types.entries[!owner_type].fields
+				for j in 0..len(members)
+					let slot = len(next.register_types)
+					next = mir_lower_register(next, members[!j].kind)
+					next = mir_lower_emit(next, mir_record_get(slot, owner, j))
+					evaluated = evaluated.append(MirLowerField(members[!j].name, slot))
+			elif field_node.kind == NODE_DELETE
+				let name = hir_ast_text(context.tree, field)
+				var found = false
+				for candidate in evaluated
+					if candidate.name == name and candidate.slot >= 0
+						found = true
+				if not found
+					return MirLowerExpr(mir_lower_error(next, "unknown MIR record field to delete"), -1)
+				evaluated = evaluated.append(MirLowerField(name, -1))
+			elif field_node.kind == NODE_FIELD
+				let expression = mir_lower_expression(next, context, hir_ast_child(context.tree, field, 0))
+				next = expression.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				evaluated = evaluated.append(MirLowerField(hir_ast_text(context.tree, field), expression.slot))
+			else
+				return MirLowerExpr(mir_lower_error(next, "invalid MIR record field"), -1)
 		let layout = context.types.entries[!type_id].fields
 		var inputs = Array[i64]()
 		for field in layout
@@ -267,6 +302,13 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		let dst = len(next.register_types)
 		next = mir_lower_register(next, TYPE_TAG_STRING)
 		next = mir_lower_emit(next, mir_string(dst, decoded.value))
+		return MirLowerExpr(next, dst)
+	if node.kind == NODE_FLOAT
+		if mir_lower_type(context, id, HIR_LITERAL) != TYPE_TAG_F64
+			return MirLowerExpr(mir_lower_error(next, "missing typed float literal"), -1)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_F64)
+		next = mir_lower_emit(next, MirInstruction(MIR_CONST_F64, dst, -1, -1, 0, Array[i64](), text))
 		return MirLowerExpr(next, dst)
 	if node.kind == NODE_INTEGER or node.kind == NODE_BOOL
 		let type_id = mir_lower_type(context, id, HIR_LITERAL)
@@ -434,6 +476,16 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, mir_dict_insert(dst, owned, key.slot, value.slot))
 				return MirLowerExpr(next, dst)
+		if context.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(context.tree, callee) == "sqrt" and node.count == 2
+			let operand = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 1))
+			next = operand.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			if next.register_types[!operand.slot] != TYPE_TAG_F64 or mir_lower_type(context, id, HIR_CALL) != TYPE_TAG_F64
+				return MirLowerExpr(mir_lower_error(next, "sqrt requires f64"), -1)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, TYPE_TAG_F64)
+			next = mir_lower_emit(next, mir_op(MIR_SQRT_F64, dst, operand.slot, -1, 0))
+			return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == NODE_NAME
 			let builtin = hir_ast_text(context.tree, callee)
 			var op = 0
@@ -509,6 +561,8 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		let type_id = mir_lower_type(context, id, HIR_UNARY)
 		let dst = len(next.register_types)
 		var opcode = MIR_NEG_I64
+		if type_id == TYPE_TAG_F64
+			opcode = MIR_NEG_F64
 		if text == "not"
 			opcode = MIR_NOT_BOOL
 		elif text == "+"
@@ -591,31 +645,48 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		if text == "+"
 			if type_id == TYPE_TAG_STRING
 				opcode = MIR_STRING_CONCAT
+			elif type_id == TYPE_TAG_F64
+				opcode = MIR_ADD_F64
 			else
 				opcode = MIR_ADD_I64
 		elif text == "-"
-			opcode = MIR_SUB_I64
+			if type_id == TYPE_TAG_F64
+				opcode = MIR_SUB_F64
+			else
+				opcode = MIR_SUB_I64
 		elif text == "*"
-			opcode = MIR_MUL_I64
+			if type_id == TYPE_TAG_F64
+				opcode = MIR_MUL_F64
+			else
+				opcode = MIR_MUL_I64
 		elif text == "/"
-			opcode = MIR_DIV_I64
+			if type_id == TYPE_TAG_F64
+				opcode = MIR_DIV_F64
+			else
+				opcode = MIR_DIV_I64
 		elif text == "%"
 			opcode = MIR_REM_I64
 		elif text == "==" or text == "!="
 			opcode = MIR_EQ_I64
-			if next.register_types[!first] == TYPE_TAG_BOOL
+			if next.register_types[!first] == TYPE_TAG_F64
+				opcode = MIR_EQ_F64
+			elif next.register_types[!first] == TYPE_TAG_BOOL
 				opcode = MIR_EQ_BOOL
 			elif next.register_types[!first] == TYPE_TAG_STRING
 				opcode = MIR_EQ_STRING
 			negate = text == "!="
 		elif text == "<" or text == ">="
 			opcode = MIR_LT_I64
-			if next.register_types[!first] == TYPE_TAG_STRING
+			if next.register_types[!first] == TYPE_TAG_F64
+				opcode = MIR_LT_F64
+			elif next.register_types[!first] == TYPE_TAG_STRING
 				opcode = MIR_LT_STRING
 			negate = text == ">="
 		elif text == "<=" or text == ">"
 			opcode = MIR_LE_I64
-			if next.register_types[!first] == TYPE_TAG_STRING
+			if next.register_types[!first] == TYPE_TAG_F64
+				opcode = MIR_LE_F64
+			elif next.register_types[!first] == TYPE_TAG_STRING
 				opcode = MIR_LE_STRING
 			negate = text == ">"
 		if opcode == 0
@@ -652,6 +723,33 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 	state.error == "" else return state
 	let node = context.tree.nodes[!id]
 	var next = state
+	if node.kind == NODE_RECUR
+		if node.count != 1
+			return mir_lower_error(next, "recur expects a direct self-call")
+		let call = hir_ast_child(context.tree, id, 0)
+		let invocation = context.tree.nodes[!call]
+		if invocation.kind != NODE_CALL
+			return mir_lower_error(next, "recur expects a direct self-call")
+		let callee = hir_ast_child(context.tree, call, 0)
+		if context.tree.nodes[!callee].kind != NODE_NAME or hir_ast_text(context.tree, callee) != context.function_name
+			return mir_lower_error(next, "recur must call the enclosing function")
+		if invocation.count - 1 != context.argument_count
+			return mir_lower_error(next, "recur argument count mismatch")
+		# Evaluate and snapshot every argument before changing parameter registers.
+		var arguments = Array[i64]()
+		for i in 0..context.argument_count
+			let argument = mir_lower_expression(next, context, hir_ast_child(context.tree, call, i + 1))
+			next = argument.state
+			next.error == "" else return next
+			if next.register_types[!argument.slot] != next.register_types[!i]
+				return mir_lower_error(next, "recur argument type mismatch")
+			let snapshot = len(next.register_types)
+			next = mir_lower_register(next, next.register_types[!i])
+			next = mir_lower_emit(next, mir_op(MIR_COPY, snapshot, argument.slot, -1, 0))
+			arguments = arguments.append(snapshot)
+		for i in 0..context.argument_count
+			next = mir_lower_emit(next, mir_op(MIR_COPY, i, arguments[!i], -1, 0))
+		return mir_lower_end(next, mir_jump(0))
 	if node.kind == NODE_BREAK or node.kind == NODE_CONTINUE
 		var target = -1
 		if node.kind == NODE_BREAK and len(next.break_targets) > 0
@@ -779,7 +877,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			next = value.state
 			next.error == "" else return next
 			if next.register_types[!value.slot] != field.type_id
-				return mir_lower_error(next, "MIR record update type mismatch")
+				return mir_lower_error(next, "expected " + hir_type_name(context.types, field.type_id) + ", found " + hir_type_name(context.types, next.register_types[!value.slot]))
 			var updated_slot = value.slot
 			let operator = hir_ast_text(context.tree, id)
 			if operator != "="
@@ -1002,7 +1100,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 	return mir_lower_error(next, "unsupported source statement for MIR: " + node_kind_name(node.kind))
 
 def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant]) -> MirLowerResult
-	let context = MirLowerContext(tree, hir, hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, targets)
+	let context = MirLowerContext(tree, hir, hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, targets, header.name, len(arguments))
 	var state = MirBuilder(0)
 	state = mir_lower_block(state)
 	if not mir_type_supported(context.types, return_type) or len(arguments) != len(header.parameters)

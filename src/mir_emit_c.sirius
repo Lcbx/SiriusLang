@@ -4,6 +4,8 @@
 def mir_c_type(type_id: i64) -> string
 	if type_id == TYPE_TAG_BOOL
 		return "bool"
+	if type_id == TYPE_TAG_F64
+		return "double"
 	if type_id == TYPE_TAG_STRING
 		return "S_String *"
 	if type_id >= TYPE_TAG_RECORD
@@ -63,7 +65,7 @@ def mir_c_release_managed(function: MirFunction, except: i64) -> string
 def mir_c_record_runtime(types: TypeTable) -> string
 	var parts = Array[string]()
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
-	parts = parts.append("typedef struct { int64_t bits; S_String *text; S_MirRecord *record; } S_MirField;\n")
+	parts = parts.append("typedef struct { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;\n")
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n")
 	parts = parts.append("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n")
@@ -206,7 +208,8 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tarray = s_mir_record_reserve_owned(array, array->length + 1);\n")
 	parts = parts.append("\tarray->fields[array->length++] = owned;\n\treturn array;\n}\n\n")
 	parts = parts.append("static inline bool s_mir_key_equal(int64_t type_id, S_MirField a, S_MirField b) {\n")
-	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n\treturn a.bits == b.bits;\n}\n")
+	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n")
+	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_F64) + ") return a.real == b.real;\n\treturn a.bits == b.bits;\n}\n")
 	parts = parts.append("static inline int64_t s_mir_dict_find(const S_MirRecord *dict, int64_t key_type, S_MirField key) {\n")
 	parts = parts.append("\tfor (size_t j = 0; j < dict->length; j += 2) if (s_mir_key_equal(key_type, dict->fields[j], key)) return (int64_t)j;\n")
 	parts = parts.append("\treturn -1;\n}\n")
@@ -296,7 +299,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> string
 	let op = instruction.op
 	var result = ""
-	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING and op != MIR_ARGUMENTS and op != MIR_RELEASE_IF_INIT
+	if op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING and op != MIR_CONST_F64 and op != MIR_ARGUMENTS and op != MIR_RELEASE_IF_INIT
 		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg)
@@ -307,7 +310,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			if op == MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID or (op >= MIR_STRING_SLICE and op <= MIR_LE_STRING)
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID or (op >= MIR_STRING_SLICE and op <= MIR_LE_STRING) or (op >= MIR_ADD_F64 and op <= MIR_LE_F64)
 				result = result + mir_c_check(instruction.second)
 			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate)
@@ -331,13 +334,19 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		return result + "\t" + dst + " = s_write_text(" + first + ", " + second + "); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_CONST_STRING
 		return mir_c_store_owned(instruction.dst, TYPE_TAG_STRING, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")")
+	if op == MIR_CONST_F64
+		return "\t" + dst + " = " + instruction.text + "; init" + str(instruction.dst) + " = true;\n"
+	if op == MIR_SQRT_F64
+		return result + "\t" + dst + " = sqrt(" + first + "); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_OPTIONAL_NONE
 		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)")
 	if op == MIR_OPTIONAL_SOME
 		let payload_type = function.register_types[!instruction.first]
 		var field = "bits"
 		var value = first
-		if payload_type == TYPE_TAG_STRING
+		if payload_type == TYPE_TAG_F64
+			field = "real"
+		elif payload_type == TYPE_TAG_STRING
 			field = "text"
 			value = mir_c_retain_value(payload_type, value)
 		elif mir_common_managed(payload_type)
@@ -355,7 +364,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		return result + "\t" + dst + " = (" + first + "->length != 0); init" + str(instruction.dst) + " = true;\n"
 	if op == MIR_OPTIONAL_UNWRAP
 		var field = "bits"
-		if dst_type == TYPE_TAG_STRING
+		if dst_type == TYPE_TAG_F64
+			field = "real"
+		elif dst_type == TYPE_TAG_STRING
 			field = "text"
 		elif mir_common_managed(dst_type)
 			field = "record"
@@ -374,7 +385,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			let kind = function.register_types[!input]
 			var field = "bits"
 			var value = mir_c_register(input)
-			if kind == TYPE_TAG_STRING
+			if kind == TYPE_TAG_F64
+				field = "real"
+			elif kind == TYPE_TAG_STRING
 				field = "text"
 				value = mir_c_retain_value(kind, value)
 			elif mir_common_managed(kind)
@@ -391,7 +404,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	if op == MIR_DICT_GET_OPTIONAL
 		let key_type = function.register_types[!instruction.second]
 		var key_field = "bits"
-		if key_type == TYPE_TAG_STRING
+		if key_type == TYPE_TAG_F64
+			key_field = "real"
+		elif key_type == TYPE_TAG_STRING
 			key_field = "text"
 		# The helper retains the dictionary payload using its canonical Optional type.
 		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
@@ -400,10 +415,14 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	if op == MIR_DICT_GET_OR
 		let key_type = function.register_types[!instruction.second]
 		var key_field = "bits"
-		if key_type == TYPE_TAG_STRING
+		if key_type == TYPE_TAG_F64
+			key_field = "real"
+		elif key_type == TYPE_TAG_STRING
 			key_field = "text"
 		var value_field = "bits"
-		if dst_type == TYPE_TAG_STRING
+		if dst_type == TYPE_TAG_F64
+			value_field = "real"
+		elif dst_type == TYPE_TAG_STRING
 			value_field = "text"
 		elif mir_common_managed(dst_type)
 			value_field = "record"
@@ -421,7 +440,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			let kind = function.register_types[!arg]
 			var field = "bits"
 			var value = mir_c_register(arg)
-			if kind == TYPE_TAG_STRING
+			if kind == TYPE_TAG_F64
+				field = "real"
+			elif kind == TYPE_TAG_STRING
 				field = "text"
 				value = mir_c_retain_value(kind, value)
 			elif mir_common_managed(kind)
@@ -437,7 +458,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 	if op == MIR_ARRAY_GET
 		result = result + "\tif (" + second + " < 0 || (uint64_t)" + second + " >= " + first + "->length) s_panic(\"array index out of bounds\");\n"
 		var field = "bits"
-		if dst_type == TYPE_TAG_STRING
+		if dst_type == TYPE_TAG_F64
+			field = "real"
+		elif dst_type == TYPE_TAG_STRING
 			field = "text"
 		elif mir_common_managed(dst_type)
 			field = "record"
@@ -449,7 +472,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		let element_type = function.register_types[!instruction.second]
 		var field = "bits"
 		var value = mir_c_register(instruction.second)
-		if element_type == TYPE_TAG_STRING
+		if element_type == TYPE_TAG_F64
+			field = "real"
+		elif element_type == TYPE_TAG_STRING
 			field = "text"
 			value = mir_c_retain_value(element_type, value)
 		elif mir_common_managed(element_type)
@@ -465,7 +490,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		let element_type = function.register_types[!instruction.immediate]
 		var field = "bits"
 		var value = mir_c_register(instruction.immediate)
-		if element_type == TYPE_TAG_STRING
+		if element_type == TYPE_TAG_F64
+			field = "real"
+		elif element_type == TYPE_TAG_STRING
 			field = "text"
 			value = mir_c_retain_value(element_type, value)
 		elif mir_common_managed(element_type)
@@ -484,7 +511,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			let kind = function.register_types[!arg]
 			var field = "bits"
 			var value = mir_c_register(arg)
-			if kind == TYPE_TAG_STRING
+			if kind == TYPE_TAG_F64
+				field = "real"
+			elif kind == TYPE_TAG_STRING
 				field = "text"
 				value = mir_c_retain_value(kind, value)
 			elif kind >= TYPE_TAG_RECORD
@@ -494,7 +523,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 		return code + mir_c_store_owned(instruction.dst, dst_type, "record") + "\t}\n"
 	if op == MIR_RECORD_GET
 		var field = "bits"
-		if dst_type == TYPE_TAG_STRING
+		if dst_type == TYPE_TAG_F64
+			field = "real"
+		elif dst_type == TYPE_TAG_STRING
 			field = "text"
 		elif dst_type >= TYPE_TAG_RECORD
 			field = "record"
@@ -553,7 +584,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			expr = "false"
 	elif op == MIR_COPY
 		expr = first
-	elif op == MIR_NEG_I64
+	elif op == MIR_NEG_I64 or op == MIR_NEG_F64
 		expr = "(-" + first + ")"
 	elif op == MIR_NOT_BOOL
 		expr = "(!" + first + ")"
@@ -570,21 +601,21 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction) -> str
 			expr = mir_c_function(instruction.immediate) + "(" + ", ".join(arguments) + ")"
 	else
 		var symbol = ""
-		if op == MIR_ADD_I64
+		if op == MIR_ADD_I64 or op == MIR_ADD_F64
 			symbol = "+"
-		elif op == MIR_SUB_I64
+		elif op == MIR_SUB_I64 or op == MIR_SUB_F64
 			symbol = "-"
-		elif op == MIR_MUL_I64
+		elif op == MIR_MUL_I64 or op == MIR_MUL_F64
 			symbol = "*"
-		elif op == MIR_DIV_I64
+		elif op == MIR_DIV_I64 or op == MIR_DIV_F64
 			symbol = "/"
 		elif op == MIR_REM_I64
 			symbol = "%"
-		elif op == MIR_EQ_I64 or op == MIR_EQ_BOOL
+		elif op == MIR_EQ_I64 or op == MIR_EQ_BOOL or op == MIR_EQ_F64
 			symbol = "=="
-		elif op == MIR_LT_I64
+		elif op == MIR_LT_I64 or op == MIR_LT_F64
 			symbol = "<"
-		elif op == MIR_LE_I64
+		elif op == MIR_LE_I64 or op == MIR_LE_F64
 			symbol = "<="
 		if op == MIR_DIV_I64 or op == MIR_REM_I64
 			result = result + "\tif (" + second + " == 0) s_panic(\"division by zero\");\n"
@@ -631,7 +662,9 @@ def mir_c_definition(function: MirFunction, index: i64) -> string
 		for instruction in block.instructions
 			if instruction.op == MIR_PRINT
 				parts = parts.append(mir_c_check(instruction.first))
-				if function.register_types[!instruction.first] == TYPE_TAG_BOOL
+				if function.register_types[!instruction.first] == TYPE_TAG_F64
+					parts = parts.append("\ts_print_f64(" + mir_c_register(instruction.first) + ");\n")
+				elif function.register_types[!instruction.first] == TYPE_TAG_BOOL
 					parts = parts.append("\ts_print_bool(" + mir_c_register(instruction.first) + ");\n")
 				elif function.register_types[!instruction.first] == TYPE_TAG_STRING
 					parts = parts.append("\ts_print_string(" + mir_c_register(instruction.first) + ");\n")
@@ -657,7 +690,7 @@ def mir_emit_c(program: MirProgram, entry: i64) -> MirCResult
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")
 	var parts = Array[string]()
-	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include <string.h>\n#include \"sirius_runtime.h\"\n\n")
+	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include \"sirius_runtime.h\"\n\n")
 	parts = parts.append(mir_c_record_runtime(program.types))
 	for i in 0..len(program.functions)
 		parts = parts.append(mir_c_signature(program.functions[!i], i) + ";\n")

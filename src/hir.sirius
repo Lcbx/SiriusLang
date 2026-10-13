@@ -455,6 +455,21 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			elif info.kind == NODE_TYPE
 				return_type = part
 		let body_id = hir_ast_child(tree, id, entry.count - 1)
+		if entry.kind == NODE_REC
+			var published = Array[string]()
+			let body = tree.nodes[!body_id]
+			for j in 0..body.count
+				let pub_id = hir_ast_child(tree, body_id, j)
+				if tree.nodes[!pub_id].kind == NODE_PUB
+					var field_name = hir_ast_text(tree, pub_id)
+					if tree.nodes[!pub_id].count > 0
+						let value_id = hir_ast_child(tree, pub_id, 0)
+						if tree.nodes[!value_id].kind == NODE_ATTR
+							field_name = hir_ast_text(tree, value_id)
+					for seen in published
+						if seen == field_name
+							return hir_declaration_error(functions, constants, "constructor field overrides are not supported yet", hir_ast_line(tree, pub_id))
+					published = published.append(field_name)
 		if entry.kind == NODE_DEF
 			let body = tree.nodes[!body_id]
 			for j in 0..body.count
@@ -638,7 +653,10 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 			let declared = hir_module_type_reference_with_constants(result.types, result.tree, function.result_type_node, result.functions, result.module_constants)
 			result.types = declared.table
 			result.last_type = declared.type_id
-		return result
+			return result
+		# Unannotated callees need a concrete result type for their caller's
+		# expressions. Infer it without recursively registering specializations.
+		# The worklist still owns emission and deduplication of these calls.
 	if function.constructor
 		var nested = HirBodyState(state.tree, state.names, state.constants)
 		nested.types = result.types
@@ -695,6 +713,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	var nested = HirBodyState(state.tree, state.names, state.constants)
 	nested.types = result.types
 	nested.functions = state.functions
+	nested.module_constants = state.module_constants
 	nested.active_functions = state.active_functions.append(name)
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]

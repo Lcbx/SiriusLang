@@ -58,6 +58,16 @@ let MIR_STRING_JOIN = 53
 let MIR_EQ_STRING = 54
 let MIR_LT_STRING = 55
 let MIR_LE_STRING = 56
+let MIR_CONST_F64 = 57
+let MIR_ADD_F64 = 58
+let MIR_SUB_F64 = 59
+let MIR_MUL_F64 = 60
+let MIR_DIV_F64 = 61
+let MIR_EQ_F64 = 62
+let MIR_LT_F64 = 63
+let MIR_LE_F64 = 64
+let MIR_NEG_F64 = 65
+let MIR_SQRT_F64 = 66
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -209,7 +219,7 @@ def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
 
 def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 	var reads = Array[i64]()
-	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_ARGUMENTS or ins.op == MIR_RELEASE_IF_INIT
+	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_CONST_F64 or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_ARGUMENTS or ins.op == MIR_RELEASE_IF_INIT
 		return reads
 	if ins.op == MIR_WRITE_TEXT
 		return [ins.first, ins.second]
@@ -222,7 +232,7 @@ def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
 		return reads
 	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_STRING_SLICE
 		reads = mir_read_add(reads, ins.immediate)
-	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND or (ins.op >= MIR_STRING_SLICE and ins.op <= MIR_LE_STRING)
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND or (ins.op >= MIR_STRING_SLICE and ins.op <= MIR_LE_STRING) or (ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64)
 		reads = mir_read_add(reads, ins.second)
 	return reads
 
@@ -232,7 +242,7 @@ def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool
 	return register >= 0 and register < len(types) and types[!register] == expected
 
 def mir_supported_type(type_id: i64) -> bool
-	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL or type_id == TYPE_TAG_STRING
+	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL or type_id == TYPE_TAG_STRING or type_id == TYPE_TAG_F64
 
 def mir_type_supported(types: TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
@@ -284,6 +294,10 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 	if ins.op == MIR_CONST_STRING
 		if dst_type != TYPE_TAG_STRING
 			return "string constant destination must be string"
+		return ""
+	if ins.op == MIR_CONST_F64
+		if dst_type != TYPE_TAG_F64 or ins.text == ""
+			return "floating constant destination must be f64"
 		return ""
 	if ins.op == MIR_NONZERO_I64
 		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
@@ -470,6 +484,19 @@ def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirI
 	if ins.op == MIR_NEG_I64
 		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
 			return "integer operand type mismatch"
+		return ""
+	if ins.op == MIR_NEG_F64 or ins.op == MIR_SQRT_F64
+		if dst_type != TYPE_TAG_F64 or not mir_register_valid(types, ins.first, TYPE_TAG_F64)
+			return "floating unary operand type mismatch"
+		return ""
+	if ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64
+		let comparison = ins.op == MIR_EQ_F64 or ins.op == MIR_LT_F64 or ins.op == MIR_LE_F64
+		if comparison and dst_type != TYPE_TAG_BOOL
+			return "floating comparison destination must be bool"
+		if not comparison and dst_type != TYPE_TAG_F64
+			return "floating arithmetic destination must be f64"
+		if not mir_register_valid(types, ins.first, TYPE_TAG_F64) or not mir_register_valid(types, ins.second, TYPE_TAG_F64)
+			return "floating operand type mismatch"
 		return ""
 	if ins.op == MIR_EQ_BOOL
 		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_BOOL) or not mir_register_valid(types, ins.second, TYPE_TAG_BOOL)

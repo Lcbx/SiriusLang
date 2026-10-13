@@ -75,13 +75,21 @@ def main() -> None:
 			if results[0] != results[1]:
 				raise AssertionError(f'{name}: backend mismatch: {results}')
 			print(f'PASS MIR-C {name} (return {results[0][0]})')
-		# Unsupported MIR constructs must fail rather than silently use legacy C.
+		# Record spreads are evaluated in source order and preserve the input record.
+		input_path = work / 'spread.sirius'
+		input_path.write_text('def main() -> i64\n\tlet original = {x = 40, y = 3}\n\tlet copied = {original.*, del y, x = 42}\n\treturn copied.x\n')
+		generated = work / 'spread.c'
+		execute([str(compiler), '--mir-c', str(input_path), str(generated)])
+		assert_native(run_native(cache, generated), code=42)
+		print('PASS MIR-C record spread/delete')
+		# Nested record assignments are not yet supported by MIR lowering;
+		# they must fail explicitly rather than use the legacy emitter.
 		input_path = work / 'unsupported.sirius'
-		input_path.write_text('def main() -> i64\n\tlet original = {x = 42}\n\tlet copied = {original.*, y = 1}\n\treturn copied.x\n')
+		input_path.write_text('def main() -> i64\n\tvar outer = {inner = {x = 2}}\n\touter.inner.x = 3\n\treturn outer.inner.x\n')
 		result = subprocess.run([str(compiler), '--mir-c', str(input_path), str(work / 'unsupported.c')], capture_output=True, text=True)
-		if result.returncode == 0 or not ('unsupported' in result.stdout or 'not supported' in result.stdout):
-			raise AssertionError(f'MIR must reject non-scalar source explicitly: {result}')
-		print('PASS MIR-C unsupported construct rejected')
+		if result.returncode == 0 or 'not supported' not in result.stdout:
+			raise AssertionError(f'MIR must reject unsupported nested updates explicitly: {result}')
+		print('PASS MIR-C unsupported nested record update rejected')
 		driver = cache.sirius('mir-c-direct', (
 			'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/compile_common.sirius',
 			'src/hir.sirius', 'src/emit_c.sirius', 'src/hir_specialize.sirius',

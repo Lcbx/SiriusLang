@@ -54,13 +54,16 @@ ERRORS = {
 
 
 def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
-	runtime: Path | None = None) -> tuple[int, int]:
+	runtime: Path | None = None, positive_exclude: tuple[str, ...] = (),
+	negative_exclude: tuple[str, ...] = (),
+	expected_errors: dict[str, str] | None = None) -> tuple[int, int]:
 	"""Test independent cases concurrently, reporting in deterministic fixture order."""
 	jobs = validate_jobs(jobs)
 	positives = [(ROOT / 'tests/fixtures' / (name + '.sirius'),
 		ROOT / 'tests/expected_output' / (name + '.txt')) for name in REFERENCE]
 	positives += [(src, ROOT / 'tests/compiler/expected_output' / (src.stem + '.txt'))
 		for src in sorted((ROOT / 'tests/compiler/fixtures').glob('*.sirius'))]
+	positives = [(source, expected) for source, expected in positives if source.stem not in positive_exclude]
 	if not positives:
 		raise AssertionError('No positive emitter cases found')
 	runtime = runtime or BuildCache(cc).runtime()
@@ -88,6 +91,8 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 	negatives = sorted((ROOT / 'tests/compiler/negative').glob('*.sirius'))
 	if {source.stem for source in negatives} != set(ERRORS):
 		raise AssertionError('negative test fixtures and expected diagnostics differ')
+	negatives = [source for source in negatives if source.stem not in negative_exclude]
+	expected_errors = expected_errors or ERRORS
 
 	def negative(item: tuple[int, Path]) -> str:
 		index, source = item
@@ -96,7 +101,7 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 		generated = folder / 'should_not_exist.c'
 		result = subprocess.run([str(compiler), str(source), str(generated)],
 			capture_output=True, text=True, encoding='utf-8')
-		if result.returncode != 1 or ERRORS[source.stem] not in result.stdout or generated.exists():
+		if result.returncode != 1 or expected_errors[source.stem] not in result.stdout or generated.exists():
 			raise AssertionError(f'{source.name}: unexpected result {result.returncode}, {result.stdout!r}, {result.stderr!r}')
 		return f'PASS {source.name} (rejected)'
 

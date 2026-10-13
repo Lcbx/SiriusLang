@@ -28,9 +28,10 @@ suffix. Building without Python is also possible:
 cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o sirius
 ```
 
-`./sirius input.sirius output.c` selects the **legacy C emitter** (the only
-established self-hosting path). `./sirius --mir-c input.sirius output.c` selects
-the **experimental HIR → MIR → C backend**. Unsupported MIR constructs fail
+`./sirius input.sirius output.c` selects the **legacy C emitter** (used by
+the committed bootstrap). `./sirius --mir-c input.sirius output.c` selects
+the **HIR → MIR → C backend**, which also reaches a native self-hosting fixed
+point when built without the legacy emitter. Unsupported MIR constructs fail
 explicitly; there is no implicit fallback. The stand-alone MIR interpreter is
 currently a testable library, not a source-program CLI.
 
@@ -75,7 +76,8 @@ Run individual suites as needed:
 | Command | Scope |
 | --- | --- |
 | `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
-| `python tools/test_compiler.py` | 85 successful native executions and 37 expected diagnostics |
+| `python tools/test_compiler.py` | Legacy backend: 85 native executions and 37 expected diagnostics |
+| `python tools/test_mir_compiler.py` | Standalone MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
 | `python tools/test_parser.py` | 11 parser golden fixtures and smoke checks |
 | `python tools/test_types.py` | Type interning, typed HIR and specialization |
@@ -93,8 +95,10 @@ Run individual suites as needed:
 | `python tools/test_tool_utils.py` | Process result and newline test helpers |
 | `python tools/test_python_bootstrap.py --command 'python archive/python_bootstrap/sirius.py'` | **Archival** Python compiler tests only; not part of active bootstrap |
 
-The 85/37 counts describe the current tests, not a full language conformance
-claim. The fixture-generation scripts are **manual authoring tools**:
+The fixture counts describe tested behavior, not a full language conformance
+claim. Two legacy negative fixtures (`f64` arrays and optional fallback in
+`elif`) are valid programs accepted by MIR; the MIR runner tests them as
+positives instead of treating them as diagnostic failures. The fixture-generation scripts are **manual authoring tools**:
 `tools/generate_core_fixtures.py` and
 `tools/generate_extended_fixtures.py`; they overwrite checked-in fixtures.
 
@@ -127,10 +131,10 @@ type and specialization handling.
 
 The MIR path implements typed CFG instructions, an interpreter, a C emitter,
 specialization lowering, explicit ownership operations, guard insertion, liveness,
-last-use release insertion and exit cleanup. It supports numerous source-level
-scalar, string, record, array, dictionary and optional operations. However,
-some nested projection updates, record spreads and inference cases still prevent
-full MIR/legacy fixture parity. **MIR-only self-hosting reaches a native C
+last-use release insertion and exit cleanup. It runs all 85 shared executable fixtures, including `f64` arithmetic,
+`recur`, record spread/delete, and nonrecursive generic return inference.
+Deeply nested projection assignments remain unsupported, and the standalone
+MIR interpreter does not yet execute floating-point operations or file I/O. **MIR-only self-hosting reaches a native C
 fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
 emitter in their sources. Arrays use CoW for consuming updates and amortized
 in-place append for unique owners; string join allocates once. The MIR C emitter
