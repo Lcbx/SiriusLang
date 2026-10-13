@@ -23,8 +23,17 @@ HIR annotation chains. This avoids repeatedly searching the annotation list and
 preserves distinct operations on a node. Canonical `TypeTable` descriptors are
 cached by stable structural keys while keeping insertion-order numeric `TypeId`s.
 The MIR-C emitter now accumulates generated fragments before joining sections,
-function bodies and the full translation unit. These are compiler-internal
-representation changes, not changes to source-language value semantics.
+function bodies and the full translation unit. Normal source compilation uses
+`mir_emit_c_verified` after CFG ownership, lifetime and balance validation.
+This removes redundant register-read initialization checks and uses `NULL` as
+an empty ownership state for managed C pointers instead of per-register flags.
+Scalar registers need no runtime initialized-state tracking. Guarded arithmetic,
+index and optional operations rely on their explicit MIR CFG panic edges.
+The separate `mir_emit_c` entry point retains defensive initialization checks
+for arbitrary hand-constructed MIR, including tests of invalid register reads.
+Both paths retain reference counting and path-sensitive cleanup semantics.
+These are compiler-internal representation changes, not changes to source-language
+value semantics.
 
 ## Typed HIR
 

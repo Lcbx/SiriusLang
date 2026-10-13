@@ -34,6 +34,7 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 
 - [x] Index typed HIR annotations by syntax-node ID per specialization (sparse lookup, preserving distinct operations on the same node).
 - [x] Buffer MIR-C output through string fragments and join once per generated section/function/program.
+- [x] Eliminate redundant register-initialization checks and state flags from ownership-verified MIR C; preserve defensive checks for directly supplied MIR. Avoid duplicate index/division/unwrap checks when explicit CFG guards exist.
 - [x] Index canonical type descriptors by stable keys, preserving TypeIds. An analogous specialization signature cache was benchmarked and reverted because its key construction made generation slower.
 - [x] Split lowering into read-only `MirLowerContext` and mutable `MirBuilder`, passed separately to expression and statement lowering.
 - [x] Reduce CFG forward ownership CoW copies with cached sparse block write effects and in-place joins; further liveness/packed-bitset work depends on profiling.

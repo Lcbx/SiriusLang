@@ -32,8 +32,11 @@ cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o siri
 the committed bootstrap). `./sirius --mir-c input.sirius output.c` selects
 the **HIR → MIR → C backend**, which also reaches a native self-hosting fixed
 point when built without the legacy emitter. Unsupported MIR constructs fail
-explicitly; there is no implicit fallback. The stand-alone MIR interpreter is
-currently a testable library, not a source-program CLI.
+explicitly; there is no implicit fallback. The normal MIR compiler omits
+runtime register-initialization bookkeeping after ownership verification;
+direct MIR-to-C emission retains defensive checks for unverified input.
+The stand-alone MIR interpreter is currently a testable library, not a
+source-program CLI.
 
 ## Compiler development and bootstrap maintenance
 

@@ -34,8 +34,11 @@ def main() -> None:
 		f64_case.write_text('def main() -> i64\n\tlet xs = [1.0, 2.0]\n\tif xs[!0] == 1.0 and xs[!1] == 2.0\n\t\treturn 0\n\treturn 1\n')
 		output = work / 'f64_array.c'
 		execute([str(compiler), str(f64_case), str(output)])
+		generated = output.read_text(encoding='utf-8')
+		if 'bool init' in generated or 'uninitialized register' in generated:
+			raise AssertionError('Verified MIR C must not emit redundant runtime register checks')
 		assert_native(run_native(cache, output))
-		print('PASS MIR-only f64 arrays and comparisons')
+		print('PASS MIR-only f64 arrays and comparisons, no runtime register checks')
 		f64_dict = work / 'f64_dict.sirius'
 		f64_dict.write_text(
 			'def main() -> i64\n'
