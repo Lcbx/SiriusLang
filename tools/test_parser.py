@@ -6,8 +6,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from sirius_sources import ROOT, PARSER_SOURCES, normalize_newlines
-from test_build import BuildCache, options, require_cc, validate_jobs
+from source_manifest import ROOT, PARSER_SOURCES, normalize_newlines
+from build_support import BuildCache, options, require_cc, validate_jobs
 
 
 def main() -> None:

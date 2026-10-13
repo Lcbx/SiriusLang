@@ -4,8 +4,8 @@ import argparse
 from pathlib import Path
 import tempfile
 
-from sirius_sources import COMPILER_SOURCES
-from test_build import BuildCache, assert_native, execute, options, require_cc, run_native
+from source_manifest import COMPILER_SOURCES
+from build_support import BuildCache, assert_native, execute, options, require_cc, run_native
 
 
 CASES = {

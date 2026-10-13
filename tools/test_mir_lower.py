@@ -2,7 +2,7 @@
 """Lower checked HIR into scalar MIR and execute it with the Sirius interpreter."""
 import argparse
 
-from test_build import BuildCache, check_sirius_driver, options, require_cc
+from build_support import BuildCache, check_sirius_driver, options, require_cc
 
 
 def main() -> None:

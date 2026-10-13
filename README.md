@@ -1,175 +1,142 @@
 # Sirius
 
-Sirius is an experimental statically compiled, functional-first language with Python-like syntax, immutable values, structural typing, local imperative control flow, and planned NumPy-like arrays. The compiler currently targets **C11**.
+Sirius is an experimental, functional-first, statically compiled language with
+Python-like syntax, local imperative control flow, structural typing, immutable
+value semantics and copy-on-write collections. Its compiler emits **C11**.
 
-**Status: minimally self-hosted.** The Sirius compiler can compile its own combined source from the committed C bootstrap until the generated C reproduces itself. This demonstrates a working bootstrap subset, **not** complete implementation of [the language design](LANGUAGE_DESIGN.md). The historical Python compiler is frozen.
+**Current status:** the compiler is written in Sirius and can reproduce its own
+committed C bootstrap. Self-hosting covers a subset of
+[the intended language](LANGUAGE_DESIGN.md), not the complete design.
+The historical Python compiler is archived and is **not** used for active builds.
 
-## Quick start
+## Build and use
 
-Requirements: a C11 compiler (`cc` or `gcc`); Python 3.10+ is needed for the test/build **scripts**, not for the compiler. Commands below run from the repository root.
-
-**Build the self-hosted compiler from committed C (no Python required):**
+Requires a C11 compiler (`cc` or `gcc`). Python 3.10+ is required for development
+tools, not for executing the C bootstrap. Run these commands from the project root.
 
 ```sh
-cc -std=c11 -I include bootstrap_c/compiler.c include/sirius_runtime.c -lm -o sirius
+python tools/build_compiler.py
 ./sirius tests/fixtures/01_scalars.sirius output.c
-cc -std=c11 -I include output.c include/sirius_runtime.c -lm -o output
+cc -std=c11 -I runtime output.c runtime/sirius_runtime.c -lm -o output
 ./output
 ```
 
-Use `gcc` instead of `cc` where needed. On Windows, use `sirius.exe` / `output.exe` and launch them as appropriate. The self-hosted CLI is `sirius <input.sirius> <output.c>` (legacy C emitter). For the experimental scalar/string/record/array/dictionary HIR→MIR→C path, use `sirius --mir-c <input.sirius> <output.c>`; unsupported constructs are rejected without fallback.
-
-**Regenerating the C bootstrap after changing Sirius compiler sources:**
+On Windows use `sirius.exe` / `output.exe`; the build script selects the executable
+suffix. Building without Python is also possible:
 
 ```sh
-python tools/test_emitter.py
-python tools/test_selfhost.py --update-bootstrap
-python tools/test_selfhost.py --check
+cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o sirius
 ```
 
-The update command compiles from the **existing** `bootstrap_c/compiler.c`, checks the self-reproducing fixed point, and overwrites the committed C source **without running fixture tests**. The verification command (`--check`, also the default when no mode is specified) checks the fixed point, compares committed C, and runs the full emitter suite. Commit generated C together with the Sirius changes. New compiler source must remain compilable by the prior C seed; add support for new syntax before using it in `src/`.
+`./sirius input.sirius output.c` selects the **legacy C emitter** (the only
+established self-hosting path). `./sirius --mir-c input.sirius output.c` selects
+the **experimental HIR → MIR → C backend**. Unsupported MIR constructs fail
+explicitly; there is no implicit fallback. The stand-alone MIR interpreter is
+currently a testable library, not a source-program CLI.
 
-HIR now runs an independent pre-emission body traversal after declaration indexing. It resolves lexical scopes, local/parameter/module-constant names, and statically known scalar expression types, recording typed source nodes and rejecting definite local binding errors. Record and collection literals, explicit collection constructors, field/index access, optional unboxing and selected builtin/method calls now receive canonical types when inputs are known. Concrete user-function calls and record constructors now also resolve through the declaration table; HIR checks annotated arguments, infers nested nonrecursive generic results, and records callee identities. HIR now defines the canonical specialization registry, keyed by declaration identity and argument TypeIds with in-progress tracking. `src/hir_specialize.sirius` uses a backend-independent worklist to type each concrete function body once (including mutually recursive and repeated signatures). `src/mir_program.sirius` lowers supported scalar/string/record specializations to MIR functions with matching indices. The experimental `--mir-c` path emits C from those linked MIR functions, with HIR-owned specialization identities; the legacy C emitter remains the default for the full bootstrap subset.
+## Compiler development and bootstrap maintenance
 
-## MIR-only migration status
+Three commands have deliberately different responsibilities:
 
-The experimental `--mir-c` backend additionally lowers named structural `rec` annotations, non-generic `rec` constructor calls (including direct `pub` expressions), module `i64` constants, empty typed arrays, `Array.append`, array and half-open-range `for` loops, `break`/`continue`, expression statements and `print`. The native C backend also supports `arguments`, `str(i64)`, `read_text` and `write_text`. `Array.append` currently copies its storage, including for a unique owner; correctness takes precedence over optimization. The MIR interpreter does not yet execute `read_text`.
+| Command | Purpose |
+| --- | --- |
+| `python tools/build_compiler.py [--output PATH]` | Compile the **committed** C bootstrap and runtime into an executable; does not regenerate Sirius sources |
+| `python tools/generate_bootstrap.py` | Compile Sirius sources through successive compiler generations to a byte-identical fixed point, then update `bootstrap/compiler.c`; **does not run language fixtures** |
+| `python tools/generate_bootstrap.py --check` | Verify committed bootstrap matches the computed fixed point, without modifying it or running fixtures |
+| `python tools/test_bootstrap.py` | Verify the fixed point and committed C, then run compiler execution and diagnostic fixtures |
+| `python tools/test_bootstrap.py --fixed-point-only` | Verify self-hosting and committed C without running language fixtures |
+| `python tools/test_compiler.py` | Test the default C emitter built directly from the committed C bootstrap |
+| `python tools/probe_mir_selfhost.py --require-ready` | Probe MIR-only compiler generation; **not** a self-hosting fixed-point test |
 
-**The legacy `emit_c.sirius` remains necessary**: the MIR path still lacks language constructs used by the compiler itself (notably deeper projection updates, some return-type inference, record spreads, and other complex lowering). A MIR self-hosting fixed point has not been demonstrated. Continue running the default compiler through the legacy emitter until `tools/check_mir_bootstrap.py --require-ready`, full differential tests and independent MIR self-hosting all pass.
+Normal changes to the Sirius compiler:
+
+```sh
+python tools/test_compiler.py --jobs 4
+python tools/generate_bootstrap.py
+python tools/test_bootstrap.py --jobs 4
+```
+
+Commit Sirius source and generated `bootstrap/compiler.c` together. **Never edit
+generated C by hand.** The *previous* committed compiler must be able to compile
+the updated Sirius source; introduce new syntax in stages.
+
+The ordered source manifests and byte-oriented concatenation live in
+`tools/source_manifest.py`. Sources are concatenated because Sirius imports are
+not implemented yet. `--rebuild` clears content-addressed compiled artifacts,
+and test runners supporting parallel fixtures accept `--jobs N` (default up to
+4). Cached objects and binaries are stored under `.build/cache/`, while fixture
+executables and successive compiler generations use temporary directories.
 
 ## Tests
 
-Test runners use `-O0` for disposable C binaries and compile the runtime once
-per input fingerprint. The shared compiled bootstrap, runtime object, and Sirius
-test drivers are cached in Git-ignored `.build/cache/`. A change to Sirius/C
-sources, runtime headers, compiler flags, or the selected C compiler automatically
-produces a new cache entry; GCC does not perform this invalidation itself.
+Run individual suites as needed:
 
-Individual fixtures run concurrently using Python threads to launch independent
-C compilers and executables. All active runners accept `--jobs N` (default up to
-4; use `--jobs 1` to debug) and `--rebuild` to discard cached build artifacts.
-The historical Python compiler test runner accepts these options too.
-
-```sh
-python tools/test_emitter.py --jobs 4
-python tools/test_parser.py --jobs 4
-python tools/test_selfhost.py --jobs 1
-python tools/test_emitter.py --rebuild
-```
-
-Self-hosting still **generates each compiler generation afresh** for its
-fixed-point check. Only the seed compiler and shared C runtime are cached.
-Fixture outputs remain in isolated temporary directories, not in `.build/`.
-
-
-| Command | What it checks |
+| Command | Scope |
 | --- | --- |
-| `python tools/test_selfhost.py --check` (or no mode flag) | C bootstrap fixed point, committed C comparison, 85 executable cases and 37 expected diagnostics |
-| `python tools/test_selfhost_modes.py` | Unit checks for update/check dispatch, stale bootstrap and missing fixed point |
-| `python tools/test_emitter.py` | Sirius-written emitter: 85 positive C executions, 37 expected diagnostics |
-| `python tools/test_parser.py` | Sirius parser: 11 golden cases and syntax smoke tests |
-| `python tools/test_types.py` | Canonical type interning, compiler bindings, and generic cache identity |
-| `python tools/test_mir.py` | Sirius-written typed CFG MIR interpreter and verifier (hand-built MIR) |
-| `python tools/test_mir_lower.py` | Checked HIR → scalar CFG MIR lowering; branching, loops, short-circuit evaluation, and execution |
-| `python tools/test_hir_worklist.py` | Backend-independent concrete HIR specialization worklist, including canonical array type signatures |
-| `python tools/test_mir_program.py` | HIR worklist → linked scalar MIR program; nested, repeated and recursive calls |
-| `python tools/test_mir_ownership.py` | Forward CFG definite-initialization and move/release validation |
-| `python tools/test_mir_lifetime.py` | Backward CFG liveness and last-use release insertion |
-| `python tools/test_mir_exit_cleanup.py` | Edge-specific and exit cleanup, unused arguments, managed returns, loops and panic terminators |
-| `python tools/test_mir_guard.py` | Explicit panic guards for division, checked arrays, and optional unwrap (interpreter/native) |
-| `python tools/test_mir_failure_contract.py` | Failure metadata, post-lowering guard audit, and non-unwinding operation classification |
-| `python tools/test_mir_optional.py` | Managed optional values and missing-value control flow in Sirius interpreter and native C |
-| `python tools/test_mir_c.py` | Opt-in HIR→MIR→C execution against legacy C (including managed strings and dictionaries), plus direct MIR checks |
-| `python tools/test_mir_migration.py` | New MIR coverage against legacy native C: named records/constructors, module constants, CLI/file builtins, append, array/range iteration, loop control |
-| `python tools/check_mir_bootstrap.py --require-ready` | Probe the MIR-only compiler source manifest (excludes `emit_c.sirius`) with no legacy fallback; a full fixed point is still required |
-| `python tools/test_mir_managed.py` | Shared interpreted/native managed-string MIR, retain/move/release, calls and invalidated-register checks |
-| `python tools/test_mir_dict.py` | MIR dictionaries: CoW insertion, string keys, nested arrays and consuming updates (interpreter/native) |
-| `python tools/test_mir_records.py` | Nested structural records, canonical fields, recursive release, self-copy, calls, and use-after-release |
-| `python tools/test_tokenizer.py` | Sirius tokenizer: 19 golden cases |
-| `python tools/test_selfhost.py --update-bootstrap` | Update committed C after verifying the fixed point; skip fixture tests |
-| `python tools/verify_c.py` | 24 independent C references plus runtime panic; **does not test generated compiler output** |
+| `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
+| `python tools/test_compiler.py` | 85 successful native executions and 37 expected diagnostics |
+| `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
+| `python tools/test_parser.py` | 11 parser golden fixtures and smoke checks |
+| `python tools/test_types.py` | Type interning, typed HIR and specialization |
+| `python tools/test_hir_worklist.py` | Independent HIR specialization worklist |
+| `python tools/test_mir.py` | Hand-constructed executable MIR and verifier |
+| `python tools/test_mir_lower.py` | HIR → MIR lowering and interpreter execution |
+| `python tools/test_mir_program.py` | Linked concrete MIR specializations |
+| `python tools/test_mir_c.py` | Differential MIR-C / legacy-C cases |
+| `python tools/test_mir_migration.py` | Source feature parity against legacy emission |
+| `python tools/test_mir_interpreter.py` | MIR interpreter behavior |
+| `tools/test_mir_*.py` | Focused MIR behavior and ownership tests (run scripts individually) |
+| `python tools/test_reference_c.py` | 24 independent handwritten C references plus runtime-panic checks; not a compiler test |
+| `python tools/test_build_cache.py` | Content-addressed build-cache invalidation |
+| `python tools/test_tool_utils.py` | Process result and newline test helpers |
+| `python tools/test_python_bootstrap.py --command 'python archive/python_bootstrap/sirius.py'` | **Archival** Python compiler tests only; not part of active bootstrap |
 
-Indexing uses `a[?i]` for optional reads, `a[!i]` for checked reads/updates, and postfix `!` to unbox an optional. Boolean guards use `condition else return value`, `condition else break`, or `condition else continue`.
+The 85/37 counts describe the current tests, not a full language conformance
+claim. The fixture-generation scripts are **manual authoring tools**:
+`tools/generate_core_fixtures.py` and
+`tools/generate_extended_fixtures.py`; they overwrite checked-in fixtures.
 
-The counts describe the current fixtures, not full conformance. The active tokenizer, parser, emitter and bootstrap tests use **only the committed C compiler** as their compiler seed. Python orchestrates tests but does not compile Sirius. The historical `bootstrap_python/` tests may still be run manually for archival comparison.
-
-## HIR/MIR performance work
-
-HIR-to-MIR lowering now builds a per-specialization sparse annotation index keyed
-by syntax-node ID; it no longer scans the typed HIR for each expression. Canonical
-`TypeId` interning uses a descriptor-key cache while preserving insertion-order
-IDs. MIR-C emission buffers runtime sections and function bodies as string
-fragments, joining each result once instead of repeatedly copying accumulated C.
-
-MIR lowering now passes a read-only `MirLowerContext` separately from its
-mutable `MirBuilder`, avoiding repeated CoW ownership of AST/HIR/type metadata.
-Forward CFG ownership analysis caches instruction write effects per block and
-applies each block transfer once per worklist iteration. CFG joins update a
-single CoW-owned register mask instead of allocating a new mask for every
-predecessor. MIR instruction storage remains unchanged; the legacy emitter is
-still the default.
-
-## Repository map
+## Repository structure
 
 ```text
-src/                  Sirius lexer, parser, typed HIR/worklist, C emitter, MIR lowering and interpreter
-bootstrap_python/     Frozen historical Python bootstrap (not used by active builds)
-bootstrap_c/          Checked-in, reproducible generated compiler.c
-include/              Shared C11 runtime (ARC, CoW collections, strings, I/O)
-tests/                Language, lexer, parser, emitter and failure fixtures
-tools/                Tests and bootstrap/build helpers
-LANGUAGE_DESIGN.md    Intended language semantics (normative direction)
-IR_DESIGN.md          Typed IR design and proposed MIR lowering
-INTERPRETER.md        MIR interpreter progress and backend testing policy
-ROADMAP.md            Technical debt, design assessment, staged implementation plan
-target_ir.py          Illustrative Python IR dataclasses; not used by the compiler
+src/                    Sirius compiler modules, entry points and MIR interpreter
+bootstrap/compiler.c    Committed, reproducible C compiler bootstrap
+runtime/                C11 runtime implementation and header
+archive/python_bootstrap/  Historical, frozen Python implementation
+experiments/target_ir.py  Illustrative Python IR dataclasses (not used in builds)
+tests/compiler/         Compiler feature and diagnostic fixtures
+tests/fixtures/         Earlier language examples
+tests/reference_c/      Independent handwritten C examples
+tests/mir/              Sirius MIR test drivers
+tools/                  Build/generation commands, shared helpers and test runners
 ```
 
-Source modules in `src/` are currently **concatenated in a fixed order**, along with `tests/emitter/driver.sirius` using `tools/sirius_sources.py`, to build the compiler. Sirius imports are not implemented yet. `tools/sirius_sources.py` centralizes the ordered source manifest; `tools/emitter_cases.py` contains the shared stage-1/fixed-point regression inventory.
+`src/cli.sirius` is the default compiler's entry point and
+`src/mir_cli.sirius` is the MIR-only entry point. `src/emit_c.sirius` is
+still required for the self-hosted compiler, while `src/mir_emit_c.sirius`
+implements the experimental replacement backend.
 
-## MIR backend migration (in progress)
+## Implementation boundaries
 
-`compile_common.sirius` contains `CompileResult`, and `mir_common.sirius` contains
-helpers shared by the MIR interpreter and C emitter. The **legacy C emitter
-remains the default** until the replacement compiler self-hosts and passes the
-full regression suite.
+The legacy backend covers a practical subset of scalars, recursion, records,
+constructor functions, strings, rank-1 arrays, dictionaries and optionals.
+Canonical type interning and typed HIR exist alongside legacy emitter-local
+type and specialization handling.
 
-`MIR_ONLY_COMPILER_SOURCES` excludes `src/emit_c.sirius` and uses
-`tests/emitter/mir_driver.sirius`. Run `python tools/check_mir_bootstrap.py
---require-ready` to build a MIR-only compiler using the committed C seed,
-then ask it to compile its own source through MIR. Pass `--timeout 120` for a
-bounded probe; the script reports build and C-generation wall times separately.
-The legacy emitter is not included in MIR-only test drivers. Successful C
-emission alone would not establish a self-hosting fixed point.
+The MIR path implements typed CFG instructions, an interpreter, a C emitter,
+specialization lowering, explicit ownership operations, guard insertion, liveness,
+last-use release insertion and exit cleanup. It supports numerous source-level
+scalar, string, record, array, dictionary and optional operations. However,
+some nested projection updates, record spreads and inference cases still prevent
+complete MIR-only compilation of the compiler. **No MIR-only self-hosting fixed
+point has been demonstrated.** Arrays use CoW for consuming updates; some
+updates (including `Array.append`) still use conservative copying instead of
+unique-owner reuse. MIR interpreter file-I/O parity is incomplete.
 
-MIR now handles string methods (`byte_at`, `slice`, `find`, `starts_with`,
-`ends_with`, `join`), string comparisons, direct record-field updates,
-record-owned array updates, guard statements, and calls published by record
-constructors. Record updates rebuild canonical values rather than mutate
-shared aliases. The regression coverage is in `tools/test_mir_migration.py`.
+Modules/imports, multidimensional arrays, broadcasting, full effect/purity
+checking, universal runtime type descriptors and concurrent map are future work.
+Negative indexing remains deferred.
 
-## Current scope and limitations
-
-The self-hosted compiler supports a tested subset of scalar control flow, function specialization, structural records and `rec` constructors (parameters automatically published; `def` constructors rejected), managed strings, rank-1 arrays (including nested/record elements), dictionaries, partial optionals, and C emission with conservative ownership handling. Missing constructs include tagged unions and richer optional/constructor forms.
-
-The new `src/mir.sirius` and `src/mir_interpreter.sirius` provide a verified, executable CFG MIR subset for `i64`, `bool`, strings, canonical structural records and rank-1 arrays and an unoptimized interpreter written in Sirius. `src/mir_lower.sirius` lowers **checked scalar/string/record/array HIR** (bindings, arithmetic, string literals/concatenation/length, record literals/field reads, array literals/checked indexing/length/CoW updates, short-circuiting, branches, loops, returns, and specialized function calls). `src/hir_specialize.sirius` resolves a backend-independent worklist of concrete signatures and checked bodies, while `src/mir_program.sirius` assembles their corresponding MIR functions. The opt-in `src/mir_emit_c.sirius` translates those verified functions to C11 (using the same specialization indices). Tests compare native executions against the legacy backend, and separate interpreter tests execute linked scalar programs without C generation. Record literals, field access, and rank-1 arrays now work in MIR (including nested managed elements). Arrays use a consuming update instruction with type-directed copy-on-write; record spreads/deletions, arbitrary nested projections, and some unannotated generic callees remain unsupported; the source-level interpreter CLI is not wired. String, record and array registers own references, with retain/copy, move and release operations. Copies share managed storage; array updates copy shared backing storage and reuse uniquely owned backing storage. Dropping the last collection reference recursively releases nested managed values; normal-return cleanup is implemented in C. See [INTERPRETER.md](INTERPRETER.md) for scope and the planned shared `--backend` test flag.
-
-The main outstanding work is **a robust typed representation and ownership-aware control-flow lowering**. `src/emit_c.sirius` still combines name/type resolution, specialization, ownership handling, and textual C emission. A canonical type-descriptor table now interns scalar, record, array, dictionary, and optional types. The HIR-owned specialization registry now keys cache entries by declaration identity and canonical argument `TypeId`s, tracking in-progress/completed entries. The C emitter still initiates specialization and generates C; instance code storage no longer owns the specialization key or status. Bound symbols and record-field lookup use canonical `TypeId`s. Canonical descriptors now drive record field layout and C retain/drop helper selection for records, arrays and dictionaries. The incremental typed HIR (`src/hir.sirius`) resolves literals, local names, record fields, unary/binary expressions, assignment compatibility, builtin and user-function call signatures, string methods, collection method types, and record/constructor field composition using canonical `TypeId`s. A separate pre-emission HIR traversal now handles lexical scopes, bindings, known scalar/record/collection expressions, checked/optional indexing, optional fallback, and concrete user-function/constructor call results (including nested nonrecursive generic inference). The C emitter still handles unresolved expression types, argument evaluation, initiating specializations, constructor lowering, control flow and ownership; no complete typed-function HIR exists. Legacy arithmetic type IDs still name generated C types and occur in the remaining lowering paths; a complete HIR-only semantic pass remains Phase B work. Memory management and evaluation order have focused tests, but they are not yet established correct for every nested expression or early exit.
-
-Other design features—including modules, general operator overloads, universal descriptors and `Any`, pure `map`/`filter`/`generate`, multidimensional arrays, SIMD and concurrency—remain unimplemented. Python-style negative array indices are explicitly deferred.
-
-See [ROADMAP.md](ROADMAP.md) for **prioritized debt, incremental implementation steps, acceptance criteria, and design alignment**. See [IR_DESIGN.md](IR_DESIGN.md) for the intended intermediate representations. Regenerate changed bootstrap C with `python tools/test_selfhost.py --update-bootstrap`, then verify with `python tools/test_selfhost.py --check`; never edit generated C manually.
-
-The experimental MIR backend now includes `Dict[i64 | string, T]` storage (keys are separately typed as either `i64` or `string`), with empty construction, `insert`, and `len` lowered from supported Sirius source. Direct MIR additionally provides an eager `MIR_DICT_GET_OR` primitive. Source-level `.get(...)` and lazy optional fallback now lower through typed Optional and CFG branches. MIR dictionaries currently use a simple linear key scan; this is a correctness-oriented baseline, not a production hash-table implementation.
-
-The experimental `--mir-c` backend supports optional rank-1 array indexing (`a[?i]`), dictionary `.get(key)`, postfix unwrap (`!`), lazy `or` fallback, and `let x = optional else return expr`. The legacy C backend remains the default.
-
-The combined HIR→MIR compiler pipeline validates the initial MIR and the final cleaned CFG (including ownership balance and runtime-failure audit) without repeating verification after every intermediate pass. Public individual guard, lifetime and cleanup functions retain their input/output validation, so they remain safe to use independently. This avoids redundant CFG fixed-point work while producing identical C.
-
-The experimental HIR→MIR pipeline first converts division/remainder, checked array access/mutation and optional unwrap failures into explicit guarded CFG `Panic` exits (`src/mir_guard.sirius`), then runs backward CFG last-use release insertion (`src/mir_lifetime.sirius`), forward definite-initialization/move verification (`src/mir_ownership.sirius`), then path-sensitive exit cleanup (`src/mir_cleanup.sirius`). The cleanup pass releases dead managed values along CFG edges and at explicit `Return`/`Panic` terminators, including unused arguments, while preserving returned references. A forward may-initialization analysis and `MIR_RELEASE_IF_INIT` now handle values present on only some paths; `mir_check_balance` verifies that all managed registers other than a returned value are released at reachable explicit exits. The analyses share register-read definitions; existing backend return cleanup remains defensive. These covered failures now pass through MIR cleanup before panicking; allocation failures, other runtime checks, and arbitrary host panics remain non-unwinding. See `tools/test_mir_lifetime.py`, `tools/test_mir_ownership.py`, and `tools/test_mir_exit_cleanup.py`, and `tools/test_mir_balance.py`.
-
-Final ownership-balance checking now propagates must-initialized and may-initialized masks in a single forward CFG worklist. Standalone ownership/liveness APIs retain selective analysis, avoiding unnecessary may-ownership work for scalar-only functions. `python tools/test_mir_ownership_combined.py` checks joins, backedges and unreachable blocks.
-
-The MIR ownership and lifetime analyses use dense per-register 0/1 arrays and worklist-based CFG fixed points, with shared precomputed predecessor lists. These replace sparse liveness membership scans and repeated whole-graph passes. Edge cleanup also uses a single ownership/liveness snapshot per function, inserting `MIR_RELEASE_IF_INIT` on dead edges rather than recomputing global states after each edit; a final balance check validates the rewritten CFG. The current seed compiler does not accept `Array[bool]` in these record fields, so the masks use `Array[i64]` until that language capability is available. Run `python tools/test_mir_dataflow.py` for the long branching/backedge regression.
-
-The experimental MIR pipeline now audits its runtime failure contract: checked division/remainder, bounds-checked array operations and optional unwrap must be marked as CFG-guarded before code generation. `mir_failure_info` additionally identifies operations that can terminate outside the local CFG (allocations, I/O and calls whose callees fail). These **do not unwind caller-owned values**; the audit reports them but cannot make them recoverable. Integer overflow outside division remains unspecified by the language design.
+See [ROADMAP.md](ROADMAP.md) for priorities, [IR_DESIGN.md](IR_DESIGN.md)
+for IR architecture, [INTERPRETER.md](INTERPRETER.md) for interpreter details
+and [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md) for intended semantics.

@@ -2,8 +2,8 @@
 """Unit tests for shared process and newline comparison utilities."""
 import subprocess
 
-from sirius_sources import normalize_newlines
-from test_build import assert_native
+from source_manifest import normalize_newlines
+from build_support import assert_native
 
 
 def main() -> None:

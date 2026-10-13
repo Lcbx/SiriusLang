@@ -8,8 +8,8 @@ import subprocess
 import sys
 import tempfile
 
-from sirius_sources import ROOT
-from test_build import BuildCache, compile_c, options, require_cc, validate_jobs
+from source_manifest import ROOT
+from build_support import BuildCache, compile_c, options, require_cc, validate_jobs
 
 
 def main() -> None:
@@ -18,7 +18,7 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	runtime = cache.runtime()
-	cases = sorted((ROOT / 'tests/expected_c').glob('*.c'))
+	cases = sorted((ROOT / 'tests/reference_c').glob('*.c'))
 	if not cases:
 		raise AssertionError('No expected C references found')
 

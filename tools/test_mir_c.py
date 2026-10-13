@@ -5,8 +5,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from test_build import BuildCache, assert_native, execute, normalize_newlines, options, require_cc, run_native
-from sirius_sources import COMPILER_SOURCES, normalize_newlines
+from build_support import BuildCache, assert_native, execute, normalize_newlines, options, require_cc, run_native
+from source_manifest import COMPILER_SOURCES, normalize_newlines
 
 
 CASES = {

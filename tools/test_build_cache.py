@@ -4,14 +4,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import tempfile
 
-import test_build
-from test_build import BuildCache, require_cc
+import build_support
+from build_support import BuildCache, require_cc
 
 
 def main() -> None:
 	with tempfile.TemporaryDirectory() as tmp:
-		old_build = test_build.BUILD
-		test_build.BUILD = Path(tmp)
+		old_build = build_support.BUILD
+		build_support.BUILD = Path(tmp)
 		try:
 			cache = BuildCache(require_cc())
 			built = []
@@ -29,7 +29,7 @@ def main() -> None:
 				raise AssertionError('Concurrent cache publishing failed')
 			print('PASS cached artifacts, content invalidation, concurrent publishing')
 		finally:
-			test_build.BUILD = old_build
+			build_support.BUILD = old_build
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ import sys
 import tempfile
 from typing import Callable
 
-from sirius_sources import ROOT, combined_sources, normalize_newlines
+from source_manifest import ROOT, combined_sources, normalize_newlines
 
 BUILD = ROOT / '.build' / 'cache'
 C_FLAGS = ('-std=c11', '-O0', '-Wall', '-Wextra', '-Werror', '-pedantic')
@@ -86,13 +86,13 @@ class BuildCache:
 
 	def _headers(self) -> tuple[bytes, ...]:
 		return tuple(path.name.encode() + b'\0' + path.read_bytes()
-			for path in sorted((ROOT / 'include').glob('*.h')))
+			for path in sorted((ROOT / 'runtime').glob('*.h')))
 
 	def runtime(self) -> Path:
-		source = ROOT / 'include/sirius_runtime.c'
+		source = ROOT / 'runtime/sirius_runtime.c'
 		inputs = (source.read_bytes(), *self._headers())
 		def build(output: Path, _: Path) -> None:
-			execute([self.cc, *C_FLAGS, '-I', str(ROOT / 'include'), '-c', str(source), '-o', str(output)])
+			execute([self.cc, *C_FLAGS, '-I', str(ROOT / 'runtime'), '-c', str(source), '-o', str(output)])
 		return self._artifact('runtime', inputs, 'sirius_runtime.o', build)
 
 	def _binary(self, category: str, source: Path, inputs: tuple[bytes, ...]) -> Path:
@@ -103,7 +103,7 @@ class BuildCache:
 		return self._artifact(category, (source.read_bytes(), runtime.parent.name.encode(), *inputs), filename, build)
 
 	def seed(self) -> Path:
-		return self._binary('seed', ROOT / 'bootstrap_c/compiler.c', ())
+		return self._binary('seed', ROOT / 'bootstrap/compiler.c', ())
 
 	def sirius(self, category: str, sources: tuple[str, ...], separator: bytes = b'\n') -> Path:
 		data = combined_sources(sources, separator=separator)
@@ -121,7 +121,7 @@ class BuildCache:
 
 def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
 	"""Link a C source file against the Sirius runtime with strict C11 flags."""
-	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'include'),
+	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'runtime'),
 		str(source), str(runtime), '-lm', '-o', str(output)])
 
 

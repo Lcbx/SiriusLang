@@ -5,9 +5,9 @@ from pathlib import Path
 import subprocess
 import sys
 
-from test_build import BuildCache, compile_c, execute, validate_jobs
+from build_support import BuildCache, compile_c, execute, validate_jobs
 
-from sirius_sources import ROOT, normalize_newlines
+from source_manifest import ROOT, normalize_newlines
 
 REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '29_strings_and_arguments', '36_string_byte_at', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
 ERRORS = {
@@ -59,8 +59,8 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 	jobs = validate_jobs(jobs)
 	positives = [(ROOT / 'tests/fixtures' / (name + '.sirius'),
 		ROOT / 'tests/expected_output' / (name + '.txt')) for name in REFERENCE]
-	positives += [(src, ROOT / 'tests/emitter/expected_output' / (src.stem + '.txt'))
-		for src in sorted((ROOT / 'tests/emitter/fixtures').glob('*.sirius'))]
+	positives += [(src, ROOT / 'tests/compiler/expected_output' / (src.stem + '.txt'))
+		for src in sorted((ROOT / 'tests/compiler/fixtures').glob('*.sirius'))]
 	if not positives:
 		raise AssertionError('No positive emitter cases found')
 	runtime = runtime or BuildCache(cc).runtime()
@@ -85,7 +85,7 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 			raise AssertionError(f'{source.name}: exit={result.returncode}, output={result.stdout!r} != {wanted!r}; {result.stderr}')
 		return f'PASS {source.name}'
 
-	negatives = sorted((ROOT / 'tests/emitter/negative').glob('*.sirius'))
+	negatives = sorted((ROOT / 'tests/compiler/negative').glob('*.sirius'))
 	if {source.stem for source in negatives} != set(ERRORS):
 		raise AssertionError('negative test fixtures and expected diagnostics differ')
 

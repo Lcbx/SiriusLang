@@ -6,8 +6,8 @@ from pathlib import Path
 import re
 import tempfile
 
-from sirius_sources import ROOT
-from test_build import BuildCache, execute, options, require_cc, validate_jobs
+from source_manifest import ROOT
+from build_support import BuildCache, execute, options, require_cc, validate_jobs
 
 
 def main() -> None:
@@ -43,7 +43,7 @@ def main() -> None:
 	# The generated symbol set is inspected, not the textual layout of the C.
 	with tempfile.TemporaryDirectory() as tmp:
 		generated = Path(tmp) / 'generic_record.c'
-		execute([str(cache.seed()), str(ROOT / 'tests/emitter/fixtures/11_generic_records.sirius'), str(generated)])
+		execute([str(cache.seed()), str(ROOT / 'tests/compiler/fixtures/11_generic_records.sirius'), str(generated)])
 		symbols = set(re.findall(r'\bs_sum_xy__\d+\b', generated.read_text(encoding='utf-8')))
 		if len(symbols) != 1:
 			raise AssertionError(f'Expected one structural-record specialization; found {symbols}')

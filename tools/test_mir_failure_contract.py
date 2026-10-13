@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Audit explicit CFG trap guards and report non-unwinding operations."""
-from test_build import BuildCache, execute, require_cc
-from sirius_sources import MIR_DRIVER_SOURCES
+from build_support import BuildCache, execute, require_cc
+from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:

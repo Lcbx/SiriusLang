@@ -8,7 +8,7 @@ def add(name, src, c, expected):
     src = dedent(src).strip() + '\n'
     src = '\n'.join('\t' * ((len(line) - len(line.lstrip(' '))) // 4) + line.lstrip(' ') for line in src.splitlines()) + '\n'
     (ROOT / 'tests' / 'fixtures' / (name + '.sirius')).write_text(src)
-    (ROOT / 'tests' / 'expected_c' / (name + '.c')).write_text('/* Reference lowering, not required byte-for-byte compiler output. */\n' + dedent(c).lstrip())
+    (ROOT / 'tests' / 'reference_c' / (name + '.c')).write_text('/* Reference lowering, not required byte-for-byte compiler output. */\n' + dedent(c).lstrip())
     (ROOT / 'tests' / 'expected_output' / (name + '.txt')).write_text(expected)
 
 add('14_nested_cow', '''

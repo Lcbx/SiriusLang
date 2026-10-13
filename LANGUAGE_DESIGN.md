@@ -1,6 +1,6 @@
 # Sirius — Language Design
 
-> **Status:** Language target, not an inventory of implemented compiler features. The current Python bootstrap compiler implements a subset; see [README.md](README.md) for implementation status and roadmap.
+> **Status:** Language target, not an inventory of implemented compiler features. The current self-hosted Sirius compiler implements a subset; see [README.md](README.md) for implementation status.
 >
 > **Agreed clarifications:** Bootstrap compiler written in Python (rather than OCaml); dictionary type is `Dict` (not `Map`); records use lexicographically sorted field names for canonical layout; constructor-based union aliases and `match` use the syntax below. Python-style negative array indexing is a medium-priority future improvement.
 
@@ -442,7 +442,7 @@ compile-time function evaluation are deferred.
 
 ## 12. Compiler
 
-Self-hosted compiler targeting C through Zig's C toolchain, initially bootstrapped using **Python**.
+Self-hosted compiler targeting C11, initially bootstrapped using **Python** and now maintained from committed generated C. Zig's C toolchain is optional.
 
 ### Bootstrap strategy
 

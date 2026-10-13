@@ -6,8 +6,8 @@ import subprocess
 import tempfile
 from time import perf_counter
 
-from sirius_sources import MIR_ONLY_COMPILER_SOURCES, combined_sources
-from test_build import BuildCache, options, require_cc
+from source_manifest import MIR_ONLY_COMPILER_SOURCES, combined_sources
+from build_support import BuildCache, options, require_cc
 
 
 def main() -> None:

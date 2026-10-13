@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 """Verify MIR definite initialization and consumption across the CFG."""
 
-from test_build import BuildCache, check_sirius_driver, require_cc
-from sirius_sources import MIR_DRIVER_SOURCES
+from build_support import BuildCache, check_sirius_driver, require_cc
+from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:

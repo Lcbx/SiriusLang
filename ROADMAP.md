@@ -4,17 +4,17 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 
 ## 1. Baseline and evidence
 
-- **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap_c/compiler.c`. The emitter still combines semantic analysis and C11 generation.
-- **Historical bootstrap:** `bootstrap_python/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap_c/compiler.c`, and the generated compiler runs the full shared emitter suite (75 positives and 31 diagnostics). See `tools/test_selfhost.py`.
-- **Coverage:** 75 emitter executions (13 original language cases + 62 emitter-specific fixtures), 31 emitter diagnostics, 19 tokenizer golden cases, 10 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
+- **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap/compiler.c`. The emitter still combines semantic analysis and C11 generation.
+- **Historical bootstrap:** `archive/python_bootstrap/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap/compiler.c`, and the generated compiler runs the full shared emitter suite (85 positives and 37 diagnostics). See `tools/test_bootstrap.py`.
+- **Coverage:** 85 emitter executions (13 original language cases + 72 compiler-specific fixtures), 37 emitter diagnostics, 19 tokenizer golden cases, 11 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work
 
 1. Keep [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md) as the semantic source of truth; document deliberate deviations. Do not treat the Python backend's incidental behavior as the language specification.
-2. Implement new compiler features **only in Sirius**. `bootstrap_python/` remains frozen; Python may still be used for development/test orchestration, not as a compiler dependency.
+2. Implement new compiler features **only in Sirius**. `archive/python_bootstrap/` remains frozen; Python may still be used for development/test orchestration, not as a compiler dependency.
 3. Each feature starts with positive, negative and (for managed values) aliasing/early-exit tests. Test the Sirius compiler built from the C bootstrap, not the historical Python compiler.
-4. Preserve the C11 bootstrap fixed point. Regenerate `bootstrap_c/compiler.c` from Sirius sources; never edit generated C manually.
+4. Preserve the C11 bootstrap fixed point. Regenerate `bootstrap/compiler.c` from Sirius sources; never edit generated C manually.
 5. Separate correctness and optimization. Conservative ARC comes before moves, borrowed values, FBIP reuse or SIMD.
 
 ## 2. Active bootstrap workflow
@@ -22,13 +22,13 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 The checked-in C compiler is the **sole seed for ongoing development**. The Python implementation is not part of the loop:
 
 1. Implement a compiler change in `src/` and add tests. Keep the compiler's own source within the *previous* seed compiler's accepted Sirius subset.
-2. Run `python tools/test_emitter.py` and the relevant tokenizer/parser tests (these use the committed C compiler). The committed-C comparison in `test_selfhost.py` may intentionally fail until the generated bootstrap has been refreshed.
-3. Run `python tools/test_selfhost.py --update-bootstrap` to compile the updated compiler with the **current C bootstrap**, iterate until the generated C is self-reproducing, and replace `bootstrap_c/compiler.c` without running the fixture suite.
-4. Run `python tools/test_selfhost.py --check` for the fixed-point/committed-C comparison and full emitter fixture suite, then commit the Sirius source, tests, and regenerated C together. Review the C diff rather than editing generated C.
+2. Run `python tools/test_compiler.py` and the relevant tokenizer/parser tests (these use the committed C compiler). The committed-C comparison in `test_bootstrap.py` may intentionally fail until the generated bootstrap has been refreshed.
+3. Run `python tools/generate_bootstrap.py` to compile the updated compiler with the **current C bootstrap**, iterate until the generated C is self-reproducing, and replace `bootstrap/compiler.c` without running the fixture suite.
+4. Run `python tools/test_bootstrap.py` for the fixed-point/committed-C comparison and full emitter fixture suite, then commit the Sirius source, tests, and regenerated C together. Review the C diff rather than editing generated C.
 
 When the new compiler adds syntax or semantics that the previous seed cannot compile, implement the compiler support first using **old-subset syntax**, refresh the C bootstrap, and only then adopt the new feature inside the compiler source. Otherwise the bootstrap chain cannot advance. A source change that cannot be compiled by the seed is a bootstrapping blocker, not a reason to unfreeze Python.
 
-The Python scripts under `tools/` are test/build orchestration and remain permitted; **`bootstrap_python/` itself is archival**.
+The Python scripts under `tools/` are test/build orchestration and remain permitted; **`archive/python_bootstrap/` itself is archival**.
 
 ### HIR/MIR performance sequence
 
@@ -46,7 +46,7 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 | **P0** | Mixed typing, ownership and C emission | `src/emit_c.sirius` still combines several compiler stages; some complex `elif` optional fallbacks and expression forms are rejected | Introduce typed HIR then CFG MIR incrementally, retaining the C emitter as a temporary backend |
 | **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
-| **P1** | No module/import system | `src/` and its driver are concatenated in dependency order; collision and coupling risks increase with size | Split compiler components using an ordered build manifest now; later implement static `namespace`/`import` |
+| **P1** | No module/import system | `src/` including `src/cli.sirius` is concatenated in dependency order; collision and coupling risks increase with size | Split compiler components using an ordered build manifest now; later implement static `namespace`/`import` |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
 | **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
@@ -62,12 +62,12 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 **Available now:** Python test runners, C11, Sirius scalar/record/array/dictionary support, byte-oriented strings, the existing indexed AST and self-hosted emitter.
 
-- [x] Centralize the ordered `src/` source manifest in `tools/sirius_sources.py`, retaining byte-exact historical concatenation for the bootstrap fixed point.
+- [x] Centralize the ordered `src/` source manifest in `tools/source_manifest.py`, retaining byte-exact historical concatenation for the bootstrap fixed point.
 - [x] Run tokenizer, parser, emitter and self-hosting tests using the committed C bootstrap; keep Python-stage-0 tests explicitly archival.
 - [x] Share expected output, exit codes and diagnostic substrings for the stage-1 and fixed-point compiler suites.
 - [ ] Compare output/diagnostics between successive compiler generations for new language semantics.
-- [x] Run the complete 75-positive/31-negative emitter suite against the fixed-point compiler using `tools/emitter_cases.py`.
-- [ ] Add sanitizer builds (ASan/UBSan where supported) and Windows GCC checks. The C-bootstrap fixed-point/currentness check is already implemented in `tools/test_selfhost.py`.
+- [x] Run the complete 85-positive/37-negative emitter suite against the fixed-point compiler using `tools/compiler_cases.py`.
+- [ ] Add sanitizer builds (ASan/UBSan where supported) and Windows GCC checks. The C-bootstrap fixed-point/currentness check is already implemented in `tools/test_bootstrap.py`.
 - [ ] Extend ownership regression coverage to managed `recur`, nested short-circuit branches, and conditional failures. Three new focused cases cover managed `return`, `break`, and `continue` (55–57); these also passed UBSan.
 
 **Done when:** the committed C bootstrap alone (plus a native C compiler) is sufficient to build the active compiler and run its full supported-subset tests on development platforms. No Sirius language additions needed.
@@ -149,7 +149,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Add rank-1 MIR arrays with canonical element types, checked access, length and consuming `MIR_ARRAY_SET` with type-directed CoW. Interpreter and MIR-C handle arrays of scalars, strings, records and nested arrays, with alias-preserving differential tests (`tools/test_mir_arrays.py`, `tools/test_mir_c.py`).
 - [x] Add a narrow MIR dictionary subset: canonical `Dict[i64|string, T]`, empty construction, consuming CoW insertion, length and eager checked-type `GET_OR`, with both interpreter and native C tests. Source lowering supports construction, `insert`, and `len`; source optional `get` is now supported.
 - [x] Add `Optional[T]` storage, optional dictionary lookup/fallback and array indexing, unwrap, and CFG-lazy `or`/`else return` in MIR, with native differential and interpreter ownership tests.
-- [ ] Add array append and record spreads/updates; validate ownership data-flow for all CFG exits.
+- [ ] Complete record spreads and deep projection updates; `Array.append` and some direct record updates are already supported. Continue ownership validation for all CFG exits.
 - [x] Replace repeated full-graph ownership/liveness sweeps with queued CFG worklists and precomputed predecessors; store liveness in dense 0/1 register masks. Add a branching/backedge regression (`tools/test_mir_dataflow.py`). Follow up with packed bitsets only if profiling justifies them. Edge cleanup now uses a single may-ownership/liveness snapshot and conditional releases instead of re-solving the full CFG per edge, substantially reducing MIR-only compiler generation time.
 - [x] Eliminate repeated MIR ownership/structure checks between guard, lifetime and exit-cleanup transforms in the combined compiler pipeline, retaining public pass validation and final balance/failure audits. Compare MIR-only generation output byte-for-byte against the previous compiler.
 - [x] Propagate must-initialization and may-ownership in one forward worklist for managed CFG balance checks, retaining must-only and may-only entry points. Test joins, backedges and unreachable blocks (`tools/test_mir_ownership_combined.py`).
@@ -181,7 +181,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md): the intended public language, independent of backend shortcuts.
 - [IR_DESIGN.md](IR_DESIGN.md): target HIR/MIR representations and lowering examples; refer to phases B–D here for the implementation sequence.
 - [INTERPRETER.md](INTERPRETER.md): interpreter status, validation policy, shared backend testing plan.
-- `target_ir.py`: exploratory Python dataclasses only, not a runtime dependency or mandatory implementation blueprint.
+- `experiments/target_ir.py`: exploratory Python dataclasses only, not a runtime dependency or mandatory implementation blueprint.
 
 Update this roadmap at **phase milestones**, not with an entry for every small patch; the commit history and test fixtures provide the incremental development record.
 

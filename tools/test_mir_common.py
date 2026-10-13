@@ -2,7 +2,7 @@
 """Verify shared MIR semantics independently of the two execution backends."""
 import argparse
 
-from test_build import BuildCache, check_sirius_driver, options, require_cc
+from build_support import BuildCache, check_sirius_driver, options, require_cc
 
 
 def main() -> None:
