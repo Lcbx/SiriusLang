@@ -11,8 +11,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)
-	var state = HirBodyState(tree, names, Array[string]())
-	state.types = types
+	var state = HirBodyState(tree, names, Array[string](), types)
 	state.functions = functions
 	state.module_constants = constants
 	state.active_functions = [header.name]

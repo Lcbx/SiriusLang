@@ -493,10 +493,9 @@ let HIR_UNWRAP = 13
 # source is the call AST node; definition is the callee's declaration body ID.
 rec HirSpecializationRequest(source: i64, definition: i64, arguments: Array[i64])
 
-rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string])
+rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string], types: TypeTable)
 	pub symbols = Array[SymbolInfo]()
 	pub nodes = Array[HirNode]()
-	pub types = new_type_table()
 	pub depth = 0
 	pub last_type = TYPE_TAG_INVALID
 	pub error = ""
@@ -629,8 +628,7 @@ def hir_module_type_reference_with_constants(types: TypeTable, tree: ParseState,
 						return argument
 					current = argument.table
 					arguments = arguments.append(argument.type_id)
-				var state = HirBodyState(tree, Array[string](), Array[string]())
-				state.types = current
+				var state = HirBodyState(tree, Array[string](), Array[string](), current)
 				state.functions = functions
 				state.module_constants = constants
 				let constructed = hir_body_user_call(state, id, name, arguments)
@@ -708,8 +706,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 		# expressions. Infer it without recursively registering specializations.
 		# The worklist still owns emission and deduplication of these calls.
 	if function.constructor
-		var nested = HirBodyState(state.tree, state.names, state.constants)
-		nested.types = result.types
+		var nested = HirBodyState(state.tree, state.names, state.constants, result.types)
 		nested.functions = state.functions
 		nested.module_constants = state.module_constants
 		nested.active_functions = state.active_functions
@@ -760,8 +757,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	for active in state.active_functions
 		if active == name
 			return result
-	var nested = HirBodyState(state.tree, state.names, state.constants)
-	nested.types = result.types
+	var nested = HirBodyState(state.tree, state.names, state.constants, result.types)
 	nested.functions = state.functions
 	nested.module_constants = state.module_constants
 	nested.active_functions = state.active_functions.append(name)
@@ -1174,7 +1170,7 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 	return result
 
 def hir_analyze_function_body(tree: ParseState, header: HirFunctionDecl, names: Array[string], constants: Array[string]) -> HirBodyAnalysis
-	var state = HirBodyState(tree, names, constants)
+	var state = HirBodyState(tree, names, constants, new_type_table())
 	for parameter in header.parameters
 		var type_id = TYPE_TAG_INVALID
 		if parameter.type_node >= 0
@@ -1192,7 +1188,7 @@ def hir_analyze_module_body(tree: ParseState, header: HirFunctionDecl, functions
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)
-	var state = HirBodyState(tree, names, constants)
+	var state = HirBodyState(tree, names, constants, new_type_table())
 	state.functions = functions
 	state.active_functions = [header.name]
 	for parameter in header.parameters

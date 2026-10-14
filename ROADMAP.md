@@ -271,6 +271,13 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Add repeatable C dictionary benchmarks (small/large linear vs hashed,
   including managed-key overwrites), plus a unique-owner overwrite fast path
   which copies only the replacement value. Verify aliasing, large values and CoW.
-- [ ] Profile actual Sirius dictionary workloads; C microbenchmarks alone do
-  not establish a compiler-wide speedup.
-- [ ] Evaluate HIR/MIR storage simplifications only with measured benefit.
+- [x] Profile actual Sirius dictionary workloads using an instrumented
+  runtime (`tools/profile_runtime_dict.py`) while the MIR compiler recompiles
+  itself. Discovered redundant `TypeTable` construction in `HirBodyState`:
+  passing the existing type table directly reduced measured dictionary
+  creations from 61,200 to 211 and insertions from 390,976 to 25,034.
+  Sample `-O0` self-compilation timings overlapped (roughly 6.7–7.3 s
+  in this environment), so there is no robust wall-time speedup claim.
+  Increasing dictionary initial capacity from 8 to 16 and inline bucket
+  experiments showed no convincing speedup, so neither change was retained.
+- [ ] Evaluate further HIR/MIR storage simplifications only with measured benefit.

@@ -159,3 +159,28 @@ Array and dictionary optional lookups now share one C helper,
 canonical `Optional[T]` descriptor. Missing entries pass a null pointer;
 this avoids duplicate payload copying and retains while preserving CoW.
 This is a source/runtime cleanup, not a change to the public C runtime ABI.
+
+## Self-compilation dictionary profiling (October 2026)
+
+`python tools/profile_runtime_dict.py --runs 3` builds an instrumented copy of
+`bootstrap/compiler.c` and the runtime, runs self-compilation, verifies that the
+emitted C remains byte-identical and reports allocations, inserts, lookups,
+CoW clones, rehashes and probe counts. Instrumentation is controlled by
+`S_DICT_PROFILE`; the normal runtime builds remain uninstrumented. To profile
+an updated generation before committing its C bootstrap, pass
+`--generated-c PATH`.
+
+An initial profile found 61,200 dictionary constructions and 390,976 inserts,
+with only 87 clones. These mostly came from initializing `HirBodyState.types`
+with `new_type_table()` and subsequently replacing it with an existing table:
+each discarded table inserted six built-in type descriptors. Passing the table
+through the `HirBodyState` constructor reduced counts to 211 constructions
+and 25,034 inserts, without changing compiled program output or typing rules.
+`-O0` self-compilation times ranged roughly 6.7–7.3 seconds across these
+local runs, without a reliable whole-program speedup; the dictionary operation
+count reduction is deterministic.
+
+Experiments with inline dictionary buckets and an initial capacity of 16
+reduced rehashes but did not consistently improve self-compilation time;
+they were reverted. Further runtime container changes should be justified by
+workload profiling rather than insertion-only C microbenchmarks.

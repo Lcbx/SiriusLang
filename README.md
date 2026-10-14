@@ -109,7 +109,9 @@ The stand-alone MIR interpreter is currently a testable library, not a
 source-program CLI.
 
 For phase-level performance profiling of the native MIR compiler, see
-[MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`. MIR ownership
+[MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`.
+For runtime dictionary counts during self-compilation, use
+`python tools/profile_runtime_dict.py --runs 3` (see [RUNTIME.md](RUNTIME.md)). MIR ownership
 analysis now seeds its worklist at the CFG entry, and exit cleanup runs only
 one post-edge may-ownership analysis. The MIR C backend stores typed record and
 array fields in a compact union (8 bytes rather than 32 on 64-bit targets);

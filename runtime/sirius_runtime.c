@@ -332,6 +332,29 @@ void s_array_set(S_Array **owned, int64_t idx, const void *item) {
     s_elem_temp_free(&temp, saved);
 }
 
+/* Optional counters for profiling dictionaries in compiled Sirius programs.
+   Enabled only in dedicated profiling builds; no production overhead. */
+#ifdef S_DICT_PROFILE
+static struct {
+    size_t creations, empty_releases, inserts, overwrites, gets, misses, clones, cloned_entries;
+    size_t grows, slot_calls, occupied_probes, equality_checks;
+    size_t size_le5, size_le11, size_gt11;
+} s_dict_profile;
+static void s_dict_profile_report(void) {
+    fprintf(stderr, "S_DICT_PROFILE new=%zu empty_release=%zu insert=%zu overwrite=%zu get=%zu miss=%zu "
+        "clone=%zu cloned_entries=%zu grow=%zu slots=%zu probes=%zu equal=%zu "
+        "size_le5=%zu size_le11=%zu size_gt11=%zu\n",
+        s_dict_profile.creations, s_dict_profile.empty_releases, s_dict_profile.inserts, s_dict_profile.overwrites,
+        s_dict_profile.gets, s_dict_profile.misses, s_dict_profile.clones,
+        s_dict_profile.cloned_entries, s_dict_profile.grows, s_dict_profile.slot_calls,
+        s_dict_profile.occupied_probes, s_dict_profile.equality_checks,
+        s_dict_profile.size_le5, s_dict_profile.size_le11, s_dict_profile.size_gt11);
+}
+#define DICT_PROFILE(statement) do { statement; } while (0)
+#else
+#define DICT_PROFILE(statement) ((void)0)
+#endif
+
 /* Open-addressed hash map. Each occupied key/value allocation is owned;
    resizing transfers pointers and CoW clones retain every managed element. */
 typedef struct { bool used; uint64_t hash; void *key; void *value; } S_GEntry;
@@ -346,6 +369,7 @@ struct S_Dict {
 static void s_dict_rehash(S_Dict *d, size_t cap) {
     S_GEntry *old = d->entries;
     size_t previous = d->capacity;
+    DICT_PROFILE(if (previous) s_dict_profile.grows++);
     d->entries = s_alloc(cap, sizeof(S_GEntry));
     d->capacity = cap;
     for (size_t i=0; i<previous; i++) if (old[i].used) {
@@ -358,6 +382,10 @@ static void s_dict_rehash(S_Dict *d, size_t cap) {
 S_Dict *s_dict_new(size_t ksize, size_t vsize, S_CopyElem kcopy, S_DropElem kdrop,
                    S_CopyElem vcopy, S_DropElem vdrop, S_HashKey hash, S_EqualKey eq) {
     if (!ksize || !vsize || !hash || !eq) s_panic("invalid dictionary type");
+#ifdef S_DICT_PROFILE
+    if (!s_dict_profile.creations) atexit(s_dict_profile_report);
+#endif
+    DICT_PROFILE(s_dict_profile.creations++);
     size_t alignment = _Alignof(max_align_t);
     if (ksize > SIZE_MAX - (alignment - 1)) s_panic("dictionary element too large");
     size_t offset = ((ksize + alignment - 1) / alignment) * alignment;
@@ -372,6 +400,10 @@ S_Dict *s_dict_new(size_t ksize, size_t vsize, S_CopyElem kcopy, S_DropElem kdro
 S_Dict *s_dict_retain(S_Dict *d) { if (d) d->refcount++; return d; }
 void s_dict_release(S_Dict *d) {
     if (!d || --d->refcount) return;
+    DICT_PROFILE(if (!d->length) s_dict_profile.empty_releases++);
+    DICT_PROFILE(if (d->length <= 5) s_dict_profile.size_le5++;
+        else if (d->length <= 11) s_dict_profile.size_le11++;
+        else s_dict_profile.size_gt11++);
     for (size_t i=0; i<d->capacity; i++) if (d->entries[i].used) {
         if (d->kdrop) d->kdrop(d->entries[i].key);
         if (d->vdrop) d->vdrop(d->entries[i].value);
@@ -381,9 +413,14 @@ void s_dict_release(S_Dict *d) {
 }
 static S_GEntry *s_dict_slot(const S_Dict *d, const void *key, uint64_t hash) {
     size_t slot = (size_t)hash & (d->capacity-1);
+    DICT_PROFILE(s_dict_profile.slot_calls++);
     S_GEntry *entries = d->entries;
     while (entries[slot].used) {
-        if (entries[slot].hash == hash && d->eq(entries[slot].key, key)) break;
+        DICT_PROFILE(s_dict_profile.occupied_probes++);
+        if (entries[slot].hash == hash) {
+            DICT_PROFILE(s_dict_profile.equality_checks++);
+            if (d->eq(entries[slot].key, key)) break;
+        }
         slot = (slot+1)&(d->capacity-1);
     }
     return &entries[slot];
@@ -396,6 +433,7 @@ static void s_dict_entry_copy(S_Dict *d, S_GEntry *entry, const void *key, const
     s_elem_copy(d->vcopy, entry->value, value, d->vsize);
 }
 static S_Dict *s_dict_clone(S_Dict *d) {
+    DICT_PROFILE(s_dict_profile.clones++; s_dict_profile.cloned_entries += d->length);
     /* Cloning with the same capacity preserves probe positions. */
     S_Dict *copy = s_alloc(1, sizeof(*copy));
     *copy = *d;
@@ -411,8 +449,10 @@ static S_Dict *s_dict_clone(S_Dict *d) {
 }
 S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value) {
     if (!owned) s_panic("null dictionary");
+    DICT_PROFILE(s_dict_profile.inserts++);
     uint64_t hash = owned->hash(key);
     S_GEntry *slot = s_dict_slot(owned, key, hash);
+    DICT_PROFILE(if (slot->used) s_dict_profile.overwrites++);
     if (slot->used && owned->refcount == 1) {
         /* Copy first: the value may alias this entry or another managed field.
            Preserve the original equal key and its storage on overwrite. */
@@ -449,8 +489,10 @@ S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value) {
     return owned;
 }
 const void *s_dict_get(const S_Dict *d, const void *key) {
-    if (!d) return NULL;
+    DICT_PROFILE(s_dict_profile.gets++);
+    if (!d) { DICT_PROFILE(s_dict_profile.misses++); return NULL; }
     S_GEntry *slot=s_dict_slot(d,key,d->hash(key));
+    DICT_PROFILE(if (!slot->used) s_dict_profile.misses++);
     return slot->used ? slot->value : NULL;
 }
 size_t s_dict_length(const S_Dict *d) { return d ? d->length : 0; }
