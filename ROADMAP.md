@@ -251,6 +251,8 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
   dictionaries into one type-directed helper; maintain managed-field retention.
 - [x] Guard emitted record allocation against overflow.
 - [x] Validate managed nested snapshots and native MIR self-hosting.
-- [ ] Profile/consider a hash index for MIR-generated dictionaries. They still
-  use linear lookup; do not conflate this with the generic C runtime hash map.
+- [x] Reuse the generic `S_Dict` open-addressed hash table for MIR-generated
+  dictionaries, with typed retain/drop callbacks, CoW snapshots, and structural
+  hashes/equality for recursively hashable record keys. Arrays/dicts/optionals
+  are not hashable keys; benchmark the new representation on real workloads.
 - [ ] Evaluate HIR/MIR storage simplifications only with measured benefit.

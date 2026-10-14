@@ -54,6 +54,45 @@ def main() -> None:
 		execute([str(compiler), str(f64_dict), str(output)])
 		assert_native(run_native(cache, output))
 		print('PASS MIR-only f64 dictionary values and CoW')
+		record_key = work / 'record_key.sirius'
+		record_key.write_text(
+			'rec Leaf(n: i64, label: string)\n'
+			'rec Pair(left: Leaf, right: Leaf)\n'
+			'def main() -> i64\n'
+			'\tvar key = Pair(Leaf(2, "hi"), Leaf(3, "there"))\n'
+			'\tvar table = Dict[Pair, string]()\n'
+			'\ttable = table.insert(key, "old")\n'
+			'\tlet snapshot = table\n'
+			'\tvar numbers = Dict[Pair, i64]()\n'
+			'\tnumbers = numbers.insert(Pair(Leaf(2, \"hi\"), Leaf(3, \"there\")), 6)\n'
+			'\ttable = table.insert(Pair(Leaf(2, "hi"), Leaf(3, "there")), "new")\n'
+			'\tkey = Pair(Leaf(9, "other"), Leaf(3, "there"))\n'
+			'\tif (numbers.get(Pair(Leaf(2, \"hi\"), Leaf(3, \"there\"))) or 0) != 6\n'
+			'\t\treturn 4\n'
+			'\tif len(table) != 1 or (snapshot.get(Pair(Leaf(2, "hi"), Leaf(3, "there"))) or "") != "old"\n'
+			'\t\treturn 1\n'
+			'\tif (table.get(Pair(Leaf(2, "hi"), Leaf(3, "there"))) or "") != "new"\n'
+			'\t\treturn 2\n'
+			'\tif (table.get(key) or "") != ""\n'
+			'\t\treturn 3\n'
+			'\treturn 0\n')
+		output = work / 'record_key.c'
+		execute([str(compiler), str(record_key), str(output)])
+		assert_native(run_native(cache, output))
+		print('PASS nested structural record keys, equal independently constructed keys, and CoW')
+		f64_keys = work / 'f64_keys.sirius'
+		f64_keys.write_text(
+			'def main() -> i64\n'
+			'\tvar table = Dict[f64, i64]()\n'
+			'\ttable = table.insert(0.0, 1)\n'
+			'\ttable = table.insert(-0.0, 2)\n'
+			'\tif len(table) == 1 and (table.get(0.0) or 0) == 2\n'
+			'\t\treturn 0\n'
+			'\treturn 1\n')
+		output = work / 'f64_keys.c'
+		execute([str(compiler), str(f64_keys), str(output)])
+		assert_native(run_native(cache, output))
+		print('PASS f64 key hashing normalizes signed zero')
 		mixed_fields = work / 'mixed_fields.sirius'
 		mixed_fields.write_text(
 			'def main() -> i64\n'
@@ -65,7 +104,7 @@ def main() -> None:
 			'\treturn 1\n')
 		output = work / 'mixed_fields.c'
 		execute([str(compiler), str(mixed_fields), str(output)])
-		if 'typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;' not in output.read_text(encoding='utf-8'):
+		if 'typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; S_Dict *dict; } S_MirField;' not in output.read_text(encoding='utf-8'):
 			raise AssertionError('MIR C field storage must use a compact tagged-by-type union')
 		assert_native(run_native(cache, output))
 		print('PASS mixed numeric/string/array record fields and snapshot CoW')
@@ -114,7 +153,7 @@ def main() -> None:
 		collection_c = work / 'collection_snapshots.c'
 		execute([str(compiler), str(collection_snapshots), str(collection_c)])
 		generated = collection_c.read_text(encoding='utf-8')
-		if generated.count('static inline S_MirRecord *s_mir_record_unique_owned(') != 1 or generated.count('dict = s_mir_record_unique_owned(dict);') != 1:
+		if generated.count('static inline S_MirRecord *s_mir_record_unique_owned(') != 1 or generated.count('r = s_mir_record_unique_owned(r);') != 1 or 's_dict_insert(' not in generated:
 			raise AssertionError('Managed collections must share the type-directed CoW clone helper')
 		assert_native(run_native(cache, collection_c))
 		print('PASS shared CoW clone: managed records, arrays, dictionaries, and nested snapshots')

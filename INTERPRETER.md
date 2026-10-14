@@ -70,7 +70,7 @@ sirius test --backend=both    # Execute both and check expected output/exit stat
 
 ### Dictionary limitations
 
-MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for string and integer keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. The baseline uses a linear key scan instead of hashing. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and now lowers through Optional/CFG branches. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through the default MIR compiler.
+MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for scalar, string, and recursively hashable record keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. Native MIR delegates hashing/storage to `S_Dict` (open addressing); the debug interpreter still uses linear scans with equivalent structural key equality. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and now lowers through Optional/CFG branches. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through the default MIR compiler.
 
 ## CFG ownership pass (experimental)
 

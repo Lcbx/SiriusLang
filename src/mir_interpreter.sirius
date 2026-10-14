@@ -38,9 +38,20 @@ def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue)
 		return mir_heap_retain(heap, value.bits)
 	return heap
 
-def mir_dict_equal(a: MirValue, b: MirValue) -> bool
+def mir_dict_equal(types: TypeTable, heap: Array[MirHeapRecord], a: MirValue, b: MirValue) -> bool
+	if a.type_id != b.type_id
+		return false
 	if a.type_id == TYPE_TAG_STRING
 		return a.text == b.text
+	if a.type_id >= TYPE_TAG_RECORD and a.type_id < len(types.entries) and types.entries[!a.type_id].tag == TYPE_TAG_RECORD
+		let first = heap[!a.bits]
+		let second = heap[!b.bits]
+		if len(first.fields) != len(second.fields)
+			return false
+		for i in 0..len(first.fields)
+			if not mir_dict_equal(types, heap, first.fields[!i], second.fields[!i])
+				return false
+		return true
 	return a.bits == b.bits
 
 def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], moved_args: Array[i64]) -> MirOutcome
@@ -176,7 +187,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					return mir_failure("uninitialized dictionary key", steps)
 				var at = -1
 				for i in 0..len(dict.fields) / 2
-					if mir_dict_equal(dict.fields[!i * 2], key)
+					if mir_dict_equal(program.types, heap, dict.fields[!i * 2], key)
 						at = i
 						break
 				if ins.op == MIR_DICT_GET_OPTIONAL

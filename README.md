@@ -26,8 +26,8 @@ new language features or further compiler micro-optimization. The agreed order i
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
-its own typed record/collection representation, so optimizations to the generic
-C dictionary must be evaluated separately from native compiler self-compilation.
+its own typed records and arrays, but now delegates dictionary storage to
+`S_Dict` through a managed wrapper; record keys use structural hashing.
 
 ## Build and use
 
@@ -217,5 +217,6 @@ for IR architecture, [INTERPRETER.md](INTERPRETER.md) for interpreter details
 and [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md) for intended semantics.
 
 **Runtime storage:** the MIR C emitter now shares a single type-directed CoW
-clone path for generated records, arrays and dictionaries. The public generic C
-runtime and legacy collection layouts remain separate (see `RUNTIME.md`).
+clone path for generated records and arrays. MIR dictionaries now reuse the
+public generic `S_Dict` table, while the retained legacy layout stays separate
+(see `RUNTIME.md`).

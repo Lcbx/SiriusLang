@@ -650,6 +650,21 @@ def mir_audit_failures(program: MirProgram) -> MirFailureAudit
 		return MirFailureAudit(error, 0, 0)
 	return mir_audit_failures_unchecked(program)
 
+# Dictionary keys may be scalars, strings, or acyclic records consisting
+# exclusively of hashable fields. Canonical field order defines key identity.
+def mir_dict_hashable_key(types: TypeTable, kind: i64) -> bool
+	if kind == TYPE_TAG_I64 or kind == TYPE_TAG_BOOL or kind == TYPE_TAG_STRING or kind == TYPE_TAG_F64
+		return true
+	if kind < TYPE_TAG_RECORD or kind >= len(types.entries)
+		return false
+	let desc = types.entries[!kind]
+	if desc.tag != TYPE_TAG_RECORD
+		return false
+	for field in desc.fields
+		if not mir_dict_hashable_key(types, field.kind)
+			return false
+	return true
+
 def mir_verify(program: MirProgram) -> string
 	# Reject malformed/noncanonical type descriptors before accessing field tables.
 	for i in 0..len(program.types.entries)
@@ -660,7 +675,7 @@ def mir_verify(program: MirProgram) -> string
 		if entry.tag == TYPE_TAG_DICT
 			if entry.first < 0 or entry.first >= i or entry.second < 0 or entry.second >= i
 				return "invalid or cyclic dictionary type"
-			if entry.first != TYPE_TAG_I64 and entry.first != TYPE_TAG_STRING
+			if not mir_dict_hashable_key(program.types, entry.first)
 				return "unsupported dictionary key type"
 			if not mir_type_supported(program.types, entry.second)
 				return "unsupported dictionary value type"

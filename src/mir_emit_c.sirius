@@ -92,7 +92,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	var parts = Array[string]()
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
 	# Type descriptors determine the active field; a union avoids storing four unused payloads.
-	parts = parts.append("typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;\n")
+	parts = parts.append("typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; S_Dict *dict; } S_MirField;\n")
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n")
 	parts = parts.append("\tif (fields > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField)) s_panic(\"collection too large\");\n")
@@ -127,6 +127,72 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tS_MirRecord *out = s_mir_record_new(type_id, count);\n")
 	parts = parts.append("\tfor (size_t i = 0; i < count; ++i) out->fields[i].text = s_string_retain(*(S_String *const *)s_array_at(args, (int64_t)i));\n")
 	parts = parts.append("\ts_array_release(args);\n\treturn out;\n}\n")
+	# Generic S_Dict stores one S_MirField per entry key/value. The callbacks
+	# maintain ownership of managed values, while the dictionary owns its slots.
+	parts = parts.append("static inline void s_mir_copy_string(void *dst, const void *src) { ((S_MirField *)dst)->text = s_string_retain(((const S_MirField *)src)->text); }\n")
+	parts = parts.append("static inline void s_mir_drop_string(void *value) { s_string_release(((S_MirField *)value)->text); }\n")
+	parts = parts.append("static inline void s_mir_copy_record(void *dst, const void *src) { ((S_MirField *)dst)->record = s_mir_record_retain(((const S_MirField *)src)->record); }\n")
+	# Release must be declared before generated callbacks use it.
+	parts = parts.append("static inline void s_mir_record_release(S_MirRecord *r);\n")
+	parts = parts.append("static inline void s_mir_drop_record(void *value) { s_mir_record_release(((S_MirField *)value)->record); }\n")
+	parts = parts.append("static inline uint64_t s_mir_hash_i64(const void *key) { return s_hash_i64_key(&((const S_MirField *)key)->bits); }\n")
+	parts = parts.append("static inline bool s_mir_eq_i64(const void *a, const void *b) { return ((const S_MirField *)a)->bits == ((const S_MirField *)b)->bits; }\n")
+	parts = parts.append("static inline uint64_t s_mir_hash_string(const void *key) { return s_hash_string_key(&((const S_MirField *)key)->text); }\n")
+	parts = parts.append("static inline bool s_mir_eq_string(const void *a, const void *b) { return s_eq_string_key(&((const S_MirField *)a)->text, &((const S_MirField *)b)->text); }\n")
+	parts = parts.append("static inline uint64_t s_mir_hash_f64(const void *key) { double d = ((const S_MirField *)key)->real; uint64_t bits = 0; if (d != 0.0) memcpy(&bits, &d, sizeof(bits)); return s_hash_i64_key(&bits); }\n")
+	parts = parts.append("static inline bool s_mir_eq_f64(const void *a, const void *b) { return ((const S_MirField *)a)->real == ((const S_MirField *)b)->real; }\n")
+	var has_record_keys = false
+	for desc in types.entries
+		if desc.tag == TYPE_TAG_DICT and desc.first >= TYPE_TAG_RECORD
+			has_record_keys = true
+	if has_record_keys
+		# Record keys use structural hashing of their canonical field sequence,
+		# analogous to tuple hashing. This includes recursive record-valued fields.
+		parts = parts.append("static inline uint64_t s_mir_hash_combine(uint64_t previous, uint64_t value) { return (previous ^ value) * UINT64_C(0x9e3779b185ebca87); }\n")
+		parts = parts.append("static inline uint64_t s_mir_hash_field(int64_t kind, S_MirField field) { switch (kind) {\n")
+		parts = parts.append("case " + str(TYPE_TAG_I64) + ": case " + str(TYPE_TAG_BOOL) + ": return s_hash_i64_key(&field.bits);\n")
+		parts = parts.append("case " + str(TYPE_TAG_F64) + ": return s_mir_hash_f64(&field);\n")
+		parts = parts.append("case " + str(TYPE_TAG_STRING) + ": return s_mir_hash_string(&field);\n")
+		for i in 0..len(types.entries)
+			let desc = types.entries[!i]
+			if desc.tag == TYPE_TAG_RECORD and mir_dict_hashable_key(types, i)
+				parts = parts.append("case " + str(i) + ": { uint64_t result = UINT64_C(0x345678);\n")
+				for j in 0..len(desc.fields)
+					parts = parts.append("result = s_mir_hash_combine(result, s_mir_hash_field(" + str(desc.fields[!j].kind) + ", field.record->fields[" + str(j) + "]));\n")
+				parts = parts.append("return s_mir_hash_combine(result, " + str(len(desc.fields)) + "); }\n")
+		parts = parts.append("default: s_panic(\"unhashable dictionary key\"); } }\n")
+		parts = parts.append("static inline bool s_mir_equal_field(int64_t kind, S_MirField a, S_MirField b) { switch (kind) {\n")
+		parts = parts.append("case " + str(TYPE_TAG_I64) + ": case " + str(TYPE_TAG_BOOL) + ": return a.bits == b.bits;\n")
+		parts = parts.append("case " + str(TYPE_TAG_F64) + ": return a.real == b.real;\n")
+		parts = parts.append("case " + str(TYPE_TAG_STRING) + ": return s_string_compare(a.text, b.text) == 0;\n")
+		for i in 0..len(types.entries)
+			let desc = types.entries[!i]
+			if desc.tag == TYPE_TAG_RECORD and mir_dict_hashable_key(types, i)
+				parts = parts.append("case " + str(i) + ": return ")
+				if len(desc.fields) == 0
+					parts = parts.append("true")
+				for j in 0..len(desc.fields)
+					if j > 0
+						parts = parts.append(" && ")
+					parts = parts.append("s_mir_equal_field(" + str(desc.fields[!j].kind) + ", a.record->fields[" + str(j) + "], b.record->fields[" + str(j) + "])")
+				parts = parts.append(";\n")
+		parts = parts.append("default: s_panic(\"unhashable dictionary key\"); } }\n")
+		var emitted_keys = Array[i64]()
+		for i in 0..len(types.entries)
+			let desc = types.entries[!i]
+			if desc.tag == TYPE_TAG_DICT and desc.first >= TYPE_TAG_RECORD and mir_dict_hashable_key(types, desc.first)
+				var seen = false
+				for key in emitted_keys
+					if key == desc.first
+						seen = true
+				if not seen
+					let kind = desc.first
+					emitted_keys = emitted_keys.append(kind)
+					parts = parts.append("static inline uint64_t s_mir_hash_key_" + str(kind) + "(const void *key) { return s_mir_hash_field(" + str(kind) + ", *(const S_MirField *)key); }\n")
+					parts = parts.append("static inline bool s_mir_eq_key_" + str(kind) + "(const void *a, const void *b) { return s_mir_equal_field(" + str(kind) + ", *(const S_MirField *)a, *(const S_MirField *)b); }\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_dict_new(int64_t id, S_HashKey hash, S_EqualKey eq, S_CopyElem kcopy, S_DropElem kdrop, S_CopyElem vcopy, S_DropElem vdrop) {\n")
+	parts = parts.append("\tS_MirRecord *r = s_mir_record_new(id, 1); r->fields[0].dict = s_dict_new(sizeof(S_MirField), sizeof(S_MirField), kcopy, kdrop, vcopy, vdrop, hash, eq); return r;\n}\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *r, S_MirField key, S_MirField value);\n")
 	parts = parts.append("static inline void s_mir_record_release(S_MirRecord *r) {\n\tif (!r || --r->refs) return;\n\tswitch (r->type_id) {\n")
 	for i in 0..len(types.entries)
 		let type_desc = types.entries[!i]
@@ -153,21 +219,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				parts = parts.append("\t\tif (r->length) " + mir_c_release_value(type_desc.first, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
 		elif type_desc.tag == TYPE_TAG_DICT
-			parts = parts.append("\tcase " + str(i) + ":\n")
-			for part in 0..2
-				var kind = type_desc.first
-				var offset = "0"
-				if part == 1
-					kind = type_desc.second
-					offset = "1"
-				if mir_common_managed(kind)
-					var field = "r->fields[j + " + offset + "]"
-					if kind == TYPE_TAG_STRING
-						field = field + ".text"
-					else
-						field = field + ".record"
-					parts = parts.append("\t\tfor (size_t j = 0; j < r->length; j += 2) " + mir_c_release_value(kind, field) + ";\n")
-			parts = parts.append("\t\tbreak;\n")
+			parts = parts.append("\tcase " + str(i) + ": s_dict_release(r->fields[0].dict); break;\n")
 		elif type_desc.tag == TYPE_TAG_ARRAY
 			let element_type = type_desc.first
 			parts = parts.append("\tcase " + str(i) + ":\n")
@@ -224,21 +276,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				parts = parts.append("\t\tfor (size_t j = 0; j < copy->length; ++j) " + mir_c_retain_value(desc.first, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
 		elif desc.tag == TYPE_TAG_DICT
-			parts = parts.append("\tcase " + str(i) + ":\n")
-			for part in 0..2
-				var kind = desc.first
-				var offset = "0"
-				if part == 1
-					kind = desc.second
-					offset = "1"
-				if mir_common_managed(kind)
-					var field = "copy->fields[j + " + offset + "]"
-					if kind == TYPE_TAG_STRING
-						field = field + ".text"
-					else
-						field = field + ".record"
-					parts = parts.append("\t\tfor (size_t j = 0; j < copy->length; j += 2) " + mir_c_retain_value(kind, field) + ";\n")
-			parts = parts.append("\t\tbreak;\n")
+			parts = parts.append("\tcase " + str(i) + ": s_dict_retain(copy->fields[0].dict); break;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid collection type\");\n\t}\n")
 	parts = parts.append("\ts_mir_record_release(record); return copy;\n}\n\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n")
@@ -263,39 +301,8 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tarray = s_mir_record_unique_owned(array);\n")
 	parts = parts.append("\tarray = s_mir_record_reserve_owned(array, array->length + 1);\n")
 	parts = parts.append("\tarray->fields[array->length++] = owned;\n\treturn array;\n}\n\n")
-	parts = parts.append("static inline bool s_mir_key_equal(int64_t type_id, S_MirField a, S_MirField b) {\n")
-	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_STRING) + ") return (s_string_compare(a.text, b.text) == 0);\n")
-	parts = parts.append("\tif (type_id == " + str(TYPE_TAG_F64) + ") return a.real == b.real;\n\treturn a.bits == b.bits;\n}\n")
-	parts = parts.append("static inline int64_t s_mir_dict_find(const S_MirRecord *dict, int64_t key_type, S_MirField key) {\n")
-	parts = parts.append("\tfor (size_t j = 0; j < dict->length; j += 2) if (s_mir_key_equal(key_type, dict->fields[j], key)) return (int64_t)j;\n")
-	parts = parts.append("\treturn -1;\n}\n")
-	parts = parts.append("static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *dict, int64_t key_type, S_MirField key, S_MirField value) {\n")
-	parts = parts.append("\tint64_t at = s_mir_dict_find(dict, key_type, key);\n")
-	parts = parts.append("\tdict = s_mir_record_unique_owned(dict);\n")
-	parts = parts.append("\tif (at < 0) {\n\t\tif (dict->length > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField) - 2) s_panic(\"dictionary too large\");\n")
-	parts = parts.append("\t\tdict = s_mir_record_reserve_owned(dict, dict->length + 2);\n")
-	parts = parts.append("\t\tat = (int64_t)dict->length; dict->length += 2;\n\t} else {\n")
-	parts = parts.append("\t\tswitch (dict->type_id) {\n")
-	for i in 0..len(types.entries)
-		let desc = types.entries[!i]
-		if desc.tag == TYPE_TAG_DICT
-			parts = parts.append("\t\tcase " + str(i) + ":\n")
-			for part in 0..2
-				var kind = desc.first
-				var offset = "0"
-				if part == 1
-					kind = desc.second
-					offset = "1"
-				if mir_common_managed(kind)
-					var field = "dict->fields[at + " + offset + "]"
-					if kind == TYPE_TAG_STRING
-						field = field + ".text"
-					else
-						field = field + ".record"
-					parts = parts.append("\t\t\t" + mir_c_release_value(kind, field) + ";\n")
-			parts = parts.append("\t\t\tbreak;\n")
-	parts = parts.append("\t\tdefault: s_panic(\"invalid dictionary type\");\n\t\t}\n\t}\n")
-	parts = parts.append("\tdict->fields[at] = key; dict->fields[at + 1] = value; return dict;\n}\n\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *r, S_MirField key, S_MirField value) {\n")
+	parts = parts.append("\tr = s_mir_record_unique_owned(r);\n\tr->fields[0].dict = s_dict_insert(r->fields[0].dict, &key, &value); return r;\n}\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_array(S_MirRecord *array, int64_t index, int64_t optional_type) {\n")
 	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, index < 0 || (uint64_t)index >= array->length ? 0 : 1);\n")
 	parts = parts.append("\tif (optional->length) { optional->fields[0] = array->fields[index]; switch (optional_type) {\n")
@@ -312,9 +319,9 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				parts = parts.append(mir_c_retain_value(desc.first, field) + "; ")
 			parts = parts.append("break;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
-	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_dict(S_MirRecord *dict, int64_t at, int64_t optional_type) {\n")
-	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, at < 0 ? 0 : 1);\n")
-	parts = parts.append("\tif (at >= 0) { optional->fields[0] = dict->fields[at + 1]; switch (optional_type) {\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_dict(const S_MirField *value, int64_t optional_type) {\n")
+	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, value ? 1 : 0);\n")
+	parts = parts.append("\tif (value) { optional->fields[0] = *value; switch (optional_type) {\n")
 	for i in 0..len(types.entries)
 		let desc = types.entries[!i]
 		if desc.tag == TYPE_TAG_OPTIONAL
@@ -330,7 +337,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
 	return "".join(parts)
 
-def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checked: bool) -> string
+def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types: TypeTable, checked: bool) -> string
 	let op = instruction.op
 	var result = ""
 	if checked and op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING and op != MIR_CONST_F64 and op != MIR_ARGUMENTS and op != MIR_RELEASE_IF_INIT
@@ -411,49 +418,68 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value), checked)
 		return result + "\t" + dst + " = " + value + "" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == MIR_DICT_NEW
-		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)", checked)
+		let desc = types.entries[!dst_type]
+		var hash = "s_mir_hash_i64"
+		var eq = "s_mir_eq_i64"
+		if desc.first == TYPE_TAG_STRING
+			hash = "s_mir_hash_string"
+			eq = "s_mir_eq_string"
+		elif desc.first == TYPE_TAG_F64
+			hash = "s_mir_hash_f64"
+			eq = "s_mir_eq_f64"
+		elif desc.first >= TYPE_TAG_RECORD
+			hash = "s_mir_hash_key_" + str(desc.first)
+			eq = "s_mir_eq_key_" + str(desc.first)
+		var key_copy = "NULL"
+		var key_drop = "NULL"
+		if desc.first == TYPE_TAG_STRING
+			key_copy = "s_mir_copy_string"
+			key_drop = "s_mir_drop_string"
+		elif desc.first >= TYPE_TAG_RECORD
+			key_copy = "s_mir_copy_record"
+			key_drop = "s_mir_drop_record"
+		var value_copy = "NULL"
+		var value_drop = "NULL"
+		if desc.second == TYPE_TAG_STRING
+			value_copy = "s_mir_copy_string"
+			value_drop = "s_mir_drop_string"
+		elif mir_common_managed(desc.second)
+			value_copy = "s_mir_copy_record"
+			value_drop = "s_mir_drop_record"
+		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_dict_new(" + str(dst_type) + ", " + hash + ", " + eq + ", " + key_copy + ", " + key_drop + ", " + value_copy + ", " + value_drop + ")", checked)
 	if op == MIR_DICT_LENGTH
-		return result + "\t" + dst + " = (int64_t)(" + first + "->length / 2)" + mir_c_mark_init(instruction.dst, checked) + "\n"
+		return result + "\t" + dst + " = (int64_t)s_dict_length(" + first + "->fields[0].dict)" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == MIR_DICT_INSERT
 		var fields = Array[string]()
 		for input in instruction.inputs
 			let kind = function.register_types[!input]
 			var field = "bits"
-			var value = mir_c_register(input)
 			if kind == TYPE_TAG_F64
 				field = "real"
 			elif kind == TYPE_TAG_STRING
 				field = "text"
-				value = mir_c_retain_value(kind, value)
 			elif mir_common_managed(kind)
 				field = "record"
-				value = mir_c_retain_value(kind, value)
-			fields = fields.append(field + " = " + value)
-		let key_type = function.register_types[!instruction.inputs[!0]]
+			fields = fields.append(field + " = " + mir_c_register(input))
 		var code = result + "\t{ S_MirField key = {0}, value = {0}; key." + fields[!0] + "; value." + fields[!1] + ";\n"
-		code = code + "\t\tS_MirRecord *updated = s_mir_dict_insert_owned(" + first + ", " + str(key_type) + ", key, value);\n"
+		code = code + "\t\tS_MirRecord *updated = s_mir_dict_insert_owned(" + first + ", key, value);\n"
 		code = code + "\t\t" + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + "\n"
 		if instruction.dst == instruction.first
 			return code + "\t\t" + dst + " = updated" + mir_c_mark_init(instruction.dst, checked) + " }\n"
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
-	if op == MIR_DICT_GET_OPTIONAL
+	if op == MIR_DICT_GET_OPTIONAL or op == MIR_DICT_GET_OR
 		let key_type = function.register_types[!instruction.second]
 		var key_field = "bits"
 		if key_type == TYPE_TAG_F64
 			key_field = "real"
 		elif key_type == TYPE_TAG_STRING
 			key_field = "text"
-		# The helper retains the dictionary payload using its canonical Optional type.
+		elif mir_common_managed(key_type)
+			key_field = "record"
 		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
-		code = code + "\t\tint64_t at = s_mir_dict_find(" + first + ", " + str(key_type) + ", key);\n"
-		return code + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_dict(" + first + ", at, " + str(dst_type) + ")", checked) + "\t}\n"
-	if op == MIR_DICT_GET_OR
-		let key_type = function.register_types[!instruction.second]
-		var key_field = "bits"
-		if key_type == TYPE_TAG_F64
-			key_field = "real"
-		elif key_type == TYPE_TAG_STRING
-			key_field = "text"
+		code = code + "\t\tconst S_MirField *value = s_dict_get(" + first + "->fields[0].dict, &key);\n"
+		if op == MIR_DICT_GET_OPTIONAL
+			return code + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_dict(value, " + str(dst_type) + ")", checked) + "\t}\n"
 		var value_field = "bits"
 		if dst_type == TYPE_TAG_F64
 			value_field = "real"
@@ -461,13 +487,11 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 			value_field = "text"
 		elif mir_common_managed(dst_type)
 			value_field = "record"
-		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
-		code = code + "\t\tint64_t at = s_mir_dict_find(" + first + ", " + str(key_type) + ", key);\n"
 		let fallback = mir_c_register(instruction.immediate)
-		let value = "(at < 0 ? " + fallback + " : " + first + "->fields[at + 1]." + value_field + ")"
+		let found = "(value ? value->" + value_field + " : " + fallback + ")"
 		if mir_common_managed(dst_type)
-			return code + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value), checked) + "\t}\n"
-		return code + "\t\t" + dst + " = " + value + "" + mir_c_mark_init(instruction.dst, checked) + " }\n"
+			return code + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, found), checked) + "\t}\n"
+		return code + "\t\t" + dst + " = " + found + mir_c_mark_init(instruction.dst, checked) + " }\n"
 	if op == MIR_ARRAY_NEW
 		var code = result + "\t{ S_MirRecord *array = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
 		for i in 0..len(instruction.inputs)
@@ -743,7 +767,7 @@ def mir_c_terminator(term: MirTerminator, function: MirFunction, checked: bool) 
 		return result + "\tgoto exit;\n"
 	return "\ts_panic(" + mir_c_string(term.message) + ");\n"
 
-def mir_c_definition(function: MirFunction, index: i64, checked: bool) -> string
+def mir_c_definition(function: MirFunction, index: i64, types: TypeTable, checked: bool) -> string
 	var parts = Array[string]()
 	parts = parts.append(mir_c_signature(function, index) + "\n{\n")
 	for i in 0..len(function.register_types)
@@ -780,7 +804,7 @@ def mir_c_definition(function: MirFunction, index: i64, checked: bool) -> string
 				else
 					parts = parts.append("\ts_print_i64(" + mir_c_register(instruction.first) + ");\n")
 			else
-				parts = parts.append(mir_c_instruction(instruction, function, checked))
+				parts = parts.append(mir_c_instruction(instruction, function, types, checked))
 		parts = parts.append(mir_c_terminator(block.terminator, function, checked))
 	if has_return
 		parts = parts.append("exit: ;\n")
@@ -800,6 +824,9 @@ def mir_emit_c_internal(program: MirProgram, entry: i64, checked: bool) -> MirCR
 	let main = program.functions[!entry]
 	if main.argument_count != 0 or main.return_type != TYPE_TAG_I64
 		return MirCResult("", "MIR C entry must be main() -> i64")
+	for descriptor in program.types.entries
+		if descriptor.tag == TYPE_TAG_DICT and not mir_dict_hashable_key(program.types, descriptor.first)
+			return MirCResult("", "dictionary key type is not hashable")
 	var parts = Array[string]()
 	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include \"sirius_runtime.h\"\n\n")
 	parts = parts.append(mir_c_record_runtime(program.types))
@@ -807,7 +834,7 @@ def mir_emit_c_internal(program: MirProgram, entry: i64, checked: bool) -> MirCR
 		parts = parts.append(mir_c_signature(program.functions[!i], i) + ";\n")
 	parts = parts.append("\n")
 	for i in 0..len(program.functions)
-		parts = parts.append(mir_c_definition(program.functions[!i], i, checked) + "\n")
+		parts = parts.append(mir_c_definition(program.functions[!i], i, program.types, checked) + "\n")
 	parts = parts.append("int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)" + mir_c_function(entry) + "(); }\n")
 	return MirCResult("".join(parts), "")
 

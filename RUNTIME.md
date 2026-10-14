@@ -12,7 +12,8 @@ constraints; it does not propose language-level semantic changes.
 | `S_Array` | Refcounted descriptor + homogeneous contiguous allocation; callbacks for managed elements | Clone shared values, consume owner on append | Growth/capacity, avoiding temporary buffers and unnecessary clones |
 | `S_Dict` | Refcounted open-addressed entries with one aligned allocation per key/value pair | Clone all entries on shared update | Consider slot-local payloads/slabs; preserve hashing and callback semantics |
 | `S_Array_i64`, `S_Dict_i64_i64` | Older specialized layouts | Separate CoW implementation | Consolidate carefully after auditing legacy/bootstrap callers |
-| MIR generated records/arrays/dicts | Type-directed storage emitted by `mir_emit_c.sirius` | MIR ownership operations + runtime primitives | Check overlap before unifying with generic runtime containers |
+| MIR generated records/arrays | Type-directed `S_MirRecord` fields emitted by `mir_emit_c.sirius` | MIR ownership operations + runtime primitives | Preserve wrapper/array ABI |
+| MIR generated dictionaries | `S_MirRecord` owner containing the generic `S_Dict` hash table | `S_Dict` callback-owned entries; wrapper and table have CoW | Benchmark hashing/allocations on compiler workloads |
 
 ## First runtime improvement
 
@@ -47,9 +48,9 @@ Two collection implementations remain intentionally separate:
 - `S_Array_i64` / `S_Dict_i64_i64` are publicly exposed scalar layouts used by
   handwritten C references and the retained legacy emitter.
 - `S_Array` / `S_Dict` support callbacks for managed values and are used by
-  generic runtime operations. The MIR C emitter currently generates its own
-  type-directed `S_MirRecord` storage for records and collections; it does
-  **not** call the generic array/dictionary APIs for its compiler AST.
+  generic runtime operations. The MIR C emitter uses `S_Dict` for dictionaries
+  through an owned `S_MirRecord` wrapper. Records and arrays still use
+  separate type-directed storage.
 
 Merging these structures now would change their ABI without eliminating the
 MIR-generated representation, so keep both until there is a tested consumer
@@ -89,17 +90,27 @@ a compact tagged-by-type field union, but retain and release nested values accor
 to their *static* type descriptors.
 
 Shared CoW cloning now uses **one** `s_mir_record_unique_owned` helper across
-record-field updates, array set/append and dictionary insert. The helper copies
+record-field updates, array set/append and the outer MIR dictionary wrapper. The helper copies
 the field storage, retains managed fields by their type descriptor, then consumes
 the original owner's reference. Collection operations still replace/release their
 previous values normally, and unique owners continue to update in place. The
 allocation constructor also guards against field-count arithmetic overflow.
 
-This is a code-generation and maintenance simplification, not a storage ABI change.
-The emitter's dictionary still performs a **linear key search**; the generic
-runtime's separate open-addressing implementation is not used by generated
-Sirius code. A hash-index redesign requires its own workload measurements and
-snapshot/ordering tests and is not part of this refactor.
+The MIR dictionary payload now uses the existing generic open-addressed
+`S_Dict`, instead of alternating fields and linear key lookup. The outer
+`S_MirRecord` remains the owned MIR register value and holds a single `S_Dict *`.
+Its copy-on-write clone retains the generic dictionary; subsequent insertions
+use `s_dict_insert` for independent snapshots. Typed copy/drop callbacks handle
+managed keys and values. This reuses the shared C runtime without changing the
+MIR instruction ABI or removing the retained legacy dictionary.
+
+Key hashing/equality is value-based: `i64`, `bool`, `f64` (including signed-zero
+normalization), `string`, and canonical records recursively composed of these
+hashable fields. Structural record hashing combines fields in canonical order,
+similar in spirit to Python tuple hashing. Arrays, dictionaries, and optionals
+remain unhashable keys until explicit equality semantics are defined. The
+interpreter uses corresponding recursive equality but keeps its simple list
+storage for debugging.
 
 Validation: `python tools/test_mir_compiler.py` includes shared managed-record,
 array and dictionary snapshots. `python tools/test_mir_selfhost.py` verifies
