@@ -73,10 +73,11 @@ def mir_lifetime_managed(types: TypeTable, function: MirFunction, register: i64)
 		return false
 	return mir_managed_type(types, function.register_types[!register])
 
-def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
+# Callers that also analyze ownership can reuse a single CFG snapshot.
+def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[MirLifetimeBlock]
 	let count = len(function.register_types)
-	let predecessors = mir_cfg_predecessors(function)
-	let reached = mir_ownership_reachable(function)
+	let predecessors = cfg.predecessors
+	let reached = cfg.reached
 	var state = Array[MirLifetimeBlock]()
 	var queued = Array[i64]()
 	var queue = Array[i64]()
@@ -109,6 +110,9 @@ def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
 					queued[!pred] = 1
 					queue = queue.append(pred)
 	return state
+
+def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
+	return mir_lifetime_states_cfg(function, mir_cfg_facts(function))
 
 def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLifetime
 	let state = mir_lifetime_states(function)

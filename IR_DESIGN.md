@@ -266,3 +266,17 @@ valid under MIR, and remain backend-specific tests.
 
 For now prioritize preserving the native bootstrap fixed point and differential
 behavior over compact MIR storage or speculative container unification.
+
+### CFG facts and MIR pass boundaries
+
+`mir_cfg_facts(function)` computes the reachability mask and predecessor lists
+for a fixed CFG. Forward ownership and backward liveness may share this snapshot;
+`mir_cleanup_function` does so before inserting edge cleanup, then recomputes
+facts for the modified graph before analyzing exits. A snapshot must never be
+reused after a pass adds blocks or changes terminators.
+
+The combined compiler pipeline checks initial MIR ownership, then applies guard
+insertion, lifetime insertion, edge/exit cleanup, and the ownership peephole
+optimizer without redundant intermediate verification. Its final balance and
+failure audit validate the result. Public individual pass entry points retain
+their own checks for independently constructed MIR.

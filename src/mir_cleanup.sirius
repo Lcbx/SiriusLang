@@ -31,9 +31,10 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 	# One snapshot suffices: edge releases are conditional when ownership
 	# differs between incoming paths, so incremental global recomputation
 	# after each edge insertion is unnecessary.
-	let reached = mir_ownership_reachable(function)
-	let possible = mir_ownership_maybe_states(function)
-	let liveness = mir_lifetime_states(function)
+	let cfg = mir_cfg_facts(function)
+	let reached = cfg.reached
+	let possible = mir_ownership_dataflow_cfg(function, true, cfg.reached, cfg.predecessors)
+	let liveness = mir_lifetime_states_cfg(function, cfg)
 	for i in 0..len(function.blocks)
 		if reached[!i] != 0
 			let original = blocks[!i]
@@ -65,8 +66,9 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 	# One post-edge may-own analysis determines whether an exit needs a
 	# release. Emit conditional releases: edge drops can make a value
 	# absent on some incoming paths, so a must-own analysis is unnecessary.
-	let exit_reached = mir_ownership_reachable(edged)
-	let exit_maybe = mir_ownership_maybe_states(edged)
+	let exit_cfg = mir_cfg_facts(edged)
+	let exit_reached = exit_cfg.reached
+	let exit_maybe = mir_ownership_dataflow_cfg(edged, true, exit_cfg.reached, exit_cfg.predecessors)
 	for i in 0..len(blocks)
 		if exit_reached[!i] != 0
 			let block = blocks[!i]
