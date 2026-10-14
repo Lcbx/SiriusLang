@@ -192,38 +192,10 @@ def mir_lower_literal(text: string) -> i64
 
 rec MirLowerString(value: string, error: string)
 
-# The parser retains the quotes. Decode the initial supported escape set;
-# unsupported escapes are rejected, never interpreted differently by C.
+# Share the decoder with compile-time constant evaluation.
 def mir_lower_string(text: string) -> MirLowerString
-	var result = ""
-	var i = 1
-	while i < len(text) - 1
-		let byte = text.byte_at(i) or 0
-		if byte == 92
-			i += 1
-			if i >= len(text) - 1
-				return MirLowerString("", "unterminated MIR string escape")
-			let escaped = text.byte_at(i) or 0
-			if escaped == 110
-				result = result + "\n"
-			elif escaped == 116
-				result = result + "\t"
-			elif escaped == 114
-				result = result + "\r"
-			elif escaped == 92
-				result = result + "\\"
-			elif escaped == 34
-				result = result + "\""
-			elif escaped == 39
-				result = result + "'"
-			elif escaped == 48
-				result = result + "\0"
-			else
-				return MirLowerString("", "unsupported MIR string escape")
-		else
-			result = result + text.slice(i, i + 1)
-		i += 1
-	return MirLowerString(result, "")
+	let decoded = hir_decode_string(text)
+	return MirLowerString(decoded.value, decoded.error)
 
 # Materialize a compile-time value at each use. MIR ownership/lifetime passes
 # can then handle records exactly like ordinary immutable runtime values.
@@ -237,6 +209,22 @@ def mir_lower_constant(state: MirBuilder, context: MirLowerContext, index: i64) 
 		if constant.type_id == TYPE_TAG_BOOL
 			op = MIR_CONST_BOOL
 		next = mir_lower_emit(next, mir_op(op, dst, -1, -1, constant.bits))
+		return MirLowerExpr(next, dst)
+	if constant.type_id == TYPE_TAG_STRING
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, TYPE_TAG_STRING)
+		next = mir_lower_emit(next, mir_string(dst, constant.text))
+		return MirLowerExpr(next, dst)
+	if context.types.entries[!constant.type_id].tag == TYPE_TAG_ARRAY
+		var inputs = Array[i64]()
+		for child in constant.fields
+			let lowered = mir_lower_constant(next, context, child)
+			next = lowered.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			inputs = inputs.append(lowered.slot)
+		let dst = len(next.register_types)
+		next = mir_lower_register(next, constant.type_id)
+		next = mir_lower_emit(next, mir_array_new(dst, inputs))
 		return MirLowerExpr(next, dst)
 	if context.types.entries[!constant.type_id].tag == TYPE_TAG_RECORD
 		var inputs = Array[i64]()

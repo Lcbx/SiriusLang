@@ -34,13 +34,15 @@ resumed. The agreed implementation order remains:
    and statically proven plain indexing of array literals (MIR backend only).
 
 The MIR compiler supports compile-time module `let` constants with `i64`,
-`bool`, and structural record values (including nested records). Record
-initializers accept literal fields, earlier constant names and field selection;
-integer arithmetic and Boolean `not` are evaluated at compile time. Record
-fields use canonical sorted layouts, with later duplicate fields overriding
-previous ones. MIR materializes a fresh CoW-managed value at each use.
-Runtime initializers, strings/arrays as constant values, record spreads and
-general `comptime` execution remain unsupported.
+`bool`, `string`, homogeneous arrays and structural records (including nested
+combinations). Initializers accept earlier constant names, field access,
+constant array indexing, string concatenation, integer arithmetic, Boolean
+`not`, `len(string|array)`, record spreads (`{BASE.*}`) and field deletion.
+Record fields have canonical sorted layouts with last-write-wins overrides.
+MIR materializes independently owned CoW values on use. Runtime-dependent
+initializers, arbitrary function calls and general `comptime` remain deferred.
+String module constants permit explicit `: string` annotations; array type
+annotations are not yet accepted at module level.
 
 Plain `a[i]` indexing currently proves only nonnegative integer literals applied
   to array literals (including nested literal chains). For other reads use

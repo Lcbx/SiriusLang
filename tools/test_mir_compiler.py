@@ -67,7 +67,7 @@ def main() -> None:
 			'let BAD = {x = 1}.missing',
 			'let BAD: bool = {x = true}',
 			'let BAD = {x = arguments()}',
-			'let BAD = {x = [1, 2]}',
+			'let BAD = {x = [1, true]}',
 			'let BAD = {x = 1, y = x}',
 		)):
 			negative = work / f'module_record_invalid_{index}.sirius'
@@ -79,6 +79,34 @@ def main() -> None:
 					'unsupported module constant initializer', 'module constant type mismatch'))):
 				raise AssertionError(f'Expected record constant rejection: {initializer}: {result.stdout!r}')
 		print('PASS nested module record constants, field selections, CoW, and invalid initializers')
+		# Composite constants are materialized with the usual MIR ownership rules.
+		composite_source = Path(__file__).resolve().parent.parent / 'tests/mir/module_composite_constants.sirius'
+		composite_expected = Path(__file__).resolve().parent.parent / 'tests/mir/module_composite_constants.txt'
+		composite_c = work / 'module_composite_constants.c'
+		execute([str(compiler), str(composite_source), str(composite_c)])
+		assert_native(run_native(cache, composite_c), stdout=composite_expected.read_bytes())
+		for index, initializer in enumerate((
+			'let BAD = [1, true]',
+			'let BAD = [1, 2][2]',
+			'let BAD = [1, 2][-1]',
+			'let BAD = len(true)',
+			'let BAD = "a" + 1',
+			'let BAD: i64 = "text"',
+			'let BAD = {X.*}',
+			'let X = [1]\nlet BAD = {X.*}',
+			'let BAD = {x = 1, del y}',
+			'let BAD = "\\q"',
+			'let BAD = [arguments()]',
+		)):
+			negative = work / f'module_composite_invalid_{index}.sirius'
+			negative.write_text(initializer + '\ndef main() -> i64\n\treturn 0\n')
+			generated = work / f'module_composite_invalid_{index}.c'
+			result = subprocess.run([str(compiler), str(negative), str(generated)], capture_output=True, text=True)
+			if (result.returncode != 1 or generated.exists() or
+				not any(error in result.stdout for error in (
+					'unsupported module constant initializer', 'module constant type mismatch'))):
+				raise AssertionError(f'Expected composite constant rejection: {initializer}: {result.stdout!r}')
+		print('PASS compile-time strings/arrays/spreads, len, CoW, and invalid constant rejection')
 		# Plain indexing is permitted only with an established static bound.
 		static_case = work / 'static_literal_index.sirius'
 		static_case.write_text(

@@ -364,14 +364,51 @@ rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, res
 # Constants are stored in a flat arena. Record fields reference other entries
 # by index, so nested values need no recursive runtime representation.
 rec HirModuleConstant(name: string, value: i64, type_id: i64)
-rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64])
+rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64], text: string)
 rec HirConstantEval(table: TypeTable, values: Array[HirConstantValue], index: i64, valid: bool)
 rec HirConstantField(name: string, value: i64)
 rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, values: Array[HirConstantValue], error: string, error_line: i64)
 
-def hir_constant_push(types: TypeTable, values: Array[HirConstantValue], type_id: i64, bits: i64, fields: Array[i64]) -> HirConstantEval
+def hir_constant_push_text(types: TypeTable, values: Array[HirConstantValue], type_id: i64, bits: i64, fields: Array[i64], text: string) -> HirConstantEval
 	let index = len(values)
-	return HirConstantEval(types, values.append(HirConstantValue(type_id, bits, fields)), index, true)
+	return HirConstantEval(types, values.append(HirConstantValue(type_id, bits, fields, text)), index, true)
+
+def hir_constant_push(types: TypeTable, values: Array[HirConstantValue], type_id: i64, bits: i64, fields: Array[i64]) -> HirConstantEval
+	return hir_constant_push_text(types, values, type_id, bits, fields, "")
+
+rec HirDecodedString(value: string, error: string)
+
+# Shared decoding prevents a constant string from differing from a literal.
+def hir_decode_string(text: string) -> HirDecodedString
+	var result = ""
+	var i = 1
+	while i < len(text) - 1
+		let byte = text.byte_at(i) or 0
+		if byte == 92
+			i += 1
+			if i >= len(text) - 1
+				return HirDecodedString("", "unterminated MIR string escape")
+			let escaped = text.byte_at(i) or 0
+			if escaped == 110
+				result = result + "\n"
+			elif escaped == 116
+				result = result + "\t"
+			elif escaped == 114
+				result = result + "\r"
+			elif escaped == 92
+				result = result + "\\"
+			elif escaped == 34
+				result = result + "\""
+			elif escaped == 39
+				result = result + "'"
+			elif escaped == 48
+				result = result + "\0"
+			else
+				return HirDecodedString("", "unsupported MIR string escape")
+		else
+			result = result + text.slice(i, i + 1)
+		i += 1
+	return HirDecodedString(result, "")
 
 def hir_constant_invalid(types: TypeTable, values: Array[HirConstantValue]) -> HirConstantEval
 	return HirConstantEval(types, values, -1, false)
@@ -389,6 +426,32 @@ def hir_eval_constant(types: TypeTable, values: Array[HirConstantValue], tree: P
 		if value == "true"
 			number = 1
 		return hir_constant_push(types, values, TYPE_TAG_BOOL, number, Array[i64]())
+	if node.kind == NODE_STRING
+		let decoded = hir_decode_string(value)
+		if decoded.error != ""
+			return hir_constant_invalid(types, values)
+		return hir_constant_push_text(types, values, TYPE_TAG_STRING, 0, Array[i64](), decoded.value)
+	if node.kind == NODE_ARRAY
+		var current_types = types
+		var current_values = values
+		var elements = Array[i64]()
+		var element_type = TYPE_TAG_INVALID
+		for i in 0..node.count
+			let evaluated = hir_eval_constant(current_types, current_values, tree, hir_ast_child(tree, id, i), constants)
+			if not evaluated.valid
+				return evaluated
+			current_types = evaluated.table
+			current_values = evaluated.values
+			let item_type = current_values[!evaluated.index].type_id
+			if element_type == TYPE_TAG_INVALID
+				element_type = item_type
+			elif element_type != item_type
+				return hir_constant_invalid(current_types, current_values)
+			elements = elements.append(evaluated.index)
+		if element_type == TYPE_TAG_INVALID
+			element_type = TYPE_TAG_I64
+		let canonical = intern_array_type(current_types, element_type)
+		return hir_constant_push(canonical.table, current_values, canonical.id, 0, elements)
 	if node.kind == NODE_NAME
 		for item in constants
 			if item.name == value
@@ -405,6 +468,32 @@ def hir_eval_constant(types: TypeTable, values: Array[HirConstantValue], tree: P
 			if fields[!i].name == value
 				return HirConstantEval(owner.table, owner.values, parent.fields[!i], true)
 		return hir_constant_invalid(owner.table, owner.values)
+	if node.kind == NODE_INDEX and node.count == 2
+		let owner = hir_eval_constant(types, values, tree, hir_ast_child(tree, id, 0), constants)
+		if not owner.valid
+			return owner
+		let selected = hir_eval_constant(owner.table, owner.values, tree, hir_ast_child(tree, id, 1), constants)
+		if not selected.valid
+			return selected
+		let container = selected.values[!owner.index]
+		let index = selected.values[!selected.index]
+		if selected.table.entries[!container.type_id].tag != TYPE_TAG_ARRAY or index.type_id != TYPE_TAG_I64
+			return hir_constant_invalid(selected.table, selected.values)
+		if index.bits < 0 or index.bits >= len(container.fields)
+			return hir_constant_invalid(selected.table, selected.values)
+		return HirConstantEval(selected.table, selected.values, container.fields[!index.bits], true)
+	if node.kind == NODE_CALL and node.count == 2
+		let callee = hir_ast_child(tree, id, 0)
+		if tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(tree, callee) == "len"
+			let argument = hir_eval_constant(types, values, tree, hir_ast_child(tree, id, 1), constants)
+			if not argument.valid
+				return argument
+			let item = argument.values[!argument.index]
+			if item.type_id == TYPE_TAG_STRING
+				return hir_constant_push(argument.table, argument.values, TYPE_TAG_I64, len(item.text), Array[i64]())
+			if argument.table.entries[!item.type_id].tag == TYPE_TAG_ARRAY
+				return hir_constant_push(argument.table, argument.values, TYPE_TAG_I64, len(item.fields), Array[i64]())
+			return hir_constant_invalid(argument.table, argument.values)
 	if node.kind == NODE_UNARY and (value == "-" or value == "+" or value == "not")
 		let inner = hir_eval_constant(types, values, tree, hir_ast_child(tree, id, 0), constants)
 		if not inner.valid
@@ -426,6 +515,8 @@ def hir_eval_constant(types: TypeTable, values: Array[HirConstantValue], tree: P
 			return right
 		let first = right.values[!left.index]
 		let second = right.values[!right.index]
+		if value == "+" and first.type_id == TYPE_TAG_STRING and second.type_id == TYPE_TAG_STRING
+			return hir_constant_push_text(right.table, right.values, TYPE_TAG_STRING, 0, Array[i64](), first.text + second.text)
 		if first.type_id != TYPE_TAG_I64 or second.type_id != TYPE_TAG_I64
 			return hir_constant_invalid(right.table, right.values)
 		var number = first.bits * second.bits
@@ -441,9 +532,35 @@ def hir_eval_constant(types: TypeTable, values: Array[HirConstantValue], tree: P
 		var fields = Array[HirConstantField]()
 		for i in 0..node.count
 			let field_id = hir_ast_child(tree, id, i)
-			if tree.nodes[!field_id].kind != NODE_FIELD
-				return hir_constant_invalid(current_types, current_values)
+			let field_node = tree.nodes[!field_id]
 			let field_name = hir_ast_text(tree, field_id)
+			if field_node.kind == NODE_DELETE
+				let edit = hir_record_delete(members, field_name)
+				if edit.error != ""
+					return hir_constant_invalid(current_types, current_values)
+				members = edit.fields
+				continue
+			if field_node.kind == NODE_SPREAD
+				var source = -1
+				for constant in constants
+					if constant.name == field_name
+						source = constant.value
+				if source < 0
+					return hir_constant_invalid(current_types, current_values)
+				let spread = current_values[!source]
+				if current_types.entries[!spread.type_id].tag != TYPE_TAG_RECORD
+					return hir_constant_invalid(current_types, current_values)
+				let source_fields = current_types.entries[!spread.type_id].fields
+				for j in 0..len(source_fields)
+					let member = source_fields[!j]
+					let edit = hir_record_put(members, member.name, member.kind)
+					if edit.error != ""
+						return hir_constant_invalid(current_types, current_values)
+					members = edit.fields
+					fields = fields.append(HirConstantField(member.name, spread.fields[!j]))
+				continue
+			if field_node.kind != NODE_FIELD
+				return hir_constant_invalid(current_types, current_values)
 			let evaluated = hir_eval_constant(current_types, current_values, tree, hir_ast_child(tree, field_id, 0), constants)
 			if not evaluated.valid
 				return evaluated
@@ -515,7 +632,7 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 				let annotation = hir_ast_child(tree, id, 0)
 				if tree.nodes[!annotation].kind == NODE_TYPE
 					let annotated = hir_ast_text(tree, annotation)
-					if (annotated != "i64" or type_id != TYPE_TAG_I64) and (annotated != "bool" or type_id != TYPE_TAG_BOOL)
+					if (annotated != "i64" or type_id != TYPE_TAG_I64) and (annotated != "bool" or type_id != TYPE_TAG_BOOL) and (annotated != "string" or type_id != TYPE_TAG_STRING)
 						return hir_declaration_error(functions, constants, "module constant type mismatch", hir_ast_line(tree, id))
 			constants = constants.append(HirModuleConstant(name, evaluated.index, type_id))
 			continue

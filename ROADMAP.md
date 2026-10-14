@@ -35,9 +35,10 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
 4. **Resume feature development — in progress.** Local `let` record
    destructuring is implemented. Module constants support integers, Booleans
    and nested structural records through a typed, flat compile-time value
-   arena; field access and earlier constant references are evaluated before
-   MIR, and ordinary record CoW applies at each use. String/array constant
-   values, spreads and general `comptime` remain deferred. Keep further slices
+   arena, now including strings, homogeneous nested arrays, record spreads
+   and deletes. Compile-time `len`, field access, array indexing and earlier
+   constant references are evaluated before MIR. Ordinary CoW applies at
+   each use; general `comptime` and arbitrary pure calls remain deferred. Keep further slices
    isolated and protect MIR self-hosting, snapshots and the legacy backend.
 
 **Decisions:** maintain both backends; retain the self-hosted C bootstrap;
@@ -186,7 +187,8 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [ ] Complete constructors (conditional overrides after unconditional publication), constructor-based tagged unions, exhaustive `match`, function values and noncapturing lambdas. Basic `rec` constructors with automatically published parameters and direct `pub` overrides are implemented.
 - [ ] Implement basic static `namespace`/`import`/`export` resolution; start with separately parsed sources and a build-time dependency graph, without runtime modules.
 - [x] Expand module constant evaluation from `i64` and `bool` expressions to nested **structural record constants**, including references to earlier constants and field access. Store values in a typed arena and instantiate records with ordinary MIR instructions, preserving CoW and sorted field layout. Test overrides, shadowing, invalid initializers and snapshots (`tests/mir/module_record_constants.sirius`).
-- [ ] Extend constant evaluation to strings/arrays, record spreads and selected pure intrinsics before general `comptime` evaluation.
+- [x] Extend constant evaluation to decoded strings/concatenation, homogeneous arrays (including nested), constant array indexing, named record spreads/deletes, and pure `len` of constant strings/arrays. MIR materializes values with existing instructions. See `tests/mir/module_composite_constants.sirius`.
+- [ ] Generalize compile-time expression evaluation to other pure intrinsics/functions, record constructor calls, and ultimately MIR-interpreted `comptime`; keep execution policy permissive initially.
 - [ ] Define stable diagnostic IDs and explicitly reject unsupported semantics rather than silently translating them.
 - [ ] Add language-semantic tests for each new construct and verify the C bootstrap can rebuild the compiler without invoking the frozen Python implementation.
 

@@ -1,0 +1,24 @@
+# Compile-time strings, homogeneous arrays, nested records, spreads and deletes.
+let PREFIX: string = "hello\n"
+let GREETING = PREFIX + "world"
+let NUMBERS = [10, 20, 30]
+let NESTED = [NUMBERS, [4, 5, 6]]
+let BASE = {label = GREETING, values = NUMBERS, enabled = true}
+let OVERRIDE = {BASE.*, label = "changed", del enabled, enabled = false, values = [7, 8]}
+let ARCHIVE = {items = [BASE, BASE], updated = OVERRIDE}
+let CHECK = len(GREETING) + len(NESTED) + NESTED[1][0]
+
+def main() -> i64
+	print(len(GREETING))
+	print(PREFIX == "hello\n")
+	print(OVERRIDE.label)
+	print(OVERRIDE.values[!0])
+	print(ARCHIVE.items[!1].values[!2])
+	print(CHECK)
+	let snapshot = OVERRIDE
+	var updated = OVERRIDE
+	updated.values[!0] = 99
+	print(snapshot.values[!0])
+	print(updated.values[!0])
+	print(BASE.values[!0])
+	return 0
