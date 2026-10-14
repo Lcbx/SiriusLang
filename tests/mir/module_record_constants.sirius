@@ -1,0 +1,19 @@
+# Compile-time record values have canonical structural layouts, including
+# nested fields and aliases. Each use materializes an independent value.
+let INNER = {z = 3, a = 0, a = 1}
+let COPY = INNER
+let OUTER = {score = COPY.z * 2, flag = not false, inner = COPY}
+let X: i64 = OUTER.inner.a + OUTER.score
+
+def main() -> i64
+	print(X)
+	print(OUTER.inner.z)
+	if not OUTER.flag
+		return 1
+	var local = OUTER
+	local.inner.a = 9
+	print(local.inner.a)
+	print(OUTER.inner.a)
+	let INNER = {a = 100}
+	print(INNER.a)
+	return 0

@@ -54,6 +54,31 @@ def main() -> None:
 			if result.returncode != 1 or not result.stdout or generated.exists():
 				raise AssertionError(f'Expected invalid constant rejection: {initializer}: {result.stdout!r}')
 		print('PASS typed boolean module constants, compile-time not, and invalid constant rejection')
+		# Structural module constants use the same canonical layout and CoW rules
+		# as runtime records, including aliases and local shadowing.
+		record_source = Path(__file__).resolve().parent.parent / 'tests/mir/module_record_constants.sirius'
+		record_expected = Path(__file__).resolve().parent.parent / 'tests/mir/module_record_constants.txt'
+		record_c = work / 'module_record_constants.c'
+		execute([str(compiler), str(record_source), str(record_c)])
+		assert_native(run_native(cache, record_c), stdout=record_expected.read_bytes())
+		for index, initializer in enumerate((
+			'let BAD = {}',
+			'let BAD = {x = missing}',
+			'let BAD = {x = 1}.missing',
+			'let BAD: bool = {x = true}',
+			'let BAD = {x = arguments()}',
+			'let BAD = {x = [1, 2]}',
+			'let BAD = {x = 1, y = x}',
+		)):
+			negative = work / f'module_record_invalid_{index}.sirius'
+			negative.write_text(initializer + '\ndef main() -> i64\n\treturn 0\n')
+			generated = work / f'module_record_invalid_{index}.c'
+			result = subprocess.run([str(compiler), str(negative), str(generated)], capture_output=True, text=True)
+			if (result.returncode != 1 or generated.exists() or
+				not any(error in result.stdout for error in (
+					'unsupported module constant initializer', 'module constant type mismatch'))):
+				raise AssertionError(f'Expected record constant rejection: {initializer}: {result.stdout!r}')
+		print('PASS nested module record constants, field selections, CoW, and invalid initializers')
 		# Plain indexing is permitted only with an established static bound.
 		static_case = work / 'static_literal_index.sirius'
 		static_case.write_text(

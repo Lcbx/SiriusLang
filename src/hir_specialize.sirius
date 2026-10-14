@@ -51,7 +51,7 @@ def hir_definition(functions: Array[HirFunctionDecl], definition: i64) -> i64
 def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> HirSpecializedProgram
 	var registry = new_hir_specializations()
 	var bodies = Array[HirSpecializedFunction]()
-	var types = new_type_table()
+	var types = declarations.types
 	var entry = -1
 	for declaration in declarations.functions
 		if declaration.name == name and not declaration.constructor
