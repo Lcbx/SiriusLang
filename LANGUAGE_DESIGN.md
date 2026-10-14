@@ -2,9 +2,7 @@
 
 > **Status:** Language target, not an inventory of implemented compiler features. The current self-hosted Sirius compiler implements a subset; see [README.md](README.md) for implementation status.
 >
-> **Agreed clarifications:** Bootstrap compiler written in Python (rather than OCaml); dictionary type is `Dict` (not `Map`); records use lexicographically sorted field names for canonical layout; constructor-based union aliases and `match` use the syntax below. Python-style negative array indexing is a medium-priority future improvement. Module names are path-derived; optional namespace declarations are deferred. Typed MIR is shared by native compilation, unrestricted compile-time execution, and runtime interpretation.
->
-> **Architecture details:** See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for library artifacts, cross-boundary specialization, registration, and C interoperability. Proposed APIs and unresolved questions there are not implemented features.
+> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is deferred. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## 1. Core Philosophy
 
@@ -69,7 +67,7 @@ point.x += 5
 
 **CoW:** Storage may be modified in place when exclusively owned and safe to overwrite; otherwise it is copied. Nested values support structural sharing.
 
-### Record destructuring (design only)
+### Record destructuring
 
 Destructuring names every source field explicitly; binding names need not match:
 
@@ -106,7 +104,7 @@ var a = [1, 2, 3]
 a[!1] = 10
 ```
 
-Field and indexed assignments require a mutable root binding. They are equivalent to replacing the corresponding immutable value.
+Field and checked indexed assignments require a mutable root binding. Nested paths and compound assignments evaluate indices once and reconstruct modified values from the leaf to the root using CoW.
 
 ## 4. Functions, Constructors, and Methods
 
@@ -183,7 +181,7 @@ Every type has a canonical descriptor containing:
 * Array element type and rank.
 * Type-specific memory-management and generic operations.
 
-Exported type information is preserved in library metadata; canonical structural identity must remain consistent across interpreted and compiled modules, without depending on process-local descriptor addresses.
+Across modules and execution modes, structural type identity is semantic, not based on process-local descriptor addresses. Portable library interfaces preserve exported type information (see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)).
 
 ```python
 let t = dtype(p)
@@ -210,11 +208,8 @@ Dynamic lookup and checked conversion are explicit. No runtime specialization is
 `let Result = Success | Failure` is a compile-time union type alias formed from constructor result types; `match` tests a runtime union tag and binds the published fields:
 
 ```python
-def Success(value: i64)
-	pub value
-
-def Failure(code: i64)
-	pub code
+rec Success(value: i64)
+rec Failure(code: i64)
 
 let Result = Success | Failure
 
@@ -415,18 +410,14 @@ export def process(data)
 	return Stats.mean(data)
 ```
 
-**Module semantics (design only; not yet fully implemented):**
+**Target module semantics (not yet fully implemented):**
 
-* Initially, one module per `.sirius` source file. Its case-sensitive name comes from its path relative to a configured source root (`Math/Stats.sirius` → `Math.Stats`). Duplicate names and ambiguous resolutions are errors. An optional `namespace` declaration, potentially allowing several files to contribute to one module, may be added later.
-* `import Math.Stats alias Stats` binds a compile-time namespace; access is qualified (`Stats.mean(values)`). There are no runtime module objects, implicit imports, or wildcard imports.
-* Definitions are private unless marked `export`. `export import Math.Stats alias Stats` explicitly re-exports a namespace; ordinary imports do not re-export it. Imported overloads must be explicitly brought into consideration; the precise operator-import mechanism remains open.
-* Initially, imports form an acyclic dependency graph. Name resolution is independent of import order; each module is analyzed once per compilation.
-* Generic functions specialize across module boundaries. A specialization is identified by its defining module, declaration, and concrete type signature, not by a source name alone.
-* Module-level `let` bindings are compile-time values, not runtime-initialized module globals. Evaluation may have compile-time side effects, but importing a module does not run initialization code in the final program.
-* Module boundaries do not create nominal record types: identically shaped records from different modules remain structurally compatible. Opaque representation hiding needs a distinct type feature.
-* Exported function signatures and record/type descriptors are included in portable library metadata. Generic implementations must remain available in MIR when downstream code needs new specializations.
+* One module per source file, named from its path relative to a source root (`Math/Stats.sirius` → `Math.Stats`). Case-sensitive names must resolve unambiguously; optional `namespace` declarations are deferred.
+* `import Math.Stats alias Stats` provides qualified access. Declarations are private by default; `export` makes them public, and `export import ...` explicitly re-exports a namespace. No wildcard imports or runtime module objects.
+* Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
+* Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-**Bootstrap implementation:** Module `let` currently accepts compile-time `i64` integer expressions (literals, prior constants, unary signs, `+`, `-`, `*`). General MIR-based compile-time evaluation, re-exports, and library artifacts are design targets, not claims of current implementation.
+See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports only a limited subset of module constants; see [README.md](README.md) for status.
 
 ## 12. Compiler
 
@@ -456,36 +447,20 @@ The Python bootstrap is then frozen; subsequent development uses Sirius.
 
 ### MIR execution modes (design target)
 
-Typed MIR is the shared semantic representation for:
+Typed MIR is intended to share Sirius value semantics across native C11 output, unrestricted compile-time interpretation, saved-MIR runtime interpretation, and eventual mixed native/interpreted calls. Compile-time effects (including I/O and FFI when available on the host) are permitted; no mandatory purity sandbox or execution budget is planned. The syntax and staging of explicit compile-time execution remain unresolved.
 
-* **Native execution:** Compile specialized MIR to C11 and then native code.
-* **Compile-time execution:** Run MIR in the interpreter to evaluate expressions and module constants during compilation. The interpreter is not restricted to pure functions: I/O, mutation, and FFI may be used when the host environment supplies them. No mandatory sandbox, purity restriction, or execution budget is part of the initial design; reproducibility and side effects are the programmer's responsibility.
-* **Runtime interpretation:** Save versioned MIR files and execute them independently of source compilation. Executable MIR contains the required concrete functions and dependency information; reusable MIR libraries also preserve generic implementations.
-* **Mixed execution:** Native and interpreted functions can coexist, using shared Sirius types, memory management, and call adapters. Prefer a compiled specialization when available, otherwise specialize and interpret generic MIR. Native code can eventually invoke interpreted functions through a dispatch/trampoline interface; JIT compilation is not required.
-
-Execution mode must not alter observable Sirius value semantics. The syntax for explicitly requesting compile-time execution and the point at which it can participate in type analysis are not yet decided. Compile-time side effects may intentionally make builds non-reproducible.
-
-### Library interfaces and native interoperation (design target)
-
-* Libraries expose portable metadata for exported definitions, type descriptors and layouts, specialization identities, and version/ABI compatibility. Descriptors alone cannot monomorphize generic functions: their MIR bodies must also be available.
-* A native Sirius library can provide compiled specializations and a C-callable registration hook for the compiler/interpreter or runtime to register native symbols, descriptors, and implementations. The hook's ABI and discovery protocol remain to be specified.
-* Portable metadata remains readable without executing a native hook, including when cross-compiling for a different target.
-* Sirius values and built-in types use a common interpreter/native representation within a compatible target ABI; direct calls still need a defined calling convention, ownership rules, and dispatch interface.
-* Native C libraries are a separate FFI boundary. Their structures, pointers, calling conventions, alignment, and ownership need not match Sirius conventions. Start with explicit wrappers, C primitives, and opaque handles; foreign-layout records (e.g. `repr(C)`) are a possible later feature, not an implicit promise of compatibility.
-
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for design details and an incremental implementation outline.
+Portable library metadata must expose exported type/signature identities and generic MIR for downstream specialization; compiled specializations may be registered through a native hook. Sirius native/interpreter ABI compatibility does **not** imply C FFI layout compatibility. See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for artifacts, call adapters, host/target distinctions, and proposed implementation stages.
 
 ## 13. Open Semantic Decisions
 
-These are **unresolved**, not implied guarantees:
+These remain **unresolved**, not implied guarantees:
 
-* Integer overflow, conversion overflow, division/remainder, and floating-point corner cases.
-* Scalar structural equality and dictionary hashing, particularly for floats and arrays whose `==` may be elementwise.
-* Overload resolution and visibility rules for imported operators; specialization behavior at module/library boundaries.
-* Nominal identity for union alternatives with identical structural records. The current union examples use `def` with `pub`, which conflicts with §4's `rec`-only constructor rule; their syntax must be reconciled.
-* Syntax and staging for explicit compile-time evaluation (especially evaluation that affects types), and how target-specific FFI is handled by the host compiler.
-* Portable MIR schema/versioning, library discovery and registration ABI, function-call adapters, and public-API compatibility rules.
-* C ABI declarations, foreign record layout, native ownership contracts, and error propagation across boundaries.
+* Numeric overflow, division/remainder, conversion, and floating-point corner cases.
+* Structural equality and hashing for all types (especially floats and arrays with elementwise `==`).
+* Whether future nominal variant identity should distinguish union alternatives with identical structural record shapes (currently indistinguishable).
+* Imported-operator overload visibility and explicit compile-time evaluation syntax/staging.
+
+Portable MIR formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## 14. Future Improvements
 

@@ -9,6 +9,14 @@ committed C bootstrap. Self-hosting covers a subset of
 [the intended language](LANGUAGE_DESIGN.md), not the complete design.
 The historical Python compiler is archived and is **not** used for active builds.
 
+**Design vs. implementation:** [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md)
+defines language semantics; [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
+proposes path-derived modules, portable MIR libraries, compile-time execution,
+and native/FFI interoperability. Those architecture features are **not**
+implemented by the current MIR compiler. The existing MIR interpreter is
+limited and does not provide general compile-time execution or serialized
+MIR loading.
+
 ## Current development priorities
 
 The runtime and MIR migration milestones are stable; feature development has

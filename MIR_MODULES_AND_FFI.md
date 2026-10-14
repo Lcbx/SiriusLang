@@ -1,18 +1,8 @@
 # Sirius — MIR, Modules, Libraries, and FFI
 
-> **Status:** Architectural design and open questions, not an inventory of implemented features. The core language decisions are in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md). Examples of APIs and file extensions below are provisional.
+> **Status:** Design target, not implemented functionality. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
 
-## 1. Decisions
-
-* Module names are inferred from paths relative to a configured source root. Initially, one file defines one module. Optional `namespace` declarations (possibly to combine source files) are deferred.
-* Imports are qualified; visibility is controlled by `export`. Explicit re-exports are allowed. Cyclic module imports remain unsupported initially.
-* The same typed MIR supports C emission, compile-time interpretation, saved MIR execution, and eventual mixed native/interpreted programs.
-* The MIR interpreter does not enforce compile-time purity, I/O restrictions, or execution budgets. Compile-time code can have side effects and need not produce reproducible builds. Any operation still requires its dependencies to be available in the compiler's host environment.
-* Native Sirius libraries expose canonical type information and exported definitions, plus generic MIR for downstream monomorphization. They may also supply previously compiled specializations.
-* A native registration hook makes compiled symbols and implementations available to a compatible compiler, interpreter, or runtime.
-* Sirius-to-Sirius interoperability and C FFI are separate problems: third-party C types are not assumed to follow Sirius layout or ownership rules.
-
-## 2. Module resolution and visibility
+## 1. Module resolution and visibility
 
 Given a source root, `Math/Stats.sirius` defines module `Math.Stats`:
 
@@ -29,9 +19,9 @@ Imports name compile-time namespaces; they do not instantiate runtime module obj
 export import Math.Stats alias Stats
 ```
 
-Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings evaluate during compilation, not when the final program imports a module.
+Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings evaluate during compilation and may have effects; importing a module does not execute initialization code in the final program. The current compiler only supports limited `i64` module constants.
 
-## 3. Shared MIR execution
+## 2. Shared MIR execution
 
 ```text
 Sirius source
@@ -45,7 +35,7 @@ Sirius source
 
 ### Compile-time evaluation
 
-The compiler uses the general MIR interpreter to evaluate requested computations and module constants. There is no separate restricted interpreter or requirement that called functions be pure. This permits I/O, native calls, or other observable effects when available on the host.
+The compiler would use the general MIR interpreter to evaluate requested computations and module constants. No separate restricted interpreter, mandatory purity requirement, sandbox or execution budget is planned. I/O, native calls and other side effects would be allowed when the host provides them; builds need not be reproducible.
 
 Explicit compile-time syntax, the ordering of compilation and evaluation, and compile-time operations that generate types or declarations remain to be designed. In particular, evaluating MIR while type-checking its own dependencies requires staged compilation.
 
@@ -55,7 +45,7 @@ An **executable** artifact contains concrete callable functions and their transi
 
 The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 
-## 4. Specializing across library boundaries
+## 3. Specializing across library boundaries
 
 For an exported generic function:
 
@@ -77,7 +67,7 @@ A purely native application performs required monomorphization at build/link tim
 
 A single common specialization registry is a useful implementation goal, but its exact ownership and persistence are not settled.
 
-## 5. Library artifacts and registration
+## 4. Library artifacts and registration
 
 Conceptually, a Sirius library provides:
 
@@ -98,7 +88,7 @@ A compiler/interpreter can call the hook when it can load and execute the librar
 
 Details still to specify: artifact packaging, discovery/loading, registry lifetime, hook ABI, symbol/version identity, compatible target triples, and native/interpreted call adapters. Function pointers and type descriptors cannot be assumed to have the same process-local addresses in independently loaded libraries.
 
-## 6. ABI and C interoperability
+## 5. ABI and C interoperability
 
 ### Sirius native/interpreter boundary
 
@@ -112,7 +102,7 @@ C APIs may use declaration-order structures, padding, platform-dependent alignme
 
 Initial interop should use explicit wrappers with C primitives and opaque handles, converting to ordinary Sirius values at the boundary. Explicit C-layout records, imported C declarations, callbacks, and owned/buffer-sharing conversions can be added later. Their syntax and safety rules are undecided.
 
-## 7. Suggested implementation order (proposal)
+## 6. Suggested implementation order (proposal)
 
 1. Define portable exported-symbol and type-descriptor metadata in a module interface.
 2. Make generic MIR available to cross-module specialization and add canonical specialization keys.
@@ -124,7 +114,7 @@ Initial interop should use explicit wrappers with C primitives and opaque handle
 
 These steps are architectural suggestions, not commitments or claims that all prerequisites are already satisfied.
 
-## 8. Open questions
+## 7. Open questions
 
 * Exact staging and syntax for `comptime` and compile-time type-level operations.
 * Canonical type-identity encoding and native ABI compatibility across compiler versions.

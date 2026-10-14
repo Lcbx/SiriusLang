@@ -41,6 +41,12 @@ keep value/CoW semantics; prefer correctness and simpler interfaces over
 marginal compiler-speed gains. Baseline MIR self-compilation is roughly 8 s
 at `-O0` on the earlier profiling setup; remeasure before claiming speedups.
 
+**Future architecture:** [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
+records the proposed module, MIR serialization/execution, cross-library
+specialization, and FFI direction. It is **not** an active-implementation
+checklist; continue incremental language features before taking on its
+longer-term library/ABI milestones.
+
 **Runtime and IR reviews:** [RUNTIME.md](RUNTIME.md) and
 [IR_DESIGN.md](IR_DESIGN.md#storage-review-post-mir-default). Test with
 `python tools/test_runtime_collections.py` and `python tools/test_reference_c.py`.

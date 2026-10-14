@@ -1,6 +1,6 @@
 # MIR interpreter
 
-**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar/string/record/array/dictionary/optional lowering and linked specialization worklist** now exist; ordinary Sirius programs now compile through MIR by default. The direct C emitter remains available through `sirius-legacy`. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included.
+**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar/string/record/array/dictionary/optional lowering and linked specialization worklist** now exist; ordinary Sirius programs now compile through MIR by default. The direct C emitter remains available through `sirius-legacy`. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included. The proposed use of the same MIR for compile-time execution, serialized artifacts and mixed native/interpreted calls is described in [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md); these are not current interpreter capabilities.
 
 ## Run isolated tests
 
