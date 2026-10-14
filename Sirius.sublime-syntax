@@ -1,0 +1,198 @@
+%YAML 1.2
+---
+name: Sirius
+file_extensions:
+  - sirius
+scope: source.sirius
+version: 2
+
+variables:
+  identifier: '[A-Za-z_][A-Za-z_0-9]*'
+  digits: '[0-9](?:_?[0-9])*'
+  hex_digits: '[0-9A-Fa-f](?:_?[0-9A-Fa-f])*'
+  builtin_types: '(?:i64|f64|bool|string|Array|Dict|Any)'
+
+contexts:
+  prototype:
+    - match: '(#).*$'
+      scope: comment.line.number-sign.sirius
+      captures:
+        1: punctuation.definition.comment.sirius
+
+  main:
+    # Declaration rules must precede the generic keyword/identifier rules.
+    - match: '^[ \t]*(?:(pub|export)[ \t]+)?(def)[ \t]+({{identifier}})\b'
+      scope: meta.function.sirius
+      captures:
+        1: storage.modifier.visibility.sirius
+        2: keyword.declaration.function.sirius
+        3: entity.name.function.sirius
+      push: function-signature
+
+    - match: '^[ \t]*(?:(pub|export)[ \t]+)?(rec)[ \t]+({{identifier}})\b'
+      scope: meta.record.sirius
+      captures:
+        1: storage.modifier.visibility.sirius
+        2: keyword.declaration.record.sirius
+        3: entity.name.type.sirius
+
+    - match: '^[ \t]*(?:(pub|export)[ \t]+)?(let|var)[ \t]+({{identifier}})\b'
+      captures:
+        1: storage.modifier.visibility.sirius
+        2: storage.type.variable.sirius
+        3: variable.other.definition.sirius
+      push: binding-tail
+
+    - include: expressions
+
+  binding-tail:
+    # Optional type annotation after a declared variable.
+    - match: ':'
+      scope: punctuation.separator.annotation.sirius
+      set: type-expression
+    - match: '(?=[ \t]+{{identifier}}(?:[ \t]*\[|[ \t]*(?==|#|$)))'
+      set: type-expression
+    - match: '(?==|#|$)'
+      pop: true
+    - include: expressions
+
+  function-signature:
+    - match: '\('
+      scope: punctuation.section.parameters.begin.sirius
+      push: function-parameters
+    - match: '->'
+      scope: punctuation.separator.return-type.sirius
+      set: return-type
+    - match: '(?=#|$)'
+      pop: true
+    - include: expressions
+
+  function-parameters:
+    - meta_scope: meta.function.parameters.sirius
+    - match: '\)'
+      scope: punctuation.section.parameters.end.sirius
+      pop: true
+    # Both `x: Type` and `x Type` are recognized for highlighting.
+    - match: '({{identifier}})([ \t]*)(:)(?=[ \t]*{{identifier}})'
+      captures:
+        1: variable.parameter.sirius
+        3: punctuation.separator.annotation.sirius
+      push: type-expression
+    - match: '({{identifier}})(?=[ \t]+{{identifier}})'
+      captures:
+        1: variable.parameter.sirius
+      push: type-expression
+    - match: '{{identifier}}'
+      scope: variable.parameter.sirius
+    - include: expressions
+
+  return-type:
+    - meta_scope: meta.function.return-type.sirius meta.type.sirius
+    - match: '(?=#|$)'
+      pop: true
+    - include: type-atoms
+
+  type-expression:
+    - meta_scope: meta.type.sirius
+    - match: '(?=[,)=#]|$)'
+      pop: true
+    - include: type-atoms
+
+  type-arguments:
+    - meta_scope: meta.generic.sirius
+    - match: '\]'
+      scope: punctuation.section.brackets.end.sirius
+      pop: true
+    - include: type-atoms
+
+  type-atoms:
+    - match: '\['
+      scope: punctuation.section.brackets.begin.sirius
+      push: type-arguments
+    - match: '\b{{builtin_types}}\b'
+      scope: support.type.sirius
+    - match: '\b{{identifier}}\b'
+      scope: entity.name.type.sirius
+    - match: ','
+      scope: punctuation.separator.sequence.sirius
+    - match: '\.'
+      scope: punctuation.accessor.dot.sirius
+
+  expressions:
+    - include: strings
+    - include: numbers
+
+    - match: '\b(?:true|false)\b'
+      scope: constant.language.boolean.sirius
+    - match: '\b{{builtin_types}}\b'
+      scope: support.type.sirius
+
+    - match: '\b(?:if|elif|else|while|for|in|return|recur|match)\b'
+      scope: keyword.control.sirius
+    - match: '\b(?:and|or|not)\b'
+      scope: keyword.operator.word.sirius
+    - match: '\b(?:let|var|def|rec)\b'
+      scope: keyword.declaration.sirius
+    - match: '\b(?:pub|export)\b'
+      scope: storage.modifier.visibility.sirius
+
+    # Calls, methods, and member access.
+    - match: '(\.)({{identifier}})(?=[ \t]*\()'
+      captures:
+        1: punctuation.accessor.dot.sirius
+        2: variable.function.sirius
+    - match: '(\.)({{identifier}})'
+      captures:
+        1: punctuation.accessor.dot.sirius
+        2: variable.other.member.sirius
+    - match: '\b{{identifier}}(?=[ \t]*\()'
+      scope: variable.function.sirius
+
+    - match: '->'
+      scope: punctuation.separator.return-type.sirius
+    - match: '(?:==|!=|<=|>=|<|>)'
+      scope: keyword.operator.comparison.sirius
+    - match: '(?:\+=|-=|\*=|/=|%=|=)'
+      scope: keyword.operator.assignment.sirius
+    - match: '(?:\*\*|//|<<|>>|[+*/%&|^~\-])'
+      scope: keyword.operator.arithmetic.sirius
+    - match: ':'
+      scope: punctuation.separator.key-value.sirius
+    - match: ','
+      scope: punctuation.separator.sequence.sirius
+    - match: '[()\[\]{}]'
+      scope: punctuation.section.group.sirius
+    - match: '\.'
+      scope: punctuation.accessor.dot.sirius
+    - match: '\b{{identifier}}\b'
+      scope: variable.other.sirius
+
+  numbers:
+    - match: '\b0[xX]{{hex_digits}}\b'
+      scope: constant.numeric.integer.hexadecimal.sirius
+    - match: '\b0[bB][01](?:_?[01])*\b'
+      scope: constant.numeric.integer.binary.sirius
+    - match: '\b0[oO][0-7](?:_?[0-7])*\b'
+      scope: constant.numeric.integer.octal.sirius
+    - match: '(?<![\w.])(?:{{digits}}\.(?:{{digits}})?|\.{{digits}}|{{digits}}[eE][+-]?{{digits}})(?:[eE][+-]?{{digits}})?(?![\w.])'
+      scope: constant.numeric.float.sirius
+    - match: '\b{{digits}}\b'
+      scope: constant.numeric.integer.decimal.sirius
+
+  strings:
+    - match: '"'
+      scope: punctuation.definition.string.begin.sirius
+      push: double-quoted-string
+
+  double-quoted-string:
+    - meta_include_prototype: false
+    - meta_scope: string.quoted.double.sirius
+    - match: '\\(?:[\\"nrt0]|x[0-9A-Fa-f]{2}|u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8})'
+      scope: constant.character.escape.sirius
+    - match: '\\.'
+      scope: constant.character.escape.sirius
+    - match: '"'
+      scope: punctuation.definition.string.end.sirius
+      pop: true
+    - match: '$'
+      pop: true
