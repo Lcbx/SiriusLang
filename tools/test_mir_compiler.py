@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import tempfile
+import subprocess
 
 from build_support import BuildCache, assert_native, execute, options, require_cc, run_native, validate_jobs
 from compiler_cases import check_cases
@@ -25,6 +26,26 @@ def main() -> None:
 		work = Path(temporary)
 		check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
 			runtime=cache.runtime(), negative_exclude=NEGATIVE_EXCLUDE)
+		# Plain indexing is permitted only with an established static bound.
+		static_case = work / 'static_literal_index.sirius'
+		static_case.write_text(
+			'def main() -> i64\n'
+			'\tlet a = [10, 20, 30][1]\n'
+			'\tlet b = [[1, 2], [3, 4]][0][1]\n'
+			'\tprint(a + b)\n'
+			'\treturn 0\n')
+		static_c = work / 'static_literal_index.c'
+		execute([str(compiler), str(static_case), str(static_c)])
+		assert_native(run_native(cache, static_c), stdout=b'22\n')
+		for suffix, expression in (('out_of_range', '[1, 2][2]'),
+			('unproven', 'items[0]'), ('negative', '[1, 2][-1]')):
+			negative = work / (suffix + '.sirius')
+			negative.write_text('def main() -> i64\n\tlet items = [1, 2]\n\tprint(' + expression + ')\n\treturn 0\n')
+			failed = work / (suffix + '.c')
+			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
+			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
+				raise AssertionError(f'Expected static bounds rejection for {expression}: {result.stdout!r}')
+		print('PASS static literal bounds proof and rejection of unproven plain indices')
 		elif_case = work / 'optional_elif.sirius'
 		elif_case.write_text('def main() -> i64\n\tlet table = Dict[i64, i64]()\n\tif false\n\t\tprint(1)\n\telif (table.get(1) or 0) == 0\n\t\tprint(2)\n\treturn 0\n')
 		output = work / 'optional_elif.c'

@@ -510,6 +510,54 @@ rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string
 
 rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
 
+# A conservative static bounds proof for array literals and chains of
+# literal array indexing. Unknown lengths and nonconstant indices remain
+# unproven, so callers must use [?] or [!].
+def hir_literal_index(tree: ParseState, id: i64, count: i64) -> i64
+	if tree.nodes[!id].kind != NODE_INTEGER
+		return -1
+	let digits = hir_ast_text(tree, id)
+	if len(digits) == 0
+		return -1
+	var value = 0
+	for i in 0..len(digits)
+		let digit = (digits.byte_at(i) or 0) - 48
+		if digit < 0 or digit > 9
+			return -1
+		# Avoid integer overflow: stop as soon as the prefix exceeds length.
+		if value >= count or digit >= count
+			return -1
+		value = value * 10 + digit
+		if value >= count
+			return -1
+	return value
+
+def hir_static_array_literal(tree: ParseState, id: i64) -> i64
+	let node = tree.nodes[!id]
+	if node.kind == NODE_ARRAY
+		return id
+	if node.kind != NODE_INDEX or node.count != 2
+		return -1
+	let base = hir_static_array_literal(tree, hir_ast_child(tree, id, 0))
+	if base < 0
+		return -1
+	let index = hir_literal_index(tree, hir_ast_child(tree, id, 1), tree.nodes[!base].count)
+	if index < 0
+		return -1
+	let selected = hir_ast_child(tree, base, index)
+	if tree.nodes[!selected].kind != NODE_ARRAY
+		return -1
+	return selected
+
+def hir_index_proven(tree: ParseState, id: i64) -> bool
+	let node = tree.nodes[!id]
+	if node.kind != NODE_INDEX or node.count != 2
+		return false
+	let array = hir_static_array_literal(tree, hir_ast_child(tree, id, 0))
+	if array < 0
+		return false
+	return hir_literal_index(tree, hir_ast_child(tree, id, 1), tree.nodes[!array].count) >= 0
+
 def hir_body_error(state: HirBodyState, id: i64, message: string) -> HirBodyState
 	var result = state
 	if result.error == ""
@@ -942,6 +990,8 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if result.last_type != TYPE_TAG_INVALID and result.last_type != TYPE_TAG_I64
 				return hir_body_error(result, id, "expected i64, found " + hir_type_name(result.types, result.last_type))
 		let valid_index = result.last_type == TYPE_TAG_I64 and node.count == 2
+		if kind == NODE_INDEX and not hir_index_proven(state.tree, id)
+			return hir_body_error(result, id, "index is not statically proven in bounds; use [?] or [!]")
 		result.last_type = TYPE_TAG_INVALID
 		if valid_index and owner != TYPE_TAG_INVALID and result.types.entries[!owner].tag == TYPE_TAG_ARRAY
 			let element = result.types.entries[!owner].first

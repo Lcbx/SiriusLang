@@ -178,7 +178,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 **Available then:** typed HIR/MIR, safe owned values and the existing standard-library building blocks.
 
 - [x] Implement local `let` record destructuring with explicit name/selector pairs, single source evaluation and typed field extraction. MIR only; `var` and recursive patterns remain deferred.
-- [ ] Generalize remaining optional constructs and nested CoW lvalues (optional indexing and `else return` have initial MIR support). Plain `a[i]` still needs a static bounds proof.
+- [ ] Generalize remaining optional constructs and nested CoW lvalues. Optional indexing, `else return` and nested CoW updates are implemented. **Started:** plain `a[i]` is accepted for literal arrays with compile-time in-range integer indices (including nested literal chains). Unknown lengths/indices remain unproven and require `[?]` or `[!]`; extend range/length analysis later.
 - [ ] Complete constructors (conditional overrides after unconditional publication), constructor-based tagged unions, exhaustive `match`, function values and noncapturing lambdas. Basic `rec` constructors with automatically published parameters and direct `pub` overrides are implemented.
 - [ ] Implement basic static `namespace`/`import`/`export` resolution; start with separately parsed sources and a build-time dependency graph, without runtime modules.
 - [ ] Expand constant evaluation from module `i64` expressions to **record constants**; consider selected pure intrinsics before general `comptime` evaluation.

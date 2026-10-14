@@ -257,7 +257,9 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		next = mir_lower_register(next, type_id)
 		next = mir_lower_emit(next, mir_array_new(dst, inputs))
 		return MirLowerExpr(next, dst)
-	if node.kind == NODE_OPTIONAL_INDEX or node.kind == NODE_CHECKED_INDEX
+	if node.kind == NODE_OPTIONAL_INDEX or node.kind == NODE_CHECKED_INDEX or node.kind == NODE_INDEX
+		if node.kind == NODE_INDEX and not hir_index_proven(context.tree, id)
+			return MirLowerExpr(mir_lower_error(next, "index is not statically proven in bounds; use [?] or [!]"), -1)
 		let owner = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 0))
 		next = owner.state
 		next.error == "" else return MirLowerExpr(next, -1)

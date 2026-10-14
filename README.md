@@ -30,7 +30,12 @@ resumed. The agreed implementation order remains:
    bootstrap use MIR. **Keep** `src/emit_c.sirius` accessible in the separate
    legacy compiler for differential checks; do not delete it.
 4. **Features — active:** implement missing language constructs in tested slices,
-   including local `let` record destructuring and nested record/array updates (MIR backend only).
+   including local `let` record destructuring, nested record/array updates,
+   and statically proven plain indexing of array literals (MIR backend only).
+
+Plain `a[i]` indexing currently proves only nonnegative integer literals applied
+  to array literals (including nested literal chains). For other reads use
+  `a[?i]` or `a[!i]`; no general length/range inference is implemented yet.
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
