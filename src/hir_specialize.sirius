@@ -3,8 +3,8 @@
 # duplicate signatures reuse existing IN_PROGRESS entries.
 
 rec HirConcreteBody(nodes: Array[HirNode], requests: Array[HirSpecializationRequest], types: TypeTable, return_type: i64, error: string, error_line: i64)
-rec HirSpecializedCall(source: i64, specialization: i64)
-rec HirSpecializedFunction(specialization: i64, nodes: Array[HirNode], calls: Array[HirSpecializedCall], return_type: i64)
+# Bodies are in specialization-ID order; the array index is the ID.
+rec HirSpecializedFunction(nodes: Array[HirNode], calls: Array[HirSpecializedCall], return_type: i64)
 rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: TypeTable, entry: i64, error: string)
 
 def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
@@ -104,7 +104,7 @@ def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: 
 			let started = hir_begin_specialization(registry, request.definition, request.arguments, result_type)
 			registry = started.registry
 			calls = calls.append(HirSpecializedCall(request.source, started.index))
-		bodies = bodies.append(HirSpecializedFunction(cursor, typed.nodes, calls, typed.return_type))
+		bodies = bodies.append(HirSpecializedFunction(typed.nodes, calls, typed.return_type))
 		registry = hir_complete_specialization(registry, cursor, typed.return_type)
 		cursor += 1
 	return HirSpecializedProgram(registry, bodies, types, entry, "")

@@ -21,9 +21,22 @@ def main() -> i64
 		return 6
 	if result.types.entries[!array_id].tag != TYPE_TAG_ARRAY or result.types.entries[!array_id].first != TYPE_TAG_I64
 		return 6
-	for entry in result.registry.entries
-		if entry.status != HIR_SPEC_COMPLETE
+	for i in 0..len(result.bodies)
+		if result.registry.entries[!i].status != HIR_SPEC_COMPLETE
 			return 7
+	# Distinct signatures occupy distinct slots; repeated calls share a slot.
+	let multi = parse_module("def discard(x) -> i64\n\treturn 1\ndef main() -> i64\n\treturn discard(0) + discard(true) + discard(0)\n")
+	let multi_declarations = hir_module_declarations(multi.state, multi.node)
+	let specialized = hir_specialize_program(multi.state, multi_declarations, "main", Array[i64]())
+	if specialized.error != "" or len(specialized.bodies) != 3 or len(specialized.registry.entries) != 3
+		return 9
+	if len(specialized.bodies[!0].calls) != 3
+		return 10
+	if specialized.bodies[!0].calls[!0].specialization != 1 or specialized.bodies[!0].calls[!1].specialization != 2 or specialized.bodies[!0].calls[!2].specialization != 1
+		return 11
+	for i in 0..len(specialized.bodies)
+		if specialized.registry.entries[!i].status != HIR_SPEC_COMPLETE
+			return 12
 	let bad = parse_module("def f(value: bool) -> i64\n\treturn 0\ndef main() -> i64\n\treturn f(12)\n")
 	let bad_declarations = hir_module_declarations(bad.state, bad.node)
 	let invalid = hir_specialize_program(bad.state, bad_declarations, "main", Array[i64]())

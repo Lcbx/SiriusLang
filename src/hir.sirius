@@ -124,6 +124,8 @@ let HIR_SPEC_COMPLETE = 2
 
 rec HirSpecialization(definition: i64, arguments: Array[i64], result_type: i64, status: i64)
 rec HirSpecializationRegistry(entries: Array[HirSpecialization])
+# Resolved call targets share these stable IDs with MIR function indices.
+rec HirSpecializedCall(source: i64, specialization: i64)
 rec HirSpecializationStart(registry: HirSpecializationRegistry, index: i64, created: bool)
 
 def new_hir_specializations() -> HirSpecializationRegistry

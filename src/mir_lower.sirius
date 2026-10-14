@@ -3,11 +3,10 @@
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
 rec MirSourceBinding(name: string, slot: i64, depth: i64)
-rec MirCallTarget(source: i64, specialization: i64)
 rec MirLowerField(name: string, slot: i64)
 
 # Source analysis is immutable during lowering; the builder owns only mutable CFG state.
-rec MirLowerContext(tree: ParseState, hir: Array[HirNode], annotation_index: HirAnnotationIndex, types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], call_targets: Array[MirCallTarget], function_name: string, argument_count: i64)
+rec MirLowerContext(tree: ParseState, hir: Array[HirNode], annotation_index: HirAnnotationIndex, types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], call_targets: Array[HirSpecializedCall], function_name: string, argument_count: i64)
 
 rec MirBuilder(active: i64)
 	pub register_types = Array[i64]()
@@ -1102,7 +1101,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		return next
 	return mir_lower_error(next, "unsupported source statement for MIR: " + node_kind_name(node.kind))
 
-def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant]) -> MirLowerResult
+def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[HirSpecializedCall], types: TypeTable, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant]) -> MirLowerResult
 	let context = MirLowerContext(tree, hir, hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, targets, header.name, len(arguments))
 	var state = MirBuilder(0)
 	state = mir_lower_block(state)
@@ -1118,13 +1117,13 @@ def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Ar
 		state = mir_lower_error(state, "missing MIR return")
 	return MirLowerResult(MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)
 
-def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget], types: TypeTable) -> MirLowerResult
+def mir_lower_function_typed(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[HirSpecializedCall], types: TypeTable) -> MirLowerResult
 	return mir_lower_function_module(tree, header, hir, arguments, return_type, targets, types, Array[HirFunctionDecl](), Array[HirModuleConstant]())
 
 # Compatibility wrapper for scalar standalone lowering tests.
-def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[MirCallTarget]) -> MirLowerResult
+def mir_lower_function_calls(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64, targets: Array[HirSpecializedCall]) -> MirLowerResult
 	return mir_lower_function_typed(tree, header, hir, arguments, return_type, targets, new_type_table())
 
 # Retain the simple single-function entry point for existing tests.
 def mir_lower_function(tree: ParseState, header: HirFunctionDecl, hir: Array[HirNode], arguments: Array[i64], return_type: i64) -> MirLowerResult
-	return mir_lower_function_calls(tree, header, hir, arguments, return_type, Array[MirCallTarget]())
+	return mir_lower_function_calls(tree, header, hir, arguments, return_type, Array[HirSpecializedCall]())

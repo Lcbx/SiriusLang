@@ -1,25 +1,24 @@
 # Convert the HIR-owned specialization worklist to a complete supported MIR
 # program. Function indices exactly match HIR specialization IDs.
 
-rec MirProgramBuild(program: MirProgram, registry: HirSpecializationRegistry, analyses: Array[HirSpecializedFunction], entry: i64, error: string)
+# The backend owns only MIR output; HIR analyses remain local to lowering.
+rec MirProgramBuild(program: MirProgram, entry: i64, error: string)
 
 def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild
 	let analyzed = hir_specialize_program(tree, declarations, name, arguments)
 	var functions = Array[MirFunction]()
 	if analyzed.error != ""
-		return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, analyzed.error)
-	for body in analyzed.bodies
-		let spec = analyzed.registry.entries[!body.specialization]
+		return MirProgramBuild(MirProgram(functions), analyzed.entry, analyzed.error)
+	for i in 0..len(analyzed.bodies)
+		let body = analyzed.bodies[!i]
+		let spec = analyzed.registry.entries[!i]
 		let definition = hir_definition(declarations.functions, spec.definition)
 		let header = declarations.functions[!definition]
 		if not mir_type_supported(analyzed.types, body.return_type)
-			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, "MIR specialization requires a scalar return type")
-		var targets = Array[MirCallTarget]()
-		for call in body.calls
-			targets = targets.append(MirCallTarget(call.source, call.specialization))
-		let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, targets, analyzed.types, declarations.functions, declarations.constants)
+			return MirProgramBuild(MirProgram(functions), analyzed.entry, "MIR specialization requires a scalar return type")
+		let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants)
 		if lowered.error != ""
-			return MirProgramBuild(MirProgram(functions), analyzed.registry, analyzed.bodies, analyzed.entry, lowered.error)
+			return MirProgramBuild(MirProgram(functions), analyzed.entry, lowered.error)
 		functions = functions.append(lowered.function)
 	let program = mir_program_with_types(functions, analyzed.types)
 	# Only the public individual passes check MIR at every boundary. The
@@ -27,13 +26,13 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 	# cleanup, avoiding repeated CFG fixed-point and MIR verifier passes.
 	let error = mir_check_ownership(program)
 	if error != ""
-		return MirProgramBuild(program, analyzed.registry, analyzed.bodies, analyzed.entry, error)
+		return MirProgramBuild(program, analyzed.entry, error)
 	let guarded = mir_insert_guards_unchecked(program)
 	let owned = mir_insert_lifetimes_unchecked(guarded.program)
 	let cleaned = mir_insert_exit_cleanup_unchecked(owned.program)
 	let optimized = mir_optimize_unchecked(cleaned.program)
 	let checked = mir_check_balance(optimized.program)
 	if checked != ""
-		return MirProgramBuild(optimized.program, analyzed.registry, analyzed.bodies, analyzed.entry, checked)
+		return MirProgramBuild(optimized.program, analyzed.entry, checked)
 	let audited = mir_audit_failures_unchecked(optimized.program)
-	return MirProgramBuild(optimized.program, analyzed.registry, analyzed.bodies, analyzed.entry, audited.error)
+	return MirProgramBuild(optimized.program, analyzed.entry, audited.error)

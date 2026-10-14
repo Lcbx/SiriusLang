@@ -14,11 +14,8 @@ def check(source: string, expected: i64, count: i64) -> bool
 		return false
 	if mir_check_balance(result.program) != "" or mir_audit_failures(result.program).error != ""
 		return false
-	if len(result.registry.entries) != count or len(result.program.functions) != count or len(result.analyses) != count
+	if len(result.program.functions) != count
 		return false
-	for i in 0..count
-		if result.registry.entries[!i].status != HIR_SPEC_COMPLETE or result.analyses[!i].specialization != i
-			return false
 	let executed = mir_execute(result.program, result.entry, Array[MirValue](), 50000, 30)
 	if executed.error != "" or executed.value.bits != expected
 		print(executed.error)
@@ -63,11 +60,8 @@ def main() -> i64
 	let nested = "def inc(n: i64) -> i64\n\treturn n + 1\ndef twice(n: i64) -> i64\n\treturn inc(inc(n))\ndef main() -> i64\n\treturn twice(40)\n"
 	if not check(nested, 42, 3)
 		return 5
-	# Unannotated callee return types must not silently become invalid MIR.
-	let bad = parse_module("def ident(x)\n\treturn x\ndef main() -> i64\n\treturn ident(1)\n")
-	let bad_declarations = hir_module_declarations(bad.state, bad.node)
-	let unsupported = mir_build_program(bad.state, bad_declarations, "main", Array[i64]())
-	if unsupported.error != "HIR worklist calls require an explicit return type"
+	# Nonrecursive unannotated return types are inferred during specialization.
+	if not check("def ident(x)\n\treturn x\ndef main() -> i64\n\treturn ident(42)\n", 42, 2)
 		return 6
 	let named = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef size(p: Point) -> i64\n\treturn p.x + p.y\ndef main() -> i64\n\treturn size({x = 20, y = 22})\n"
 	if not check(named, 42, 2)

@@ -19,7 +19,9 @@ compiler micro-optimization the default workstream.**
    demonstrably reduce complexity. Keep public and bootstrap interfaces stable;
    remove unused code only with proof from manifests/callers/tests. The runtime
    dictionary probe and CoW clone paths have been simplified, and unused
-   ownership intersection/union helpers were removed. Avoid merging the legacy
+   ownership intersection/union helpers were removed. HIR bodies now use their
+   array positions as specialization IDs, and `MirProgramBuild` no longer
+   retains HIR analyses after lowering. Avoid merging the legacy
    collection ABI with the separate MIR-emitted storage prematurely.
 3. **Make MIR the default backend — completed.** `COMPILER_SOURCES` and
    `bootstrap/compiler.c` now use MIR with a lean `src/cli.sirius` entry point.
@@ -78,6 +80,7 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 - [x] Eliminate redundant register-initialization checks and state flags from ownership-verified MIR C; preserve defensive checks for directly supplied MIR. Avoid duplicate index/division/unwrap checks when explicit CFG guards exist.
 - [x] Index canonical type descriptors by stable keys, preserving TypeIds. An analogous specialization signature cache was benchmarked and reverted because its key construction made generation slower.
 - [x] Split lowering into read-only `MirLowerContext` and mutable `MirBuilder`, passed separately to expression and statement lowering.
+- [x] Keep HIR specialization registry and typed bodies within the HIR→MIR build phase; expose only MIR program, entry and error. Specialization IDs are the body/function array indices; MIR lowering consumes the HIR call targets without copying them into a duplicate record type. Verify distinct and reused signatures in HIR tests.
 - [x] Reduce CFG forward ownership CoW copies with cached sparse block write effects and in-place joins; avoid unchanged writes to CoW-owned forward/backward state arrays.
 - [x] Fuse owned `MIR_COPY`/`MIR_RETAIN` followed by final `MIR_RELEASE` into `MIR_MOVE`; remove verified-only redundant C exit cleanup, preserving defensive direct emission.
 - [x] Centralize verified MIR C managed-slot replacement into typed helpers; preserve evaluation-before-release and defensive direct MIR checks.
