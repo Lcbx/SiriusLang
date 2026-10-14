@@ -758,6 +758,21 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				return mir_lower_emit(next, mir_op(MIR_PRINT, -1, argument.slot, -1, 0))
 		let expression = mir_lower_expression(next, context, expression_id)
 		return expression.state
+	if node.kind == NODE_DESTRUCTURE
+		let initializer = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 0))
+		next = initializer.state
+		next.error == "" else return next
+		for i in 1..node.count
+			let field_id = hir_ast_child(context.tree, id, i)
+			let type_id = mir_lower_type(context, field_id, HIR_BINDING)
+			let index = mir_lower_field_index(context, field_id)
+			if index < 0 or not mir_type_supported(context.types, type_id)
+				return mir_lower_error(next, "missing typed destructuring field")
+			let slot = len(next.register_types)
+			next = mir_lower_register(next, type_id)
+			next = mir_lower_emit(next, mir_record_get(slot, initializer.slot, index))
+			next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, field_id), slot, next.depth))
+		return next
 	if node.kind == NODE_LET or node.kind == NODE_VAR
 		var initializer = -1
 		var fallback = -1

@@ -16,7 +16,7 @@ The intended pipeline is **tokens → syntax AST → typed/specialized HIR → o
 
 ### Incremental source-to-MIR migration
 
-The HIR worklist now resolves named `rec` return/parameter annotations by canonical published fields, including nested `Array`/`Optional`/`Dict` annotations. Constructor calls are lowered directly into `MIR_RECORD_NEW` in published-field evaluation order, with canonical physical ordering. Top-level integer constants are resolved independently of the C emitter. The lowering additionally supports empty typed arrays, array append (`MIR_ARRAY_APPEND`, consuming owner), array/range `for`, loop control, expression statements, and CLI/file/string conversion intrinsics. Native MIR-C initializes the arguments runtime and converts CLI strings into MIR-owned arrays; MIR interpreter file reads are deferred. MIR-only native self-hosting reaches a fixed point and all 85 executable shared fixtures pass. Two historical negative fixtures are accepted by MIR as valid programs (floating-point arrays and `elif` optional fallback).
+The HIR worklist now resolves named `rec` return/parameter annotations by canonical published fields, including nested `Array`/`Optional`/`Dict` annotations. Constructor calls are lowered directly into `MIR_RECORD_NEW` in published-field evaluation order, with canonical physical ordering. Top-level integer constants are resolved independently of the C emitter. The lowering additionally supports empty typed arrays, array append (`MIR_ARRAY_APPEND`, consuming owner), array/range `for`, loop control, expression statements, and CLI/file/string conversion intrinsics. Native MIR-C initializes the arguments runtime and converts CLI strings into MIR-owned arrays; MIR interpreter file reads are deferred. MIR-only native self-hosting reaches a fixed point and all 86 executable shared fixtures pass. Two historical negative fixtures are accepted by MIR as valid programs (floating-point arrays and `elif` optional fallback).
 
 ### Concrete specialization worklist (implemented subset)
 
@@ -240,7 +240,7 @@ projections remain deferred.
 emitter; it is the default compiler and committed bootstrap source manifest.
 `LEGACY_COMPILER_SOURCES` builds the old C emitter in a separate executable.
 The native MIR fixed point is verified with `tools/test_bootstrap.py` and
-`tools/test_mir_selfhost.py`. The default MIR backend passes all 85 positive
+`tools/test_mir_selfhost.py`. The default MIR backend passes all 86 positive
 fixtures and 35 MIR-invalid diagnostics. Two legacy-negative fixtures are
 valid under MIR, and remain backend-specific tests.
 
@@ -280,3 +280,12 @@ insertion, lifetime insertion, edge/exit cleanup, and the ownership peephole
 optimizer without redundant intermediate verification. Its final balance and
 failure audit validate the result. Public individual pass entry points retain
 their own checks for independently constructed MIR.
+
+### Local record destructuring (MIR backend)
+
+`let {binding = .field, ...} = expression` lowers to one evaluation of the
+record expression followed by typed `MIR_RECORD_GET` operations. HIR checks
+field existence and duplicate bindings and preserves ordinary lexical scope;
+MIR lifetime cleanup manages the temporary owner and field values. This does
+not introduce recursive patterns or mutable destructuring, and the retained
+legacy C emitter rejects the syntax explicitly.

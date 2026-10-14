@@ -67,7 +67,7 @@ point.x += 5
 
 **CoW:** Storage may be modified in place when exclusively owned and safe to overwrite; otherwise it is copied. Nested values support structural sharing.
 
-### Record destructuring (design only)
+### Record destructuring
 
 Destructuring names every source field explicitly; binding names need not match:
 
@@ -82,7 +82,8 @@ listed in any order, but implicit/positional destructuring
 (`let {first, second} = value`) is not supported. Missing fields or repeated binding names are
 compile-time errors. Structural typing determines field compatibility; source
 record fields not listed are ignored. Initially restricted to `let` bindings;
-recursive patterns and `var` destructuring are deferred.
+recursive patterns and `var` destructuring are deferred. The initial
+local `let` form is implemented in the MIR compiler.
 
 Record updates use spreading:
 

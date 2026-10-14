@@ -47,6 +47,7 @@ let NODE_WHILE = 41
 let NODE_REC = 42
 let NODE_GUARD = 43
 let NODE_UNWRAP = 44
+let NODE_DESTRUCTURE = 45
 
 def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -79,6 +80,8 @@ def node_kind_name(kind: i64) -> string
 		return "def"
 	if kind == NODE_DELETE
 		return "delete"
+	if kind == NODE_DESTRUCTURE
+		return "destructure"
 	if kind == NODE_ELSE
 		return "else"
 	if kind == NODE_ELSE_RETURN
@@ -615,6 +618,36 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_MATCH, token, arms)
 	if op == "let" or op == "var" or op == "pub"
 		next.index += 1
+		if is_token(next, "{")
+			if op != "let"
+				return ParseResult(fail(next, "record destructuring requires let"), -1)
+			next = expect(next, "{")
+			var fields = Array[i64]()
+			while next.error == "" and not is_token(next, "}")
+				let name = next.index
+				next = expect_kind(next, TOKEN_NAME, "destructured binding")
+				next = expect(next, "=")
+				next = expect(next, ".")
+				let selector = next.index
+				next = expect_kind(next, TOKEN_NAME, "record field")
+				let field_name = leaf(next, NODE_NAME, selector)
+				let part = unary_node(field_name.state, NODE_FIELD, name, field_name.node)
+				next = part.state
+				fields = fields.append(part.node)
+				if not is_token(next, ",")
+					break
+				next = expect(next, ",")
+			if len(fields) == 0
+				return ParseResult(fail(next, "record destructuring requires at least one field"), -1)
+			next = expect(next, "}")
+			next = expect(next, "=")
+			let value = parse_expr(next, 0)
+			next = expect_kind(value.state, TOKEN_NEWLINE, "newline")
+			var items = Array[i64]()
+			items = items.append(value.node)
+			for field in fields
+				items = items.append(field)
+			return append_node(next, NODE_DESTRUCTURE, token, items)
 		let name = next.index
 		next = expect_kind(next, TOKEN_NAME, "binding name")
 		var kids = Array[i64]()

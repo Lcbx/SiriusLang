@@ -1,0 +1,19 @@
+def make()
+	print("once")
+	return {inner={value=1}, numbers=[2, 3], word="hello"}
+
+def extract(record)
+	let {word = .word} = record
+	return word
+
+def main() -> i64
+	let {child = .inner, xs = .numbers, label = .word} = make()
+	let snapshot = child
+	var changed = child
+	changed.value = 9
+	print(snapshot.value)
+	print(changed.value)
+	print(xs[!0])
+	print(label)
+	print(extract({word="generic"}))
+	return 0

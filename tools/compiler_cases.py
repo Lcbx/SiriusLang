@@ -48,6 +48,12 @@ ERRORS = {
 	'37_unwrap_type': 'unboxing requires an Optional',
 	'38_legacy_index': "expected ']', found '?'",
 	'39_field_append_wrong_type': 'expected i64, found string',
+	'40_destructure_unknown_field': "unknown record field 'nonexistent'",
+	'41_destructure_duplicate_name': "duplicate binding 'x'",
+	'42_destructure_nonrecord': 'record destructuring requires a record',
+	'43_destructure_scope': "unknown name 'local'",
+	'44_destructure_empty': 'record destructuring requires at least one field',
+	'45_var_destructure': 'record destructuring requires let',
 
 }
 

@@ -989,6 +989,23 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 	state.error == "" else return state
 	let node = state.tree.nodes[!id]
 	var result = state
+	if node.kind == NODE_DESTRUCTURE
+		let initializer = hir_ast_child(state.tree, id, 0)
+		result = hir_body_expression(result, initializer)
+		result.error == "" else return result
+		let record_type = result.last_type
+		if record_type == TYPE_TAG_INVALID or result.types.entries[!record_type].tag != TYPE_TAG_RECORD
+			return hir_body_error(result, id, "record destructuring requires a record")
+		for i in 1..node.count
+			let field_id = hir_ast_child(state.tree, id, i)
+			let selector = hir_ast_child(state.tree, field_id, 0)
+			let field = resolve_hir_field(result.types, record_type, hir_ast_text(state.tree, selector))
+			if field.error != ""
+				return hir_body_error(result, field_id, field.error)
+			result.nodes = result.nodes.append(HirNode(field_id, HIR_FIELD, field.type_id, field.field_index))
+			result = hir_body_binding(result, field_id, hir_ast_text(state.tree, field_id), field.type_id, false)
+			result.error == "" else return result
+		return result
 	if node.kind == NODE_LET or node.kind == NODE_VAR
 		var declared = TYPE_TAG_INVALID
 		var initializer = -1

@@ -1,0 +1,5 @@
+def main() -> i64
+	if true
+		let {local = .value} = {value=1}
+	print(local)
+	return 0

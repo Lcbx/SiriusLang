@@ -11,8 +11,8 @@ The historical Python compiler is archived and is **not** used for active builds
 
 ## Current development priorities
 
-The current work prioritizes runtime structures and codebase simplification, not
-new language features or further compiler micro-optimization. The agreed order is:
+The runtime and MIR migration milestones are stable; feature development has
+resumed. The agreed implementation order remains:
 
 1. **Runtime:** improve `S_Array`, `S_Dict`, strings, allocation and CoW behavior,
    preserving snapshots and the existing C ABI. Start with measured bottlenecks.
@@ -21,8 +21,8 @@ new language features or further compiler micro-optimization. The agreed order i
 3. **MIR as the default — completed:** normal compilation and the committed
    bootstrap use MIR. **Keep** `src/emit_c.sirius` accessible in the separate
    legacy compiler for differential checks; do not delete it.
-4. **Features:** resume language implementation after the runtime and backend
-   transition are stable.
+4. **Features — active:** implement missing language constructs in tested slices,
+   starting with local `let` record destructuring (MIR backend only).
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
@@ -56,6 +56,18 @@ compiler so the default executable does not link two backends:
 python tools/build_legacy_compiler.py
 ./sirius-legacy input.sirius output.c
 ```
+
+Record destructuring is available through the MIR compiler:
+
+```sirius
+def pick(record)
+	let {first = .a, second = .b} = record
+	return first
+```
+
+The source expression is evaluated once. Missing fields, duplicate bindings and
+non-record sources are compile-time errors; only local `let` patterns are
+supported. The retained legacy compiler rejects this newer syntax explicitly.
 
 The legacy executable also accepts `--mir-c` for comparisons; the regular
 `./sirius` always uses MIR. Unsupported MIR constructs fail
@@ -138,9 +150,9 @@ Run individual suites as needed:
 | --- | --- |
 | `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
 | `python tools/test_runtime_collections.py` | Runtime generic arrays/dictionaries, aliasing, CoW and managed values |
-| `python tools/test_compiler.py` | Default MIR backend: 85 native executions and 35 expected diagnostics |
+| `python tools/test_compiler.py` | Default MIR backend: 86 native executions and 41 expected diagnostics |
 | `python tools/test_legacy_compiler.py` | Retained legacy emitter: 85 native executions and 37 expected diagnostics |
-| `python tools/test_mir_compiler.py` | Default MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
+| `python tools/test_mir_compiler.py` | Default MIR backend: 86 native executions, 41 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
 | `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
 | `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |

@@ -4,8 +4,8 @@ This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANG
 
 ## Current priorities and decisions
 
-The near-term order is deliberate. **Do not make feature expansion or further
-compiler micro-optimization the default workstream.**
+The priority order is deliberate. Runtime and cleanup work are stable enough
+to resume incremental feature implementation; avoid speculative micro-optimization.
 
 1. **Runtime/data structures — in progress.** Preserve reference-counted value
    semantics and CoW snapshots, while reducing allocations and needless copies.
@@ -27,14 +27,14 @@ compiler micro-optimization the default workstream.**
    `bootstrap/compiler.c` now use MIR with a lean `src/cli.sirius` entry point.
    `LEGACY_COMPILER_SOURCES` keeps `src/emit_c.sirius` and
    `src/legacy_cli.sirius` independently buildable. MIR and legacy regression
-   suites pass separately (85/35 and 85/37 respectively). The two legacy
+   suites pass separately (86/41 and 85/37 respectively). The two legacy
    diagnostics for valid MIR programs remain legacy-specific. Future work
    should preserve both CLI builds and their differential test coverage.
    MIR C optional lookups now share a descriptor-directed payload helper, and
    `S_MirField` union-member selection is centralized in the emitter.
-4. **Resume feature development — pending.** Return to language features after
-   MIR-default and runtime regression gates pass. Use the remaining feature
-   sections below as a backlog rather than a parallel active priority.
+4. **Resume feature development — in progress.** The first feature slice is
+   local `let` record destructuring. Keep further slices isolated and protect
+   MIR self-hosting, runtime snapshots, and the retained legacy backend.
 
 **Decisions:** maintain both backends; retain the self-hosted C bootstrap;
 keep value/CoW semantics; prefer correctness and simpler interfaces over
@@ -49,8 +49,8 @@ at `-O0` on the earlier profiling setup; remeasure before claiming speedups.
 
 - **Active compiler:** Sirius source in `src/`, compiled through the checked-in MIR-generated C bootstrap in `bootstrap/compiler.c`. Normal source compilation goes through HIR and MIR before C11 generation.
 - **Historical bootstrap:** `archive/python_bootstrap/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap/compiler.c`; the default MIR compiler runs 85 positive fixtures and 35 diagnostics, while the separately built legacy emitter retains its 85/37 suite. See `tools/test_bootstrap.py`.
-- **Coverage:** legacy: 85 native executions and 37 diagnostics; standalone MIR: 85 native executions, 35 expected diagnostics and two formerly rejected cases now accepted as positive tests. Also 19 tokenizer golden cases, 11 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap/compiler.c`; the default MIR compiler runs 86 positive fixtures and 41 diagnostics, while the separately built legacy emitter retains its 85/37 suite. See `tools/test_bootstrap.py`.
+- **Coverage:** legacy: 85 native executions and 37 diagnostics; standalone MIR: 86 native executions, 41 expected diagnostics and two formerly rejected cases now accepted as positive tests. Also 19 tokenizer golden cases, 11 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work
 
@@ -171,6 +171,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 **Available then:** typed HIR/MIR, safe owned values and the existing standard-library building blocks.
 
+- [x] Implement local `let` record destructuring with explicit name/selector pairs, single source evaluation and typed field extraction. MIR only; `var` and recursive patterns remain deferred.
 - [ ] Generalize remaining optional constructs and nested CoW lvalues (optional indexing and `else return` have initial MIR support). Plain `a[i]` still needs a static bounds proof.
 - [ ] Complete constructors (conditional overrides after unconditional publication), constructor-based tagged unions, exhaustive `match`, function values and noncapturing lambdas. Basic `rec` constructors with automatically published parameters and direct `pub` overrides are implemented.
 - [ ] Implement basic static `namespace`/`import`/`export` resolution; start with separately parsed sources and a build-time dependency graph, without runtime modules.
@@ -247,7 +248,7 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Support the concrete return annotations and specializations needed for MIR-only native self-hosting, including canonical `rec` annotations, constructor `pub` fields, module constants and nonrecursive unannotated generic return inference. Recursive inference without annotations remains intentionally rejected.
 - [x] Lower all current compiler-source constructs and the 85 shared executable fixtures to MIR, including `recur`, record spreads/deletes, inferred nonrecursive generic returns and basic `f64` operations. Deeper nested projection updates remain unsupported; floating-point operations and file I/O are native-C features not yet mirrored in the MIR interpreter.
 - [x] Achieve a native MIR-only fixed point through generations 2, 3 and 4, excluding the legacy emitter; verify byte-identical C with `tools/test_mir_selfhost.py`. Reduce C size using a shared return cleanup epilogue, and improve generated compiler performance using amortized array append and single-allocation string join. Correct compound-assignment lowering for locals and record fields.
-- [x] Run the full shared executable fixture suite through the standalone MIR backend (85/85). Check all 35 MIR-invalid diagnostic fixtures; test the other two legacy-negative fixtures as MIR-positive (`tools/test_mir_compiler.py`).
+- [x] Run the shared executable fixture suite through the standalone MIR backend (86/86). Check all 41 MIR-invalid diagnostic fixtures; test the other two legacy-negative fixtures as MIR-positive (`tools/test_mir_compiler.py`).
 - [x] Switch the default build manifest/CLI and committed C bootstrap to MIR; verify the new bootstrap fixed point and the default compiler regression suite.
 - [x] Retain the legacy C emitter in a separate entry point (`src/legacy_cli.sirius`) and executable (`tools/build_legacy_compiler.py`); preserve legacy-only `--mir-c` for differential tests.
 

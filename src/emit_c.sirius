@@ -1355,6 +1355,8 @@ def emit_return_value(state: EmitState, id: i64, value_id: i64) -> EmitState
 def emit_statement(state: EmitState, id: i64) -> EmitState
 	state.error == "" else return state
 	let item = ast_node(state.tree, id)
+	if item.kind == NODE_DESTRUCTURE
+		return emit_error(state, id, "record destructuring requires MIR backend")
 	if item.kind == NODE_LET or item.kind == NODE_VAR
 		let name = ast_text(state.tree, id)
 		let previous = find_symbol(state, name)
