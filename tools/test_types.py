@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import tempfile
 
-from source_manifest import ROOT
+from source_manifest import ROOT, LEGACY_COMPILER_SOURCES
 from build_support import BuildCache, execute, options, require_cc, validate_jobs
 
 
@@ -43,7 +43,8 @@ def main() -> None:
 	# The generated symbol set is inspected, not the textual layout of the C.
 	with tempfile.TemporaryDirectory() as tmp:
 		generated = Path(tmp) / 'generic_record.c'
-		execute([str(cache.seed()), str(ROOT / 'tests/compiler/fixtures/11_generic_records.sirius'), str(generated)])
+		legacy = cache.sirius('legacy-compiler', LEGACY_COMPILER_SOURCES, separator=b'')
+		execute([str(legacy), str(ROOT / 'tests/compiler/fixtures/11_generic_records.sirius'), str(generated)])
 		symbols = set(re.findall(r'\bs_sum_xy__\d+\b', generated.read_text(encoding='utf-8')))
 		if len(symbols) != 1:
 			raise AssertionError(f'Expected one structural-record specialization; found {symbols}')

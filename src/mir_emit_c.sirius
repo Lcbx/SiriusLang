@@ -12,6 +12,16 @@ def mir_c_type(type_id: i64) -> string
 		return "S_MirRecord *"
 	return "int64_t"
 
+# The active union member follows the canonical static TypeId.
+def mir_c_field_name(type_id: i64) -> string
+	if type_id == TYPE_TAG_F64
+		return "real"
+	if type_id == TYPE_TAG_STRING
+		return "text"
+	if mir_common_managed(type_id)
+		return "record"
+	return "bits"
+
 def mir_c_register(index: i64) -> string
 	return "r" + str(index)
 
@@ -303,23 +313,7 @@ def mir_c_record_runtime(types: TypeTable) -> string
 	parts = parts.append("\tarray->fields[array->length++] = owned;\n\treturn array;\n}\n\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_dict_insert_owned(S_MirRecord *r, S_MirField key, S_MirField value) {\n")
 	parts = parts.append("\tr = s_mir_record_unique_owned(r);\n\tr->fields[0].dict = s_dict_insert(r->fields[0].dict, &key, &value); return r;\n}\n")
-	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_array(S_MirRecord *array, int64_t index, int64_t optional_type) {\n")
-	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, index < 0 || (uint64_t)index >= array->length ? 0 : 1);\n")
-	parts = parts.append("\tif (optional->length) { optional->fields[0] = array->fields[index]; switch (optional_type) {\n")
-	for i in 0..len(types.entries)
-		let desc = types.entries[!i]
-		if desc.tag == TYPE_TAG_OPTIONAL
-			parts = parts.append("\tcase " + str(i) + ": ")
-			if mir_common_managed(desc.first)
-				var field = "optional->fields[0]"
-				if desc.first == TYPE_TAG_STRING
-					field = field + ".text"
-				else
-					field = field + ".record"
-				parts = parts.append(mir_c_retain_value(desc.first, field) + "; ")
-			parts = parts.append("break;\n")
-	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
-	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_dict(const S_MirField *value, int64_t optional_type) {\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_optional_from_field(const S_MirField *value, int64_t optional_type) {\n")
 	parts = parts.append("\tS_MirRecord *optional = s_mir_record_new(optional_type, value ? 1 : 0);\n")
 	parts = parts.append("\tif (value) { optional->fields[0] = *value; switch (optional_type) {\n")
 	for i in 0..len(types.entries)
@@ -383,15 +377,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return mir_c_store_owned(instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)", checked)
 	if op == MIR_OPTIONAL_SOME
 		let payload_type = function.register_types[!instruction.first]
-		var field = "bits"
+		let field = mir_c_field_name(payload_type)
 		var value = first
-		if payload_type == TYPE_TAG_F64
-			field = "real"
-		elif payload_type == TYPE_TAG_STRING
-			field = "text"
-			value = mir_c_retain_value(payload_type, value)
-		elif mir_common_managed(payload_type)
-			field = "record"
+		if mir_common_managed(payload_type)
 			value = mir_c_retain_value(payload_type, value)
 		let code = result + "\t{ S_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", 1);\n"
 		return code + "\t\toptional->fields[0]." + field + " = " + value + ";\n" + mir_c_store_owned(instruction.dst, dst_type, "optional", checked) + "\t}\n"
@@ -404,13 +392,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 	if op == MIR_OPTIONAL_HAS
 		return result + "\t" + dst + " = (" + first + "->length != 0)" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == MIR_OPTIONAL_UNWRAP
-		var field = "bits"
-		if dst_type == TYPE_TAG_F64
-			field = "real"
-		elif dst_type == TYPE_TAG_STRING
-			field = "text"
-		elif mir_common_managed(dst_type)
-			field = "record"
+		let field = mir_c_field_name(dst_type)
 		let value = first + "->fields[0]." + field
 		if checked or instruction.text != "__mir_guarded"
 			result = result + "\tif (!" + first + "->length) s_panic(\"missing optional value\");\n"
@@ -453,13 +435,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		var fields = Array[string]()
 		for input in instruction.inputs
 			let kind = function.register_types[!input]
-			var field = "bits"
-			if kind == TYPE_TAG_F64
-				field = "real"
-			elif kind == TYPE_TAG_STRING
-				field = "text"
-			elif mir_common_managed(kind)
-				field = "record"
+			let field = mir_c_field_name(kind)
 			fields = fields.append(field + " = " + mir_c_register(input))
 		var code = result + "\t{ S_MirField key = {0}, value = {0}; key." + fields[!0] + "; value." + fields[!1] + ";\n"
 		code = code + "\t\tS_MirRecord *updated = s_mir_dict_insert_owned(" + first + ", key, value);\n"
@@ -469,24 +445,12 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
 	if op == MIR_DICT_GET_OPTIONAL or op == MIR_DICT_GET_OR
 		let key_type = function.register_types[!instruction.second]
-		var key_field = "bits"
-		if key_type == TYPE_TAG_F64
-			key_field = "real"
-		elif key_type == TYPE_TAG_STRING
-			key_field = "text"
-		elif mir_common_managed(key_type)
-			key_field = "record"
+		let key_field = mir_c_field_name(key_type)
 		var code = result + "\t{ S_MirField key = {0}; key." + key_field + " = " + second + ";\n"
 		code = code + "\t\tconst S_MirField *value = s_dict_get(" + first + "->fields[0].dict, &key);\n"
 		if op == MIR_DICT_GET_OPTIONAL
-			return code + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_dict(value, " + str(dst_type) + ")", checked) + "\t}\n"
-		var value_field = "bits"
-		if dst_type == TYPE_TAG_F64
-			value_field = "real"
-		elif dst_type == TYPE_TAG_STRING
-			value_field = "text"
-		elif mir_common_managed(dst_type)
-			value_field = "record"
+			return code + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_field(value, " + str(dst_type) + ")", checked) + "\t}\n"
+		let value_field = mir_c_field_name(dst_type)
 		let fallback = mir_c_register(instruction.immediate)
 		let found = "(value ? value->" + value_field + " : " + fallback + ")"
 		if mir_common_managed(dst_type)
@@ -497,15 +461,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		for i in 0..len(instruction.inputs)
 			let arg = instruction.inputs[!i]
 			let kind = function.register_types[!arg]
-			var field = "bits"
+			let field = mir_c_field_name(kind)
 			var value = mir_c_register(arg)
-			if kind == TYPE_TAG_F64
-				field = "real"
-			elif kind == TYPE_TAG_STRING
-				field = "text"
-				value = mir_c_retain_value(kind, value)
-			elif mir_common_managed(kind)
-				field = "record"
+			if mir_common_managed(kind)
 				value = mir_c_retain_value(kind, value)
 			code = code + "\t\tarray->fields[" + str(i) + "]." + field + " = " + value + ";\n"
 		return code + mir_c_store_owned(instruction.dst, dst_type, "array", checked) + "\t}\n"
@@ -513,32 +471,20 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return result + "\t" + dst + " = (int64_t)" + first + "->length" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == MIR_ARRAY_GET_OPTIONAL
 		# The helper retains the array element using the canonical Optional type.
-		return result + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_array(" + first + ", " + second + ", " + str(dst_type) + ")", checked)
+		return result + mir_c_store_owned(instruction.dst, dst_type, "s_mir_optional_from_field((" + second + " >= 0 && (uint64_t)" + second + " < " + first + "->length) ? &" + first + "->fields[" + second + "] : NULL, " + str(dst_type) + ")", checked)
 	if op == MIR_ARRAY_GET
 		if checked or instruction.text != "__mir_guarded"
 			result = result + "\tif (" + second + " < 0 || (uint64_t)" + second + " >= " + first + "->length) s_panic(\"array index out of bounds\");\n"
-		var field = "bits"
-		if dst_type == TYPE_TAG_F64
-			field = "real"
-		elif dst_type == TYPE_TAG_STRING
-			field = "text"
-		elif mir_common_managed(dst_type)
-			field = "record"
+		let field = mir_c_field_name(dst_type)
 		let value = first + "->fields[" + second + "]." + field
 		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value), checked)
 		return result + "\t" + dst + " = " + value + "" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == MIR_ARRAY_APPEND
 		let element_type = function.register_types[!instruction.second]
-		var field = "bits"
+		let field = mir_c_field_name(element_type)
 		var value = mir_c_register(instruction.second)
-		if element_type == TYPE_TAG_F64
-			field = "real"
-		elif element_type == TYPE_TAG_STRING
-			field = "text"
-			value = mir_c_retain_value(element_type, value)
-		elif mir_common_managed(element_type)
-			field = "record"
+		if mir_common_managed(element_type)
 			value = mir_c_retain_value(element_type, value)
 		var code = result + "\t{ S_MirField added = {0}; added." + field + " = " + value + ";\n"
 		code = code + "\t\tS_MirRecord *updated = s_mir_array_append_owned(" + first + ", added);\n"
@@ -548,15 +494,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
 	if op == MIR_ARRAY_SET
 		let element_type = function.register_types[!instruction.immediate]
-		var field = "bits"
+		let field = mir_c_field_name(element_type)
 		var value = mir_c_register(instruction.immediate)
-		if element_type == TYPE_TAG_F64
-			field = "real"
-		elif element_type == TYPE_TAG_STRING
-			field = "text"
-			value = mir_c_retain_value(element_type, value)
-		elif mir_common_managed(element_type)
-			field = "record"
+		if mir_common_managed(element_type)
 			value = mir_c_retain_value(element_type, value)
 		var code = result + "\t{ S_MirField replacement = {0}; replacement." + field + " = " + value + ";\n"
 		code = code + "\t\tS_MirRecord *updated = s_mir_array_set_owned(" + first + ", " + second + ", replacement);\n"
@@ -566,15 +506,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
 	if op == MIR_RECORD_ARRAY_APPEND
 		let element_type = function.register_types[!instruction.second]
-		var field = "bits"
+		let field = mir_c_field_name(element_type)
 		var value = second
-		if element_type == TYPE_TAG_F64
-			field = "real"
-		elif element_type == TYPE_TAG_STRING
-			field = "text"
-			value = mir_c_retain_value(element_type, value)
-		elif mir_common_managed(element_type)
-			field = "record"
+		if mir_common_managed(element_type)
 			value = mir_c_retain_value(element_type, value)
 		let at = str(instruction.immediate)
 		var code = result + "\t{ S_MirField added = {0}; added." + field + " = " + value + ";\n"
@@ -586,15 +520,9 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
 	if op == MIR_RECORD_SET
 		let field_type = function.register_types[!instruction.second]
-		var field = "bits"
+		let field = mir_c_field_name(field_type)
 		var value = second
-		if field_type == TYPE_TAG_F64
-			field = "real"
-		elif field_type == TYPE_TAG_STRING
-			field = "text"
-			value = mir_c_retain_value(field_type, value)
-		elif mir_common_managed(field_type)
-			field = "record"
+		if mir_common_managed(field_type)
 			value = mir_c_retain_value(field_type, value)
 		let at = str(instruction.immediate)
 		var code = result + "\t{ S_MirField replacement = {0}; replacement." + field + " = " + value + ";\n"
@@ -611,26 +539,14 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 		for i in 0..len(instruction.inputs)
 			let arg = instruction.inputs[!i]
 			let kind = function.register_types[!arg]
-			var field = "bits"
+			let field = mir_c_field_name(kind)
 			var value = mir_c_register(arg)
-			if kind == TYPE_TAG_F64
-				field = "real"
-			elif kind == TYPE_TAG_STRING
-				field = "text"
-				value = mir_c_retain_value(kind, value)
-			elif kind >= TYPE_TAG_RECORD
-				field = "record"
+			if mir_common_managed(kind)
 				value = mir_c_retain_value(kind, value)
 			code = code + "\t\trecord->fields[" + str(i) + "]." + field + " = " + value + ";\n"
 		return code + mir_c_store_owned(instruction.dst, dst_type, "record", checked) + "\t}\n"
 	if op == MIR_RECORD_GET
-		var field = "bits"
-		if dst_type == TYPE_TAG_F64
-			field = "real"
-		elif dst_type == TYPE_TAG_STRING
-			field = "text"
-		elif dst_type >= TYPE_TAG_RECORD
-			field = "record"
+		let field = mir_c_field_name(dst_type)
 		let value = first + "->fields[" + str(instruction.immediate) + "]." + field
 		if mir_common_managed(dst_type)
 			return result + mir_c_store_owned(instruction.dst, dst_type, mir_c_retain_value(dst_type, value), checked)

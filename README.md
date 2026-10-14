@@ -182,12 +182,13 @@ tests/fixtures/         Earlier language examples
 tests/reference_c/      Independent handwritten C examples
 tests/mir/              Sirius MIR test drivers
 tools/                  Build/generation commands, shared helpers and test runners
+benchmarks/             Standalone C collection microbenchmarks
 ```
 
-`src/cli.sirius` is the default compiler's entry point and
-`src/mir_cli.sirius` is the MIR-only entry point. `src/emit_c.sirius` is
-still required for the self-hosted compiler, while `src/mir_emit_c.sirius`
-implements the experimental replacement backend.
+`src/cli.sirius` is the MIR-default compiler entry point, and
+`src/legacy_cli.sirius` is the separately buildable legacy entry point.
+`src/emit_c.sirius` is retained for legacy differential tests but is **not**
+part of the default compiler or its self-hosted bootstrap.
 
 ## Implementation boundaries
 
@@ -219,4 +220,6 @@ and [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md) for intended semantics.
 **Runtime storage:** the MIR C emitter now shares a single type-directed CoW
 clone path for generated records and arrays. MIR dictionaries now reuse the
 public generic `S_Dict` table, while the retained legacy layout stays separate
-(see `RUNTIME.md`).
+(see `RUNTIME.md`). To reproduce dictionary crossover/update measurements,
+run `python tools/benchmark_dictionaries.py` (`--runs N` for repetition).
+These C microbenchmarks are not representative of full compiler throughput.

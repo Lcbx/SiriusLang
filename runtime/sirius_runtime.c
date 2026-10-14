@@ -411,15 +411,28 @@ static S_Dict *s_dict_clone(S_Dict *d) {
 }
 S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value) {
     if (!owned) s_panic("null dictionary");
-    /* Save both operands first, as either may point inside the dictionary. */
+    uint64_t hash = owned->hash(key);
+    S_GEntry *slot = s_dict_slot(owned, key, hash);
+    if (slot->used && owned->refcount == 1) {
+        /* Copy first: the value may alias this entry or another managed field.
+           Preserve the original equal key and its storage on overwrite. */
+        S_ElementTemp temp = {0};
+        void *saved = s_elem_temp(&temp, owned->vsize);
+        s_elem_copy(owned->vcopy, saved, value, owned->vsize);
+        if (owned->vdrop) owned->vdrop(slot->value);
+        memcpy(slot->value, saved, owned->vsize);
+        s_elem_temp_free(&temp, saved);
+        return owned;
+    }
+    /* New entries and shared snapshots copy their borrowed operands before
+       cloning or rehashing can invalidate the original storage. */
     S_GEntry replacement_entry = {0};
     s_dict_entry_copy(owned, &replacement_entry, key, value);
     if (owned->refcount != 1) {
-        S_Dict *replacement=s_dict_clone(owned);
-        s_dict_release(owned); owned=replacement;
+        S_Dict *replacement = s_dict_clone(owned);
+        s_dict_release(owned); owned = replacement;
+        slot = s_dict_slot(owned, replacement_entry.key, hash);
     }
-    uint64_t hash=owned->hash(replacement_entry.key);
-    S_GEntry *slot=s_dict_slot(owned,replacement_entry.key,hash);
     /* Overwriting a key does not increase table occupancy. */
     if (!slot->used && owned->length + 1 >= owned->capacity - owned->capacity / 4) {
         if (owned->capacity > SIZE_MAX / 2) s_panic("dictionary too large");

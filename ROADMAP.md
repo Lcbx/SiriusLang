@@ -28,6 +28,8 @@ compiler micro-optimization the default workstream.**
    suites pass separately (85/35 and 85/37 respectively). The two legacy
    diagnostics for valid MIR programs remain legacy-specific. Future work
    should preserve both CLI builds and their differential test coverage.
+   MIR C optional lookups now share a descriptor-directed payload helper, and
+   `S_MirField` union-member selection is centralized in the emitter.
 4. **Resume feature development — pending.** Return to language features after
    MIR-default and runtime regression gates pass. Use the remaining feature
    sections below as a backlog rather than a parallel active priority.
@@ -254,5 +256,10 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Reuse the generic `S_Dict` open-addressed hash table for MIR-generated
   dictionaries, with typed retain/drop callbacks, CoW snapshots, and structural
   hashes/equality for recursively hashable record keys. Arrays/dicts/optionals
-  are not hashable keys; benchmark the new representation on real workloads.
+  are not hashable keys.
+- [x] Add repeatable C dictionary benchmarks (small/large linear vs hashed,
+  including managed-key overwrites), plus a unique-owner overwrite fast path
+  which copies only the replacement value. Verify aliasing, large values and CoW.
+- [ ] Profile actual Sirius dictionary workloads; C microbenchmarks alone do
+  not establish a compiler-wide speedup.
 - [ ] Evaluate HIR/MIR storage simplifications only with measured benefit.

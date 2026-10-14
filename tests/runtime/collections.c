@@ -5,6 +5,12 @@
 #include <string.h>
 
 typedef struct { uint64_t values[24]; } LargeValue;
+static size_t key_copies, key_drops;
+static void copy_key(void *dst, const void *src) {
+	++key_copies;
+	*(int64_t *)dst = *(const int64_t *)src;
+}
+static void drop_key(void *slot) { (void)slot; ++key_drops; }
 
 static void copy_string(void *dst, const void *src) {
 	*(S_String **)dst = s_string_retain(*(S_String *const *)src);
@@ -102,6 +108,32 @@ int main(void) {
 	assert(*(const int64_t *)s_dict_get(overwrites, &replacement) == new_value);
 	s_dict_release(overwrites_snapshot);
 	s_dict_release(overwrites);
+
+	/* Unique overwrites preserve key storage and do not re-copy or drop it.
+	   Large replacement values also exercise the heap-backed temp fallback. */
+	S_Dict *large_values = s_dict_new(sizeof(int64_t), sizeof(LargeValue),
+		copy_key, drop_key, NULL, NULL, s_hash_i64_key, s_eq_i64_key);
+	int64_t first_key = 1, second_key = 2;
+	LargeValue first_value = {{0}}, second_value = {{0}};
+	for (size_t i = 0; i < 24; ++i) {
+		first_value.values[i] = 100 + i;
+		second_value.values[i] = 200 + i;
+	}
+	large_values = s_dict_insert(large_values, &first_key, &first_value);
+	large_values = s_dict_insert(large_values, &second_key, &second_value);
+	assert(key_copies == 2 && key_drops == 0);
+	const LargeValue *first_address = s_dict_get(large_values, &first_key);
+	large_values = s_dict_insert(large_values, &first_key, s_dict_get(large_values, &second_key));
+	assert(s_dict_get(large_values, &first_key) == first_address);
+	assert(memcmp(s_dict_get(large_values, &first_key), &second_value, sizeof(second_value)) == 0);
+	assert(key_copies == 2 && key_drops == 0);
+	S_Dict *large_snapshot = s_dict_retain(large_values);
+	large_values = s_dict_insert(large_values, &first_key, &first_value);
+	assert(memcmp(s_dict_get(large_snapshot, &first_key), &second_value, sizeof(second_value)) == 0);
+	assert(memcmp(s_dict_get(large_values, &first_key), &first_value, sizeof(first_value)) == 0);
+	s_dict_release(large_snapshot);
+	s_dict_release(large_values);
+	assert(key_copies == key_drops);
 
 	/* The retained scalar-only dictionary has a separate ABI and CoW layout. */
 	S_Dict_i64_i64 *legacy = s_dict_i64_i64_new();

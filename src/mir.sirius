@@ -192,9 +192,9 @@ def mir_array_append(dst: i64, owner: i64, value: i64) -> MirInstruction
 def mir_array_set(dst: i64, owner: i64, index: i64, value: i64) -> MirInstruction
 	return MirInstruction(MIR_ARRAY_SET, dst, owner, index, value, Array[i64](), "")
 
-# Dictionary entries are kept in insertion order as alternating key/value slots.
-# GET_OR takes a pre-evaluated fallback; lazy source `get(...) or fallback`
-# must lower using a CFG branch instead (future Optional MIR support).
+# The C backend stores dictionary entries in S_Dict through an owned wrapper;
+# the interpreter uses its own list representation. GET_OR eagerly evaluates
+# its fallback; source `get(...) or fallback` lowers through Optional CFG.
 def mir_dict_new(dst: i64) -> MirInstruction
 	return mir_op(MIR_DICT_NEW, dst, -1, -1, 0)
 

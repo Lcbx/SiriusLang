@@ -115,3 +115,47 @@ storage for debugging.
 Validation: `python tools/test_mir_compiler.py` includes shared managed-record,
 array and dictionary snapshots. `python tools/test_mir_selfhost.py` verifies
 native fixed-point self-hosting.
+
+## Dictionary lookup and overwrite measurements (October 2026)
+
+`python tools/benchmark_dictionaries.py --runs 3` benchmarks the generic
+`S_Dict` against a **contiguous, optimistic linear-search proxy** for the old
+MIR representation; it is not a benchmark of the previous MIR emitter. Tests
+cover hits, misses and overwrites for 1–8192 scalar keys, plus managed string
+key/value overwrites. The benchmark compiler uses `-O2`; results depend on
+hardware, compiler and workloads.
+
+In local runs, contiguous linear search was competitive at 1–16 keys and
+especially for misses; hashed lookups became increasingly advantageous from
+roughly 32–128 keys. At 1024 keys, hits took ~13 ns with hashing versus
+~167 ns for linear lookup; misses ~18 ns versus ~324 ns. At 8192 keys the
+gap was far larger. These results support a single hashed implementation
+rather than adding a special small-dictionary mode now.
+
+`S_Dict` formerly allocated and copied a complete key/value entry even when
+replacing an existing key in a uniquely owned dictionary. It now preserves
+that key and copies only the replacement value into a temporary before
+dropping the old value. This avoids per-update allocation and key copy/drop,
+including for structural record keys. Shared dictionaries continue cloning
+as before, and new keys still allocate entries. The temporary uses inline
+aligned storage or a heap fallback for larger value types; borrowed source
+values may alias the dictionary. `tests/runtime/collections.c` covers these
+cases and key copy/drop counts, including snapshot CoW.
+
+Managed string-key overwrites improved from roughly 73–84 ns/update to
+64–76 ns/update in single-run `-O2` comparisons of the original and modified
+runtime. Integer overwrites improved less consistently. Compiling the Sirius
+compiler with either runtime produced **identical C**, and `-O0` self-compilation
+stayed around 6.6–7.0 seconds in four alternating sample runs. Consequently
+no overall compiler speedup is claimed. Avoid further dictionary-specific
+complexity until a real workload exposes a meaningful bottleneck.
+
+## MIR emitter representation cleanup
+
+The generated `S_MirField` union member is selected by one Sirius helper
+(`mir_c_field_name`) for scalar, string and managed record payloads.
+Array and dictionary optional lookups now share one C helper,
+`s_mir_optional_from_field`, which retains managed values according to the
+canonical `Optional[T]` descriptor. Missing entries pass a null pointer;
+this avoids duplicate payload copying and retains while preserving CoW.
+This is a source/runtime cleanup, not a change to the public C runtime ABI.

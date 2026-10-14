@@ -162,6 +162,29 @@ def main() -> None:
 		if '].record = s_mir_array_append_owned(updated->fields[' not in field_append.read_text(encoding='utf-8'):
 			raise AssertionError('Direct self-field appends must use fused CoW mutation')
 		print('PASS fused record-array append is selected during MIR lowering')
+		optional_fields = work / 'optional_fields.sirius'
+		optional_fields.write_text(
+			'rec Item(name: string, count: i64)\n'
+			'def main() -> i64\n'
+			'\tlet items = [Item("first", 1), Item("second", 2)]\n'
+			'\tlet found = items[?1] or Item("none", 0)\n'
+			'\tlet absent = items[?99] or Item("none", 0)\n'
+			'\tvar table = Dict[i64,Item]().insert(5, Item("old", 5))\n'
+			'\tlet snapshot = table\n'
+			'\ttable = table.insert(5, Item("new", 6))\n'
+			'\tlet old = snapshot.get(5) or Item("missing", 0)\n'
+			'\tlet updated = table.get(5) or Item("missing", 0)\n'
+			'\tlet missing = table.get(20) or Item("missing", 0)\n'
+			'\tif found.count == 2 and absent.count == 0 and old.name == "old" and updated.name == "new" and missing.count == 0\n'
+			'\t\treturn 0\n'
+			'\treturn 1\n')
+		optional_c = work / 'optional_fields.c'
+		execute([str(compiler), str(optional_fields), str(optional_c)])
+		optional_source = optional_c.read_text(encoding='utf-8')
+		if optional_source.count('static inline S_MirRecord *s_mir_optional_from_field(') != 1 or 's_mir_optional_from_array(' in optional_source or 's_mir_optional_from_dict(' in optional_source:
+			raise AssertionError('MIR arrays and dictionaries must share optional field construction')
+		assert_native(run_native(cache, optional_c))
+		print('PASS shared Optional field helper: arrays, dictionaries, managed records, and CoW')
 
 
 if __name__ == '__main__':
