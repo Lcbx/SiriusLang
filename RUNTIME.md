@@ -80,3 +80,27 @@ collection test was also checked with Clang ASan/UBSan.
 
 Keep the C11 API stable through MIR-default migration. Functional behavior and
 snapshot semantics take priority over micro-optimizations.
+
+## MIR-generated storage cleanup
+
+The default compiler uses the type-directed `S_MirRecord` representation emitted by
+`src/mir_emit_c.sirius`. Its records, optional values, arrays and dictionaries share
+a compact tagged-by-type field union, but retain and release nested values according
+to their *static* type descriptors.
+
+Shared CoW cloning now uses **one** `s_mir_record_unique_owned` helper across
+record-field updates, array set/append and dictionary insert. The helper copies
+the field storage, retains managed fields by their type descriptor, then consumes
+the original owner's reference. Collection operations still replace/release their
+previous values normally, and unique owners continue to update in place. The
+allocation constructor also guards against field-count arithmetic overflow.
+
+This is a code-generation and maintenance simplification, not a storage ABI change.
+The emitter's dictionary still performs a **linear key search**; the generic
+runtime's separate open-addressing implementation is not used by generated
+Sirius code. A hash-index redesign requires its own workload measurements and
+snapshot/ordering tests and is not part of this refactor.
+
+Validation: `python tools/test_mir_compiler.py` includes shared managed-record,
+array and dictionary snapshots. `python tools/test_mir_selfhost.py` verifies
+native fixed-point self-hosting.

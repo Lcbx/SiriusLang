@@ -215,3 +215,7 @@ Negative indexing remains deferred.
 See [ROADMAP.md](ROADMAP.md) for priorities, [IR_DESIGN.md](IR_DESIGN.md)
 for IR architecture, [INTERPRETER.md](INTERPRETER.md) for interpreter details
 and [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md) for intended semantics.
+
+**Runtime storage:** the MIR C emitter now shares a single type-directed CoW
+clone path for generated records, arrays and dictionaries. The public generic C
+runtime and legacy collection layouts remain separate (see `RUNTIME.md`).

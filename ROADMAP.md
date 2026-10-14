@@ -244,3 +244,13 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Run the full shared executable fixture suite through the standalone MIR backend (85/85). Check all 35 MIR-invalid diagnostic fixtures; test the other two legacy-negative fixtures as MIR-positive (`tools/test_mir_compiler.py`).
 - [x] Switch the default build manifest/CLI and committed C bootstrap to MIR; verify the new bootstrap fixed point and the default compiler regression suite.
 - [x] Retain the legacy C emitter in a separate entry point (`src/legacy_cli.sirius`) and executable (`tools/build_legacy_compiler.py`); preserve legacy-only `--mir-c` for differential tests.
+
+### Latest runtime simplification (MIR-generated containers)
+
+- [x] Consolidate C-emitted CoW cloning of records, optionals, arrays and
+  dictionaries into one type-directed helper; maintain managed-field retention.
+- [x] Guard emitted record allocation against overflow.
+- [x] Validate managed nested snapshots and native MIR self-hosting.
+- [ ] Profile/consider a hash index for MIR-generated dictionaries. They still
+  use linear lookup; do not conflate this with the generic C runtime hash map.
+- [ ] Evaluate HIR/MIR storage simplifications only with measured benefit.

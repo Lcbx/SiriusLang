@@ -92,6 +92,32 @@ def main() -> None:
 			raise AssertionError('Record assignments must lower to CoW-aware MIR updates')
 		assert_native(run_native(cache, output))
 		print('PASS unique/shared record field updates, managed aliases, and nested CoW')
+		collection_snapshots = work / 'collection_snapshots.sirius'
+		collection_snapshots.write_text(
+			'rec Item(name: string, tags: Array[string])\n'
+			'def main() -> i64\n'
+			'\tvar item = Item("first", ["a"])\n'
+			'\tlet original_item = item\n'
+			'\titem.name = "second"\n'
+			'\tvar items = [item]\n'
+			'\tlet original_items = items\n'
+			'\titems[!0] = Item("third", ["b"])\n'
+			'\titems = items.append(Item("fourth", ["c"]))\n'
+			'\tvar entries = Dict[string, Array[string]]()\n'
+			'\tentries = entries.insert("key", ["before"])\n'
+			'\tlet original_entries = entries\n'
+			'\tentries = entries.insert("key", ["after"])\n'
+			'\tentries = entries.insert("other", ["extra"])\n'
+			'\tif original_item.name == "first" and item.name == "second" and original_items[!0].name == "second" and items[!0].name == "third" and len(items) == 2 and len(original_items) == 1 and (original_entries.get("key") or ["missing"])[!0] == "before" and (entries.get("key") or ["missing"])[!0] == "after"\n'
+			'\t\treturn 0\n'
+			'\treturn 1\n')
+		collection_c = work / 'collection_snapshots.c'
+		execute([str(compiler), str(collection_snapshots), str(collection_c)])
+		generated = collection_c.read_text(encoding='utf-8')
+		if generated.count('static inline S_MirRecord *s_mir_record_unique_owned(') != 1 or generated.count('dict = s_mir_record_unique_owned(dict);') != 1:
+			raise AssertionError('Managed collections must share the type-directed CoW clone helper')
+		assert_native(run_native(cache, collection_c))
+		print('PASS shared CoW clone: managed records, arrays, dictionaries, and nested snapshots')
 		field_append = work / 'field_append.c'
 		execute([str(compiler), str(Path(__file__).resolve().parent.parent / 'tests/compiler/fixtures/85_field_append_cow.sirius'), str(field_append)])
 		if '].record = s_mir_array_append_owned(updated->fields[' not in field_append.read_text(encoding='utf-8'):
