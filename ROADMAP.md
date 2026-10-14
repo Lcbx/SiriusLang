@@ -11,13 +11,16 @@ compiler micro-optimization the default workstream.**
    semantics and CoW snapshots, while reducing allocations and needless copies.
    Review array growth, dictionary layout, hash-table behavior, string storage,
    and runtime duplication; measure before replacing mature implementations.
-   First changes: generic arrays reuse aligned temporary storage and `realloc`;
-   generic dictionaries store key/value payloads in one aligned allocation.
-   Focused CoW and aliasing tests cover both.
+   Generic arrays reuse aligned temporary storage and `realloc`;
+   generic dictionaries share key/value allocations. Both dictionary layouts
+   now clone at their existing capacity and avoid rehashing on overwrite.
+   Focused CoW and aliasing tests cover these changes.
 2. **Simplify the codebase — in progress.** Factor common mechanisms where they
    demonstrably reduce complexity. Keep public and bootstrap interfaces stable;
-   remove unused code only with proof from manifests/callers/tests. Updating
-   documentation and focused runtime tests is part of this work.
+   remove unused code only with proof from manifests/callers/tests. The runtime
+   dictionary probe and CoW clone paths have been simplified, and unused
+   ownership intersection/union helpers were removed. Avoid merging the legacy
+   collection ABI with the separate MIR-emitted storage prematurely.
 3. **Make MIR the default backend — completed.** `COMPILER_SOURCES` and
    `bootstrap/compiler.c` now use MIR with a lean `src/cli.sirius` entry point.
    `LEGACY_COMPILER_SOURCES` keeps `src/emit_c.sirius` and
@@ -34,8 +37,9 @@ keep value/CoW semantics; prefer correctness and simpler interfaces over
 marginal compiler-speed gains. Baseline MIR self-compilation is roughly 8 s
 at `-O0` on the earlier profiling setup; remeasure before claiming speedups.
 
-**Runtime review and tests:** [RUNTIME.md](RUNTIME.md),
-`python tools/test_runtime_collections.py`, `python tools/test_reference_c.py`.
+**Runtime and IR reviews:** [RUNTIME.md](RUNTIME.md) and
+[IR_DESIGN.md](IR_DESIGN.md#storage-review-post-mir-default). Test with
+`python tools/test_runtime_collections.py` and `python tools/test_reference_c.py`.
 
 ## 1. Baseline and evidence
 

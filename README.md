@@ -25,7 +25,9 @@ new language features or further compiler micro-optimization. The agreed order i
    transition are stable.
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
-criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review.
+criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
+its own typed record/collection representation, so optimizations to the generic
+C dictionary must be evaluated separately from native compiler self-compilation.
 
 ## Build and use
 

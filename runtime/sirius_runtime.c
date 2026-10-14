@@ -150,10 +150,14 @@ S_Dict_i64_i64 *s_dict_i64_i64_retain(S_Dict_i64_i64 *m) { if (m) m->refcount++;
 void s_dict_i64_i64_release(S_Dict_i64_i64 *m) {
     if (m && --m->refcount == 0) { free(m->entries); free(m); }
 }
-static void s_map_put_raw(S_Dict_i64_i64 *m, int64_t key, int64_t value) {
+static size_t s_map_slot(const S_Dict_i64_i64 *m, int64_t key) {
     size_t index = (size_t)s_hash_i64(key) & (m->capacity - 1);
     while (m->entries[index].used && m->entries[index].key != key)
         index = (index + 1) & (m->capacity - 1);
+    return index;
+}
+static void s_map_put_raw(S_Dict_i64_i64 *m, int64_t key, int64_t value) {
+    size_t index = s_map_slot(m, key);
     if (!m->entries[index].used) m->count++;
     m->entries[index].used = true;
     m->entries[index].key = key;
@@ -177,27 +181,30 @@ S_Dict_i64_i64 *s_dict_i64_i64_insert(S_Dict_i64_i64 *m, int64_t key, int64_t va
     if (!m) s_panic("invalid map");
     S_Dict_i64_i64 *result = m;
     if (m->refcount != 1) {
-        result = s_dict_i64_i64_new();
-        for (size_t i = 0; i < m->capacity; i++) {
-            if (m->entries[i].used) {
-                if ((result->count + 1) * 4 >= result->capacity * 3) s_map_grow(result);
-                s_map_put_raw(result, m->entries[i].key, m->entries[i].value);
-            }
-        }
+        /* Entries contain only scalars: preserve their table layout on CoW. */
+        result = malloc(sizeof(*result));
+        if (!result) s_panic("out of memory");
+        *result = *m;
+        result->refcount = 1;
+        if (m->capacity > SIZE_MAX / sizeof(*m->entries)) s_panic("map too large");
+        result->entries = malloc(m->capacity * sizeof(*m->entries));
+        if (!result->entries) s_panic("out of memory");
+        memcpy(result->entries, m->entries, m->capacity * sizeof(*m->entries));
         s_dict_i64_i64_release(m); /* consumes the variable's ownership */
     }
-    if ((result->count + 1) * 4 >= result->capacity * 3) s_map_grow(result);
-    s_map_put_raw(result, key, value);
+    size_t slot = s_map_slot(result, key);
+    if (!result->entries[slot].used && result->count + 1 >= result->capacity - result->capacity / 4) {
+        s_map_grow(result);
+        slot = s_map_slot(result, key);
+    }
+    if (!result->entries[slot].used) result->count++;
+    result->entries[slot] = (S_DictEntry){true, key, value};
     return result;
 }
 S_Optional_i64 s_dict_i64_i64_get(const S_Dict_i64_i64 *m, int64_t key) {
     if (!m) return (S_Optional_i64){false, 0};
-    size_t index = (size_t)s_hash_i64(key) & (m->capacity - 1);
-    while (m->entries[index].used) {
-        if (m->entries[index].key == key)
-            return (S_Optional_i64){true, m->entries[index].value};
-        index = (index + 1) & (m->capacity - 1);
-    }
+    size_t index = s_map_slot(m, key);
+    if (m->entries[index].used) return (S_Optional_i64){true, m->entries[index].value};
     return (S_Optional_i64){false, 0};
 }
 
@@ -389,13 +396,16 @@ static void s_dict_entry_copy(S_Dict *d, S_GEntry *entry, const void *key, const
     s_elem_copy(d->vcopy, entry->value, value, d->vsize);
 }
 static S_Dict *s_dict_clone(S_Dict *d) {
-    S_Dict *copy = s_dict_new(d->ksize,d->vsize,d->kcopy,d->kdrop,
-                              d->vcopy,d->vdrop,d->hash,d->eq);
-    while (copy->capacity < d->capacity) s_dict_rehash(copy,copy->capacity*2);
+    /* Cloning with the same capacity preserves probe positions. */
+    S_Dict *copy = s_alloc(1, sizeof(*copy));
+    *copy = *d;
+    copy->refcount = 1;
+    copy->entries = s_alloc(d->capacity, sizeof(*copy->entries));
     for (size_t i=0;i<d->capacity;i++) if (d->entries[i].used) {
-        S_GEntry *slot=s_dict_slot(copy,d->entries[i].key,d->entries[i].hash);
-        s_dict_entry_copy(d, slot, d->entries[i].key, d->entries[i].value);
-        slot->hash=d->entries[i].hash; slot->used=true; copy->length++;
+        S_GEntry *slot = &copy->entries[i];
+        s_dict_entry_copy(copy, slot, d->entries[i].key, d->entries[i].value);
+        slot->hash = d->entries[i].hash;
+        slot->used = true;
     }
     return copy;
 }
@@ -408,9 +418,14 @@ S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value) {
         S_Dict *replacement=s_dict_clone(owned);
         s_dict_release(owned); owned=replacement;
     }
-    if ((owned->length+1)*4 >= owned->capacity*3) s_dict_rehash(owned,owned->capacity*2);
     uint64_t hash=owned->hash(replacement_entry.key);
     S_GEntry *slot=s_dict_slot(owned,replacement_entry.key,hash);
+    /* Overwriting a key does not increase table occupancy. */
+    if (!slot->used && owned->length + 1 >= owned->capacity - owned->capacity / 4) {
+        if (owned->capacity > SIZE_MAX / 2) s_panic("dictionary too large");
+        s_dict_rehash(owned,owned->capacity*2);
+        slot=s_dict_slot(owned,replacement_entry.key,hash);
+    }
     if (slot->used) {
         if (owned->kdrop) owned->kdrop(slot->key);
         if (owned->vdrop) owned->vdrop(slot->value);

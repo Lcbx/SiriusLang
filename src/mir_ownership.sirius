@@ -22,24 +22,6 @@ def mir_ownership_entry(function: MirFunction) -> Array[i64]
 		values = values.append(initialized)
 	return values
 
-def mir_ownership_intersect(left: Array[i64], right: Array[i64]) -> Array[i64]
-	var values = Array[i64]()
-	for i in 0..len(left)
-		var initialized = 0
-		if left[!i] != 0 and right[!i] != 0
-			initialized = 1
-		values = values.append(initialized)
-	return values
-
-def mir_ownership_union(left: Array[i64], right: Array[i64]) -> Array[i64]
-	var values = Array[i64]()
-	for i in 0..len(left)
-		var initialized = 0
-		if left[!i] != 0 or right[!i] != 0
-			initialized = 1
-		values = values.append(initialized)
-	return values
-
 # Join directly into one CoW-owned state instead of allocating a fresh mask
 # for every predecessor. The initial state and predecessor states stay intact.
 def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Array[i64]

@@ -40,15 +40,43 @@ append/set, snapshot CoW, dictionary overwrite/rehashing, managed strings,
 borrowed dictionary values and the large-element fallback. It also passes
 ASan/UBSan on the tested toolchain. `python tools/test_reference_c.py` checks older C users.
 
+## Collection cleanup after MIR-default migration
+
+Two collection implementations remain intentionally separate:
+
+- `S_Array_i64` / `S_Dict_i64_i64` are publicly exposed scalar layouts used by
+  handwritten C references and the retained legacy emitter.
+- `S_Array` / `S_Dict` support callbacks for managed values and are used by
+  generic runtime operations. The MIR C emitter currently generates its own
+  type-directed `S_MirRecord` storage for records and collections; it does
+  **not** call the generic array/dictionary APIs for its compiler AST.
+
+Merging these structures now would change their ABI without eliminating the
+MIR-generated representation, so keep both until there is a tested consumer
+migration plan. In particular, do not claim generic dictionary microbenchmark
+improvements as self-compilation improvements.
+
+Both dictionary implementations now clone a shared table at its existing
+capacity instead of repeatedly reinserting/rehashing entries. The generic
+clone also preserves occupied probe positions while individually retaining
+managed key/value payloads. Insertions probe before growing: replacing an
+existing key no longer causes growth when the table reaches its load threshold.
+The scalar-only map now shares the same probe helper across get and insert.
+`tests/runtime/collections.c` covers repeated overwrites near the threshold,
+shared snapshots, borrowed-value keys, and the retained scalar API. Run
+`python tools/test_runtime_collections.py` and the reference-C suite; the
+collection test was also checked with Clang ASan/UBSan.
+
 ## Next runtime steps
 
-1. Measure real compiler allocations and runtime container usage. Do not infer
-   compiler speedups from synthetic microbenchmarks.
-2. Investigate reducing dictionary entry overhead further (slot-local storage
-   or slabs) only if profiles justify added complexity.
-3. Audit the specialized legacy containers before consolidating or deprecating
-   them; do not break the retained legacy emitter.
-4. Continue testing managed/aliasing paths under ASan/UBSan on supported toolchains.
+1. Measure allocations in **MIR-generated** collection and record operations;
+   these are the relevant paths for compiler self-hosting.
+2. Consider unifying generic and emitted runtime storage only after a concrete
+   stable ABI and differential tests exist. Avoid merging specialized legacy
+   structures merely because they have similar operations.
+3. Further dictionary layout changes (inline entries, slabs) require evidence
+   of a real workload bottleneck.
+4. Continue testing managed values, aliasing and CoW with sanitizers.
 
 Keep the C11 API stable through MIR-default migration. Functional behavior and
 snapshot semantics take priority over micro-optimizations.

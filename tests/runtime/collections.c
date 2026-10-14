@@ -83,6 +83,39 @@ int main(void) {
 	assert(s_string_compare(*(S_String *const *)s_dict_get(managed_snapshot, &word), payload) == 0);
 	s_dict_release(managed_snapshot);
 	s_dict_release(managed);
+
+	/* Replacing an existing key near the load threshold must not require a resize. */
+	S_Dict *overwrites = s_dict_new(sizeof(int64_t), sizeof(int64_t), NULL, NULL,
+		NULL, NULL, s_hash_i64_key, s_eq_i64_key);
+	for (int64_t i = 0; i < 5; ++i) overwrites = s_dict_insert(overwrites, &i, &i);
+	S_Dict *overwrites_snapshot = s_dict_retain(overwrites);
+	int64_t replacement = 12345;
+	for (int i = 0; i < 1000; ++i) overwrites = s_dict_insert(overwrites, &key, &replacement);
+	assert(s_dict_length(overwrites) == 6);
+	assert(s_dict_length(overwrites_snapshot) == 5);
+	assert(s_dict_get(overwrites_snapshot, &key) == NULL);
+	assert(*(const int64_t *)s_dict_get(overwrites, &key) == replacement);
+	/* A borrowed stored value can itself become a key across a resize. */
+	int64_t new_value = 456;
+	overwrites = s_dict_insert(overwrites, s_dict_get(overwrites, &key), &new_value);
+	assert(s_dict_length(overwrites) == 7);
+	assert(*(const int64_t *)s_dict_get(overwrites, &replacement) == new_value);
+	s_dict_release(overwrites_snapshot);
+	s_dict_release(overwrites);
+
+	/* The retained scalar-only dictionary has a separate ABI and CoW layout. */
+	S_Dict_i64_i64 *legacy = s_dict_i64_i64_new();
+	for (int64_t i = 0; i < 5; ++i) legacy = s_dict_i64_i64_insert(legacy, i, i);
+	S_Dict_i64_i64 *legacy_snapshot = s_dict_i64_i64_retain(legacy);
+	for (int i = 0; i < 1000; ++i) legacy = s_dict_i64_i64_insert(legacy, 2, 12345);
+	assert(s_dict_i64_i64_get(legacy, 2).value == 12345);
+	assert(s_dict_i64_i64_get(legacy_snapshot, 2).value == 2);
+	legacy = s_dict_i64_i64_insert(legacy, 6, 456);
+	assert(s_dict_i64_i64_get(legacy, 6).value == 456);
+	assert(!s_dict_i64_i64_get(legacy_snapshot, 6).has_value);
+	s_dict_i64_i64_release(legacy_snapshot);
+	s_dict_i64_i64_release(legacy);
+
 	s_string_release(word);
 	s_string_release(payload);
 	puts("PASS runtime collection aliasing, growth, managed values and CoW");

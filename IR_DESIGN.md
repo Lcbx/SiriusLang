@@ -243,3 +243,26 @@ The native MIR fixed point is verified with `tools/test_bootstrap.py` and
 `tools/test_mir_selfhost.py`. The default MIR backend passes all 85 positive
 fixtures and 35 MIR-invalid diagnostics. Two legacy-negative fixtures are
 valid under MIR, and remain backend-specific tests.
+
+## Storage review (post-MIR-default)
+
+- **HIR:** `HirNode` is a small typed annotation over source AST IDs, not a
+  second syntax tree. `HirAnnotationIndex` uses a per-source dictionary head and
+  an array of predecessor links for repeated annotations; lowering builds this
+  index once per function. Keep it until a measured lookup bottleneck warrants
+  changing the representation.
+- **MIR:** `MirInstruction` stores general-purpose operands plus `inputs` and
+  `text`; even many scalar operations construct empty input arrays. Blocks own
+  instruction arrays and functions own block/register-type arrays. Packing
+  operands or using opcode-specific layouts may save memory, but would change
+  the verifier, optimizer, interpreter, and C emitter simultaneously; defer it.
+- **Ownership:** CFG analyses maintain dense register-state arrays and cache
+  per-block instruction effects. The prior standalone intersect/union helpers
+  were unused; the active worklist exclusively uses `mir_ownership_join`.
+- **Runtime boundary:** generated MIR-C records and collections have typed
+  layouts distinct from the generic `S_Array`/`S_Dict` C runtime and the
+  specialized legacy `i64` collections. Consolidation requires an ABI and
+  ownership plan, not simply moving functions into the same source file.
+
+For now prioritize preserving the native bootstrap fixed point and differential
+behavior over compact MIR storage or speculative container unification.
