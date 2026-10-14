@@ -1,5 +1,5 @@
 # Typed-HIR -> CFG MIR lowering, including managed collections, record spreads, and tail recurrence.
-# Deeply nested mutable projections remain unsupported.
+# Nested record and checked-array projections rebuild their CoW path to the root.
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
 rec MirSourceBinding(name: string, slot: i64, depth: i64)
@@ -19,6 +19,8 @@ rec MirBuilder(active: i64)
 
 rec MirLowerExpr(state: MirBuilder, slot: i64)
 rec MirLowerResult(function: MirFunction, error: string)
+rec MirUpdateStep(owner: i64, kind: i64, selector: i64)
+rec MirUpdatePath(state: MirBuilder, slot: i64, steps: Array[MirUpdateStep])
 
 def mir_lower_error(state: MirBuilder, message: string) -> MirBuilder
 	var next = state
@@ -114,6 +116,75 @@ def mir_lower_augmented(state: MirBuilder, operator: string, previous: i64, valu
 	next = mir_lower_register(next, kind)
 	next = mir_lower_emit(next, mir_op(opcode, dst, previous, value, 0))
 	return MirLowerExpr(next, dst)
+
+# Evaluate projection owners and indices once, left to right. Each step owns
+# a readable child register; after replacing the leaf, rebuild toward the root.
+def mir_lower_update_path(state: MirBuilder, context: MirLowerContext, target: i64) -> MirUpdatePath
+	let node = context.tree.nodes[!target]
+	if node.kind == NODE_NAME
+		let slot = mir_lower_binding(state, hir_ast_text(context.tree, target))
+		if slot < 0
+			return MirUpdatePath(mir_lower_error(state, "unknown MIR assignment target"), -1, Array[MirUpdateStep]())
+		return MirUpdatePath(state, slot, Array[MirUpdateStep]())
+	if node.kind != NODE_ATTR and node.kind != NODE_CHECKED_INDEX
+		return MirUpdatePath(mir_lower_error(state, "unsupported nested MIR assignment target"), -1, Array[MirUpdateStep]())
+	let parent = mir_lower_update_path(state, context, hir_ast_child(context.tree, target, 0))
+	var next = parent.state
+	next.error == "" else return parent
+	let parent_type = next.register_types[!parent.slot]
+	if node.kind == NODE_ATTR
+		if context.types.entries[!parent_type].tag != TYPE_TAG_RECORD
+			return MirUpdatePath(mir_lower_error(next, "MIR field update requires a record"), -1, parent.steps)
+		let field = resolve_hir_field(context.types, parent_type, hir_ast_text(context.tree, target))
+		if field.error != ""
+			return MirUpdatePath(mir_lower_error(next, field.error), -1, parent.steps)
+		let child = len(next.register_types)
+		next = mir_lower_register(next, field.type_id)
+		next = mir_lower_emit(next, mir_record_get(child, parent.slot, field.field_index))
+		return MirUpdatePath(next, child, parent.steps.append(MirUpdateStep(parent.slot, NODE_ATTR, field.field_index)))
+	if context.types.entries[!parent_type].tag != TYPE_TAG_ARRAY
+		return MirUpdatePath(mir_lower_error(next, "MIR indexed update requires an array"), -1, parent.steps)
+	let index = mir_lower_expression(next, context, hir_ast_child(context.tree, target, 1))
+	next = index.state
+	next.error == "" else return MirUpdatePath(next, -1, parent.steps)
+	if next.register_types[!index.slot] != TYPE_TAG_I64
+		return MirUpdatePath(mir_lower_error(next, "MIR index must be i64"), -1, parent.steps)
+	let child = len(next.register_types)
+	next = mir_lower_register(next, context.types.entries[!parent_type].first)
+	next = mir_lower_emit(next, mir_array_get(child, parent.slot, index.slot))
+	return MirUpdatePath(next, child, parent.steps.append(MirUpdateStep(parent.slot, NODE_CHECKED_INDEX, index.slot)))
+
+# Set the leaf and then publish updated parents, using existing consuming CoW
+# operations so snapshots of any ancestor retain their previous values.
+def mir_lower_nested_assignment(state: MirBuilder, context: MirLowerContext, id: i64, target: i64) -> MirBuilder
+	let path = mir_lower_update_path(state, context, target)
+	var next = path.state
+	next.error == "" else return next
+	if len(path.steps) < 2
+		return mir_lower_error(next, "nested MIR assignment needs a projection path")
+	let operator = hir_ast_text(context.tree, id)
+	if context.tree.nodes[!target].kind == NODE_CHECKED_INDEX and operator != "="
+		return mir_lower_error(next, "unsupported MIR indexed assignment")
+	let rhs = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 1))
+	next = rhs.state
+	next.error == "" else return next
+	if next.register_types[!rhs.slot] != next.register_types[!path.slot]
+		return mir_lower_error(next, "expected " + hir_type_name(context.types, next.register_types[!path.slot]) + ", found " + hir_type_name(context.types, next.register_types[!rhs.slot]))
+	var updated = rhs.slot
+	if operator != "="
+		let result = mir_lower_augmented(next, operator, path.slot, rhs.slot)
+		next = result.state
+		next.error == "" else return next
+		updated = result.slot
+	for i in 0..len(path.steps)
+		let step = path.steps[!len(path.steps) - 1 - i]
+		if step.kind == NODE_ATTR
+			next = mir_lower_record_update(next, context, step.owner, step.selector, updated)
+		else
+			next = mir_lower_emit(next, mir_array_set(step.owner, step.owner, step.selector, updated))
+		next.error == "" else return next
+		updated = step.owner
+	return next
 
 def mir_lower_literal(text: string) -> i64
 	var value = 0
@@ -822,6 +893,12 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		return next
 	if node.kind == NODE_ASSIGN
 		let target = hir_ast_child(context.tree, id, 0)
+		# Keep the established direct-update and fused-append fast paths.
+		# General nested projections read their indices once and rebuild CoW parents.
+		if context.tree.nodes[!target].kind == NODE_ATTR or context.tree.nodes[!target].kind == NODE_CHECKED_INDEX
+			let owner = hir_ast_child(context.tree, target, 0)
+			if context.tree.nodes[!owner].kind != NODE_NAME
+				return mir_lower_nested_assignment(next, context, id, target)
 		if context.tree.nodes[!target].kind == NODE_CHECKED_INDEX
 			if hir_ast_text(context.tree, id) != "="
 				return mir_lower_error(next, "unsupported MIR indexed assignment")

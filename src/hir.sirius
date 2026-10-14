@@ -1059,9 +1059,17 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			result = hir_body_expression(result, lhs)
 			result.error == "" else return result
 			target_type = result.last_type
+		elif target.kind == NODE_ATTR and state.tree.nodes[!hir_ast_child(state.tree, lhs, 0)].kind != NODE_NAME
+			# Nested targets can contain checked indices. Analyze their expressions
+			# before MIR lowering so their literals and calls have typed HIR nodes.
+			result = hir_body_expression(result, lhs)
+			result.error == "" else return result
+			target_type = result.last_type
 		result = hir_body_expression(result, rhs)
 		if target_type != TYPE_TAG_INVALID and result.last_type != TYPE_TAG_INVALID and target_type != result.last_type
-			return hir_body_error(result, id, "indexed assignment type mismatch")
+			if target.kind == NODE_CHECKED_INDEX
+				return hir_body_error(result, id, "indexed assignment type mismatch")
+			return hir_body_error(result, id, "expected " + hir_type_name(result.types, target_type) + ", found " + hir_type_name(result.types, result.last_type))
 		if target.kind == NODE_NAME
 			let resolved = resolve_hir_name(result.symbols, hir_ast_text(state.tree, lhs))
 			if resolved.error == "" and result.last_type != TYPE_TAG_INVALID and resolved.type_id != TYPE_TAG_INVALID and resolved.type_id != result.last_type

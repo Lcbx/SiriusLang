@@ -22,7 +22,7 @@ resumed. The agreed implementation order remains:
    bootstrap use MIR. **Keep** `src/emit_c.sirius` accessible in the separate
    legacy compiler for differential checks; do not delete it.
 4. **Features — active:** implement missing language constructs in tested slices,
-   starting with local `let` record destructuring (MIR backend only).
+   including local `let` record destructuring and nested record/array updates (MIR backend only).
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
@@ -68,6 +68,19 @@ def pick(record)
 The source expression is evaluated once. Missing fields, duplicate bindings and
 non-record sources are compile-time errors; only local `let` patterns are
 supported. The retained legacy compiler rejects this newer syntax explicitly.
+
+Nested assignments also work through the MIR backend:
+
+```sirius
+var state = {items=[{value=1}]}
+let snapshot = state
+state.items[!0].value = 2
+```
+
+The compiler evaluates checked indices once, then reconstructs modified values
+from the leaf to the mutable root using CoW. Record-field compound assignments
+also work on nested paths; indexed compound assignments remain deferred. The
+legacy emitter still supports only its previously implemented direct updates.
 
 The legacy executable also accepts `--mir-c` for comparisons; the regular
 `./sirius` always uses MIR. Unsupported MIR constructs fail
@@ -213,7 +226,8 @@ The MIR path implements typed CFG instructions, an interpreter, a C emitter,
 specialization lowering, explicit ownership operations, guard insertion, liveness,
 last-use release insertion, exit cleanup, and post-cleanup owned-copy/call-argument move elimination. It runs all 85 shared executable fixtures, including `f64` arithmetic,
 `recur`, record spread/delete, and nonrecursive generic return inference.
-Deeply nested projection assignments remain unsupported, and the standalone
+Nested checked-array and record assignment paths are supported; indexed augmented
+assignments remain unsupported. The standalone
 MIR interpreter does not yet execute floating-point operations or file I/O. **MIR-only self-hosting reaches a native C
 fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
 emitter in their sources. Arrays use CoW for consuming updates and amortized

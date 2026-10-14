@@ -1,0 +1,26 @@
+def chosen() -> i64
+	print("index")
+	return 1
+
+def replacement() -> string
+	print("value")
+	return "updated"
+
+def main() -> i64
+	var data = {group={items=[{name="first", amount=10}, {name="second", amount=20}], matrix=[[1, 2], [3, 4]]}, word="keep"}
+	let before = data
+	let saved_item = data.group.items[!1]
+	data.group.items[!chosen()].name = replacement()
+	data.group.items[!1].amount += 5
+	data.group.matrix[!0][!1] = 77
+	data.group.items[!0].name = data.group.items[!0].name
+	if before.group.items[!1].name != "second" or saved_item.name != "second"
+		return 1
+	if data.group.items[!1].name != "updated" or data.group.items[!1].amount != 25
+		return 2
+	if before.group.matrix[!0][!1] != 2 or data.group.matrix[!0][!1] != 77
+		return 3
+	if data.group.items[!0].name != "first" or data.word != "keep"
+		return 4
+	print("ok")
+	return 0

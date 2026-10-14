@@ -10,10 +10,11 @@ from source_manifest import LEGACY_COMPILER_SOURCES
 
 
 # Record destructuring is currently implemented only by the MIR backend.
-MIR_ONLY_POSITIVE = ('86_record_destructure',)
+MIR_ONLY_POSITIVE = ('86_record_destructure', '87_nested_updates')
 MIR_ONLY_NEGATIVE = ('40_destructure_unknown_field', '41_destructure_duplicate_name',
 	'42_destructure_nonrecord', '43_destructure_scope', '44_destructure_empty',
-	'45_var_destructure')
+	'45_var_destructure', '46_nested_immutable', '47_nested_missing_field',
+	'48_nested_wrong_value', '49_nested_bad_index', '50_nested_index_augmented')
 
 
 def main() -> None:

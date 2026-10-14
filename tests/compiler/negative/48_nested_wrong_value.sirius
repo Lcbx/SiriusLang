@@ -1,0 +1,4 @@
+def main() -> i64
+	var x = {inner={value=1}}
+	x.inner.value = "bad"
+	return 0

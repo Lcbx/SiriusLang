@@ -105,7 +105,7 @@ var a = [1, 2, 3]
 a[!1] = 10
 ```
 
-Field and indexed assignments require a mutable root binding. They are equivalent to replacing the corresponding immutable value.
+Field and checked indexed assignments require a mutable root binding. Nested paths (such as `a.items[!0].name = "new"`) evaluate indices once, then replace values with copy-on-write back to the root. Indexed compound assignment is not yet supported.
 
 ## 4. Functions, Constructors, and Methods
 

@@ -1,0 +1,4 @@
+def main() -> i64
+	let x = {inner={value=1}}
+	x.inner.value = 2
+	return 0

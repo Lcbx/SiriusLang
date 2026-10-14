@@ -54,6 +54,11 @@ ERRORS = {
 	'43_destructure_scope': "unknown name 'local'",
 	'44_destructure_empty': 'record destructuring requires at least one field',
 	'45_var_destructure': 'record destructuring requires let',
+	'46_nested_immutable': "cannot assign immutable binding 'x'",
+	'47_nested_missing_field': "unknown record field 'other'",
+	'48_nested_wrong_value': 'expected i64, found string',
+	'49_nested_bad_index': 'expected i64, found string',
+	'50_nested_index_augmented': 'unsupported MIR indexed assignment',
 
 }
 
