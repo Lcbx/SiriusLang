@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Run the shared compiler fixtures through the standalone MIR-only backend."""
+"""Run the shared compiler fixtures through the default MIR backend."""
 import argparse
 from pathlib import Path
 import tempfile

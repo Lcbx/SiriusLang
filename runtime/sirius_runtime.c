@@ -76,13 +76,7 @@ int64_t s_array_i64_get_checked_take(S_Array_i64 *a, int64_t index) {
     return value;
 }
 S_String *s_string_from_utf8(const char *str) {
-    size_t n = strlen(str);
-    S_String *s = malloc(sizeof(*s) + n + 1);
-    if (!s) s_panic("out of memory");
-    s->refcount = 1;
-    s->length = n;
-    memcpy(s->data, str, n + 1);
-    return s;
+    return s_string_from_bytes(str, strlen(str));
 }
 S_String *s_string_retain(S_String *s) {
     if (s) s->refcount++;
@@ -250,6 +244,15 @@ static void s_elem_copy(S_CopyElem cb, void *dst, const void *src, size_t size) 
     if (cb) cb(dst, src);
     else memcpy(dst, src, size);
 }
+/* Most array elements fit on the stack. Preserve a temporary copy before
+   reallocating, replacing, or dropping storage that may alias the RHS. */
+typedef union { max_align_t align; unsigned char bytes[128]; } S_ElementTemp;
+static void *s_elem_temp(S_ElementTemp *temp, size_t size) {
+    return size <= sizeof(temp->bytes) ? temp->bytes : s_alloc(1, size);
+}
+static void s_elem_temp_free(S_ElementTemp *temp, void *ptr) {
+    if (ptr != temp->bytes) free(ptr);
+}
 S_Array *s_array_new(size_t size, S_CopyElem copy, S_DropElem drop) {
     if (!size) s_panic("zero-sized array element");
     S_Array *a = s_alloc(1, sizeof(*a));
@@ -289,19 +292,21 @@ static void s_array_reserve(S_Array *a, size_t need) {
         if (capacity > SIZE_MAX/2) s_panic("array too large");
         capacity *= 2;
     }
-    void *data = s_alloc(capacity, a->size);
-    if (a->length) memcpy(data, a->data, a->length*a->size); /* transfer ownership */
-    free(a->data); a->data = data; a->capacity = capacity;
+    if (capacity > SIZE_MAX / a->size) s_panic("array too large");
+    void *data = realloc(a->data, capacity * a->size);
+    if (!data) s_panic("out of memory");
+    a->data = data; a->capacity = capacity;
 }
 S_Array *s_array_append(S_Array *owned, const void *item) {
     s_array_unique(&owned);
     if (owned->length == SIZE_MAX) s_panic("array too large");
     /* Preserve an item borrowed from this same array across reallocation. */
-    void *saved = s_alloc(1, owned->size);
+    S_ElementTemp temp = {0};
+    void *saved = s_elem_temp(&temp, owned->size);
     s_elem_copy(owned->copy, saved, item, owned->size);
     s_array_reserve(owned, owned->length+1);
     memcpy((char*)owned->data+owned->length*owned->size, saved, owned->size);
-    free(saved); /* ownership moved into the array */
+    s_elem_temp_free(&temp, saved); /* ownership moved into the array */
     owned->length++;
     return owned;
 }
@@ -309,21 +314,22 @@ void s_array_set(S_Array **owned, int64_t idx, const void *item) {
     if (!s_array_at(*owned, idx)) s_panic("index out of bounds");
     /* The RHS may point into the array itself. Copy it before CoW or dropping. */
     S_Array *a = *owned;
-    void *saved = s_alloc(1, a->size);
+    S_ElementTemp temp = {0};
+    void *saved = s_elem_temp(&temp, a->size);
     s_elem_copy(a->copy, saved, item, a->size);
     s_array_unique(owned);
     a = *owned;
     void *place = (char*)a->data+(size_t)idx*a->size;
     if (a->drop) a->drop(place);
     memcpy(place, saved, a->size); /* transfer saved's ownership */
-    free(saved);
+    s_elem_temp_free(&temp, saved);
 }
 
 /* Open-addressed hash map. Each occupied key/value allocation is owned;
    resizing transfers pointers and CoW clones retain every managed element. */
 typedef struct { bool used; uint64_t hash; void *key; void *value; } S_GEntry;
 struct S_Dict {
-    size_t refcount, length, capacity, ksize, vsize;
+    size_t refcount, length, capacity, ksize, vsize, value_offset;
     S_CopyElem kcopy, vcopy;
     S_DropElem kdrop, vdrop;
     S_HashKey hash;
@@ -345,8 +351,12 @@ static void s_dict_rehash(S_Dict *d, size_t cap) {
 S_Dict *s_dict_new(size_t ksize, size_t vsize, S_CopyElem kcopy, S_DropElem kdrop,
                    S_CopyElem vcopy, S_DropElem vdrop, S_HashKey hash, S_EqualKey eq) {
     if (!ksize || !vsize || !hash || !eq) s_panic("invalid dictionary type");
+    size_t alignment = _Alignof(max_align_t);
+    if (ksize > SIZE_MAX - (alignment - 1)) s_panic("dictionary element too large");
+    size_t offset = ((ksize + alignment - 1) / alignment) * alignment;
+    if (vsize > SIZE_MAX - offset) s_panic("dictionary element too large");
     S_Dict *d = s_alloc(1, sizeof(*d));
-    d->refcount=1; d->ksize=ksize; d->vsize=vsize;
+    d->refcount=1; d->ksize=ksize; d->vsize=vsize; d->value_offset=offset;
     d->kcopy=kcopy; d->kdrop=kdrop; d->vcopy=vcopy; d->vdrop=vdrop;
     d->hash=hash; d->eq=eq;
     s_dict_rehash(d, 8);
@@ -358,7 +368,7 @@ void s_dict_release(S_Dict *d) {
     for (size_t i=0; i<d->capacity; i++) if (d->entries[i].used) {
         if (d->kdrop) d->kdrop(d->entries[i].key);
         if (d->vdrop) d->vdrop(d->entries[i].value);
-        free(d->entries[i].key); free(d->entries[i].value);
+        free(d->entries[i].key);
     }
     free(d->entries); free(d);
 }
@@ -371,15 +381,20 @@ static S_GEntry *s_dict_slot(const S_Dict *d, const void *key, uint64_t hash) {
     }
     return &entries[slot];
 }
+/* One aligned allocation owns both payloads; rehash transfers the entry. */
+static void s_dict_entry_copy(S_Dict *d, S_GEntry *entry, const void *key, const void *value) {
+    entry->key = s_alloc(1, d->value_offset + d->vsize);
+    entry->value = (char *)entry->key + d->value_offset;
+    s_elem_copy(d->kcopy, entry->key, key, d->ksize);
+    s_elem_copy(d->vcopy, entry->value, value, d->vsize);
+}
 static S_Dict *s_dict_clone(S_Dict *d) {
     S_Dict *copy = s_dict_new(d->ksize,d->vsize,d->kcopy,d->kdrop,
                               d->vcopy,d->vdrop,d->hash,d->eq);
     while (copy->capacity < d->capacity) s_dict_rehash(copy,copy->capacity*2);
     for (size_t i=0;i<d->capacity;i++) if (d->entries[i].used) {
         S_GEntry *slot=s_dict_slot(copy,d->entries[i].key,d->entries[i].hash);
-        slot->key=s_alloc(1,d->ksize); slot->value=s_alloc(1,d->vsize);
-        s_elem_copy(d->kcopy,slot->key,d->entries[i].key,d->ksize);
-        s_elem_copy(d->vcopy,slot->value,d->entries[i].value,d->vsize);
+        s_dict_entry_copy(d, slot, d->entries[i].key, d->entries[i].value);
         slot->hash=d->entries[i].hash; slot->used=true; copy->length++;
     }
     return copy;
@@ -387,22 +402,22 @@ static S_Dict *s_dict_clone(S_Dict *d) {
 S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value) {
     if (!owned) s_panic("null dictionary");
     /* Save both operands first, as either may point inside the dictionary. */
-    void *key_copy=s_alloc(1,owned->ksize), *value_copy=s_alloc(1,owned->vsize);
-    s_elem_copy(owned->kcopy,key_copy,key,owned->ksize);
-    s_elem_copy(owned->vcopy,value_copy,value,owned->vsize);
+    S_GEntry replacement_entry = {0};
+    s_dict_entry_copy(owned, &replacement_entry, key, value);
     if (owned->refcount != 1) {
         S_Dict *replacement=s_dict_clone(owned);
         s_dict_release(owned); owned=replacement;
     }
     if ((owned->length+1)*4 >= owned->capacity*3) s_dict_rehash(owned,owned->capacity*2);
-    uint64_t hash=owned->hash(key_copy);
-    S_GEntry *slot=s_dict_slot(owned,key_copy,hash);
+    uint64_t hash=owned->hash(replacement_entry.key);
+    S_GEntry *slot=s_dict_slot(owned,replacement_entry.key,hash);
     if (slot->used) {
         if (owned->kdrop) owned->kdrop(slot->key);
         if (owned->vdrop) owned->vdrop(slot->value);
-        free(slot->key); free(slot->value);
+        free(slot->key);
     } else { owned->length++; }
-    slot->used=true; slot->hash=hash; slot->key=key_copy; slot->value=value_copy;
+    replacement_entry.used=true; replacement_entry.hash=hash;
+    *slot=replacement_entry;
     return owned;
 }
 const void *s_dict_get(const S_Dict *d, const void *key) {

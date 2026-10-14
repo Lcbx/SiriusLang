@@ -1,6 +1,6 @@
 # MIR interpreter
 
-**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar/string/record/array/dictionary/optional lowering and linked specialization worklist** now exist; ordinary Sirius programs compile through the existing direct C emitter by default, while supported programs including optional indexing, dictionary lookup and lazy fallback may opt in to `--mir-c`. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included.
+**Status:** First standalone executable CFG MIR subset implemented in **Sirius** (`src/mir.sirius`, `src/mir_interpreter.sirius`). A **limited typed-HIR-to-MIR scalar/string/record/array/dictionary/optional lowering and linked specialization worklist** now exist; ordinary Sirius programs now compile through MIR by default. The direct C emitter remains available through `sirius-legacy`. The interpreter is compiled once with the existing Sirius compiler and then runs hand-built MIR without generating C for that program. No compile-time evaluation is included.
 
 ## Run isolated tests
 
@@ -33,7 +33,7 @@ Initial coverage: `i64`, `bool`, owned `string`, canonical structural records, r
 
 `src/hir_specialize.sirius` owns specialization discovery and semantic body analysis independently of C or MIR. It indexes requests by declaration-body identity and canonical argument TypeIds; repeat calls and active recursive calls reuse an entry. Each worklist entry yields `HirSpecializedFunction` with typed nodes, call-to-specialization IDs and return type. `src/mir_program.sirius` lowers one `MirFunction` per completed entry, retaining **the same index** as the HIR registry; `MIR_CALL` refers to that index. The final linked program is verified before execution.
 
-This migration slice supports direct and mutual recursion, generic parameters with scalar/string/record/array/dictionary/optional instantiations, and supported managed calls; an unannotated callee return type is explicitly rejected by the new worklist. The semantic worklist can analyze non-scalar types such as arrays, and lowers the supported checked rank-1 array subset to MIR. The default C emitter still instantiates and emits its own bodies, but the opt-in `--mir-c` backend now emits from the linked MIR and HIR-owned specialization IDs. The two backends share the source subset used by `tools/test_mir_c.py`, and the experimental backend fails explicitly outside that subset.
+This migration slice supports direct and mutual recursion, generic parameters with scalar/string/record/array/dictionary/optional instantiations, and supported managed calls; an unannotated callee return type is explicitly rejected by the new worklist. The semantic worklist can analyze non-scalar types such as arrays, and lowers the supported checked rank-1 array subset to MIR. The separate legacy C emitter still instantiates and emits its own bodies, while the default compiler emits from linked MIR and HIR-owned specialization IDs. The two backends share the source subset used by `tools/test_mir_c.py`, and the experimental backend fails explicitly outside that subset.
 
 ## Optional values and control flow (experimental)
 
@@ -43,7 +43,7 @@ The typed-HIR path lowers `array[?index]`, `dict.get(key)`, postfix `!` unwrap, 
 
 ## Experimental MIR C backend and future test policy
 
-`./sirius --mir-c input.sirius output.c` currently selects supported HIR specialization → MIR → C11, bypassing the legacy specialization/emission path. It is **not** the interpreter path. The default `./sirius input.sirius output.c` still supports the wider bootstrap language. Strict C11 tests exercise native execution of both for a common supported shared subset including optionals. MIR currently tracks initialized registers dynamically in generated C, and handles division by zero and panic; overflow semantics remain unsettled.
+`./sirius input.sirius output.c` uses HIR specialization → MIR → C11. The independent `./sirius-legacy input.sirius output.c` selects the old emitter; it still accepts `--mir-c` for backend comparison. Neither command interprets MIR. Native C11 tests cover both backends. Verified MIR omits redundant initialization flags and uses explicit CFG guards for errors; overflow semantics remain unsettled.
 
 The future unified interpreter-vs-native test CLI remains:
 
@@ -64,13 +64,13 @@ sirius test --backend=both    # Execute both and check expected output/exit stat
 
 1. Extend the worklist to infer unannotated callee result types safely, handle constructors and full HIR operations, and retain source-span diagnostics.
 2. Extend MIR lowering with `for`, record spreads/updates, array append, dictionaries and additional borrow/CoW operations; keep the implemented immutable record ownership rules.
-3. Expand the opt-in MIR C backend to the full supported language, then switch default production emission to the **same** specialized MIR while retaining differential tests.
+3. Extend the default MIR C backend to remaining language features while retaining the separate legacy emitter and differential tests.
 4. Extend nested-record/string/array ownership to all CFG exits and dictionaries, with static ownership data-flow checks before accepting more complex updates.
 5. Implement the shared test harness and `--backend` switch after the two execution paths accept the same fixtures.
 
 ### Dictionary limitations
 
-MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for string and integer keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. The baseline uses a linear key scan instead of hashing. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and now lowers through Optional/CFG branches. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through `--mir-c`.
+MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for string and integer keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. The baseline uses a linear key scan instead of hashing. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and now lowers through Optional/CFG branches. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through the default MIR compiler.
 
 ## CFG ownership pass (experimental)
 

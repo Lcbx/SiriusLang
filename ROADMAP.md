@@ -2,11 +2,46 @@
 
 This is an **engineering plan**, not a replacement for [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md). The design specifies intended semantics; this document tracks the narrower implementation, its debt, and the order in which the Sirius-written compiler can gain features **using the facilities available at each step**.
 
+## Current priorities and decisions
+
+The near-term order is deliberate. **Do not make feature expansion or further
+compiler micro-optimization the default workstream.**
+
+1. **Runtime/data structures — in progress.** Preserve reference-counted value
+   semantics and CoW snapshots, while reducing allocations and needless copies.
+   Review array growth, dictionary layout, hash-table behavior, string storage,
+   and runtime duplication; measure before replacing mature implementations.
+   First changes: generic arrays reuse aligned temporary storage and `realloc`;
+   generic dictionaries store key/value payloads in one aligned allocation.
+   Focused CoW and aliasing tests cover both.
+2. **Simplify the codebase — in progress.** Factor common mechanisms where they
+   demonstrably reduce complexity. Keep public and bootstrap interfaces stable;
+   remove unused code only with proof from manifests/callers/tests. Updating
+   documentation and focused runtime tests is part of this work.
+3. **Make MIR the default backend — completed.** `COMPILER_SOURCES` and
+   `bootstrap/compiler.c` now use MIR with a lean `src/cli.sirius` entry point.
+   `LEGACY_COMPILER_SOURCES` keeps `src/emit_c.sirius` and
+   `src/legacy_cli.sirius` independently buildable. MIR and legacy regression
+   suites pass separately (85/35 and 85/37 respectively). The two legacy
+   diagnostics for valid MIR programs remain legacy-specific. Future work
+   should preserve both CLI builds and their differential test coverage.
+4. **Resume feature development — pending.** Return to language features after
+   MIR-default and runtime regression gates pass. Use the remaining feature
+   sections below as a backlog rather than a parallel active priority.
+
+**Decisions:** maintain both backends; retain the self-hosted C bootstrap;
+keep value/CoW semantics; prefer correctness and simpler interfaces over
+marginal compiler-speed gains. Baseline MIR self-compilation is roughly 8 s
+at `-O0` on the earlier profiling setup; remeasure before claiming speedups.
+
+**Runtime review and tests:** [RUNTIME.md](RUNTIME.md),
+`python tools/test_runtime_collections.py`, `python tools/test_reference_c.py`.
+
 ## 1. Baseline and evidence
 
-- **Active compiler:** Sirius source in `src/`, compiled through the checked-in C bootstrap in `bootstrap/compiler.c`. The emitter still combines semantic analysis and C11 generation.
+- **Active compiler:** Sirius source in `src/`, compiled through the checked-in MIR-generated C bootstrap in `bootstrap/compiler.c`. Normal source compilation goes through HIR and MIR before C11 generation.
 - **Historical bootstrap:** `archive/python_bootstrap/` is **frozen**. It is retained for provenance, not used to develop features, regenerate bootstrap C, or run the active test pipeline.
-- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap/compiler.c`, and the generated compiler runs the full shared emitter suite (85 positives and 37 diagnostics). See `tools/test_bootstrap.py`.
+- **Self-hosting:** the checked-in C builds a seed compiler; that compiler recompiles the Sirius sources until their generated C reaches a byte-identical fixed point. The fixed point is compared to `bootstrap/compiler.c`; the default MIR compiler runs 85 positive fixtures and 35 diagnostics, while the separately built legacy emitter retains its 85/37 suite. See `tools/test_bootstrap.py`.
 - **Coverage:** legacy: 85 native executions and 37 diagnostics; standalone MIR: 85 native executions, 35 expected diagnostics and two formerly rejected cases now accepted as positive tests. Also 19 tokenizer golden cases, 11 parser golden cases, and 24 independent C references. The historical Python tests cover 38 positive programs. Passing these is **not** proof of ownership safety or full language conformance.
 
 ### Rules for further work
@@ -52,7 +87,7 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 
 | Priority | Debt | Evidence / risk | Recommended remedy |
 | --- | --- | --- | --- |
-| **P0** | Mixed typing, ownership and C emission | `src/emit_c.sirius` still combines several compiler stages; some complex `elif` optional fallbacks and expression forms are rejected | Introduce typed HIR then CFG MIR incrementally, retaining the C emitter as a temporary backend |
+| **P1** | Legacy emitter technical debt | `src/emit_c.sirius` combines typing, ownership and C emission; its diagnostics differ from MIR | Preserve as a separate comparison backend; do not put it back in the default bootstrap |
 | **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
 | **P1** | No module/import system | `src/` including `src/cli.sirius` is concatenated in dependency order; collision and coupling risks increase with size | Split compiler components using an ordered build manifest now; later implement static `namespace`/`import` |
@@ -105,9 +140,9 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Give each MIR instruction typed operands and a destination; represent `Branch`, `Jump`, `Switch`, `Return` and `Panic` as terminators.
 - [ ] Evaluate expressions into explicit temporaries in source order, including calls, record fields, nested updates, and constructor publications.
-- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls; optional `or`, `else return`, checked and optional indexing, and dictionary `.get()` now lower into explicit CFG and typed MIR. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The experimental `src/mir_emit_c.sirius` now emits native C from this MIR, selected using `--mir-c`, with differential scalar/string/record tests (`tools/test_mir_c.py`). The legacy emitter is still the default; the MIR path now lowers `for`, `recur`, record spreads/deletes, `f64` expressions, array append and guard statements.
+- [ ] Lower `if`/`elif`, `and`/`or`, `while`, `for`, optional `or` and `else return` into branches before C generation. **Started:** `src/mir_lower.sirius` lowers checked scalar functions with `if`/`elif`/`else`, `and`/`or`, `while` and linked specialized calls; optional `or`, `else return`, checked and optional indexing, and dictionary `.get()` now lower into explicit CFG and typed MIR. `src/mir_program.sirius` associates each HIR specialization with a same-index MIR function. The default `src/mir_emit_c.sirius` emits native C from MIR; the separate legacy compiler retains the `--mir-c` comparison option (`tools/test_mir_c.py`). MIR lowers `for`, `recur`, record spreads/deletes, `f64` expressions, array append and guards.
 - [ ] Lower `recur` to parallel assignment into temporaries followed by a backedge, even for managed values once ownership is implemented.
-- [ ] Make the **default** C backend consume MIR only; compare visible behavior to the old backend while switching constructs one by one. **Started:** opt-in `--mir-c` consumes exactly the linked HIR worklist/MIR, with native scalar/string/record/array differential cases, direct print/panic/register checks and managed-string/record ownership tests.
+- [x] Make the **default** C backend consume MIR only. Keep the separate legacy executable and differential coverage (`tools/test_mir_c.py`, `tools/test_mir_migration.py`); retain native print/panic/register and managed-value ownership tests.
 
 **Done when:** complex optional/boolean combinations and branch-local evaluation work without special-case rejection; no semantic checks depend on generated C expressions.
 
@@ -152,7 +187,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 ### MIR string-ownership slice (experimental, implemented)
 
 - [x] Add managed `string` registers and explicit MIR retain/copy, move and release operations in Sirius, with runtime invalidation checks.
-- [x] Make both the Sirius MIR interpreter and opt-in MIR→C backend execute the same string operations; C uses ARC credits across calls and returns.
+- [x] Make both the Sirius MIR interpreter and MIR→C backend execute the same string operations; C uses ARC credits across calls and returns.
 - [x] Lower string literals, concatenation and `len(string)` from typed HIR; extend differential and ownership-specific tests.
 - [x] Generalize managed register ownership to immutable structural records, including nested strings/records. `MIR_RECORD_NEW`/`MIR_RECORD_GET` consume canonical layouts; interpreter and generated C handle copy/move/retain/release and recursive destruction. See `tools/test_mir_records.py` and record cases in `tools/test_mir_c.py`.
 - [x] Add rank-1 MIR arrays with canonical element types, checked access, length and consuming `MIR_ARRAY_SET` with type-directed CoW. Interpreter and MIR-C handle arrays of scalars, strings, records and nested arrays, with alias-preserving differential tests (`tools/test_mir_arrays.py`, `tools/test_mir_c.py`).
@@ -203,5 +238,5 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
 - [x] Lower all current compiler-source constructs and the 85 shared executable fixtures to MIR, including `recur`, record spreads/deletes, inferred nonrecursive generic returns and basic `f64` operations. Deeper nested projection updates remain unsupported; floating-point operations and file I/O are native-C features not yet mirrored in the MIR interpreter.
 - [x] Achieve a native MIR-only fixed point through generations 2, 3 and 4, excluding the legacy emitter; verify byte-identical C with `tools/test_mir_selfhost.py`. Reduce C size using a shared return cleanup epilogue, and improve generated compiler performance using amortized array append and single-allocation string join. Correct compound-assignment lowering for locals and record fields.
 - [x] Run the full shared executable fixture suite through the standalone MIR backend (85/85). Check all 35 MIR-invalid diagnostic fixtures; test the other two legacy-negative fixtures as MIR-positive (`tools/test_mir_compiler.py`).
-- [ ] Switch the default build manifest/CLI and committed C bootstrap to MIR; repeat bootstrap fixed point and regression testing using the new default.
-- [ ] Remove the legacy C emitter and retire the `--mir-c` switch.
+- [x] Switch the default build manifest/CLI and committed C bootstrap to MIR; verify the new bootstrap fixed point and the default compiler regression suite.
+- [x] Retain the legacy C emitter in a separate entry point (`src/legacy_cli.sirius`) and executable (`tools/build_legacy_compiler.py`); preserve legacy-only `--mir-c` for differential tests.

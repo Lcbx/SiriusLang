@@ -22,7 +22,8 @@ def main() -> None:
 		generated, compiler = generate_fixed_point(cache, work)
 		check_committed(ROOT / 'bootstrap/compiler.c', generated)
 		if not args.fixed_point_only:
-			check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs), runtime=cache.runtime())
+			check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
+				runtime=cache.runtime(), negative_exclude=('04_unsupported_array', '27_optional_elif'))
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Compile and test the Sirius emitter using the committed C bootstrap."""
+"""Run the shared fixture suite against the default MIR compiler."""
 import argparse
 from pathlib import Path
 import tempfile
@@ -16,7 +16,8 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	compiler = cache.sirius('compiler', COMPILER_SOURCES)
 	with tempfile.TemporaryDirectory() as temporary:
-		check_cases(cache.cc, compiler, Path(temporary), jobs=validate_jobs(args.jobs), runtime=cache.runtime())
+		check_cases(cache.cc, compiler, Path(temporary), jobs=validate_jobs(args.jobs),
+			runtime=cache.runtime(), negative_exclude=('04_unsupported_array', '27_optional_elif'))
 
 
 if __name__ == '__main__':

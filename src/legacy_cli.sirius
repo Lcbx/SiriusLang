@@ -1,0 +1,24 @@
+# Concatenate after the lexer, parser and emitter until Sirius imports exist.
+def main() -> i64
+	let args = arguments()
+	var input_index = 1
+	var mir_backend = false
+	if len(args) == 4 and args[!1] == "--mir-c"
+		input_index = 2
+		mir_backend = true
+	elif len(args) != 3
+		print("usage: emit_c [--mir-c] input.sirius output.c")
+		return 2
+	let source = read_text(args[!input_index]) or ""
+	var result = CompileResult("", "", 0)
+	if mir_backend
+		result = compile_c_mir(source)
+	else
+		result = compile_c(source)
+	if result.error != ""
+		print("ERROR " + str(result.line) + ": " + result.error)
+		return 1
+	if not write_text(args[!input_index + 1], result.code)
+		print("cannot write output")
+		return 2
+	return 0

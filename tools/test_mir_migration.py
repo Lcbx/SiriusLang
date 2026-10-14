@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import tempfile
 
-from source_manifest import COMPILER_SOURCES
+from source_manifest import LEGACY_COMPILER_SOURCES
 from build_support import BuildCache, assert_native, execute, options, require_cc, run_native
 
 
@@ -44,9 +44,11 @@ CASES = {
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	options(parser)
+	parser.add_argument('--compiler', type=Path, help='prebuilt legacy compiler supporting --mir-c')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	compiler = cache.sirius('mir-migration', COMPILER_SOURCES, separator=b'')
+	compiler = args.compiler.resolve() if args.compiler else cache.sirius(
+		'mir-migration', LEGACY_COMPILER_SOURCES, separator=b'')
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		path = work / 'data.txt'

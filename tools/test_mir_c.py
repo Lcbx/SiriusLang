@@ -5,8 +5,8 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from build_support import BuildCache, assert_native, execute, normalize_newlines, options, require_cc, run_native
-from source_manifest import COMPILER_SOURCES, normalize_newlines
+from build_support import BuildCache, assert_native, execute, options, require_cc, run_native
+from source_manifest import LEGACY_COMPILER_SOURCES, normalize_newlines
 
 
 CASES = {
@@ -54,10 +54,13 @@ CASES = {
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	options(parser)
+	parser.add_argument('--compiler', type=Path, help='prebuilt legacy compiler to compare both backends')
+	parser.add_argument('--skip-direct', action='store_true', help='skip expensive direct-MIR test driver build')
 	args = parser.parse_args()
 	cc = require_cc()
 	cache = BuildCache(cc, rebuild=args.rebuild)
-	compiler = cache.sirius('emitter-mir-optin', COMPILER_SOURCES, separator=b'')
+	compiler = args.compiler.resolve() if args.compiler else cache.sirius(
+		'emitter-mir-optin', LEGACY_COMPILER_SOURCES, separator=b'')
 	with tempfile.TemporaryDirectory() as directory:
 		work = Path(directory)
 		for name, source in CASES.items():
@@ -90,22 +93,23 @@ def main() -> None:
 		if result.returncode == 0 or 'not supported' not in result.stdout:
 			raise AssertionError(f'MIR must reject unsupported nested updates explicitly: {result}')
 		print('PASS MIR-C unsupported nested record update rejected')
-		driver = cache.sirius('mir-c-direct', (
-			'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/compile_common.sirius',
-			'src/hir.sirius', 'src/emit_c.sirius', 'src/hir_specialize.sirius',
-			'src/mir.sirius', 'src/mir_common.sirius', 'src/mir_lower.sirius', 'src/mir_ownership.sirius', 'src/mir_guard.sirius', 'src/mir_lifetime.sirius', 'src/mir_cleanup.sirius', 'src/mir_opt.sirius', 'src/mir_program.sirius',
-			'src/mir_emit_c.sirius', 'tests/mir/c_driver.sirius',
-		))
-		generated = [work / f'direct-{name}.c' for name in ('print', 'panic', 'uninitialized')]
-		execute([str(driver), *(str(path) for path in generated)])
-		for source, expected, error_fragment in (
-			(generated[0], b'42\ntrue\n', None),
-			(generated[1], b'', b'quoted "panic" and backslash \\ end'),
-			(generated[2], b'', b'uninitialized register'),
-		):
-			result = run_native(cache, source)
-			assert_native(result, stdout=expected, code=0 if error_fragment is None else None, stderr_contains=error_fragment)
-		print('PASS MIR-C direct print, panic escaping, uninitialized register')
+		if not args.skip_direct:
+			driver = cache.sirius('mir-c-direct', (
+				'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/compile_common.sirius',
+				'src/hir.sirius', 'src/emit_c.sirius', 'src/hir_specialize.sirius',
+				'src/mir.sirius', 'src/mir_common.sirius', 'src/mir_lower.sirius', 'src/mir_ownership.sirius', 'src/mir_guard.sirius', 'src/mir_lifetime.sirius', 'src/mir_cleanup.sirius', 'src/mir_opt.sirius', 'src/mir_program.sirius',
+				'src/mir_emit_c.sirius', 'tests/mir/c_driver.sirius',
+			))
+			generated = [work / f'direct-{name}.c' for name in ('print', 'panic', 'uninitialized')]
+			execute([str(driver), *(str(path) for path in generated)])
+			for source, expected, error_fragment in (
+				(generated[0], b'42\ntrue\n', None),
+				(generated[1], b'', b'quoted "panic" and backslash \\ end'),
+				(generated[2], b'', b'uninitialized register'),
+			):
+				result = run_native(cache, source)
+				assert_native(result, stdout=expected, code=0 if error_fragment is None else None, stderr_contains=error_fragment)
+			print('PASS MIR-C direct print, panic escaping, uninitialized register')
 
 
 if __name__ == '__main__':

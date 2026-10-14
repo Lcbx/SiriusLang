@@ -9,6 +9,24 @@ committed C bootstrap. Self-hosting covers a subset of
 [the intended language](LANGUAGE_DESIGN.md), not the complete design.
 The historical Python compiler is archived and is **not** used for active builds.
 
+## Current development priorities
+
+The current work prioritizes runtime structures and codebase simplification, not
+new language features or further compiler micro-optimization. The agreed order is:
+
+1. **Runtime:** improve `S_Array`, `S_Dict`, strings, allocation and CoW behavior,
+   preserving snapshots and the existing C ABI. Start with measured bottlenecks.
+2. **Simplification:** reduce duplicated runtime/compiler logic and stale build
+   paths. Prefer incremental refactors with focused regression tests.
+3. **MIR as the default — completed:** normal compilation and the committed
+   bootstrap use MIR. **Keep** `src/emit_c.sirius` accessible in the separate
+   legacy compiler for differential checks; do not delete it.
+4. **Features:** resume language implementation after the runtime and backend
+   transition are stable.
+
+See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
+criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review.
+
 ## Build and use
 
 Requires a C11 compiler (`cc` or `gcc`). Python 3.10+ is required for development
@@ -28,10 +46,17 @@ suffix. Building without Python is also possible:
 cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o sirius
 ```
 
-`./sirius input.sirius output.c` selects the **legacy C emitter** (used by
-the committed bootstrap). `./sirius --mir-c input.sirius output.c` selects
-the **HIR → MIR → C backend**, which also reaches a native self-hosting fixed
-point when built without the legacy emitter. Unsupported MIR constructs fail
+`./sirius input.sirius output.c` uses **HIR → MIR → C**, the default and
+committed self-hosted bootstrap. The legacy emitter is preserved in a separate
+compiler so the default executable does not link two backends:
+
+```sh
+python tools/build_legacy_compiler.py
+./sirius-legacy input.sirius output.c
+```
+
+The legacy executable also accepts `--mir-c` for comparisons; the regular
+`./sirius` always uses MIR. Unsupported MIR constructs fail
 explicitly; there is no implicit fallback. The normal MIR compiler omits
 runtime register-initialization bookkeeping after ownership verification;
 direct MIR-to-C emission retains defensive checks for unverified input.
@@ -76,14 +101,16 @@ Three commands have deliberately different responsibilities:
 | `python tools/generate_bootstrap.py --check` | Verify committed bootstrap matches the computed fixed point, without modifying it or running fixtures |
 | `python tools/test_bootstrap.py` | Verify the fixed point and committed C, then run compiler execution and diagnostic fixtures |
 | `python tools/test_bootstrap.py --fixed-point-only` | Verify self-hosting and committed C without running language fixtures |
-| `python tools/test_compiler.py` | Test the default C emitter built directly from the committed C bootstrap |
-| `python tools/probe_mir_selfhost.py --require-ready` | Quick MIR-only source-generation probe; **not** a fixed-point test |
+| `python tools/test_compiler.py` | Test the default MIR compiler built from the committed C bootstrap |
+| `python tools/build_legacy_compiler.py [--output PATH]` | Build `sirius-legacy` separately from Sirius sources using the committed MIR bootstrap |
+| `python tools/probe_mir_selfhost.py --require-ready` | Quick source-generation probe of the default MIR backend; **not** a fixed-point test |
 | `python tools/test_mir_selfhost.py` | Build the standalone MIR compiler, compile successive native generations and compare their C byte-for-byte; run MIR runtime smoke cases (prefers Clang for the large generated C) |
 
 Normal changes to the Sirius compiler:
 
 ```sh
 python tools/test_compiler.py --jobs 4
+python tools/test_legacy_compiler.py --jobs 4
 python tools/generate_bootstrap.py
 python tools/test_bootstrap.py --jobs 4
 ```
@@ -93,7 +120,9 @@ generated C by hand.** The *previous* committed compiler must be able to compile
 the updated Sirius source; introduce new syntax in stages.
 
 The ordered source manifests and byte-oriented concatenation live in
-`tools/source_manifest.py`. Sources are concatenated because Sirius imports are
+`tools/source_manifest.py`. `COMPILER_SOURCES` is MIR-only;
+`LEGACY_COMPILER_SOURCES` retains the old emitter and its separate CLI.
+Sources are concatenated because Sirius imports are
 not implemented yet. `--rebuild` clears content-addressed compiled artifacts,
 and test runners supporting parallel fixtures accept `--jobs N` (default up to
 4). Cached objects and binaries are stored under `.build/cache/`, while fixture
@@ -106,8 +135,10 @@ Run individual suites as needed:
 | Command | Scope |
 | --- | --- |
 | `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
-| `python tools/test_compiler.py` | Legacy backend: 85 native executions and 37 expected diagnostics |
-| `python tools/test_mir_compiler.py` | Standalone MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
+| `python tools/test_runtime_collections.py` | Runtime generic arrays/dictionaries, aliasing, CoW and managed values |
+| `python tools/test_compiler.py` | Default MIR backend: 85 native executions and 35 expected diagnostics |
+| `python tools/test_legacy_compiler.py` | Retained legacy emitter: 85 native executions and 37 expected diagnostics |
+| `python tools/test_mir_compiler.py` | Default MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
 | `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
 | `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
