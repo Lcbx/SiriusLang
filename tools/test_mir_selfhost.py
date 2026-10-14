@@ -22,6 +22,8 @@ SMOKE = {
 		'def main() -> i64\n\tvar text = "a"\n\ttext += "bc"\n\treturn len(text)\n', 3),
 	'array_cow': (
 		'def main() -> i64\n\tvar a = [1, 2]\n\tlet before = a\n\ta = a.append(3)\n\treturn len(before) * 10 + len(a)\n', 23),
+	'record_array_append': (
+		'rec Store(values: Array[i64])\n\tpub values\ndef main() -> i64\n\tvar s = Store([1])\n\tlet old = s\n\ts.values = s.values.append(2)\n\treturn len(old.values) * 10 + len(s.values)\n', 12),
 	'join': (
 		'def main() -> i64\n\treturn len("/".join(["a", "bc", "d"]))\n', 6),
 }

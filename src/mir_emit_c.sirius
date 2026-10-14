@@ -69,8 +69,15 @@ def mir_c_retain_value(type_id: i64, value: string) -> string
 	return "s_mir_record_retain(" + value + ")"
 
 # Evaluate the incoming value before dropping dst, including self-copies.
+def mir_c_store_name(type_id: i64) -> string
+	if type_id == TYPE_TAG_STRING
+		return "s_mir_string_store"
+	return "s_mir_record_store"
+
 def mir_c_store_owned(dst: i64, type_id: i64, expression: string, checked: bool) -> string
 	let name = mir_c_register(dst)
+	if not checked
+		return "\t" + mir_c_store_name(type_id) + "(&" + name + ", " + expression + ");\n"
 	return "\t{ " + mir_c_type(type_id) + " owned = " + expression + "; if (" + mir_c_live(dst, checked) + ") " + mir_c_release_value(type_id, name) + "; " + name + " = owned" + mir_c_mark_init(dst, checked) + " }\n"
 
 def mir_c_release_managed(function: MirFunction, except: i64, checked: bool) -> string
@@ -84,7 +91,8 @@ def mir_c_release_managed(function: MirFunction, except: i64, checked: bool) -> 
 def mir_c_record_runtime(types: TypeTable) -> string
 	var parts = Array[string]()
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
-	parts = parts.append("typedef struct { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;\n")
+	# Type descriptors determine the active field; a union avoids storing four unused payloads.
+	parts = parts.append("typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;\n")
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {\n")
 	parts = parts.append("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n")
@@ -171,6 +179,30 @@ def mir_c_record_runtime(types: TypeTable) -> string
 				parts = parts.append("\t\tfor (size_t j = 0; j < r->length; ++j) " + mir_c_release_value(element_type, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
 	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n\tfree(r);\n}\n\n")
+	parts = parts.append("static inline void s_mir_string_store(S_String **slot, S_String *owned) { S_String *old = *slot; *slot = owned; s_string_release(old); }\n")
+	parts = parts.append("static inline void s_mir_record_store(S_MirRecord **slot, S_MirRecord *owned) { S_MirRecord *old = *slot; *slot = owned; s_mir_record_release(old); }\n\n")
+	# Clone record storage only if a snapshot owns another reference.
+	parts = parts.append("static inline S_MirRecord *s_mir_record_unique_owned(S_MirRecord *record) {\n")
+	parts = parts.append("\tif (record->refs == 1) return record;\n")
+	parts = parts.append("\tS_MirRecord *copy = s_mir_record_new(record->type_id, record->length);\n")
+	parts = parts.append("\tfor (size_t i = 0; i < record->length; ++i) copy->fields[i] = record->fields[i];\n")
+	parts = parts.append("\tswitch (record->type_id) {\n")
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == TYPE_TAG_RECORD
+			parts = parts.append("\tcase " + str(i) + ":\n")
+			for j in 0..len(desc.fields)
+				let kind = desc.fields[!j].kind
+				if mir_common_managed(kind)
+					var value = "copy->fields[" + str(j) + "]"
+					if kind == TYPE_TAG_STRING
+						value = value + ".text"
+					else
+						value = value + ".record"
+					parts = parts.append("\t\t" + mir_c_retain_value(kind, value) + ";\n")
+			parts = parts.append("\t\tbreak;\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid record type\");\n\t}\n")
+	parts = parts.append("\ts_mir_record_release(record); return copy;\n}\n\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n")
 	parts = parts.append("\tif (index < 0 || (uint64_t)index >= array->length) s_panic(\"array index out of bounds\");\n")
 	parts = parts.append("\tif (array->refs > 1) {\n\t\tS_MirRecord *copy = s_mir_record_new(array->type_id, array->length);\n")
@@ -319,7 +351,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 	let op = instruction.op
 	var result = ""
 	if checked and op != MIR_CONST_I64 and op != MIR_CONST_BOOL and op != MIR_CONST_STRING and op != MIR_CONST_F64 and op != MIR_ARGUMENTS and op != MIR_RELEASE_IF_INIT
-		if op == MIR_CALL or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
+		if op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_DICT_NEW or op == MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg, checked)
 		else
@@ -329,7 +361,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 			if op == MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg, checked)
-			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID or (op >= MIR_STRING_SLICE and op <= MIR_LE_STRING) or (op >= MIR_ADD_F64 and op <= MIR_LE_F64)
+			if op >= MIR_ADD_I64 and op <= MIR_LE_I64 or op == MIR_EQ_BOOL or op == MIR_ARRAY_GET or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_DICT_GET_OPTIONAL or op == MIR_ARRAY_APPEND or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_DIV_NO_OVERFLOW_I64 or op == MIR_ARRAY_INDEX_VALID or (op >= MIR_STRING_SLICE and op <= MIR_LE_STRING) or (op >= MIR_ADD_F64 and op <= MIR_LE_F64)
 				result = result + mir_c_check(instruction.second, checked)
 			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate, checked)
@@ -525,6 +557,48 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 		if instruction.dst == instruction.first
 			return code + "\t\t" + dst + " = updated" + mir_c_mark_init(instruction.dst, checked) + " }\n"
 		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
+	if op == MIR_RECORD_ARRAY_APPEND
+		let element_type = function.register_types[!instruction.second]
+		var field = "bits"
+		var value = second
+		if element_type == TYPE_TAG_F64
+			field = "real"
+		elif element_type == TYPE_TAG_STRING
+			field = "text"
+			value = mir_c_retain_value(element_type, value)
+		elif mir_common_managed(element_type)
+			field = "record"
+			value = mir_c_retain_value(element_type, value)
+		let at = str(instruction.immediate)
+		var code = result + "\t{ S_MirField added = {0}; added." + field + " = " + value + ";\n"
+		code = code + "\t\tS_MirRecord *updated = s_mir_record_unique_owned(" + first + ");\n"
+		code = code + "\t\tupdated->fields[" + at + "].record = s_mir_array_append_owned(updated->fields[" + at + "].record, added);\n"
+		code = code + "\t\t" + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + "\n"
+		if instruction.dst == instruction.first
+			return code + "\t\t" + dst + " = updated" + mir_c_mark_init(instruction.dst, checked) + " }\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
+	if op == MIR_RECORD_SET
+		let field_type = function.register_types[!instruction.second]
+		var field = "bits"
+		var value = second
+		if field_type == TYPE_TAG_F64
+			field = "real"
+		elif field_type == TYPE_TAG_STRING
+			field = "text"
+			value = mir_c_retain_value(field_type, value)
+		elif mir_common_managed(field_type)
+			field = "record"
+			value = mir_c_retain_value(field_type, value)
+		let at = str(instruction.immediate)
+		var code = result + "\t{ S_MirField replacement = {0}; replacement." + field + " = " + value + ";\n"
+		code = code + "\t\tS_MirRecord *updated = s_mir_record_unique_owned(" + first + ");\n"
+		if mir_common_managed(field_type)
+			code = code + "\t\t" + mir_c_release_value(field_type, "updated->fields[" + at + "]." + field) + ";\n"
+		code = code + "\t\tupdated->fields[" + at + "] = replacement;\n"
+		code = code + "\t\t" + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + "\n"
+		if instruction.dst == instruction.first
+			return code + "\t\t" + dst + " = updated" + mir_c_mark_init(instruction.dst, checked) + " }\n"
+		return code + mir_c_store_owned(instruction.dst, dst_type, "updated", checked) + "\t}\n"
 	if op == MIR_RECORD_NEW
 		var code = result + "\t{ S_MirRecord *record = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
 		for i in 0..len(instruction.inputs)
@@ -559,6 +633,8 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 	if op == MIR_RELEASE
 		return result + "\t" + mir_c_release_value(dst_type, dst) + "; " + dst + " = NULL" + mir_c_mark_uninit(instruction.dst, checked) + "\n"
 	if op == MIR_MOVE
+		if not checked
+			return result + "\t{ " + mir_c_type(dst_type) + " owned = " + first + "; " + first + " = NULL; " + mir_c_store_name(dst_type) + "(&" + dst + ", owned); }\n"
 		var transfer = result + "\t{ " + mir_c_type(dst_type) + " owned = " + first + "; " + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + " "
 		transfer = transfer + "if (" + mir_c_live(instruction.dst, checked) + ") " + mir_c_release_value(dst_type, dst) + "; " + dst + " = owned" + mir_c_mark_init(instruction.dst, checked) + " }\n"
 		return transfer
@@ -593,6 +669,29 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, checke
 		let code = result + "\t{ S_Optional_i64 value = " + name + "(" + first + ", " + second + ");\n"
 		let wrapped = code + "\t\tS_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", value.has_value ? 1 : 0);\n"
 		return wrapped + "\t\tif (value.has_value) optional->fields[0].bits = value.value;\n" + mir_c_store_owned(instruction.dst, dst_type, "optional", checked) + "\t}\n"
+	if op == MIR_CALL_MOVE
+		# The call reads its arguments before any caller slot is changed.
+		# Clearing consumed registers after it returns transfers their owners
+		# without temporaries or dependence on C argument evaluation order.
+		var arguments = Array[string]()
+		for i in 0..len(instruction.inputs)
+			let arg = instruction.inputs[!i]
+			var value = mir_c_register(arg)
+			if not mir_call_move_at(instruction, i) and mir_common_managed(function.register_types[!arg])
+				value = mir_c_retain_value(function.register_types[!arg], value)
+			arguments = arguments.append(value)
+		var call = mir_c_function(instruction.immediate) + "()"
+		if len(arguments) != 0
+			call = mir_c_function(instruction.immediate) + "(" + ", ".join(arguments) + ")"
+		var code = result
+		if mir_common_managed(dst_type)
+			code = code + mir_c_store_owned(instruction.dst, dst_type, call, checked)
+		else
+			code = code + "\t" + dst + " = " + call + mir_c_mark_init(instruction.dst, checked) + "\n"
+		for i in 0..len(instruction.inputs)
+			if mir_call_move_at(instruction, i)
+				code = code + "\t" + mir_c_register(instruction.inputs[!i]) + " = NULL" + mir_c_mark_uninit(instruction.inputs[!i], checked) + "\n"
+		return code
 	if op == MIR_CONST_I64
 		if instruction.immediate == (-9223372036854775807 - 1)
 			expr = "INT64_MIN"
@@ -702,7 +801,9 @@ def mir_c_definition(function: MirFunction, index: i64, checked: bool) -> string
 		parts = parts.append(mir_c_terminator(block.terminator, function, checked))
 	if has_return
 		parts = parts.append("exit: ;\n")
-		parts = parts.append(mir_c_release_managed(function, -1, checked))
+		# Verified programs have explicit MIR exit releases and pass balance checking.
+		if checked
+			parts = parts.append(mir_c_release_managed(function, -1, checked))
 		parts = parts.append("\treturn returned;\n")
 	parts = parts.append("}\n")
 	return "".join(parts)

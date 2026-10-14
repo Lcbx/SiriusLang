@@ -1,0 +1,53 @@
+# Verify that the peephole consumes only an immediately released owned copy.
+def mir_opt_fixture(retain: bool, adjacent: bool) -> MirProgram
+	var code = Array[MirInstruction]()
+	code = code.append(mir_string(0, "abc"))
+	var op = MIR_COPY
+	if retain
+		op = MIR_RETAIN
+	code = code.append(mir_op(op, 1, 0, -1, 0))
+	if not adjacent
+		code = code.append(mir_op(MIR_STRING_LENGTH, 2, 0, -1, 0))
+	code = code.append(mir_op(MIR_RELEASE, 0, 0, -1, 0))
+	code = code.append(mir_op(MIR_STRING_LENGTH, 2, 1, -1, 0))
+	code = code.append(mir_op(MIR_RELEASE, 1, 1, -1, 0))
+	let function = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_STRING, TYPE_TAG_STRING, TYPE_TAG_I64], [MirBlock(code, mir_return(2))], 0)
+	return MirProgram([function])
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	for i in 0..3
+		let program = mir_opt_fixture(i == 1, i != 2)
+		if mir_check_balance(program) != ""
+			return 2
+		let result = mir_optimize_unchecked(program)
+		var expected = 1
+		if i == 2
+			expected = 0
+		if result.moves != expected or mir_check_balance(result.program) != ""
+			return 3
+		let instructions = result.program.functions[!0].blocks[!0].instructions
+		if (instructions[!1].op == MIR_MOVE) != (expected == 1)
+			return 4
+		let repeated = mir_optimize_unchecked(result.program)
+		if repeated.moves != 0
+			return 5
+		let executed = mir_execute(result.program, 0, Array[MirValue](), 100, 10)
+		if executed.error != "" or executed.value.bits != 3
+			return 6
+		for item in executed.heap
+			if item.refs != 0
+				return 7
+		let c = mir_emit_c_verified(result.program, 0)
+		if c.error != "" or not write_text(args[!i + 1], c.code)
+			return 8
+		if (c.code.find("exit: ;\n\treturn returned;") or (-1)) == -1
+			return 9
+		# The verified backend replaces managed slots through one shared
+		# helper, without repeated inline retain/release code.
+		if (c.code.find("s_mir_string_store(&r0, ") or (-1)) == -1
+			return 10
+	print("PASS MIR owned-copy elimination")
+	return 0

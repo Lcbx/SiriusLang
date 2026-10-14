@@ -1,0 +1,8 @@
+def add_one(values: Array[i64], value: i64) -> Array[i64]
+	return values.append(value)
+
+def main() -> i64
+	var values = Array[i64]()
+	for i in 0..30000
+		values = add_one(values, i)
+	return len(values)

@@ -31,7 +31,11 @@ Scalar registers need no runtime initialized-state tracking. Guarded arithmetic,
 index and optional operations rely on their explicit MIR CFG panic edges.
 The separate `mir_emit_c` entry point retains defensive initialization checks
 for arbitrary hand-constructed MIR, including tests of invalid register reads.
-Both paths retain reference counting and path-sensitive cleanup semantics.
+The verified emitter omits its function-wide exit-release sweep: the preceding
+CFG cleanup pass already emits the required explicit releases, and balance
+validation proves other managed registers are dead on every return. The
+defensive entry point retains the release sweep. Both paths retain reference
+counting and path-sensitive cleanup semantics.
 These are compiler-internal representation changes, not changes to source-language
 value semantics.
 
@@ -50,7 +54,7 @@ value semantics.
 
 ## Lowered MIR (CFG)
 
-`src/mir.sirius` currently defines typed `MirProgram`, `MirFunction`, `MirBlock`, `MirInstruction` and `MirTerminator` records for scalar, string, record, array, dictionary and optional values. `mir_verify` validates instruction operands, result types, signatures and CFG targets; `src/mir_interpreter.sirius` executes them using typed register slots. `MIR_CALL` uses explicit argument-register indices, with limits for total steps and call depth. They now accept **checked scalar/string/record HIR lowering output**, including calls linked by `src/mir_program.sirius` from the HIR worklist, and are tested against `mir_execute`; the opt-in MIR C emitter consumes the same `MirProgram`, while legacy compilation still bypasses MIR. The implemented managed operations include string construction/concatenation/length, record construction (`MIR_RECORD_NEW`) and field extraction (`MIR_RECORD_GET`), plus `MIR_COPY`, `MIR_RETAIN`, `MIR_MOVE` and `MIR_RELEASE`. Every initialized string/record register owns a reference. Record construction and field reads retain nested managed values; C copies share immutable reference-counted records and releases recursively drop nested strings/records. Calls retain arguments and returns transfer ownership. The interpreter maintains a record heap with equivalent logical reference credits. Managed collections, direct record updates, and CFG lifetime/exit-cleanup passes now have experimental coverage; complete ownership proofs and borrows remain future work. See [INTERPRETER.md](INTERPRETER.md).
+`src/mir.sirius` currently defines typed `MirProgram`, `MirFunction`, `MirBlock`, `MirInstruction` and `MirTerminator` records for scalar, string, record, array, dictionary and optional values. `mir_verify` validates instruction operands, result types, signatures and CFG targets; `src/mir_interpreter.sirius` executes them using typed register slots. `MIR_CALL` uses explicit argument-register indices, with limits for total steps and call depth. They now accept **checked scalar/string/record HIR lowering output**, including calls linked by `src/mir_program.sirius` from the HIR worklist, and are tested against `mir_execute`; the opt-in MIR C emitter consumes the same `MirProgram`, while legacy compilation still bypasses MIR. The implemented managed operations include string construction/concatenation/length, record construction (`MIR_RECORD_NEW`) field extraction (`MIR_RECORD_GET`), and consuming CoW field updates (`MIR_RECORD_SET`), plus `MIR_COPY`, `MIR_RETAIN`, `MIR_MOVE` and `MIR_RELEASE`. Every initialized string/record register owns a reference. Record construction and field reads retain nested managed values; C copies share immutable reference-counted records and releases recursively drop nested strings/records. Ordinary calls retain arguments and returns transfer ownership. After lifetime insertion, managed arguments released immediately after a call can be transferred instead: `MIR_CALL_MOVE` consumes one or more distinct managed argument registers that each occur exactly once in the call. Its `first` field names the first moved register and `second` holds a positional bitmask of additional moved arguments (positions 0–61); calls with more arguments simply retain any unrepresentable ones. The verifier and forward/backward ownership analyses invalidate all transferred registers; interpreter and C emission transfer the same ownership credits. Duplicated registers and values used later are never transferred, while other distinct eligible arguments can still move. The interpreter maintains a record heap with equivalent logical reference credits. Managed collections, direct record updates, and CFG lifetime/exit-cleanup passes now have experimental coverage; complete ownership proofs and borrows remain future work. See [INTERPRETER.md](INTERPRETER.md).
 
 A function is `FunctionMIR(locals, arguments, blocks, entry)`.
 Each basic block holds ordered instructions and one terminator (`Jump`, `Branch`, `Switch`, `ReturnTerm`, or `PanicTerm`).
@@ -175,9 +179,9 @@ HIR-to-MIR lowering now handles `a[?i]`, `dict.get(key)`, postfix `!`, `optional
 
 `src/mir_lifetime.sirius` analyzes each MIR function using backward register liveness to a fixed point across CFG backedges. At a last use or dead definition of a managed register, it inserts `MIR_RELEASE`. Explicit consuming operations (`MIR_MOVE`, `MIR_ARRAY_SET`, `MIR_DICT_INSERT`) do not release consumed sources; copies and calls retain their existing ownership semantics. The pass is run after typed MIR construction and before final verification, and is idempotent. Forward definite-initialization (`src/mir_ownership.sirius`) runs before and after lifetime insertion. It intersects initialized registers at CFG joins and loop backedges, with explicit move/release invalidation, to reject invalid uses statically. Both passes share operand-read definitions.
 
-A second pass (`src/mir_cleanup.sirius`) performs **path-sensitive ownership cleanup**. Using one snapshot of forward may-ownership and backward liveness, it inserts conditional releases for managed registers dead on each CFG edge, splitting conditional edges as needed. This avoids repeated whole-CFG analysis after every edge rewrite; the rewritten graph is reanalyzed once for exit cleanup and verified for balance. An additional *may-initialized* forward union analysis identifies values owned on **any** path to a return or explicit panic. Exit cleanup uses `MIR_RELEASE` for definitely initialized registers and `MIR_RELEASE_IF_INIT` for conditionally initialized ones, preserving the returned value. `mir_check_balance` rejects reachable exits that may retain any other managed register. The conditional release uses runtime initialization flags (C) or register validity (interpreter); its effect is tracked by both analyses. Cleanup is idempotent. Tests cover branches, joins, nested managed arrays, explicit conditional releases, native/interpreter agreement, and prior lifetime behavior. Covered division, checked indexing/update and unwrap failures now have explicit cleanup exits; allocator failures and other implicit aborts remain non-unwinding. Ownership-credit and full unwinding proofs remain future work.
+A second pass (`src/mir_cleanup.sirius`) performs **path-sensitive ownership cleanup**. Using one snapshot of forward may-ownership and backward liveness, it inserts conditional releases for managed registers dead on each CFG edge, splitting conditional edges as needed. This avoids repeated whole-CFG analysis after every edge rewrite; the rewritten graph is reanalyzed once for *may*-ownership exit cleanup and verified for balance. An additional *may-initialized* forward union analysis identifies values owned on **any** path to a return or explicit panic. Exit cleanup uses `MIR_RELEASE_IF_INIT` for possibly owned registers, preserving the returned value. No post-edge *must*-ownership pass is required for this conditional release strategy. `mir_check_balance` rejects reachable exits that may retain any other managed register. The conditional release uses nullable managed pointers in verified C (defensive direct C emission retains initialization state) or register validity in the interpreter; its effect is tracked by both analyses. Cleanup is idempotent. Tests cover branches, joins, nested managed arrays, explicit conditional releases, native/interpreter agreement, and prior lifetime behavior. Covered division, checked indexing/update and unwrap failures now have explicit cleanup exits; allocator failures and other implicit aborts remain non-unwinding. Ownership-credit and full unwinding proofs remain future work.
 
-Final balance verification propagates must-initialization (intersection) and may-ownership (union) together in one forward worklist, reusing reachability and predecessors and checking register validity before exit balance. Standalone callers can still request one analysis only. Final balance verification reuses the same CFG reachability, predecessor lists and definite-initialization states to check both register validity and managed-reference balance. Scalar-only functions skip the may-ownership solver. Public standalone checks keep the same diagnostics.
+Final balance verification propagates must-initialization (intersection) and may-ownership (union) together in one forward worklist seeded at the CFG entry. Each reached successor is processed at least once, even if the predecessor's state is initially unchanged. This avoids unnecessary initial processing of all reachable blocks, reuses reachability and predecessors, and checks register validity before exit balance. Standalone callers can still request one analysis only. Final balance verification reuses the same CFG reachability, predecessor lists and definite-initialization states to check both register validity and managed-reference balance. Scalar-only functions skip the may-ownership solver. Public standalone checks keep the same diagnostics.
 
 MIR lowering keeps source syntax, typed HIR annotations, canonical types, and call
 resolution in a read-only `MirLowerContext`; `MirBuilder` carries only mutable
@@ -187,7 +191,14 @@ state transfer per block, preserving sequential move/redefinition behavior.
 Must/may joins update an owned dense mask rather than allocating a new one per
 predecessor. Instruction-level validation still uses ordered reads/writes.
 
-The combined compiler path uses unchecked *internal* guard, lifetime and cleanup transformations between an initial ownership verification and final ownership-balance verification. The final failure audit reuses that verification. Individual public MIR passes still validate their inputs and outputs; intermediate checks are not omitted from standalone tests.
+The verified C emitter centralizes managed-value destination replacement in
+`static inline` string/record store helpers. The new owned value is evaluated
+before replacing and releasing the old one, preserving aliasing, CoW, and
+self-assignment semantics; directly supplied, unverified MIR still uses its
+explicit checked stores. This reduces repeated C source without altering the
+MIR ownership graph.
+
+The combined compiler path uses unchecked *internal* guard, lifetime and cleanup transformations, followed by `src/mir_opt.sirius` peephole optimization, between an initial ownership verification and final ownership-balance verification. An adjacent managed `MIR_COPY`/`MIR_RETAIN` and source `MIR_RELEASE` become `MIR_MOVE` when destination and source differ. Conditional/path-dependent releases are not fused. Ownership and liveness state helpers skip writes that leave a CoW state array unchanged. The final failure audit reuses that verification. Individual public MIR passes still validate their inputs and outputs; intermediate checks are not omitted from standalone tests.
 
 ### MIR fallibility audit (implemented)
 
@@ -203,10 +214,17 @@ return `Optional[i64]`. Shared operand-read and type-verification rules apply
 to the interpreter and C backend. Compiler guard metadata does not reinterpret
 arbitrary string-literal contents.
 
-Direct record-field assignments and updates to arrays held in record fields
-reconstruct canonical record values, preserving aliases. This is a correct
-value-semantic lowering, but not an in-place CoW optimization. Arbitrarily deep
-projection updates are deferred.
+Direct record-field assignments use `MIR_RECORD_SET(dst, owner, field, value)`,
+which consumes the owned record and modifies it in place when uniquely owned.
+If another value retains the record, C and interpreter clone the record and
+retain its managed fields before replacing the selected field. The incoming
+value is retained before releasing the old field, including self-assignment.
+For `r.items = r.items.append(x)`, `MIR_RECORD_ARRAY_APPEND` fuses the
+record and array updates instead: consume the record, make the record unique
+if shared, then append to its array field without extracting a temporary
+retained array. If the array itself has other owners it is still cloned.
+Other array field updates use their ordinary CoW operations; arbitrarily deep
+projections remain deferred.
 
 `MIR_ONLY_COMPILER_SOURCES` excludes the legacy emitter to make self-hosting
 coverage measurable independently. The production/default C path is unchanged;

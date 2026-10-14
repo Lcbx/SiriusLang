@@ -37,7 +37,15 @@ The Python scripts under `tools/` are test/build orchestration and remain permit
 - [x] Eliminate redundant register-initialization checks and state flags from ownership-verified MIR C; preserve defensive checks for directly supplied MIR. Avoid duplicate index/division/unwrap checks when explicit CFG guards exist.
 - [x] Index canonical type descriptors by stable keys, preserving TypeIds. An analogous specialization signature cache was benchmarked and reverted because its key construction made generation slower.
 - [x] Split lowering into read-only `MirLowerContext` and mutable `MirBuilder`, passed separately to expression and statement lowering.
-- [x] Reduce CFG forward ownership CoW copies with cached sparse block write effects and in-place joins; further liveness/packed-bitset work depends on profiling.
+- [x] Reduce CFG forward ownership CoW copies with cached sparse block write effects and in-place joins; avoid unchanged writes to CoW-owned forward/backward state arrays.
+- [x] Fuse owned `MIR_COPY`/`MIR_RETAIN` followed by final `MIR_RELEASE` into `MIR_MOVE`; remove verified-only redundant C exit cleanup, preserving defensive direct emission.
+- [x] Centralize verified MIR C managed-slot replacement into typed helpers; preserve evaluation-before-release and defensive direct MIR checks.
+- [x] Seed the ownership worklist at the entry rather than all reachable blocks, visiting successors at least once; compute post-edge may-ownership without a redundant must-ownership pass for conditional exit cleanup. Profiled native MIR self-compilation improves from 22.05 s to 16.75 s at `-O0` (single runs).
+- [x] Pack generated MIR fields (`S_MirField`) into a C union, selected by canonical type descriptors; guard parser token comparisons by source-span width. Single-run `-O0` profiling improves native self-compilation from 16.75 s to 11.83 s, primarily in parsing and ownership dataflow. Full MIR fixtures and self-hosting fixed point pass.
+- [x] Replace full record reconstruction on direct field assignment with consuming `MIR_RECORD_SET`. C and interpreter use in-place updates for unique owners and copy-on-write for shared owners. Verified on 85 native fixtures, snapshot/alias tests and three self-hosting generations; generated C is ~3.17 MB versus ~3.45 MB previously. Runtime speed improvement is not yet established.
+- [x] Fuse `r.array = r.array.append(x)` into `MIR_RECORD_ARRAY_APPEND` to eliminate temporary CoW aliases. Native microbenchmark: 100,000 appends fall from 6.35 s to <0.01 s (`-O1`); self-compilation speed remains approximately unchanged.
+- [x] Transfer multiple distinct, last-use managed arguments in one call without retain/release; preserve duplicate-argument and use-after-move safety in MIR verification, interpreter and C emission.
+- [ ] Investigate constructor ownership transfers, CFG-aware register-slot reuse, and packed ownership/liveness states after profiling.
 - [ ] Consider compact MIR instruction layout only after the higher-priority improvements.
 
 ## 3. Technical and organizational debt

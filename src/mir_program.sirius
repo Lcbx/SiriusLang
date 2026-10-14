@@ -31,8 +31,9 @@ def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: strin
 	let guarded = mir_insert_guards_unchecked(program)
 	let owned = mir_insert_lifetimes_unchecked(guarded.program)
 	let cleaned = mir_insert_exit_cleanup_unchecked(owned.program)
-	let checked = mir_check_balance(cleaned.program)
+	let optimized = mir_optimize_unchecked(cleaned.program)
+	let checked = mir_check_balance(optimized.program)
 	if checked != ""
-		return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, checked)
-	let audited = mir_audit_failures_unchecked(cleaned.program)
-	return MirProgramBuild(cleaned.program, analyzed.registry, analyzed.bodies, analyzed.entry, audited.error)
+		return MirProgramBuild(optimized.program, analyzed.registry, analyzed.bodies, analyzed.entry, checked)
+	let audited = mir_audit_failures_unchecked(optimized.program)
+	return MirProgramBuild(optimized.program, analyzed.registry, analyzed.bodies, analyzed.entry, audited.error)

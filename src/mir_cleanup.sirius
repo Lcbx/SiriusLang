@@ -62,8 +62,10 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 				next = mir_branch(term.operand, yes, no)
 			blocks[!i] = MirBlock(instructions, next)
 	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
+	# One post-edge may-own analysis determines whether an exit needs a
+	# release. Emit conditional releases: edge drops can make a value
+	# absent on some incoming paths, so a must-own analysis is unnecessary.
 	let exit_reached = mir_ownership_reachable(edged)
-	let exit_states = mir_ownership_states(edged)
 	let exit_maybe = mir_ownership_maybe_states(edged)
 	for i in 0..len(blocks)
 		if exit_reached[!i] != 0
@@ -76,10 +78,7 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 				var instructions = block.instructions
 				for register in 0..len(edged.register_types)
 					if register != preserved and mir_managed_type(program.types, edged.register_types[!register]) and exit_maybe[!i].outgoing[!register] != 0
-						var operation = MIR_RELEASE_IF_INIT
-						if exit_states[!i].outgoing[!register] != 0
-							operation = MIR_RELEASE
-						instructions = instructions.append(mir_op(operation, register, register, -1, 0))
+						instructions = instructions.append(mir_op(MIR_RELEASE_IF_INIT, register, register, -1, 0))
 						count += 1
 				blocks[!i] = MirBlock(instructions, term)
 	return MirCleanupFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)

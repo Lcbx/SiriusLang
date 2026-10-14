@@ -17,20 +17,20 @@ def mir_live_contains(registers: Array[i64], register: i64) -> bool
 
 def mir_live_add(registers: Array[i64], register: i64) -> Array[i64]
 	var next = registers
-	if register >= 0 and register < len(next)
+	if register >= 0 and register < len(next) and next[!register] == 0
 		next[!register] = 1
 	return next
 
 def mir_live_remove(registers: Array[i64], register: i64) -> Array[i64]
 	var next = registers
-	if register >= 0 and register < len(next)
+	if register >= 0 and register < len(next) and next[!register] != 0
 		next[!register] = 0
 	return next
 
 def mir_live_union(left: Array[i64], right: Array[i64]) -> Array[i64]
 	var next = left
 	for i in 0..len(next)
-		if right[!i] != 0
+		if right[!i] != 0 and next[!i] == 0
 			next[!i] = 1
 	return next
 
@@ -48,6 +48,10 @@ def mir_live_before(ins: MirInstruction, after: Array[i64]) -> Array[i64]
 		before = mir_live_remove(before, ins.dst)
 	if mir_consumes_source(ins)
 		before = mir_live_remove(before, ins.first)
+	if ins.op == MIR_CALL_MOVE
+		for i in 0..len(ins.inputs)
+			if mir_call_move_at(ins, i)
+				before = mir_live_remove(before, ins.inputs[!i])
 	for register in mir_instruction_reads(ins)
 		before = mir_live_add(before, register)
 	return before
@@ -121,7 +125,7 @@ def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLi
 				if ins.op != MIR_PRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
 					dropping = mir_lifetime_drop_add(dropping, ins.dst)
 				for register in mir_instruction_reads(ins)
-					if register != ins.dst and not (mir_consumes_source(ins) and register == ins.first) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)
+					if register != ins.dst and not (mir_consumes_source(ins) and register == ins.first) and not mir_call_moves_register(ins, register) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)
 						dropping = mir_lifetime_drop_add(dropping, register)
 			releases = releases.append(dropping)
 			live = mir_live_before(ins, live)

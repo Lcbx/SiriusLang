@@ -35,8 +35,35 @@ point when built without the legacy emitter. Unsupported MIR constructs fail
 explicitly; there is no implicit fallback. The normal MIR compiler omits
 runtime register-initialization bookkeeping after ownership verification;
 direct MIR-to-C emission retains defensive checks for unverified input.
+The verified emitter also trusts explicit MIR exit releases instead of emitting a
+second function-wide cleanup sweep.
+Managed destination replacement in verified MIR C uses shared, typed
+store helpers (the incoming reference is evaluated before the old one is
+released); direct defensive MIR emission retains the explicit checked form.
 The stand-alone MIR interpreter is currently a testable library, not a
 source-program CLI.
+
+For phase-level performance profiling of the native MIR compiler, see
+[MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`. MIR ownership
+analysis now seeds its worklist at the CFG entry, and exit cleanup runs only
+one post-edge may-ownership analysis. The MIR C backend stores typed record and
+array fields in a compact union (8 bytes rather than 32 on 64-bit targets);
+the parser also avoids allocating token slices when lengths cannot match.
+Direct record-field updates now use consuming `MIR_RECORD_SET` instead of
+reconstructing all fields. Unique records mutate in place, while shared records
+clone and retain managed fields to preserve snapshots. The interpreter and C
+emitter implement the same behavior; `tools/test_mir_record_set.py` tests both.
+These changes preserve observable value semantics.
+Direct self-field array appends (`r.items = r.items.append(x)`) now use
+`MIR_RECORD_ARRAY_APPEND` to avoid retaining and cloning the old array before
+replacing that same field. Shared records and nested arrays still use CoW;
+`tools/test_mir_record_array_append.py` validates the interpreter and native C.
+The MIR peephole optimizer transfers multiple managed arguments into a call
+when their final operations are adjacent releases, avoiding unnecessary
+retains and enabling callee-side CoW reuse. Each transferred register must be
+unique in the call; duplicate arguments and values used later remain borrowed.
+`tools/test_mir_call_move.py` tests the verifier, interpreter and native C,
+including three transfers in one call.
 
 ## Compiler development and bootstrap maintenance
 
@@ -80,8 +107,11 @@ Run individual suites as needed:
 | --- | --- |
 | `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
 | `python tools/test_compiler.py` | Legacy backend: 85 native executions and 37 expected diagnostics |
-| `python tools/test_mir_compiler.py` | Standalone MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases |
+| `python tools/test_mir_compiler.py` | Standalone MIR backend: 85 native executions, 35 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
+| `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
+| `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
+| `python tools/test_mir_call_move.py` | Last-use managed call argument transfers, duplicate-argument safety, use-after-move rejection and native/interpreter parity; optional `--compiler PATH` |
 | `python tools/test_parser.py` | 11 parser golden fixtures and smoke checks |
 | `python tools/test_types.py` | Type interning, typed HIR and specialization |
 | `python tools/test_hir_worklist.py` | Independent HIR specialization worklist |
@@ -90,6 +120,7 @@ Run individual suites as needed:
 | `python tools/test_mir_program.py` | Linked concrete MIR specializations |
 | `python tools/test_mir_c.py` | Differential MIR-C / legacy-C cases, including compound assignments |
 | `python tools/test_mir_selfhost.py` | Native MIR stage-2/3/4 fixed point and targeted runtime regressions |
+| `python tools/test_mir_opt.py` | Managed copy-to-move optimization, interpreter, native C and ownership balance |
 | `python tools/test_mir_migration.py` | Source feature parity against legacy emission |
 | `python tools/test_mir_interpreter.py` | MIR interpreter behavior |
 | `tools/test_mir_*.py` | Focused MIR behavior and ownership tests (run scripts individually) |
@@ -134,7 +165,7 @@ type and specialization handling.
 
 The MIR path implements typed CFG instructions, an interpreter, a C emitter,
 specialization lowering, explicit ownership operations, guard insertion, liveness,
-last-use release insertion and exit cleanup. It runs all 85 shared executable fixtures, including `f64` arithmetic,
+last-use release insertion, exit cleanup, and post-cleanup owned-copy/call-argument move elimination. It runs all 85 shared executable fixtures, including `f64` arithmetic,
 `recur`, record spread/delete, and nonrecursive generic return inference.
 Deeply nested projection assignments remain unsupported, and the standalone
 MIR interpreter does not yet execute floating-point operations or file I/O. **MIR-only self-hosting reaches a native C

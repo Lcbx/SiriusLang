@@ -46,9 +46,9 @@ def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Arra
 	var joined = left
 	for i in 0..len(joined)
 		if maybe
-			if right[!i] != 0
+			if right[!i] != 0 and joined[!i] == 0
 				joined[!i] = 1
-		elif right[!i] == 0
+		elif right[!i] == 0 and joined[!i] != 0
 			joined[!i] = 0
 	return joined
 
@@ -61,6 +61,11 @@ def mir_ownership_effects(block: MirBlock) -> MirOwnershipEffects
 		if mir_consumes_source(ins)
 			registers = registers.append(ins.first)
 			values = values.append(0)
+		if ins.op == MIR_CALL_MOVE
+			for i in 0..len(ins.inputs)
+				if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i)
+					registers = registers.append(ins.inputs[!i])
+					values = values.append(0)
 		if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
 			registers = registers.append(ins.dst)
 			values = values.append(1)
@@ -69,7 +74,10 @@ def mir_ownership_effects(block: MirBlock) -> MirOwnershipEffects
 def mir_ownership_apply_effects(before: Array[i64], effects: MirOwnershipEffects) -> Array[i64]
 	var after = before
 	for i in 0..len(effects.registers)
-		after[!effects.registers[!i]] = effects.values[!i]
+		let register = effects.registers[!i]
+		let value = effects.values[!i]
+		if after[!register] != value
+			after[!register] = value
 	return after
 
 def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
@@ -102,9 +110,13 @@ def mir_ownership_reachable(function: MirFunction) -> Array[i64]
 
 def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 	var after = before
-	if mir_consumes_source(ins)
+	if mir_consumes_source(ins) and after[!ins.first] != 0
 		after[!ins.first] = 0
-	if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
+	if ins.op == MIR_CALL_MOVE
+		for i in 0..len(ins.inputs)
+			if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i) and after[!ins.inputs[!i]] != 0
+				after[!ins.inputs[!i]] = 0
+	if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT and after[!ins.dst] == 0
 		after[!ins.dst] = 1
 	return after
 
@@ -119,6 +131,10 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 	var must = Array[MirOwnershipBlock]()
 	var maybe = Array[MirOwnershipBlock]()
 	var queued = Array[i64]()
+	# Begin at entry; unvisited predecessor states are the lattice identity
+	# (top for must, bottom for may). Visit each successor at least once,
+	# including when its predecessor happens to retain the initial state.
+	var visited = Array[i64]()
 	var queue = Array[i64]()
 	var effects = Array[MirOwnershipEffects]()
 	for i in 0..len(function.blocks)
@@ -127,14 +143,17 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			must = must.append(MirOwnershipBlock(top, top))
 		if check_maybe
 			maybe = maybe.append(MirOwnershipBlock(bottom, bottom))
-		queued = queued.append(reached[!i])
-		if reached[!i] != 0
-			queue = queue.append(i)
+		queued = queued.append(0)
+		visited = visited.append(0)
+	queue = queue.append(function.entry)
+	queued[!function.entry] = 1
 	var head = 0
 	while head < len(queue)
 		let i = queue[!head]
 		head += 1
 		queued[!i] = 0
+		let first_visit = visited[!i] == 0
+		visited[!i] = 1
 		var changed = false
 		if check_must
 			var incoming = top
@@ -158,7 +177,7 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			if not mir_ownership_equal(incoming, maybe[!i].incoming) or not mir_ownership_equal(outgoing, maybe[!i].outgoing)
 				maybe[!i] = MirOwnershipBlock(incoming, outgoing)
 				changed = true
-		if changed
+		if changed or first_visit
 			let term = function.blocks[!i].terminator
 			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
 				if queued[!term.target] == 0

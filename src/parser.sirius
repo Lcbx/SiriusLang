@@ -157,7 +157,10 @@ def word(p: ParseState) -> string
 	return token_text(p.source, current(p))
 
 def is_token(p: ParseState, value: string) -> bool
-	return word(p) == value
+	let token = current(p)
+	if token.end - token.start != len(value)
+		return false
+	return token_text(p.source, token) == value
 
 def kind_is(p: ParseState, kind: i64) -> bool
 	return current(p).kind == kind

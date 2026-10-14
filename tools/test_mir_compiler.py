@@ -17,9 +17,10 @@ NEGATIVE_EXCLUDE = ('04_unsupported_array', '27_optional_elif')
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	options(parser)
+	parser.add_argument('--compiler', type=Path, help='Use a prebuilt MIR compiler (skip rebuilding the compiler driver)')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	compiler = cache.sirius('mir-only-regression', MIR_ONLY_COMPILER_SOURCES, separator=b'')
+	compiler = args.compiler.resolve() if args.compiler else cache.sirius('mir-only-regression', MIR_ONLY_COMPILER_SOURCES, separator=b'')
 	with tempfile.TemporaryDirectory() as temporary:
 		work = Path(temporary)
 		check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
@@ -53,6 +54,49 @@ def main() -> None:
 		execute([str(compiler), str(f64_dict), str(output)])
 		assert_native(run_native(cache, output))
 		print('PASS MIR-only f64 dictionary values and CoW')
+		mixed_fields = work / 'mixed_fields.sirius'
+		mixed_fields.write_text(
+			'def main() -> i64\n'
+			'\tvar item = {count=7, rate=2.5, word="ok", nums=[1, 2]}\n'
+			'\tlet snapshot = item\n'
+			'\titem = {item.*, count=8, rate=4.5}\n'
+			'\tif snapshot.count == 7 and item.count == 8 and snapshot.rate == 2.5 and item.rate == 4.5 and item.word == "ok" and snapshot.nums[!1] == 2\n'
+			'\t\treturn 0\n'
+			'\treturn 1\n')
+		output = work / 'mixed_fields.c'
+		execute([str(compiler), str(mixed_fields), str(output)])
+		if 'typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; } S_MirField;' not in output.read_text(encoding='utf-8'):
+			raise AssertionError('MIR C field storage must use a compact tagged-by-type union')
+		assert_native(run_native(cache, output))
+		print('PASS mixed numeric/string/array record fields and snapshot CoW')
+		record_update = work / 'record_update.sirius'
+		record_update.write_text(
+			'def main() -> i64\n'
+			'\tvar unique = {count=0, name="start"}\n'
+			'\twhile unique.count < 1000\n'
+			'\t\tunique.count += 1\n'
+			'\tlet before = unique\n'
+			'\tunique.count += 1\n'
+			'\tunique.name = "after"\n'
+			'\tunique.name = unique.name\n'
+			'\tvar outer = {inner=unique, items=[1, 2]}\n'
+			'\tlet saved = outer\n'
+			'\touter.inner = before\n'
+			'\touter.items = outer.items.append(3)\n'
+			'\tif before.count == 1000 and before.name == "start" and unique.count == 1001 and unique.name == "after" and outer.inner.count == 1000 and saved.inner.count == 1001 and len(saved.items) == 2 and len(outer.items) == 3\n'
+			'\t\treturn 0\n'
+			'\treturn 1\n')
+		output = work / 'record_update.c'
+		execute([str(compiler), str(record_update), str(output)])
+		if output.read_text(encoding='utf-8').count('s_mir_record_unique_owned(') < 2:
+			raise AssertionError('Record assignments must lower to CoW-aware MIR updates')
+		assert_native(run_native(cache, output))
+		print('PASS unique/shared record field updates, managed aliases, and nested CoW')
+		field_append = work / 'field_append.c'
+		execute([str(compiler), str(Path(__file__).resolve().parent.parent / 'tests/compiler/fixtures/85_field_append_cow.sirius'), str(field_append)])
+		if '].record = s_mir_array_append_owned(updated->fields[' not in field_append.read_text(encoding='utf-8'):
+			raise AssertionError('Direct self-field appends must use fused CoW mutation')
+		print('PASS fused record-array append is selected during MIR lowering')
 
 
 if __name__ == '__main__':

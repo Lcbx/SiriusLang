@@ -1,0 +1,68 @@
+# Post-cleanup MIR peephole optimizations. Ownership-aware transformations
+# operate on explicit registers rather than generated C text.
+
+rec MirOptimizedFunction(function: MirFunction, moves: i64)
+rec MirOptimizeResult(program: MirProgram, moves: i64)
+
+# Fuse last-use ownership transfers inside a basic block. Calls normally
+# retain each managed argument; a following release allows a direct move.
+# No CFG edge enters the middle of a basic block.
+def mir_optimize_function(types: TypeTable, function: MirFunction) -> MirOptimizedFunction
+	var blocks = Array[MirBlock]()
+	var moves = 0
+	for block in function.blocks
+		var instructions = Array[MirInstruction]()
+		var i = 0
+		while i < len(block.instructions)
+			let ins = block.instructions[!i]
+			# Lifetime releases immediately following a call allow ownership to
+			# pass to the callee. Capture every eligible distinct managed input
+			# before consuming those releases; retain all other arguments.
+			if ins.op == MIR_CALL and i + 1 < len(block.instructions)
+				var sources = Array[i64]()
+				var remaining = Array[MirInstruction]()
+				var j = i + 1
+				while j < len(block.instructions) and block.instructions[!j].op == MIR_RELEASE
+					let release = block.instructions[!j]
+					var occurrences = 0
+					var position = -1
+					for k in 0..len(ins.inputs)
+						if ins.inputs[!k] == release.first
+							occurrences += 1
+							position = k
+					var already = false
+					for source in sources
+						if source == release.first
+							already = true
+					if not already and occurrences == 1 and position < 62 and release.first != ins.dst and mir_managed_type(types, function.register_types[!release.first])
+						sources = sources.append(release.first)
+					else
+						remaining = remaining.append(release)
+					j += 1
+				if len(sources) > 0
+					instructions = instructions.append(mir_call_moves(ins.dst, ins.immediate, ins.inputs, sources))
+					for release in remaining
+						instructions = instructions.append(release)
+					moves += len(sources)
+					i = j
+					continue
+			if i + 1 < len(block.instructions) and (ins.op == MIR_COPY or ins.op == MIR_RETAIN) and ins.dst != ins.first and mir_managed_type(types, function.register_types[!ins.dst])
+				let next = block.instructions[!i + 1]
+				if next.op == MIR_RELEASE and next.first == ins.first
+					instructions = instructions.append(mir_op(MIR_MOVE, ins.dst, ins.first, -1, 0))
+					i += 2
+					moves += 1
+					continue
+			instructions = instructions.append(ins)
+			i += 1
+		blocks = blocks.append(MirBlock(instructions, block.terminator))
+	return MirOptimizedFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), moves)
+
+def mir_optimize_unchecked(program: MirProgram) -> MirOptimizeResult
+	var functions = Array[MirFunction]()
+	var moves = 0
+	for function in program.functions
+		let optimized = mir_optimize_function(program.types, function)
+		functions = functions.append(optimized.function)
+		moves += optimized.moves
+	return MirOptimizeResult(mir_program_with_types(functions, program.types), moves)

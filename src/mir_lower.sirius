@@ -72,26 +72,14 @@ def mir_lower_binding(state: MirBuilder, name: string) -> i64
 			return state.bindings[!j].slot
 	return -1
 
-# Rebuild a canonical record when updating a field; keeps aliases immutable.
+# Record updates transfer ownership of the local record; the C backend
+# mutates uniquely owned records and clones when a snapshot is still alive.
 def mir_lower_record_update(state: MirBuilder, context: MirLowerContext, root: i64, field: i64, value: i64) -> MirBuilder
-	var next = state
-	let record_type = next.register_types[!root]
+	let record_type = state.register_types[!root]
 	let layout = context.types.entries[!record_type].fields
-	if field < 0 or field >= len(layout) or layout[!field].kind != next.register_types[!value]
-		return mir_lower_error(next, "MIR record update type mismatch")
-	var fields = Array[i64]()
-	for i in 0..len(layout)
-		if i == field
-			fields = fields.append(value)
-		else
-			let dst = len(next.register_types)
-			next = mir_lower_register(next, layout[!i].kind)
-			next = mir_lower_emit(next, mir_record_get(dst, root, i))
-			fields = fields.append(dst)
-	let updated = len(next.register_types)
-	next = mir_lower_register(next, record_type)
-	next = mir_lower_emit(next, mir_record_new(updated, fields))
-	return mir_lower_emit(next, mir_op(MIR_COPY, root, updated, -1, 0))
+	if field < 0 or field >= len(layout) or layout[!field].kind != state.register_types[!value]
+		return mir_lower_error(state, "MIR record update type mismatch")
+	return mir_lower_emit(state, mir_record_set(root, root, field, value))
 
 # Evaluate a compound assignment using the current target before storing it.
 def mir_lower_augmented(state: MirBuilder, operator: string, previous: i64, value: i64) -> MirLowerExpr
@@ -873,7 +861,22 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			let field = resolve_hir_field(context.types, record_type, hir_ast_text(context.tree, target))
 			if field.error != ""
 				return mir_lower_error(next, field.error)
-			let value = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 1))
+			# Direct self-field append: no intermediate array reference should
+			# force cloning the array just before replacing the field.
+			let rhs = hir_ast_child(context.tree, id, 1)
+			if hir_ast_text(context.tree, id) == "=" and context.tree.nodes[!rhs].kind == NODE_CALL and context.tree.nodes[!rhs].count == 2 and context.types.entries[!field.type_id].tag == TYPE_TAG_ARRAY
+				let callee = hir_ast_child(context.tree, rhs, 0)
+				if context.tree.nodes[!callee].kind == NODE_ATTR and hir_ast_text(context.tree, callee) == "append"
+					let receiver = hir_ast_child(context.tree, callee, 0)
+					if context.tree.nodes[!receiver].kind == NODE_ATTR and hir_ast_text(context.tree, receiver) == hir_ast_text(context.tree, target)
+						let base = hir_ast_child(context.tree, receiver, 0)
+						if context.tree.nodes[!base].kind == NODE_NAME and hir_ast_text(context.tree, base) == hir_ast_text(context.tree, owner)
+							let item = mir_lower_expression(next, context, hir_ast_child(context.tree, rhs, 1))
+							next = item.state
+							next.error == "" else return next
+							if next.register_types[!item.slot] == context.types.entries[!field.type_id].first
+								return mir_lower_emit(next, mir_record_array_append(root, root, field.field_index, item.slot))
+			let value = mir_lower_expression(next, context, rhs)
 			next = value.state
 			next.error == "" else return next
 			if next.register_types[!value.slot] != field.type_id
