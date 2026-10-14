@@ -264,3 +264,9 @@ public generic `S_Dict` table, while the retained legacy layout stays separate
 (see `RUNTIME.md`). To reproduce dictionary crossover/update measurements,
 run `python tools/benchmark_dictionaries.py` (`--runs N` for repetition).
 These C microbenchmarks are not representative of full compiler throughput.
+
+**Compiler storage profiling:** `python tools/profile_ir_storage.py` counts
+MIR-backed record/array allocation requests during self-compilation. The MIR
+liveness worklist shares its initially empty register mask between blocks,
+reducing allocation calls and measured compile time without changing the IR
+format. See [MIR_PROFILE.md](MIR_PROFILE.md) for comparative measurements.

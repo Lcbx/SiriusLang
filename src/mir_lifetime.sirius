@@ -78,11 +78,14 @@ def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[Mi
 	let count = len(function.register_types)
 	let predecessors = cfg.predecessors
 	let reached = cfg.reached
+	# Share the immutable zero state across blocks and worklist iterations.
+	# CoW creates a private copy only when a liveness bit actually changes.
+	let empty = mir_live_empty(count)
 	var state = Array[MirLifetimeBlock]()
 	var queued = Array[i64]()
 	var queue = Array[i64]()
 	for i in 0..len(function.blocks)
-		state = state.append(MirLifetimeBlock(mir_live_empty(count), mir_live_empty(count)))
+		state = state.append(MirLifetimeBlock(empty, empty))
 		queued = queued.append(reached[!i])
 	for step in 0..len(function.blocks)
 		let i = len(function.blocks) - 1 - step
@@ -94,7 +97,7 @@ def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[Mi
 		head += 1
 		queued[!i] = 0
 		let block = function.blocks[!i]
-		var outgoing = mir_live_empty(count)
+		var outgoing = empty
 		if block.terminator.kind == MIR_JUMP or block.terminator.kind == MIR_BRANCH
 			outgoing = mir_live_union(outgoing, state[!block.terminator.target].live_in)
 		if block.terminator.kind == MIR_BRANCH

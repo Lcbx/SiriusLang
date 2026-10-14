@@ -258,7 +258,10 @@ valid under MIR, and remain backend-specific tests.
   operands or using opcode-specific layouts may save memory, but would change
   the verifier, optimizer, interpreter, and C emitter simultaneously; defer it.
 - **Ownership:** CFG analyses maintain dense register-state arrays and cache
-  per-block instruction effects. The prior standalone intersect/union helpers
+  per-block instruction effects. Liveness worklists share one empty state per
+  function; CoW isolates it when an instruction makes a value live. Measured
+  native compilation is faster despite slightly larger cumulative allocation
+  requests. The prior standalone intersect/union helpers
   were unused; the active worklist exclusively uses `mir_ownership_join`.
 - **Runtime boundary:** generated MIR-C records and collections have typed
   layouts distinct from the generic `S_Array`/`S_Dict` C runtime and the

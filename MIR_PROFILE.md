@@ -237,3 +237,35 @@ The 85 positive fixtures and 35 expected diagnostics pass; a direct test covers
 three moved strings interleaved with a borrowed scalar, duplicate-register
 exclusion, invalid masks, use-after-move, interpreter heap balance, and native
 C agreement. Native compiler generations 3 and 4 emit byte-identical C.
+
+## Liveness state allocation review (2026-10-14)
+
+`tools/profile_ir_storage.py` instruments a disposable copy of the compiled C
+bootstrap and reports `s_mir_record_new` calls by numeric runtime type ID.
+This includes IR-related and other managed data. It measures **initial**
+allocation requests, not reallocations or peak RSS; IDs depend on the exact
+bootstrap. In the self-compile workload, the `Array[i64]` runtime type (ID 13)
+accounts for most requested bytes, reflecting state-heavy compiler passes.
+
+`mir_lifetime_states_cfg` previously constructed an independent register-sized
+zero array for each block and each worklist iteration. It now builds one
+immutable zero state per function, shared between blocks and iterations. CoW
+ensures that `mir_live_add` does not mutate another block's state.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Native `-O0` self-compilation (median, 3 runs) | 6.89 s | 5.63 s |
+| Native `-O1` self-compilation (median, 4 runs) | 2.22 s | 1.92 s |
+| `s_mir_record_new` calls | 4,590,011 | 4,555,316 |
+| ID 13 calls | 997,199 | 962,249 |
+| Cumulative initial allocation requests | 3.34 GB | 3.48 GB |
+
+These comparisons use the same compiler sources except for the liveness
+change, with separate, fixed-point C bootstraps. Time reductions were repeated
+on this machine, but are not portable guarantees. The larger cumulative
+requested size is an explicit tradeoff; it does not prove higher peak memory.
+`python tools/test_compiler.py` (91 executions, 46 diagnostics),
+`python tools/test_mir_dataflow.py` and the C bootstrap fixed-point check pass.
+The standalone `test_mir_lifetime.py` driver takes unusually long to compile
+on this machine with **both** old and updated seed compilers, so its full
+end-to-end result was not established here.

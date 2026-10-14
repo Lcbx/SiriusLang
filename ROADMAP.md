@@ -280,4 +280,14 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
   in this environment), so there is no robust wall-time speedup claim.
   Increasing dictionary initial capacity from 8 to 16 and inline bucket
   experiments showed no convincing speedup, so neither change was retained.
-- [ ] Evaluate further HIR/MIR storage simplifications only with measured benefit.
+- [x] Profile MIR-backed allocations with `tools/profile_ir_storage.py` and
+  retain a measured liveness-storage improvement: share one immutable empty
+  register state across CFG blocks and iterations, cloning on CoW writes.
+  On the same MIR compiler self-compilation workload, initial record/array
+  allocation calls fell from 4,590,011 to 4,555,316; median native `-O0`
+  time fell from ~6.9 to ~5.6 s (three runs each), and `-O1` from ~2.22 to
+  ~1.92 s (four runs each). Cumulative initial allocation requests *in bytes*
+  rose ~4%; the improvement reduces initialization/allocation overhead, not
+  total requested bytes. No MIR opcode/layout change was warranted.
+- [ ] Continue measuring ownership state storage and the parser's CoW arena
+  before considering intrusive MIR instruction packing.
