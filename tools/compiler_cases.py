@@ -58,7 +58,7 @@ ERRORS = {
 	'47_nested_missing_field': "unknown record field 'other'",
 	'48_nested_wrong_value': 'expected i64, found string',
 	'49_nested_bad_index': 'expected i64, found string',
-	'50_nested_index_augmented': 'unsupported MIR indexed assignment',
+	'51_nested_invalid_augmented_type': 'unsupported MIR augmented assignment',
 
 }
 

@@ -1,0 +1,19 @@
+rec Entry(name: string, labels: Array[string])
+
+def transform(state, n: i64)
+	if n == 0
+		return state
+	var updated = state
+	let snapshot = updated
+	updated.items[!0].labels[!0] = "next"
+	if snapshot.items[!0].labels[!0] != "initial" and n == 10000
+		return snapshot
+	recur transform(updated, n - 1)
+
+def main() -> i64
+	let initial = {items=[Entry("item", ["initial"])]}
+	let result = transform(initial, 10000)
+	if result.items[!0].labels[!0] != "next" or initial.items[!0].labels[!0] != "initial"
+		return 1
+	print("ok")
+	return 0

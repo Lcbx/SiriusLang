@@ -1,0 +1,16 @@
+def outer() -> i64
+	print("outer")
+	return 0
+
+def inner() -> i64
+	print("inner")
+	return 9
+
+def replacement() -> string
+	print("rhs")
+	return "bad"
+
+def main() -> i64
+	var data = {matrix=[[{value="ok"}]]}
+	data.matrix[!outer()][!inner()].value = replacement()
+	return 0

@@ -160,11 +160,9 @@ def mir_lower_nested_assignment(state: MirBuilder, context: MirLowerContext, id:
 	let path = mir_lower_update_path(state, context, target)
 	var next = path.state
 	next.error == "" else return next
-	if len(path.steps) < 2
-		return mir_lower_error(next, "nested MIR assignment needs a projection path")
+	if len(path.steps) == 0
+		return mir_lower_error(next, "MIR projected assignment needs a projection path")
 	let operator = hir_ast_text(context.tree, id)
-	if context.tree.nodes[!target].kind == NODE_CHECKED_INDEX and operator != "="
-		return mir_lower_error(next, "unsupported MIR indexed assignment")
 	let rhs = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 1))
 	next = rhs.state
 	next.error == "" else return next
@@ -901,7 +899,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				return mir_lower_nested_assignment(next, context, id, target)
 		if context.tree.nodes[!target].kind == NODE_CHECKED_INDEX
 			if hir_ast_text(context.tree, id) != "="
-				return mir_lower_error(next, "unsupported MIR indexed assignment")
+				return mir_lower_nested_assignment(next, context, id, target)
 			let owner = hir_ast_child(context.tree, target, 0)
 			if context.tree.nodes[!owner].kind == NODE_ATTR
 				let base = hir_ast_child(context.tree, owner, 0)

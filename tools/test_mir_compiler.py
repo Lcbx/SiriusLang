@@ -185,6 +185,15 @@ def main() -> None:
 			raise AssertionError('MIR arrays and dictionaries must share optional field construction')
 		assert_native(run_native(cache, optional_c))
 		print('PASS shared Optional field helper: arrays, dictionaries, managed records, and CoW')
+		for stem, stdout, error in (
+			('02_nested_checked_assignment', b'outer\ninner\n', b'array index out of bounds'),
+			('03_nested_augmented_division', b'index\nrhs\n', b'division by zero'),
+		):
+			source = Path(__file__).resolve().parent.parent / 'tests/compiler/runtime_errors' / (stem + '.sirius')
+			generated = work / (stem + '.c')
+			execute([str(compiler), str(source), str(generated)])
+			assert_native(run_native(cache, generated), stdout=stdout, code=1, stderr_contains=error)
+			print(f'PASS nested assignment runtime failure: {stem}')
 
 
 if __name__ == '__main__':

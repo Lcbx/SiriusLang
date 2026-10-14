@@ -78,8 +78,8 @@ state.items[!0].value = 2
 ```
 
 The compiler evaluates checked indices once, then reconstructs modified values
-from the leaf to the mutable root using CoW. Record-field compound assignments
-also work on nested paths; indexed compound assignments remain deferred. The
+from the leaf to the mutable root using CoW. Record-field and checked-index compound assignments also work on nested paths
+for supported numeric and string operators. The
 legacy emitter still supports only its previously implemented direct updates.
 
 The legacy executable also accepts `--mir-c` for comparisons; the regular
@@ -163,9 +163,9 @@ Run individual suites as needed:
 | --- | --- |
 | `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
 | `python tools/test_runtime_collections.py` | Runtime generic arrays/dictionaries, aliasing, CoW and managed values |
-| `python tools/test_compiler.py` | Default MIR backend: 86 native executions and 41 expected diagnostics |
+| `python tools/test_compiler.py` | Default MIR backend: 91 native executions and 46 expected diagnostics |
 | `python tools/test_legacy_compiler.py` | Retained legacy emitter: 85 native executions and 37 expected diagnostics |
-| `python tools/test_mir_compiler.py` | Default MIR backend: 86 native executions, 41 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
+| `python tools/test_mir_compiler.py` | Default MIR backend: 91 native executions, 46 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
 | `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
 | `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
@@ -224,10 +224,10 @@ type and specialization handling.
 
 The MIR path implements typed CFG instructions, an interpreter, a C emitter,
 specialization lowering, explicit ownership operations, guard insertion, liveness,
-last-use release insertion, exit cleanup, and post-cleanup owned-copy/call-argument move elimination. It runs all 85 shared executable fixtures, including `f64` arithmetic,
+last-use release insertion, exit cleanup, and post-cleanup owned-copy/call-argument move elimination. It runs all 85 shared legacy-positive executable fixtures plus the newer MIR-only cases, including `f64` arithmetic,
 `recur`, record spread/delete, and nonrecursive generic return inference.
-Nested checked-array and record assignment paths are supported; indexed augmented
-assignments remain unsupported. The standalone
+Nested checked-array and record assignment paths support both simple and
+supported augmented assignments. The standalone
 MIR interpreter does not yet execute floating-point operations or file I/O. **MIR-only self-hosting reaches a native C
 fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
 emitter in their sources. Arrays use CoW for consuming updates and amortized

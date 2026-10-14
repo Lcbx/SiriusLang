@@ -1,0 +1,12 @@
+def chosen() -> i64
+	print("index")
+	return 0
+
+def denominator() -> i64
+	print("rhs")
+	return 0
+
+def main() -> i64
+	var data = {group={values=[10, 20]}}
+	data.group.values[!chosen()] /= denominator()
+	return 0

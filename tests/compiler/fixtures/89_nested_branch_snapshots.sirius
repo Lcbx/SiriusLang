@@ -1,0 +1,29 @@
+rec Box(title: string, words: Array[string])
+
+def transform(source, early: bool)
+	var state = source
+	let original = state
+	state.items[!0].words[!1] = "changed"
+	if early
+		state.items[!0].title = "early"
+		return state
+	if len(state.items) == 2 and state.items[!1].title == "two"
+		state.items[!1].words[!0] = state.items[!0].words[!1]
+	else
+		state.items[!1].words[!0] = "never"
+	if original.items[!0].words[!1] != "second"
+		return original
+	return state
+
+def main() -> i64
+	let initial = {items=[Box("one", ["first", "second"]), Box("two", ["other"])], note="base"}
+	let a = transform(initial, true)
+	let b = transform(initial, false)
+	if initial.items[!0].words[!1] != "second" or initial.items[!1].words[!0] != "other"
+		return 1
+	if a.items[!0].title != "early" or a.items[!0].words[!1] != "changed" or a.items[!1].words[!0] != "other"
+		return 2
+	if b.items[!0].title != "one" or b.items[!0].words[!1] != "changed" or b.items[!1].words[!0] != "changed"
+		return 3
+	print("ok")
+	return 0
