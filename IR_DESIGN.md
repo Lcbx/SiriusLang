@@ -263,6 +263,9 @@ valid under MIR, and remain backend-specific tests.
   native compilation is faster despite slightly larger cumulative allocation
   requests. The prior standalone intersect/union helpers
   were unused; the active worklist exclusively uses `mir_ownership_join`.
+  A subsequent CoW callsite profile finds large cumulative copies from CFG
+  joins/transfers and parser arena appends; keep the array/record value
+  semantics rather than disabling cloning. See `MIR_PROFILE.md`.
 - **Runtime boundary:** generated MIR-C records and collections have typed
   layouts distinct from the generic `S_Array`/`S_Dict` C runtime and the
   specialized legacy `i64` collections. Consolidation requires an ABI and

@@ -26,6 +26,34 @@ def main() -> None:
 		work = Path(temporary)
 		check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
 			runtime=cache.runtime(), negative_exclude=NEGATIVE_EXCLUDE)
+		# Module constants are typed; boolean names, negation, and shadowing
+		# must survive HIR analysis, MIR lowering, and native C emission.
+		bool_source = work / 'module_bool_constants.sirius'
+		bool_source.write_text(
+			'let ON: bool = true\n'
+			'let OFF = not ON\n'
+			'let ALWAYS: bool = not OFF\n'
+			'def enabled() -> bool\n'
+			'\treturn ALWAYS and not OFF\n'
+			'def main() -> i64\n'
+			'\tif not enabled() or OFF\n'
+			'\t\treturn 1\n'
+			'\tlet ON = false\n'
+			'\tif ON\n'
+			'\t\treturn 2\n'
+			'\treturn 0\n')
+		bool_c = work / 'module_bool_constants.c'
+		execute([str(compiler), str(bool_source), str(bool_c)])
+		assert_native(run_native(cache, bool_c))
+		for index, initializer in enumerate(('let B: i64 = true', 'let B: bool = 1',
+			'let B = true + 1', 'let B = not 3', 'let B = 1 * true')):
+			negative = work / f'module_bool_invalid_{index}.sirius'
+			negative.write_text(initializer + '\ndef main() -> i64\n\treturn 0\n')
+			generated = work / f'module_bool_invalid_{index}.c'
+			result = subprocess.run([str(compiler), str(negative), str(generated)], capture_output=True, text=True)
+			if result.returncode != 1 or not result.stdout or generated.exists():
+				raise AssertionError(f'Expected invalid constant rejection: {initializer}: {result.stdout!r}')
+		print('PASS typed boolean module constants, compile-time not, and invalid constant rejection')
 		# Plain indexing is permitted only with an established static bound.
 		static_case = work / 'static_literal_index.sirius'
 		static_case.write_text(

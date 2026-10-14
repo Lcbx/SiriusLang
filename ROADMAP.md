@@ -32,9 +32,11 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    should preserve both CLI builds and their differential test coverage.
    MIR C optional lookups now share a descriptor-directed payload helper, and
    `S_MirField` union-member selection is centralized in the emitter.
-4. **Resume feature development — in progress.** The first feature slice is
-   local `let` record destructuring. Keep further slices isolated and protect
-   MIR self-hosting, runtime snapshots, and the retained legacy backend.
+4. **Resume feature development — in progress.** Local `let` record
+   destructuring is implemented. Module constants now preserve the type of
+   compile-time Boolean values (including `not`) in addition to integers.
+   Keep further slices isolated and protect MIR self-hosting, snapshots, and
+   the retained legacy backend.
 
 **Decisions:** maintain both backends; retain the self-hosted C bootstrap;
 keep value/CoW semantics; prefer correctness and simpler interfaces over
@@ -289,5 +291,15 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
   ~1.92 s (four runs each). Cumulative initial allocation requests *in bytes*
   rose ~4%; the improvement reduces initialization/allocation overhead, not
   total requested bytes. No MIR opcode/layout change was warranted.
-- [ ] Continue measuring ownership state storage and the parser's CoW arena
-  before considering intrusive MIR instruction packing.
+- [x] Attribute ownership and parser arena CoW allocations before considering
+  MIR instruction packing. `tools/profile_ir_storage.py` now counts CoW clones
+  as well as initial allocations. A self-compilation snapshot found ~3.33 GB
+  of cumulative clone requests, dominated by dense `Array[i64]` ownership
+  states (~2.84 GB) and the parser's growing `Array[Node]` arena (~0.42 GB).
+  These are **cumulative allocations**, not resident memory. Direct caller
+  tracing identifies CFG join/transfer and parser `append_node` as the hot
+  operations. Deferred packed states and parser API refactoring because both
+  require representation/ownership changes; no speculative runtime tweak.
+- [x] Extend compile-time module constants from only `i64` to also `bool`:
+  typed names, literal values, compile-time `not`, and explicit annotation
+  mismatch rejection. Extend this typed representation to records later.

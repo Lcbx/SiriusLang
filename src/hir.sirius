@@ -361,8 +361,8 @@ rec HirParameterDecl(name: string, source: i64, type_node: i64)
 
 rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl])
 
-rec HirModuleConstant(name: string, value: i64)
-rec HirConstantEval(value: i64, valid: bool)
+rec HirModuleConstant(name: string, value: i64, type_id: i64)
+rec HirConstantEval(value: i64, type_id: i64, valid: bool)
 rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], error: string, error_line: i64)
 
 def hir_eval_constant(tree: ParseState, id: i64, constants: Array[HirModuleConstant]) -> HirConstantEval
@@ -372,29 +372,37 @@ def hir_eval_constant(tree: ParseState, id: i64, constants: Array[HirModuleConst
 		var number = 0
 		for i in 0..len(value)
 			number = number * 10 + (value.byte_at(i) or 48) - 48
-		return HirConstantEval(number, true)
+		return HirConstantEval(number, TYPE_TAG_I64, true)
+	if node.kind == NODE_BOOL
+		if value == "true"
+			return HirConstantEval(1, TYPE_TAG_BOOL, true)
+		return HirConstantEval(0, TYPE_TAG_BOOL, true)
 	if node.kind == NODE_NAME
 		for item in constants
 			if item.name == value
-				return HirConstantEval(item.value, true)
-	if node.kind == NODE_UNARY and (value == "-" or value == "+")
+				return HirConstantEval(item.value, item.type_id, true)
+	if node.kind == NODE_UNARY and (value == "-" or value == "+" or value == "not")
 		let inner = hir_eval_constant(tree, hir_ast_child(tree, id, 0), constants)
 		if not inner.valid
 			return inner
+		if value == "not" and inner.type_id == TYPE_TAG_BOOL
+			return HirConstantEval(1 - inner.value, TYPE_TAG_BOOL, true)
+		if inner.type_id != TYPE_TAG_I64 or value == "not"
+			return HirConstantEval(0, TYPE_TAG_INVALID, false)
 		if value == "-"
-			return HirConstantEval(-inner.value, true)
+			return HirConstantEval(-inner.value, TYPE_TAG_I64, true)
 		return inner
 	if node.kind == NODE_BINARY and (value == "+" or value == "-" or value == "*")
 		let left = hir_eval_constant(tree, hir_ast_child(tree, id, 0), constants)
 		let right = hir_eval_constant(tree, hir_ast_child(tree, id, 1), constants)
-		if not left.valid or not right.valid
-			return HirConstantEval(0, false)
+		if not left.valid or not right.valid or left.type_id != TYPE_TAG_I64 or right.type_id != TYPE_TAG_I64
+			return HirConstantEval(0, TYPE_TAG_INVALID, false)
 		if value == "+"
-			return HirConstantEval(left.value + right.value, true)
+			return HirConstantEval(left.value + right.value, TYPE_TAG_I64, true)
 		if value == "-"
-			return HirConstantEval(left.value - right.value, true)
-		return HirConstantEval(left.value * right.value, true)
-	return HirConstantEval(0, false)
+			return HirConstantEval(left.value - right.value, TYPE_TAG_I64, true)
+		return HirConstantEval(left.value * right.value, TYPE_TAG_I64, true)
+	return HirConstantEval(0, TYPE_TAG_INVALID, false)
 
 
 def hir_ast_child(tree: ParseState, id: i64, offset: i64) -> i64
@@ -436,7 +444,13 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			let evaluated = hir_eval_constant(tree, initializer, constants)
 			if not evaluated.valid
 				return hir_declaration_error(functions, constants, "unsupported module constant initializer", hir_ast_line(tree, id))
-			constants = constants.append(HirModuleConstant(name, evaluated.value))
+			if entry.count > 1
+				let annotation = hir_ast_child(tree, id, 0)
+				if tree.nodes[!annotation].kind == NODE_TYPE
+					let annotated = hir_ast_text(tree, annotation)
+					if (annotated != "i64" or evaluated.type_id != TYPE_TAG_I64) and (annotated != "bool" or evaluated.type_id != TYPE_TAG_BOOL)
+						return hir_declaration_error(functions, constants, "module constant type mismatch", hir_ast_line(tree, id))
+			constants = constants.append(HirModuleConstant(name, evaluated.value, evaluated.type_id))
 			continue
 		var parameters = Array[HirParameterDecl]()
 		var return_type = -1
@@ -793,8 +807,8 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			return result
 		for constant in result.module_constants
 			if constant.name == name
-				result.last_type = TYPE_TAG_I64
-				result.nodes = result.nodes.append(HirNode(id, HIR_NAME, TYPE_TAG_I64, -1))
+				result.last_type = constant.type_id
+				result.nodes = result.nodes.append(HirNode(id, HIR_NAME, constant.type_id, -1))
 				return result
 		for constant in result.constants
 			if constant == name

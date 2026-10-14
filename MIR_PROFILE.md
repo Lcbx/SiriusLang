@@ -269,3 +269,27 @@ requested size is an explicit tradeoff; it does not prove higher peak memory.
 The standalone `test_mir_lifetime.py` driver takes unusually long to compile
 on this machine with **both** old and updated seed compilers, so its full
 end-to-end result was not established here.
+
+## CoW ownership and parser allocation attribution (2026-10-14)
+
+Extended `tools/profile_ir_storage.py` to count copies made by
+`s_mir_record_unique_owned`, using a disposable C bootstrap. The profiler
+reports allocations and their initial byte requests by generated runtime
+TypeId; clone allocations are included in the overall allocation totals.
+The following is a **single** self-compilation snapshot after adding typed
+Boolean module constants, not a performance comparison:
+
+| Category | Clone calls | Cumulative requested bytes |
+| --- | ---: | ---: |
+| All generated records/arrays | 641,421 | 3.33 GB |
+| `Array[i64]` (runtime ID 13) | 473,741 | 2.84 GB |
+| `Array[Node]` (runtime ID 12) | 2,781 | 0.42 GB |
+
+The profiler groups by TypeId; a separate temporary `-O0` instrumented binary
+attributed the dominant ID-13 clones to `mir_ownership_join` and
+`mir_ownership_apply_effects`, with smaller contributions from liveness and
+cleanup. ID-12 clones are made during parser `append_node`, where a growing
+arena may still have live snapshots. These copies preserve value semantics.
+Cumulative requested bytes do **not** measure peak resident memory, lifetime,
+or time spent allocating. No compact encoding or shared mutable parser arena
+was adopted without a broader ownership/ABI design.

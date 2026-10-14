@@ -238,8 +238,11 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			for constant in context.constants
 				if constant.name == text
 					let dst = len(next.register_types)
-					next = mir_lower_register(next, TYPE_TAG_I64)
-					next = mir_lower_emit(next, mir_op(MIR_CONST_I64, dst, -1, -1, constant.value))
+					next = mir_lower_register(next, constant.type_id)
+					var op = MIR_CONST_I64
+					if constant.type_id == TYPE_TAG_BOOL
+						op = MIR_CONST_BOOL
+					next = mir_lower_emit(next, mir_op(op, dst, -1, -1, constant.value))
 					return MirLowerExpr(next, dst)
 			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 		return MirLowerExpr(state, register)

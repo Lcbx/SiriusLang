@@ -33,6 +33,11 @@ resumed. The agreed implementation order remains:
    including local `let` record destructuring, nested record/array updates,
    and statically proven plain indexing of array literals (MIR backend only).
 
+The MIR compiler also supports compile-time module `let` constants with
+`i64` or `bool` values. Boolean initializers support `true`, `false`, earlier
+constant names, and `not`; incompatible annotations are rejected. Runtime
+module initializers and record-valued constants are still unavailable.
+
 Plain `a[i]` indexing currently proves only nonnegative integer literals applied
   to array literals (including nested literal chains). For other reads use
   `a[?i]` or `a[!i]`; no general length/range inference is implemented yet.
@@ -110,6 +115,8 @@ source-program CLI.
 
 For phase-level performance profiling of the native MIR compiler, see
 [MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`.
+For clone/allocation counts by generated type ID, run
+`python tools/profile_ir_storage.py` (see [MIR_PROFILE.md](MIR_PROFILE.md)).
 For runtime dictionary counts during self-compilation, use
 `python tools/profile_runtime_dict.py --runs 3` (see [RUNTIME.md](RUNTIME.md)). MIR ownership
 analysis now seeds its worklist at the CFG entry, and exit cleanup runs only
