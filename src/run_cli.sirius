@@ -12,8 +12,8 @@ def run_positive_limit(value: string, maximum: i64) -> i64
 		return -1
 	return result
 
-# The linker operates on complete concrete libraries; the source compiler
-# and interpreter paths remain independent of linking.
+# The linker merges concrete libraries and expands source-backed templates;
+# the source runner and interpreter remain independent of native emission.
 def run_link_libraries(args: Array[string]) -> i64
 	if len(args) < 5
 		eprint("usage: sirius-run --link-lib output.smirl input1.smirl input2.smirl ...")
@@ -92,6 +92,7 @@ def main() -> i64
 	var export_names = Array[string]()
 	var expose_names = Array[string]()
 	var import_names = Array[string]()
+	var template_names = Array[string]()
 	var entry_name = ""
 	while index < len(args)
 		let option = args[!index]
@@ -118,7 +119,7 @@ def main() -> i64
 			if load_path != "" or load_lib_path != ""
 				break
 			continue
-		if option == "--export" or option == "--expose" or option == "--import" or option == "--entry"
+		if option == "--export" or option == "--expose" or option == "--import" or option == "--template" or option == "--entry"
 			if index + 1 >= len(args)
 				eprint("missing value for " + option)
 				return 2
@@ -128,6 +129,8 @@ def main() -> i64
 				expose_names = expose_names.append(args[!index + 1])
 			elif option == "--import"
 				import_names = import_names.append(args[!index + 1])
+			elif option == "--template"
+				template_names = template_names.append(args[!index + 1])
 			else
 				entry_name = args[!index + 1]
 			index += 2
@@ -154,8 +157,8 @@ def main() -> i64
 		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export ROOT [--expose NAME] [--import NAME]] input.sirius [args...]")
 		eprint("       sirius-run [--load-mir file | --entry NAME --load-lib file | --list-lib file] [args...]")
 		return 2
-	if (emit_lib_path == "" and (len(export_names) != 0 or len(expose_names) != 0 or len(import_names) != 0)) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
-		eprint("--export, --expose and --import require --emit-lib; --entry requires --load-lib")
+	if (emit_lib_path == "" and (len(export_names) != 0 or len(expose_names) != 0 or len(import_names) != 0 or len(template_names) != 0)) or (emit_lib_path != "" and len(export_names) == 0 and len(template_names) == 0) or (load_lib_path == "" and entry_name != "")
+		eprint("--export, --expose, --import and --template require --emit-lib; --entry requires --load-lib")
 		return 2
 	var program = MirProgram(Array[MirFunction]())
 	var entry_id = -1
@@ -174,6 +177,8 @@ def main() -> i64
 				print(symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
 			for symbol in library.imports
 				print("import " + symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
+			for name in library.templates
+				print("template " + name)
 			return 0
 		if len(library.imports) != 0
 			eprint("cannot execute MIR library with unresolved imports")
@@ -221,6 +226,9 @@ def main() -> i64
 			return 1
 		program = lowered.program
 		entry_id = lowered.entry
+		if emit_lib_path != "" and len(export_names) == 0
+			let dummy = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64], [MirBlock([mir_op(MIR_CONST_I64, 0, -1, -1, 0)], mir_return(0))], 0)
+			program = mir_program_with_types([dummy], declarations.types)
 		if emit_lib_path == "" and len(lowered.imports) > 0
 			eprint("unresolved external declarations require library linking")
 			return 2
@@ -247,7 +255,15 @@ def main() -> i64
 				if count != 1
 					eprint("--import requires exactly one concrete specialization: " + name)
 					return 2
-			let saved = mir_serialize_library_imports(program, exports, imports)
+			for name in template_names
+				var found = false
+				for declaration in declarations.functions
+					if declaration.name == name and not declaration.external and not declaration.constructor
+						found = true
+				if not found
+					eprint("unknown generic template: " + name)
+					return 2
+			let saved = mir_serialize_library_generic(program, exports, imports, template_names, source)
 			if saved.error != ""
 				eprint("cannot serialize MIR library: " + saved.error)
 				return 2

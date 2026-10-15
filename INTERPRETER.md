@@ -109,6 +109,25 @@ execution or native source compilation rejects unresolved reachable externals.
 The old `--import NAME` flag remains available for compatibility with prior
 typed-placeholder sources, but is no longer needed for new code.
 
+### Link-time generic specializations
+
+```sh
+./sirius-run --emit-lib generic.smirl --template identity generic.sirius
+./sirius-run --emit-lib consumer.smirl --export consumer consumer.sirius
+./sirius-run --link-lib combined.smirl consumer.smirl generic.smirl
+python tools/test_mir_generic.py
+```
+
+`SIRIUS-MIR-LIB/3` stores provider source and named templates, which need not
+have concrete roots. Consumers use concrete `extern def` declarations; the
+linker instantiates missing imports against the provider module, remapping
+structural argument types and checking the full resulting signature. Equal
+requests share one specialization, and matching concrete exports take priority.
+The output is an ordinary resolved concrete library and supports both execution
+backends. The initial implementation requires the specialized provider call
+graph to be self-contained (no unresolved externals). It does not yet persist
+typed generic HIR or support cross-artifact generic dependencies.
+
 ### Native execution of linked concrete libraries
 
 ```sh
@@ -122,9 +141,9 @@ emits a standalone C11 program instead of interpreting it. It requires a fully
 resolved artifact and a zero-argument `i64` entry; this is whole-program backend
 selection, **not** per-function mixed native/interpreted dispatch.
 
-Library imports currently resolve only to concrete specializations. True source
-modules, cross-library generic bodies/specialization, native registration, and
-mixed native/interpreted calls remain unimplemented. See
+Imports can resolve either to concrete exports or to source-backed templates.
+True source modules, persisted typed generic artifacts, native registration,
+and mixed native/interpreted calls remain unimplemented. See
 [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## Execution semantics and checks
@@ -154,7 +173,7 @@ exercise native vs dynamic output, diagnostics, and selected failure cases.
 
 **Known gaps:** Complete cleanup during implicit runtime failure or budget
 termination, exact decimal-to-`f64` rounding at all IEEE-754 boundaries,
-integer overflow conventions, generic library specialization, native/IR
-cross-calls, and compile-time execution. General purity/effect inference can
+integer overflow conventions, generic templates with external dependencies,
+native/IR cross-calls, and compile-time execution. General purity/effect inference can
 be developed later; it is **not a prerequisite** for the intended permissive
 compile-time MIR interpreter.

@@ -57,7 +57,7 @@ for the input**. It can optionally enforce `--max-steps N` and `--max-depth N`.
 Serialized executables are versioned concrete programs, not a stable external
 ABI. See [INTERPRETER.md](INTERPRETER.md).
 
-### Named concrete libraries
+### Concrete and generic MIR libraries
 
 ```sh
 ./sirius-run --emit-lib utils.smirl --export first --export second utils.sirius
@@ -104,8 +104,32 @@ rejects missing or incompatible structural signatures. The earlier
 allows native compilation of the *same linked concrete MIR*; mixed calls
 between native and interpreted function implementations are not yet supported.
 
-Source-level modules, cross-library **generic** specialization, and runtime
-native registration are not implemented. See [INTERPRETER.md](INTERPRETER.md)
+A first link-time generic specialization path is available using template-bearing
+`SIRIUS-MIR-LIB/3` artifacts. A generic provider may contain only templates:
+
+```sirius
+# generic.sirius
+def identity(x)
+	return x
+```
+
+```sh
+./sirius-run --emit-lib generic.smirl --template identity generic.sirius
+./sirius-run --emit-lib consumer.smirl --export consumer consumer.sirius
+./sirius-run --link-lib combined.smirl consumer.smirl generic.smirl
+```
+
+The consumer uses a concrete `extern def identity(x: T) -> T` declaration.
+The linker specializes the saved generic source against the imported structural
+argument types and verifies the complete signature. Multiple consumers can
+request different specializations; equal requests share one implementation.
+Concrete exports take precedence over templates. Linked output is still a
+concrete version-1 library and works in the interpreter or native C emitter.
+
+This first slice stores **provider source**, not persistent typed generic HIR;
+providers must be self-contained (no unresolved external dependencies in the
+specialized call graph). Source-level modules, cross-artifact semantic imports,
+and mixed native/interpreted function calls remain unimplemented. See [INTERPRETER.md](INTERPRETER.md)
 and [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## Implemented language subset

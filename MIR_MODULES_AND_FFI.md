@@ -1,6 +1,6 @@
 # Sirius modules, MIR libraries and FFI
 
-**Status:** Source modules, generic specialization and native/FFI registration
+**Status:** Source modules, persistent typed generic artifacts and native/FFI registration
 are proposed. Versioned concrete MIR executables, named multi-entry libraries,
 cross-artifact merging, source `extern def` declarations and signature-checked
 concrete imports are implemented. Resolved libraries can also emit native C.
@@ -50,8 +50,13 @@ exports and verifies the result, emitting a resolved version-1 library.
 Source consumers can use `extern def` (fully typed, no body) to declare imports
 automatically; `--import` retains compatibility with legacy placeholder sources.
 Provider specializations remain exposed through `--expose`. These are **internal
-versioned formats**, not stable ABIs; generic specialization across artifacts
-is not implemented. `--emit-c-lib` emits standalone C from a resolved library,
+versioned formats**, not stable ABIs. `SIRIUS-MIR-LIB/3` retains provider
+source plus named templates. At link time a missing concrete import can
+specialize a template against the importer's canonical structural types,
+reusing the HIR/MIR pipeline; equal requests share a specialization. This is a
+source-backed first slice: the generic provider must be self-contained, and
+linked results contain only concrete specializations. `--emit-c-lib` emits
+standalone C from a resolved library,
 but does not implement cross-backend function-call dispatch.
 
 ### Compile-time MIR execution (planned)
@@ -68,12 +73,15 @@ Define `comptime` syntax, order of declaration evaluation, error propagation
 and dependency handling before implementing it. This is distinct from the
 longer-term transitive purity checking needed by parallel `map`.
 
-## Generic specialization across libraries (planned)
+## Generic specialization across libraries (partial)
 
-An exported generic function's **signature alone is insufficient** to
-instantiate it for a new type. The artifact must preserve its generic body
-(MIR or a suitable typed representation), dependent declarations and resolved
-operator environment.
+A signature alone cannot instantiate a generic body. Version-3 artifacts
+currently retain the entire provider source module, making self-contained
+generic functions available for specialization **without access to the
+original source file**. The linker remaps imported structural types into the
+provider's type table, builds concrete MIR, and checks the expected signature.
+The remaining target is persistent typed generic bodies and complete resolved
+semantic environments, not reparsed source text.
 
 At a call boundary:
 

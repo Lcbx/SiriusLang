@@ -17,9 +17,9 @@ or completeness guarantee.
    with both interpreter and native tests.
 3. **Language features:** add missing semantic constructs in vertical slices
    (HIR → MIR → native/interpreter → tests), while preserving self-hosting.
-4. **Modules/libraries and comptime:** evolve concrete MIR serialization into
-   generic cross-module specialization, then compile-time MIR execution and
-   mixed native/interpreted calls. These are design goals, not current features.
+4. **Modules/libraries:** extend initial source-backed link-time generic
+   specialization to typed artifacts and imported dependencies, then mixed
+   native/interpreted function calls. Compile-time MIR execution is postponed.
 
 **Completed foundation:** MIR is the default C backend; the compiler produces a
 byte-identical native self-hosting fixed point. The legacy Sirius C emitter is
@@ -46,17 +46,19 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [ ] Introduce separate-source, path-derived module resolution and namespace
   imports. Retain deterministic structural record layouts and specialization
   identity.
-- [ ] Support exported **generic** libraries and specialization across artifacts;
-  preserve generic bodies and their resolved semantic environments. Concrete
-  name/signature import resolution alone is insufficient.
+- [x] Introduce source-backed generic exports (`SIRIUS-MIR-LIB/3`) and
+  link-time specialization from concrete imported structural signatures,
+  with reuse, validation and both interpreter/native output paths.
+- [ ] Replace retained generic source with persistent typed bodies/semantic
+  environments, including dependencies on other libraries and importable
+  constructors; support specialization without reparsing source.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed
   native/interpreted function-call dispatch; emitting whole-program C is not
   sufficient.
-- [ ] Execute appropriate MIR through the interpreter at compile time.
-  Initially allow effects without mandatory purity restrictions, as specified
-  in the design; decide syntax, staging and environment explicitly.
+- [ ] (Postponed) Compile-time MIR execution and its staging/syntax. Do not
+  require purity inference or mandatory effect restrictions initially.
 - [ ] Extend arrays to multidimensional shapes, broadcasting and numerical
   kernels. Transitive purity checks are required before unordered/parallel
   functional transformations, not for initial compile-time interpretation.
