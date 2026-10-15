@@ -12,10 +12,10 @@ The historical Python compiler is archived and is **not** used for active builds
 **Design vs. implementation:** [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md)
 defines language semantics; [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
 proposes path-derived modules, portable MIR libraries, compile-time execution,
-and native/FFI interoperability. Those architecture features are **not**
-implemented by the current MIR compiler. The existing MIR interpreter is
-limited and does not provide general compile-time execution or serialized
-MIR loading.
+and native/FFI interoperability. The dynamic MIR interpreter can load versioned
+executables and **concrete multi-entry MIR libraries** with named exports and
+canonical structural signatures. Source imports, generic MIR libraries,
+compile-time execution and native linking remain unimplemented.
 
 ## Current development priorities
 
@@ -116,8 +116,48 @@ second function-wide cleanup sweep.
 Managed destination replacement in verified MIR C uses shared, typed
 store helpers (the incoming reference is evaluated before the old one is
 released); direct defensive MIR emission retains the explicit checked form.
-The stand-alone MIR interpreter is currently a testable library, not a
-source-program CLI.
+The MIR interpreter is also available as a **dynamic source runner**:
+
+```sh
+python tools/build_mir_runner.py
+# Optional execution guards: --max-steps N --max-depth N
+./sirius-run input.sirius [program arguments...]
+python tools/test_mir_run.py --all-fixtures
+# Save optimized, concrete MIR without compiling to C:
+./sirius-run --emit-mir program.smir input.sirius
+# Load and run without parsing Sirius source:
+./sirius-run --load-mir program.smir [program arguments...]
+python tools/test_mir_wire.py --all-fixtures
+```
+
+`src/run_cli.sirius` uses the same parser, typed HIR, specialization worklist,
+MIR ownership passes and optimized linked program as the C emitter. It executes
+MIR directly without generating C for the input program. `arguments()[0]`
+represents the source path, followed by program arguments. Native C programs
+instead see their executable name. For differential tests the harness adjusts
+`argv[0]` to be equal for both backends. There is no compile-time MIR execution
+or purity analysis. The serialized executable stores canonical type descriptors
+and function/CFG instructions; its versioned format is not a general module
+or cross-version library ABI. For `--load-mir`, `arguments()[0]` is the artifact
+path. See [INTERPRETER.md](INTERPRETER.md) for current limitations.
+
+
+Named concrete libraries (no source-level `export` declaration required yet):
+
+```sh
+./sirius-run --emit-lib utils.smirl --export first --export second utils.sirius
+./sirius-run --list-lib utils.smirl
+./sirius-run --entry second --load-lib utils.smirl
+python tools/test_mir_library.py
+```
+
+A library includes all concrete specializations reachable from its zero-argument
+export roots, with named function indices and structural signatures independent
+of local `TypeId` ordering. The loader validates export uniqueness, signatures,
+serialized MIR and ownership before execution. Direct selection requires a
+`()->i64` entry; other concrete return types can be exported and inspected.
+This is not yet cross-library linking: there are no imports, unresolved symbols,
+exported generic bodies or native registration hooks.
 
 For phase-level performance profiling of the native MIR compiler, see
 [MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`.
@@ -151,6 +191,9 @@ Three commands have deliberately different responsibilities:
 
 | Command | Purpose |
 | --- | --- |
+| `python tools/build_mir_runner.py [--output PATH]` | Build `sirius-run` for source and serialized MIR execution |
+| `python tools/test_mir_wire.py --all-fixtures` | Check versioned MIR serialization, malformed-input rejection and round-trip parity for 91 fixtures |
+| `python tools/test_mir_run.py --all-fixtures` | Compare native/interpreted execution on 18 cases, 3 runtime failures and all 91 shared fixtures |
 | `python tools/build_compiler.py [--output PATH]` | Compile the **committed** C bootstrap and runtime into an executable; does not regenerate Sirius sources |
 | `python tools/generate_bootstrap.py` | Compile Sirius sources through successive compiler generations to a byte-identical fixed point, then update `bootstrap/compiler.c`; **does not run language fixtures** |
 | `python tools/generate_bootstrap.py --check` | Verify committed bootstrap matches the computed fixed point, without modifying it or running fixtures |
@@ -255,13 +298,12 @@ specialization lowering, explicit ownership operations, guard insertion, livenes
 last-use release insertion, exit cleanup, and post-cleanup owned-copy/call-argument move elimination. It runs all 85 shared legacy-positive executable fixtures plus the newer MIR-only cases, including `f64` arithmetic,
 `recur`, record spread/delete, and nonrecursive generic return inference.
 Nested checked-array and record assignment paths support both simple and
-supported augmented assignments. The standalone
-MIR interpreter does not yet execute floating-point operations or file I/O. **MIR-only self-hosting reaches a native C
+supported augmented assignments. The dynamic MIR interpreter executes floating-point operations, file I/O, and source-level programs through `sirius-run`. **MIR-only self-hosting reaches a native C
 fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
 emitter in their sources. Arrays use CoW for consuming updates and amortized
 in-place append for unique owners; string join allocates once. The MIR C emitter
 shares managed-value cleanup across return paths to reduce generated C size.
-MIR interpreter file-I/O parity is incomplete.
+The native and interpreted paths pass their differential execution and runtime-failure cases, as well as all 91 shared positive output fixtures. The serialized MIR runner also passes 91 source-versus-loaded comparisons. Exact decimal-to-`f64` rounding for every literal and complete abnormal-exit unwinding remain open.
 
 Modules/imports, multidimensional arrays, broadcasting, full effect/purity
 checking, universal runtime type descriptors and concurrent map are future work.

@@ -122,6 +122,11 @@ void s_print_string(const S_String *s) { fwrite(s->data, 1, s->length, stdout); 
 void s_print_i64(int64_t x) { printf("%" PRId64 "\n", x); }
 void s_print_f64(double x) { printf("%.15g\n", x); }
 void s_print_bool(bool x) { puts(x ? "true" : "false"); }
+void s_eprint_string(const S_String *s) { fwrite(s->data, 1, s->length, stderr); fputc('\n', stderr); }
+void s_eprint_string_take(S_String *s) { s_eprint_string(s); s_string_release(s); }
+void s_eprint_i64(int64_t x) { fprintf(stderr, "%" PRId64 "\n", x); }
+void s_eprint_f64(double x) { fprintf(stderr, "%.15g\n", x); }
+void s_eprint_bool(bool x) { fputs(x ? "true\n" : "false\n", stderr); }
 
 /* Small, deterministic hash map used by the golden C examples. */
 typedef struct { bool used; int64_t key; int64_t value; } S_DictEntry;

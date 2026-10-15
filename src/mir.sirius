@@ -71,6 +71,7 @@ let MIR_SQRT_F64 = 66
 let MIR_RECORD_SET = 67
 let MIR_RECORD_ARRAY_APPEND = 68
 let MIR_CALL_MOVE = 69
+let MIR_EPRINT = 70
 
 let MIR_JUMP = 1
 let MIR_BRANCH = 2
@@ -88,7 +89,7 @@ def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(true, false)
 	if op == MIR_ARRAY_SET
 		return MirFailureInfo(true, true)
-	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
+	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
 		return MirFailureInfo(false, true)
 	return MirFailureInfo(false, false)
 
@@ -99,6 +100,7 @@ rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, i
 rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
 rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
 rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
+rec MirNamedExport(name: string, function_id: i64)
 rec MirProgram(functions: Array[MirFunction])
 	pub types = new_type_table()
 
@@ -107,9 +109,10 @@ def mir_program_with_types(functions: Array[MirFunction], types: TypeTable) -> M
 	program.types = types
 	return program
 
-# For the initial scalar subset, an i64 slot stores its integer and a bool slot
-# stores 0/1 in bits. type_id 0 represents an uninitialized register.
+# Integer/boolean payloads use bits, f64 uses real, and strings use text.
+# type_id 0 represents an uninitialized register.
 rec MirValue(type_id: i64, bits: i64, text: string)
+	pub real = 0.0
 rec MirHeapRecord(type_id: i64, fields: Array[MirValue], refs: i64)
 rec MirOutcome(value: MirValue, error: string, steps: i64)
 	pub heap = Array[MirHeapRecord]()
@@ -341,7 +344,7 @@ def mir_managed_type(types: TypeTable, type_id: i64) -> bool
 
 def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
 	let types = function.register_types
-	if ins.op == MIR_PRINT
+	if ins.op == MIR_PRINT or ins.op == MIR_EPRINT
 		if ins.first < 0 or ins.first >= len(types) or not mir_supported_type(types[!ins.first])
 			return "invalid print operand"
 		return ""

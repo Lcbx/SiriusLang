@@ -121,7 +121,10 @@ class BuildCache:
 
 def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
 	"""Link a C source file against the Sirius runtime with strict C11 flags."""
-	execute([cc, *C_FLAGS, *LINK_FLAGS, '-I', str(ROOT / 'runtime'),
+	# The MIR C emitter declares generic static-inline helpers, some unused by
+	# a particular specialization. Clang warns about these under -Wall.
+	extra = ('-Wno-unused-function',) if 'clang' in Path(cc).name else ()
+	execute([cc, *C_FLAGS, *extra, *LINK_FLAGS, '-I', str(ROOT / 'runtime'),
 		str(source), str(runtime), '-lm', '-o', str(output)])
 
 

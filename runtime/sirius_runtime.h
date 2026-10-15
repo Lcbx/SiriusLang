@@ -58,6 +58,11 @@ void s_print_string_take(S_String *s);
 void s_print_i64(int64_t v);
 void s_print_f64(double v);
 void s_print_bool(bool v);
+void s_eprint_string(const S_String *str);
+void s_eprint_string_take(S_String *str);
+void s_eprint_i64(int64_t v);
+void s_eprint_f64(double v);
+void s_eprint_bool(bool v);
 _Noreturn void s_panic(const char *reason);
 
 /* Generic, type-specialized-by-the-compiler bootstrap collections.  The

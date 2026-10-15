@@ -1,5 +1,5 @@
-# Unoptimized execution of verified typed MIR. This is not a source-level
-# backend until the compiler lowers its typed HIR into this same representation.
+# Dynamic execution of verified typed MIR; the source runner uses the same
+# HIR specialization, MIR lowering, and optimization as the C backend.
 
 def mir_failure(error: string, steps: i64) -> MirOutcome
 	return MirOutcome(MirValue(TYPE_TAG_INVALID, 0, ""), error, steps)
@@ -38,11 +38,92 @@ def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue)
 		return mir_heap_retain(heap, value.bits)
 	return heap
 
+# Preserve the presence bit of read_text without conflating missing and empty files.
+def mir_read_text_fields(path: string) -> Array[MirValue]
+	let content = read_text(path) else return Array[MirValue]()
+	return [MirValue(TYPE_TAG_STRING, 0, content)]
+
+# The interpreter stores floating values separately from i64 handles/integers.
+def mir_real_value(value: f64) -> MirValue
+	var result = MirValue(TYPE_TAG_F64, 0, "")
+	result.real = value
+	return result
+
+# Parse the decimal spelling carried by MIR_CONST_F64, including exponents.
+# This needs no native C dependency, but decimal rounding parity with strtod
+# at extreme magnitudes remains to be verified separately.
+def mir_parse_real(source: string) -> f64
+	var value = 0.0
+	var i = 0
+	while i < len(source)
+		let digit = source.byte_at(i) or -1
+		if digit < 48 or digit > 57
+			break
+		value = value * 10.0 + mir_float_digit(digit - 48)
+		i += 1
+	if i < len(source) and (source.byte_at(i) or -1) == 46
+		i += 1
+		var divisor = 1.0
+		var fraction = 0.0
+		while i < len(source)
+			let digit = source.byte_at(i) or -1
+			if digit < 48 or digit > 57
+				break
+			divisor = divisor * 10.0
+			fraction = fraction * 10.0 + mir_float_digit(digit - 48)
+			i += 1
+		value = value + fraction / divisor
+	if i < len(source)
+		i += 1  # e or E (guaranteed by the source lexer)
+		var negative = false
+		if i < len(source) and (source.byte_at(i) or -1) == 45
+			negative = true
+			i += 1
+		elif i < len(source) and (source.byte_at(i) or -1) == 43
+			i += 1
+		var exponent = 0
+		while i < len(source)
+			let digit = source.byte_at(i) or -1
+			# Bound work even for untrusted literals with huge exponents.
+			if exponent < 400
+				exponent = exponent * 10 + digit - 48
+			i += 1
+		for j in 0..exponent
+			if negative
+				value = value / 10.0
+			else
+				value = value * 10.0
+	return value
+
+# No i64-to-f64 conversion intrinsic is available yet.
+def mir_float_digit(digit: i64) -> f64
+	if digit == 0
+		return 0.0
+	if digit == 1
+		return 1.0
+	if digit == 2
+		return 2.0
+	if digit == 3
+		return 3.0
+	if digit == 4
+		return 4.0
+	if digit == 5
+		return 5.0
+	if digit == 6
+		return 6.0
+	if digit == 7
+		return 7.0
+	if digit == 8
+		return 8.0
+	return 9.0
+
 def mir_dict_equal(types: TypeTable, heap: Array[MirHeapRecord], a: MirValue, b: MirValue) -> bool
 	if a.type_id != b.type_id
 		return false
 	if a.type_id == TYPE_TAG_STRING
 		return a.text == b.text
+	if a.type_id == TYPE_TAG_F64
+		return a.real == b.real
 	if a.type_id >= TYPE_TAG_RECORD and a.type_id < len(types.entries) and types.entries[!a.type_id].tag == TYPE_TAG_RECORD
 		let first = heap[!a.bits]
 		let second = heap[!b.bits]
@@ -54,7 +135,7 @@ def mir_dict_equal(types: TypeTable, heap: Array[MirHeapRecord], a: MirValue, b:
 		return true
 	return a.bits == b.bits
 
-def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], moved_args: Array[i64]) -> MirOutcome
+def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], moved_args: Array[i64], runtime_args: Array[string]) -> MirOutcome
 	if depth >= max_depth
 		return mir_failure("call depth limit exceeded", 0)
 	let function = program.functions[!function_id]
@@ -85,6 +166,18 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
+			if ins.op == MIR_CONST_F64
+				registers[!ins.dst] = mir_real_value(mir_parse_real(ins.text))
+				continue
+			if ins.op == MIR_NEG_F64 or ins.op == MIR_SQRT_F64
+				let value = registers[!ins.first]
+				if value.type_id != TYPE_TAG_F64
+					return mir_failure("invalid floating operand", steps)
+				if ins.op == MIR_NEG_F64
+					registers[!ins.dst] = mir_real_value(-value.real)
+				else
+					registers[!ins.dst] = mir_real_value(sqrt(value.real))
+				continue
 			if ins.op == MIR_RELEASE_IF_INIT
 				if registers[!ins.dst].type_id != TYPE_TAG_INVALID
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
@@ -92,7 +185,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				continue
 			if ins.op == MIR_ARGUMENTS
 				var fields = Array[MirValue]()
-				for argument in arguments()
+				for argument in runtime_args
 					fields = fields.append(MirValue(TYPE_TAG_STRING, 0, argument))
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
@@ -105,7 +198,14 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, str(value.bits))
 				continue
 			if ins.op == MIR_READ_TEXT
-				return mir_failure("read_text is not yet supported in the MIR interpreter", steps)
+				let path = registers[!ins.first]
+				if path.type_id != TYPE_TAG_STRING
+					return mir_failure("read_text expects a string", steps)
+				let fields = mir_read_text_fields(path.text)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
 			if ins.op == MIR_WRITE_TEXT
 				let path = registers[!ins.first]
 				let content = registers[!ins.second]
@@ -428,7 +528,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 			if ins.op == MIR_CONST_STRING
 				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, ins.text)
 				continue
-			if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE or ins.op == MIR_RELEASE or ins.op == MIR_STRING_LENGTH or ins.op == MIR_NEG_I64 or ins.op == MIR_NOT_BOOL or ins.op == MIR_PRINT
+			if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE or ins.op == MIR_RELEASE or ins.op == MIR_STRING_LENGTH or ins.op == MIR_NEG_I64 or ins.op == MIR_NOT_BOOL or ins.op == MIR_PRINT or ins.op == MIR_EPRINT
 				let value = registers[!ins.first]
 				if value.type_id == TYPE_TAG_INVALID
 					return mir_failure("uninitialized register", steps)
@@ -449,6 +549,17 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					registers[!ins.dst] = MirValue(TYPE_TAG_I64, -value.bits, "")
 				elif ins.op == MIR_NOT_BOOL
 					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, 1 - value.bits, "")
+				elif ins.op == MIR_EPRINT
+					if value.type_id == TYPE_TAG_F64
+						eprint(value.real)
+					elif value.type_id == TYPE_TAG_STRING
+						eprint(value.text)
+					elif value.type_id == TYPE_TAG_BOOL
+						eprint(value.bits != 0)
+					else
+						eprint(value.bits)
+				elif value.type_id == TYPE_TAG_F64
+					print(value.real)
 				elif value.type_id == TYPE_TAG_STRING
 					print(value.text)
 				elif value.type_id == TYPE_TAG_BOOL
@@ -472,7 +583,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 						if mir_call_move_at(ins, i)
 							moved_args = moved_args.append(i)
 							registers[!ins.inputs[!i]] = MirValue(TYPE_TAG_INVALID, 0, "")
-				let outcome = mir_execute_function_owned(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1, heap, moved_args)
+				let outcome = mir_execute_function_owned(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1, heap, moved_args, runtime_args)
 				steps += outcome.steps
 				if outcome.error != ""
 					return mir_failure(outcome.error, steps)
@@ -543,6 +654,23 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
+			if ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64
+				if left.type_id != TYPE_TAG_F64 or right.type_id != TYPE_TAG_F64
+					return mir_failure("invalid floating operands", steps)
+				if ins.op == MIR_ADD_F64
+					registers[!ins.dst] = mir_real_value(left.real + right.real)
+				elif ins.op == MIR_SUB_F64
+					registers[!ins.dst] = mir_real_value(left.real - right.real)
+				elif ins.op == MIR_MUL_F64
+					registers[!ins.dst] = mir_real_value(left.real * right.real)
+				elif ins.op == MIR_DIV_F64
+					registers[!ins.dst] = mir_real_value(left.real / right.real)
+				else
+					var answer = 0
+					if ins.op == MIR_EQ_F64 and left.real == right.real or ins.op == MIR_LT_F64 and left.real < right.real or ins.op == MIR_LE_F64 and left.real <= right.real
+						answer = 1
+					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer, "")
+				continue
 			if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
 				return mir_failure("uninitialized register", steps)
 			var answer = 0
@@ -568,6 +696,8 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 			elif ins.op == MIR_LE_I64
 				if left.bits <= right.bits
 					answer = 1
+			else
+				return mir_failure("unsupported MIR opcode " + str(ins.op), steps)
 			if ins.op == MIR_EQ_I64 or ins.op == MIR_EQ_BOOL or ins.op == MIR_LT_I64 or ins.op == MIR_LE_I64
 				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer, "")
 			else
@@ -598,10 +728,11 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				block_id = term.target
 	return mir_failure("unreachable", steps)
 
-def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord]) -> MirOutcome
-	return mir_execute_function_owned(program, function_id, arguments, budget, max_depth, depth, input_heap, Array[i64]())
+def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], runtime_args: Array[string]) -> MirOutcome
+	return mir_execute_function_owned(program, function_id, arguments, budget, max_depth, depth, input_heap, Array[i64](), runtime_args)
 
-def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64) -> MirOutcome
+# Runtime arguments are provided by the execution host, not the compiler CLI.
+def mir_execute_with_arguments(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64, runtime_args: Array[string]) -> MirOutcome
 	let error = mir_common_entry_error(program, function_id)
 	if error != ""
 		return mir_failure(error, 0)
@@ -611,4 +742,7 @@ def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue
 	for argument in arguments
 		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == TYPE_TAG_ARRAY or program.types.entries[!argument.type_id].tag == TYPE_TAG_DICT or program.types.entries[!argument.type_id].tag == TYPE_TAG_OPTIONAL)
 			return mir_failure("managed collection arguments require an execution heap", 0)
-	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord]())
+	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord](), runtime_args)
+
+def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64) -> MirOutcome
+	return mir_execute_with_arguments(program, function_id, arguments, max_steps, max_depth, arguments())

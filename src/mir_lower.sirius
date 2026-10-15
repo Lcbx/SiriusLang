@@ -833,11 +833,14 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		let expression_node = context.tree.nodes[!expression_id]
 		if expression_node.kind == NODE_CALL and expression_node.count == 2
 			let callee = hir_ast_child(context.tree, expression_id, 0)
-			if context.tree.nodes[!callee].kind == NODE_NAME and hir_ast_text(context.tree, callee) == "print"
+			if context.tree.nodes[!callee].kind == NODE_NAME and (hir_ast_text(context.tree, callee) == "print" or hir_ast_text(context.tree, callee) == "eprint")
 				let argument = mir_lower_expression(next, context, hir_ast_child(context.tree, expression_id, 1))
 				next = argument.state
 				next.error == "" else return next
-				return mir_lower_emit(next, mir_op(MIR_PRINT, -1, argument.slot, -1, 0))
+				var op = MIR_PRINT
+				if hir_ast_text(context.tree, callee) == "eprint"
+					op = MIR_EPRINT
+				return mir_lower_emit(next, mir_op(op, -1, argument.slot, -1, 0))
 		let expression = mir_lower_expression(next, context, expression_id)
 		return expression.state
 	if node.kind == NODE_DESTRUCTURE

@@ -38,8 +38,13 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    arena, now including strings, homogeneous nested arrays, record spreads
    and deletes. Compile-time `len`, field access, array indexing and earlier
    constant references are evaluated before MIR. Ordinary CoW applies at
-   each use; general `comptime` and arbitrary pure calls remain deferred. Keep further slices
-   isolated and protect MIR self-hosting, snapshots and the legacy backend.
+   each use; general `comptime` and arbitrary pure calls remain deferred.
+   Versioned executable MIR serialization is available through
+   `sirius-run --emit-mir`/`--load-mir`. Concrete multi-entry libraries now
+   support `--emit-lib`, `--list-lib` and `--load-lib`, with named exports,
+   type signatures and validation. Source imports, generic library specialization
+   and native linking remain future work.
+   Keep further slices isolated and protect MIR self-hosting and snapshots.
 
 **Decisions:** maintain both backends; retain the self-hosted C bootstrap;
 keep value/CoW semantics; prefer correctness and simpler interfaces over
@@ -47,8 +52,9 @@ marginal compiler-speed gains. Baseline MIR self-compilation is roughly 8 s
 at `-O0` on the earlier profiling setup; remeasure before claiming speedups.
 
 **Future architecture:** [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
-records the proposed module, MIR serialization/execution, cross-library
-specialization, and FFI direction. It is **not** an active-implementation
+records the proposed module, MIR libraries, cross-library
+specialization, and FFI direction. Concrete MIR executable serialization
+is already implemented; the remaining parts are **not** an active-implementation
 checklist; continue incremental language features before taking on its
 longer-term library/ABI milestones.
 
@@ -253,13 +259,37 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 
 Update this roadmap at **phase milestones**, not with an entry for every small patch; the commit history and test fixtures provide the incremental development record.
 
+## Dynamic MIR execution (active)
+
+- [x] Add independent `sirius-run` source CLI and builder. Reuse the normal
+  parse → typed HIR → MIR lowering/ownership/optimization path; execute the
+  resulting linked MIR in Sirius without generating C for input programs.
+- [x] Make CLI `arguments()` independent of compiler-host arguments, including
+  through recursive calls. Implement `MIR_READ_TEXT` with a real optional
+  presence test (missing vs empty files). Fail explicitly on unknown opcodes
+  instead of returning bogus values.
+- [x] Add source-level native-vs-dynamic test harness: 18 independently expected
+  cases, compile-diagnostic parity, and all 91 positive shared fixtures.
+- [x] Cover all current `f64` MIR operations with a real-valued register field,
+  nested containers, `sqrt`, and decimal/scientific literal tests. Exact
+  decimal rounding across all IEEE-754 edge cases still needs a shared parser.
+- [ ] Normalize runtime errors and cleanup/ownership on abnormal termination.
+  Four runtime failures (including nested managed arrays) now match exit code,
+  exact stdout, and stderr via shared `eprint`/`MIR_EPRINT` support. The runner
+  accepts `--max-steps` and `--max-depth` independently of program arguments.
+  Unwinding on implicit allocation failures and budget aborts remains pending.
+- [x] Serialize and load versioned concrete MIR executables, including canonical
+  type descriptors, validation and round-trip execution tests (91 fixtures).
+- [ ] Add exported symbol metadata, library specialization and native/interpreted
+  boundary dispatch. Compile-time MIR evaluation and purity inference are deferred.
+
 ## MIR-only compilation migration
 
 - [x] Extract `CompileResult` from the legacy emitter.
 - [x] Share MIR entry validation and managed TypeId classification in `mir_common.sirius`.
 - [x] Add an explicit self-hosting coverage probe for the MIR backend, using a MIR-only source manifest and entry-point driver.
 - [x] Support the concrete return annotations and specializations needed for MIR-only native self-hosting, including canonical `rec` annotations, constructor `pub` fields, module constants and nonrecursive unannotated generic return inference. Recursive inference without annotations remains intentionally rejected.
-- [x] Lower all current compiler-source constructs and the 85 shared executable fixtures to MIR, including `recur`, record spreads/deletes, inferred nonrecursive generic returns and basic `f64` operations. Nested record and checked-array projection updates are supported; floating-point operations and file I/O are native-C features not yet mirrored in the MIR interpreter.
+- [x] Lower all current compiler-source constructs and the 85 shared executable fixtures to MIR, including `recur`, record spreads/deletes, inferred nonrecursive generic returns and basic `f64` operations. Nested record and checked-array projection updates are supported; floating-point operations and file I/O now execute through both MIR backends.
 - [x] Achieve a native MIR-only fixed point through generations 2, 3 and 4, excluding the legacy emitter; verify byte-identical C with `tools/test_mir_selfhost.py`. Reduce C size using a shared return cleanup epilogue, and improve generated compiler performance using amortized array append and single-allocation string join. Correct compound-assignment lowering for locals and record fields.
 - [x] Run the shared executable fixture suite through the standalone MIR backend (91/91). Check all 46 MIR-invalid diagnostic fixtures; test the other two legacy-negative fixtures as MIR-positive (`tools/test_mir_compiler.py`).
 - [x] Switch the default build manifest/CLI and committed C bootstrap to MIR; verify the new bootstrap fixed point and the default compiler regression suite.

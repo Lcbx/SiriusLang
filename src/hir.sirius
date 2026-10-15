@@ -204,7 +204,7 @@ def hir_call_arguments(types: TypeTable, actual: Array[i64], expected: Array[i64
 	return HirCallCheck(types, result, "")
 
 def hir_is_builtin(name: string) -> bool
-	return name == "arguments" or name == "read_text" or name == "write_text" or name == "print" or name == "len" or name == "str" or name == "sqrt"
+	return name == "arguments" or name == "read_text" or name == "write_text" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt"
 
 def resolve_hir_builtin_call(types: TypeTable, name: string, args: Array[i64]) -> HirCallCheck
 	if name == "arguments"
@@ -221,7 +221,7 @@ def resolve_hir_builtin_call(types: TypeTable, name: string, args: Array[i64]) -
 		return HirCallCheck(types, TYPE_TAG_STRING, "")
 	if name == "sqrt"
 		return hir_call_arguments(types, args, [TYPE_TAG_F64], TYPE_TAG_F64, "sqrt expects one argument")
-	if name == "print"
+	if name == "print" or name == "eprint"
 		if len(args) != 1
 			return HirCallCheck(types, TYPE_TAG_INVALID, "print expects one argument")
 		let id = args[!0]
@@ -610,7 +610,7 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		let name = hir_ast_text(tree, id)
 		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET
 			return hir_declaration_error(functions, constants, "unsupported module statement", hir_ast_line(tree, id))
-		if name == "print" and (entry.kind == NODE_DEF or entry.kind == NODE_REC)
+		if (name == "print" or name == "eprint") and (entry.kind == NODE_DEF or entry.kind == NODE_REC)
 			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
 		for seen in names
 			if seen == name

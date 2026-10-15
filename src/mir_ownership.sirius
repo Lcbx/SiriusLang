@@ -48,7 +48,7 @@ def mir_ownership_effects(block: MirBlock) -> MirOwnershipEffects
 				if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i)
 					registers = registers.append(ins.inputs[!i])
 					values = values.append(0)
-		if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
+		if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
 			registers = registers.append(ins.dst)
 			values = values.append(1)
 	return MirOwnershipEffects(registers, values)
@@ -78,7 +78,7 @@ def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 		for i in 0..len(ins.inputs)
 			if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i) and after[!ins.inputs[!i]] != 0
 				after[!ins.inputs[!i]] = 0
-	if ins.op != MIR_PRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT and after[!ins.dst] == 0
+	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT and after[!ins.dst] == 0
 		after[!ins.dst] = 1
 	return after
 

@@ -1,0 +1,178 @@
+# Standalone dynamic MIR execution and versioned MIR executable artifacts.
+def run_positive_limit(value: string, maximum: i64) -> i64
+	if len(value) == 0
+		return -1
+	var result = 0
+	for i in 0..len(value)
+		let digit = (value.byte_at(i) or -1) - 48
+		if digit < 0 or digit > 9 or result > (maximum - digit) / 10
+			return -1
+		result = result * 10 + digit
+	if result == 0
+		return -1
+	return result
+
+def main() -> i64
+	let args = arguments()
+	var index = 1
+	var max_steps = 10000000
+	var max_depth = 256
+	var emit_path = ""
+	var load_path = ""
+	var emit_lib_path = ""
+	var load_lib_path = ""
+	var list_lib = false
+	var export_names = Array[string]()
+	var entry_name = ""
+	while index < len(args)
+		let option = args[!index]
+		if option == "--"
+			index += 1
+			break
+		if option == "--load-mir" or option == "--emit-mir" or option == "--load-lib" or option == "--emit-lib" or option == "--list-lib"
+			if index + 1 >= len(args)
+				eprint("missing value for " + option)
+				return 2
+			if emit_path != "" or load_path != "" or emit_lib_path != "" or load_lib_path != ""
+				eprint("MIR input/output modes are mutually exclusive")
+				return 2
+			if option == "--emit-mir"
+				emit_path = args[!index + 1]
+			elif option == "--load-mir"
+				load_path = args[!index + 1]
+			elif option == "--emit-lib"
+				emit_lib_path = args[!index + 1]
+			else
+				load_lib_path = args[!index + 1]
+				list_lib = option == "--list-lib"
+			index += 2
+			if load_path != "" or load_lib_path != ""
+				break
+			continue
+		if option == "--export" or option == "--entry"
+			if index + 1 >= len(args)
+				eprint("missing value for " + option)
+				return 2
+			if option == "--export"
+				export_names = export_names.append(args[!index + 1])
+			else
+				entry_name = args[!index + 1]
+			index += 2
+			continue
+		if option != "--max-steps" and option != "--max-depth"
+			if option.starts_with("--")
+				eprint("unknown option: " + option)
+				return 2
+			break
+		if index + 1 >= len(args)
+			eprint("missing value for " + option)
+			return 2
+		let maximum = 1000000000
+		let limit = run_positive_limit(args[!index + 1], maximum)
+		if limit < 1
+			eprint("invalid value for " + option)
+			return 2
+		if option == "--max-steps"
+			max_steps = limit
+		else
+			max_depth = limit
+		index += 2
+	if load_path == "" and load_lib_path == "" and index >= len(args)
+		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export NAME ...] input.sirius [args...]")
+		eprint("       sirius-run [--load-mir file | --entry NAME --load-lib file | --list-lib file] [args...]")
+		return 2
+	if (emit_lib_path == "" and len(export_names) != 0) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
+		eprint("--export requires --emit-lib; --entry requires --load-lib")
+		return 2
+	var program = MirProgram(Array[MirFunction]())
+	var entry_id = -1
+	var runtime_args = Array[string]()
+	if load_lib_path != ""
+		let contents = read_text(load_lib_path) or ""
+		if contents == ""
+			eprint("cannot read MIR library")
+			return 2
+		let library = mir_deserialize_library(contents)
+		if library.error != ""
+			eprint("invalid MIR library: " + library.error)
+			return 2
+		if list_lib
+			for symbol in library.exports
+				print(symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
+			return 0
+		program = library.program
+		for symbol in library.exports
+			if (entry_name == "" and entry_id < 0) or symbol.name == entry_name
+				entry_id = symbol.function_id
+		if entry_id < 0
+			eprint("unknown MIR library export: " + entry_name)
+			return 2
+		runtime_args = [load_lib_path]
+		for i in index..len(args)
+			runtime_args = runtime_args.append(args[!i])
+	elif load_path != ""
+		let contents = read_text(load_path) or ""
+		if contents == ""
+			eprint("cannot read MIR artifact")
+			return 2
+		let loaded = mir_deserialize_program(contents)
+		if loaded.error != ""
+			eprint("invalid MIR artifact: " + loaded.error)
+			return 2
+		program = loaded.program
+		entry_id = loaded.entry
+		runtime_args = [load_path]
+		for i in index..len(args)
+			runtime_args = runtime_args.append(args[!i])
+	else
+		let source = read_text(args[!index]) or ""
+		let parsed = parse_module(source)
+		if parsed.state.error != ""
+			print("ERROR " + str(parsed.state.error_line) + ": " + parsed.state.error)
+			return 1
+		let declarations = hir_module_declarations(parsed.state, parsed.node)
+		if declarations.error != ""
+			print("ERROR " + str(declarations.error_line) + ": " + declarations.error)
+			return 1
+		var roots = ["main"]
+		if emit_lib_path != ""
+			roots = export_names
+		let lowered = mir_build_program_roots(parsed.state, declarations, roots, Array[i64]())
+		if lowered.error != ""
+			print("ERROR 1: " + lowered.error)
+			return 1
+		program = lowered.program
+		entry_id = lowered.entry
+		if emit_lib_path != ""
+			let saved = mir_serialize_library(program, lowered.exports)
+			if saved.error != ""
+				eprint("cannot serialize MIR library: " + saved.error)
+				return 2
+			if not write_text(emit_lib_path, saved.text)
+				eprint("cannot write MIR library")
+				return 2
+			return 0
+		runtime_args = [args[!index]]
+		for i in index + 1..len(args)
+			runtime_args = runtime_args.append(args[!i])
+	if entry_id < 0 or entry_id >= len(program.functions)
+		eprint("invalid MIR entry")
+		return 2
+	let entry = program.functions[!entry_id]
+	if entry.argument_count != 0 or entry.return_type != TYPE_TAG_I64
+		eprint("MIR entry must be main() -> i64")
+		return 2
+	if emit_path != ""
+		let saved = mir_serialize_program(program, entry_id)
+		if saved.error != ""
+			eprint("cannot serialize MIR: " + saved.error)
+			return 2
+		if not write_text(emit_path, saved.text)
+			eprint("cannot write MIR artifact")
+			return 2
+		return 0
+	let outcome = mir_execute_with_arguments(program, entry_id, Array[MirValue](), max_steps, max_depth, runtime_args)
+	if outcome.error != ""
+		eprint("Sirius panic: " + outcome.error)
+		return 1
+	return outcome.value.bits

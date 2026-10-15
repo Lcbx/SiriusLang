@@ -5,7 +5,9 @@
 rec HirConcreteBody(nodes: Array[HirNode], requests: Array[HirSpecializationRequest], types: TypeTable, return_type: i64, error: string, error_line: i64)
 # Bodies are in specialization-ID order; the array index is the ID.
 rec HirSpecializedFunction(nodes: Array[HirNode], calls: Array[HirSpecializedCall], return_type: i64)
+rec HirSpecializedRoot(name: string, function_id: i64)
 rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: TypeTable, entry: i64, error: string)
+	pub roots = Array[HirSpecializedRoot]()
 
 def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
 	var names = Array[string]()
@@ -48,18 +50,24 @@ def hir_definition(functions: Array[HirFunctionDecl], definition: i64) -> i64
 
 # Body analysis runs once per canonical signature; no recursive traversal
 # of other function bodies is performed by the worklist.
-def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> HirSpecializedProgram
+def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, names: Array[string], arguments: Array[i64]) -> HirSpecializedProgram
 	var registry = new_hir_specializations()
 	var bodies = Array[HirSpecializedFunction]()
 	var types = declarations.types
 	var entry = -1
-	for declaration in declarations.functions
-		if declaration.name == name and not declaration.constructor
-			let started = hir_begin_specialization(registry, declaration.body, arguments, TYPE_TAG_INVALID)
-			registry = started.registry
-			entry = started.index
-	if entry < 0
-		return HirSpecializedProgram(registry, bodies, types, -1, "unknown HIR entry function '" + name + "'")
+	var roots = Array[HirSpecializedRoot]()
+	for name in names
+		var found = false
+		for declaration in declarations.functions
+			if declaration.name == name and not declaration.constructor
+				let started = hir_begin_specialization(registry, declaration.body, arguments, TYPE_TAG_INVALID)
+				registry = started.registry
+				roots = roots.append(HirSpecializedRoot(name, started.index))
+				if entry < 0
+					entry = started.index
+				found = true
+		if not found
+			return HirSpecializedProgram(registry, bodies, types, -1, "unknown HIR entry function '" + name + "'")
 	var cursor = 0
 	while cursor < len(registry.entries)
 		let spec = registry.entries[!cursor]
@@ -106,4 +114,10 @@ def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: 
 		bodies = bodies.append(HirSpecializedFunction(typed.nodes, calls, typed.return_type))
 		registry = hir_complete_specialization(registry, cursor, typed.return_type)
 		cursor += 1
-	return HirSpecializedProgram(registry, bodies, types, entry, "")
+	var result = HirSpecializedProgram(registry, bodies, types, entry, "")
+	result.roots = roots
+	return result
+
+# Preserve the existing single-entry API for typed specialization tests.
+def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> HirSpecializedProgram
+	return hir_specialize_program_roots(tree, declarations, [name], arguments)

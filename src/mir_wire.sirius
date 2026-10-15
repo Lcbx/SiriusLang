@@ -1,0 +1,253 @@
+# Versioned executable MIR interchange. Integers are canonical decimal lines;
+# strings are byte-length-prefixed, so arbitrary newlines are unambiguous.
+# Type IDs are reconstructed by interning canonical descriptors in order.
+
+let MIR_WIRE_MAGIC = "SIRIUS-MIR-EXEC/1\n"
+let MIR_WIRE_MAX_SIZE = 67108864
+let MIR_WIRE_MAX_COUNT = 1000000
+
+rec MirWireSave(text: string, error: string)
+rec MirWireLoad(program: MirProgram, entry: i64, error: string)
+rec MirWireReader(data: string, at: i64, error: string)
+rec MirWireNumber(reader: MirWireReader, value: i64)
+rec MirWireString(reader: MirWireReader, value: string)
+
+# Accumulate fragments so writing a large program does not repeatedly copy a string.
+def mir_wire_num(parts: Array[string], number: i64) -> Array[string]
+	return parts.append(str(number) + "\n")
+
+def mir_wire_str(parts: Array[string], value: string) -> Array[string]
+	return parts.append(str(len(value)) + "\n" + value + "\n")
+
+def mir_wire_bad(reader: MirWireReader, message: string) -> MirWireReader
+	var next = reader
+	if next.error == ""
+		next.error = message
+	return next
+
+# Negative accumulation accepts the entire signed i64 range, including MIN.
+def mir_wire_number(reader: MirWireReader) -> MirWireNumber
+	if reader.error != ""
+		return MirWireNumber(reader, 0)
+	let start = reader.at
+	var i = start
+	var negative = false
+	if i < len(reader.data) and (reader.data.byte_at(i) or -1) == 45
+		negative = true
+		i += 1
+	var value = 0
+	let minimum = -9223372036854775807 - 1
+	var limit = -9223372036854775807
+	if negative
+		limit = minimum
+	var digits = 0
+	while i < len(reader.data) and (reader.data.byte_at(i) or -1) != 10
+		let digit = (reader.data.byte_at(i) or -1) - 48
+		if digit < 0 or digit > 9 or digits >= 19
+			return MirWireNumber(mir_wire_bad(reader, "invalid MIR integer"), 0)
+		if value < limit / 10 or (value == limit / 10 and digit > -(limit % 10))
+			return MirWireNumber(mir_wire_bad(reader, "MIR integer overflow"), 0)
+		value = value * 10 - digit
+		digits += 1
+		i += 1
+	if digits == 0 or i >= len(reader.data)
+		return MirWireNumber(mir_wire_bad(reader, "truncated MIR integer"), 0)
+	var result = value
+	if not negative
+		result = -value
+	if reader.data.slice(start, i) != str(result)
+		return MirWireNumber(mir_wire_bad(reader, "noncanonical MIR integer"), 0)
+	var next = reader
+	next.at = i + 1
+	return MirWireNumber(next, result)
+
+def mir_wire_string(reader: MirWireReader) -> MirWireString
+	let count = mir_wire_number(reader)
+	var next = count.reader
+	if next.error != ""
+		return MirWireString(next, "")
+	if count.value < 0 or count.value > MIR_WIRE_MAX_SIZE or count.value >= len(next.data) - next.at
+		return MirWireString(mir_wire_bad(next, "invalid MIR string length"), "")
+	let result = next.data.slice(next.at, next.at + count.value)
+	next.at += count.value
+	if (next.data.byte_at(next.at) or -1) != 10
+		return MirWireString(mir_wire_bad(next, "invalid MIR string terminator"), "")
+	next.at += 1
+	return MirWireString(next, result)
+
+def mir_wire_count(reader: MirWireReader) -> MirWireNumber
+	let result = mir_wire_number(reader)
+	if result.value < 0 or result.value > MIR_WIRE_MAX_COUNT
+		return MirWireNumber(mir_wire_bad(result.reader, "invalid MIR item count"), 0)
+	return result
+
+def mir_serialize_program(program: MirProgram, entry: i64) -> MirWireSave
+	if entry < 0 or entry >= len(program.functions)
+		return MirWireSave("", "invalid MIR entry")
+	let error = mir_verify(program)
+	if error != ""
+		return MirWireSave("", error)
+	var parts = [MIR_WIRE_MAGIC]
+	parts = mir_wire_num(parts, entry)
+	parts = mir_wire_num(parts, len(program.types.entries))
+	for i in 6..len(program.types.entries)
+		let desc = program.types.entries[!i]
+		parts = mir_wire_num(parts, desc.tag)
+		parts = mir_wire_num(parts, desc.first)
+		parts = mir_wire_num(parts, desc.second)
+		parts = mir_wire_num(parts, len(desc.fields))
+		for field in desc.fields
+			parts = mir_wire_str(parts, field.name)
+			parts = mir_wire_num(parts, field.kind)
+	parts = mir_wire_num(parts, len(program.functions))
+	for function in program.functions
+		parts = mir_wire_num(parts, function.argument_count)
+		parts = mir_wire_num(parts, function.return_type)
+		parts = mir_wire_num(parts, len(function.register_types))
+		for kind in function.register_types
+			parts = mir_wire_num(parts, kind)
+		parts = mir_wire_num(parts, function.entry)
+		parts = mir_wire_num(parts, len(function.blocks))
+		for block in function.blocks
+			parts = mir_wire_num(parts, len(block.instructions))
+			for ins in block.instructions
+				parts = mir_wire_num(parts, ins.op)
+				parts = mir_wire_num(parts, ins.dst)
+				parts = mir_wire_num(parts, ins.first)
+				parts = mir_wire_num(parts, ins.second)
+				parts = mir_wire_num(parts, ins.immediate)
+				parts = mir_wire_num(parts, len(ins.inputs))
+				for input in ins.inputs
+					parts = mir_wire_num(parts, input)
+				parts = mir_wire_str(parts, ins.text)
+			let term = block.terminator
+			parts = mir_wire_num(parts, term.kind)
+			parts = mir_wire_num(parts, term.operand)
+			parts = mir_wire_num(parts, term.target)
+			parts = mir_wire_num(parts, term.alternative)
+			parts = mir_wire_str(parts, term.message)
+	let data = "".join(parts)
+	if len(data) > MIR_WIRE_MAX_SIZE
+		return MirWireSave("", "MIR executable exceeds format size limit")
+	return MirWireSave(data, "")
+
+def mir_wire_failure(message: string) -> MirWireLoad
+	return MirWireLoad(MirProgram(Array[MirFunction]()), -1, message)
+
+# Deserialize untrusted input with resource bounds and canonical IDs. The
+# standard MIR verifier checks register, instruction, CFG and type semantics.
+def mir_deserialize_program(data: string) -> MirWireLoad
+	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_WIRE_MAGIC)
+		return mir_wire_failure("unsupported MIR format or size")
+	var reader = MirWireReader(data, len(MIR_WIRE_MAGIC), "")
+	let entry_result = mir_wire_number(reader)
+	reader = entry_result.reader
+	let entry = entry_result.value
+	let type_count = mir_wire_count(reader)
+	reader = type_count.reader
+	if reader.error != "" or type_count.value < 6
+		return mir_wire_failure("invalid MIR type table")
+	var types = new_type_table()
+	for i in 6..type_count.value
+		let tag_value = mir_wire_number(reader)
+		let first_value = mir_wire_number(tag_value.reader)
+		let second_value = mir_wire_number(first_value.reader)
+		let field_count = mir_wire_count(second_value.reader)
+		reader = field_count.reader
+		if reader.error != ""
+			return mir_wire_failure(reader.error)
+		let tag = tag_value.value
+		let first = first_value.value
+		let second = second_value.value
+		if tag < TYPE_TAG_RECORD or tag > TYPE_TAG_OPTIONAL or first < 0 or first >= i or second < 0 or second >= i
+			return mir_wire_failure("invalid MIR type descriptor")
+		if tag != TYPE_TAG_RECORD and field_count.value != 0
+			return mir_wire_failure("unexpected MIR record fields")
+		if tag == TYPE_TAG_RECORD and (first != 0 or second != 0)
+			return mir_wire_failure("invalid MIR record descriptor")
+		if (tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_OPTIONAL) and (first == 0 or second != 0)
+			return mir_wire_failure("invalid MIR element descriptor")
+		if tag == TYPE_TAG_DICT and (first == 0 or second == 0)
+			return mir_wire_failure("invalid MIR dictionary descriptor")
+		var fields = Array[RecordField]()
+		for j in 0..field_count.value
+			let name = mir_wire_string(reader)
+			let kind = mir_wire_number(name.reader)
+			reader = kind.reader
+			if reader.error != "" or kind.value < 0 or kind.value >= i
+				return mir_wire_failure("invalid MIR record field")
+			fields = fields.append(RecordField(name.value, kind.value))
+		let interned = intern_type(types, tag, first, second, fields)
+		if interned.id != i
+			return mir_wire_failure("noncanonical MIR type identity")
+		types = interned.table
+	let function_count = mir_wire_count(reader)
+	reader = function_count.reader
+	if reader.error != "" or entry < 0 or entry >= function_count.value
+		return mir_wire_failure("invalid MIR function table")
+	var functions = Array[MirFunction]()
+	for i in 0..function_count.value
+		let argument_count = mir_wire_number(reader)
+		let return_type = mir_wire_number(argument_count.reader)
+		let register_count = mir_wire_count(return_type.reader)
+		reader = register_count.reader
+		if reader.error != "" or return_type.value < 0 or return_type.value >= len(types.entries)
+			return mir_wire_failure("invalid MIR function signature")
+		var registers = Array[i64]()
+		for j in 0..register_count.value
+			let kind = mir_wire_number(reader)
+			reader = kind.reader
+			if reader.error != "" or kind.value < 0 or kind.value >= len(types.entries)
+				return mir_wire_failure("invalid MIR register type")
+			registers = registers.append(kind.value)
+		let block_entry = mir_wire_number(reader)
+		let block_count = mir_wire_count(block_entry.reader)
+		reader = block_count.reader
+		if reader.error != "" or block_entry.value < 0 or block_entry.value >= block_count.value
+			return mir_wire_failure("invalid MIR entry block")
+		var blocks = Array[MirBlock]()
+		for j in 0..block_count.value
+			let instruction_count = mir_wire_count(reader)
+			reader = instruction_count.reader
+			if reader.error != ""
+				return mir_wire_failure(reader.error)
+			var instructions = Array[MirInstruction]()
+			for k in 0..instruction_count.value
+				let op = mir_wire_number(reader)
+				let dst = mir_wire_number(op.reader)
+				let first = mir_wire_number(dst.reader)
+				let second = mir_wire_number(first.reader)
+				let immediate = mir_wire_number(second.reader)
+				let inputs_count = mir_wire_count(immediate.reader)
+				reader = inputs_count.reader
+				if reader.error != ""
+					return mir_wire_failure(reader.error)
+				var inputs = Array[i64]()
+				for m in 0..inputs_count.value
+					let input = mir_wire_number(reader)
+					reader = input.reader
+					if reader.error != ""
+						return mir_wire_failure(reader.error)
+					inputs = inputs.append(input.value)
+				let value = mir_wire_string(reader)
+				reader = value.reader
+				if reader.error != ""
+					return mir_wire_failure(reader.error)
+				instructions = instructions.append(MirInstruction(op.value, dst.value, first.value, second.value, immediate.value, inputs, value.value))
+			let kind = mir_wire_number(reader)
+			let operand = mir_wire_number(kind.reader)
+			let target = mir_wire_number(operand.reader)
+			let alternative = mir_wire_number(target.reader)
+			let message = mir_wire_string(alternative.reader)
+			reader = message.reader
+			if reader.error != ""
+				return mir_wire_failure(reader.error)
+			blocks = blocks.append(MirBlock(instructions, MirTerminator(kind.value, operand.value, target.value, alternative.value, message.value)))
+		functions = functions.append(MirFunction(argument_count.value, return_type.value, registers, blocks, block_entry.value))
+	if reader.at != len(data)
+		return mir_wire_failure("trailing MIR data")
+	let program = mir_program_with_types(functions, types)
+	let verified = mir_check_balance(program)
+	if verified != ""
+		return mir_wire_failure("invalid MIR program: " + verified)
+	return MirWireLoad(program, entry, "")

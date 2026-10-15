@@ -1,6 +1,6 @@
 # Sirius — MIR, Modules, Libraries, and FFI
 
-> **Status:** Design target, not implemented functionality. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
+> **Status:** Library/module/FFI design target. Concrete executable MIR serialization and named concrete libraries are implemented; generic libraries and cross-artifact linking are not. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
 
 ## 1. Module resolution and visibility
 
@@ -28,8 +28,8 @@ Sirius source
     -> parse / analyze / specialize / lower
     -> typed MIR
          |-> C emitter -> native code
-         |-> interpreter at compile time
-         |-> serialized MIR -> interpreter at runtime
+         |-> interpreter at compile time (deferred)
+         |-> serialized executable MIR -> interpreter at runtime (implemented)
          `-> combinations of native and interpreted functions
 ```
 
@@ -41,7 +41,15 @@ Explicit compile-time syntax, the ordering of compilation and evaluation, and co
 
 ### Serialized MIR
 
-An **executable** artifact contains concrete callable functions and their transitive dependencies. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
+An **executable** artifact contains concrete callable functions and their transitive dependencies.
+This is implemented as `SIRIUS-MIR-EXEC/1` in `src/mir_wire.sirius` with
+`--emit-mir` and `--load-mir` runner options. It stores canonical type descriptors,
+concrete MIR functions, entry index and CFG instructions. The loader verifies
+the format, types and ownership before execution. Version compatibility is
+currently exact. The separate `SIRIUS-MIR-LIB/1` format supports multiple
+named concrete zero-argument roots and canonical structural signatures. It
+validates names, indices and signatures on loading, and carries the entire
+concrete transitive call graph, but does not support dependencies or imports. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
 
 The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 
@@ -106,7 +114,7 @@ Initial interop should use explicit wrappers with C primitives and opaque handle
 
 1. Define portable exported-symbol and type-descriptor metadata in a module interface.
 2. Make generic MIR available to cross-module specialization and add canonical specialization keys.
-3. Serialize and load concrete MIR modules; verify interpreted execution against native results.
+3. **Done for concrete executables and named concrete libraries:** serialize/load specialized MIR, validate exported symbols and signatures, and compare dynamic execution. Extend to imported modules and generic interfaces later.
 4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
 5. Register already compiled native specializations through a versioned C hook.
 6. Implement interpreted-to-native dispatch; later native-to-interpreted callbacks/trampolines.

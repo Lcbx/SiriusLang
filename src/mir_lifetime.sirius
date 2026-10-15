@@ -44,7 +44,7 @@ def mir_live_equal(left: Array[i64], right: Array[i64]) -> bool
 
 def mir_live_before(ins: MirInstruction, after: Array[i64]) -> Array[i64]
 	var before = after
-	if ins.op != MIR_PRINT
+	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT
 		before = mir_live_remove(before, ins.dst)
 	if mir_consumes_source(ins)
 		before = mir_live_remove(before, ins.first)
@@ -129,7 +129,7 @@ def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLi
 			let ins = block.instructions[!len(block.instructions) - 1 - position]
 			var dropping = Array[i64]()
 			if ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
-				if ins.op != MIR_PRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
+				if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
 					dropping = mir_lifetime_drop_add(dropping, ins.dst)
 				for register in mir_instruction_reads(ins)
 					if register != ins.dst and not (mir_consumes_source(ins) and register == ins.first) and not mir_call_moves_register(ins, register) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)

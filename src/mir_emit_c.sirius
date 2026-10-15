@@ -349,7 +349,7 @@ def mir_c_instruction(instruction: MirInstruction, function: MirFunction, types:
 				result = result + mir_c_check(instruction.second, checked)
 			if op == MIR_ARRAY_SET or op == MIR_DICT_GET_OR or op == MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate, checked)
-	if op == MIR_PRINT
+	if op == MIR_PRINT or op == MIR_EPRINT
 		return result
 	let dst = mir_c_register(instruction.dst)
 	var expr = ""
@@ -709,16 +709,19 @@ def mir_c_definition(function: MirFunction, index: i64, types: TypeTable, checke
 		let block = function.blocks[!i]
 		parts = parts.append("block" + str(i) + ": ;\n")
 		for instruction in block.instructions
-			if instruction.op == MIR_PRINT
+			if instruction.op == MIR_PRINT or instruction.op == MIR_EPRINT
 				parts = parts.append(mir_c_check(instruction.first, checked))
+				var prefix = "s_print_"
+				if instruction.op == MIR_EPRINT
+					prefix = "s_eprint_"
 				if function.register_types[!instruction.first] == TYPE_TAG_F64
-					parts = parts.append("\ts_print_f64(" + mir_c_register(instruction.first) + ");\n")
+					parts = parts.append("\t" + prefix + "f64(" + mir_c_register(instruction.first) + ");\n")
 				elif function.register_types[!instruction.first] == TYPE_TAG_BOOL
-					parts = parts.append("\ts_print_bool(" + mir_c_register(instruction.first) + ");\n")
+					parts = parts.append("\t" + prefix + "bool(" + mir_c_register(instruction.first) + ");\n")
 				elif function.register_types[!instruction.first] == TYPE_TAG_STRING
-					parts = parts.append("\ts_print_string(" + mir_c_register(instruction.first) + ");\n")
+					parts = parts.append("\t" + prefix + "string(" + mir_c_register(instruction.first) + ");\n")
 				else
-					parts = parts.append("\ts_print_i64(" + mir_c_register(instruction.first) + ");\n")
+					parts = parts.append("\t" + prefix + "i64(" + mir_c_register(instruction.first) + ");\n")
 			else
 				parts = parts.append(mir_c_instruction(instruction, function, types, checked))
 		parts = parts.append(mir_c_terminator(block.terminator, function, checked))
