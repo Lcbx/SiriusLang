@@ -45,10 +45,18 @@ callee. Return inference within one body analysis is also memoized; its key
 includes the active call chain to retain the recursion guard.
 
 MIR lowering consumes this typed result and still traverses AST structure for
-CFG generation. MIR validation is independent: it checks instruction types,
-control flow, and ownership, not HIR-level generic inference. This does not yet
-make HIR a standalone typed syntax tree, so further HIR-to-MIR simplification
-remains possible.
+CFG generation. **Local name reads** use the semantic symbol identity recorded
+in `HIR_NAME`/`HIR_BINDING`, rather than performing another lexical name lookup.
+The specialization worklist attaches `HIR_TARGET` annotations containing stable
+concrete function IDs; MIR call lowering consumes these directly. Legacy
+standalone call-lowering tests can still supply the separate call-target list.
+Constructor arguments are evaluated in caller scope before their parameters
+become visible, including when names overlap. Assignment paths and some
+constructor/pub operations still use source-based lookup.
+
+MIR validation is independent: it checks instruction types, control flow, and
+ownership, not HIR-level generic inference. HIR is not yet a standalone typed
+syntax tree, so further HIR-to-MIR simplification remains possible.
 
 ## MIR instructions and ownership
 

@@ -42,9 +42,39 @@ def check_annotation_index() -> bool
 		return false
 	return hir_annotation_find(nodes, index, -1, HIR_NAME) == -1
 
+# The worklist puts the concrete call target in typed HIR. MIR must not
+# require the older parallel list of source->callee resolutions.
+def check_hir_call_target() -> bool
+	let source = "def increment(x: i64) -> i64\n\treturn x + 1\ndef main() -> i64\n\treturn increment(41)\n"
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		return false
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	let specialized = hir_specialize_program(parsed.state, declarations, "main", Array[i64]())
+	if specialized.error != "" or len(specialized.bodies) != 2
+		return false
+	let body = specialized.bodies[!0]
+	var target = -1
+	for annotation in body.nodes
+		if annotation.operation == HIR_TARGET
+			target = annotation.field_index
+	if target != 1
+		return false
+	let header = declarations.functions[!hir_definition(declarations.functions, specialized.registry.entries[!0].definition)]
+	let lowered = mir_lower_function_module(parsed.state, header, body.nodes, Array[i64](), body.return_type, Array[HirSpecializedCall](), specialized.types, declarations.functions, declarations.constants, declarations.values)
+	if lowered.error != ""
+		return false
+	for block in lowered.function.blocks
+		for instruction in block.instructions
+			if instruction.op == MIR_CALL and instruction.immediate == 1
+				return true
+	return false
+
 def main() -> i64
 	if not check_annotation_index()
 		return 13
+	if not check_hir_call_target()
+		return 14
 	let repeat = "def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n"
 	if not check(repeat, 42, 2)
 		return 1
@@ -72,6 +102,9 @@ def main() -> i64
 	let nested_type = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef first(items: Array[Point]) -> i64\n\treturn items[!0].x\ndef main() -> i64\n\treturn first([Point(42, 1)])\n"
 	if not check(nested_type, 42, 2)
 		return 9
+	let scoped = "def choose(x: i64) -> i64\n\tlet saved = x\n\tif saved > 0\n\t\tlet x = saved + 1\n\t\tlet saved = x + 1\n\t\treturn saved\n\treturn saved\ndef main() -> i64\n\treturn choose(40)\n"
+	if not check(scoped, 42, 2)
+		return 15
 	let loop = "def main() -> i64\n\tvar result = 0\n\tfor x in [10, 20, 12]\n\t\tresult = result + x\n\treturn result\n"
 	if not check(loop, 42, 1)
 		return 10
@@ -81,5 +114,8 @@ def main() -> i64
 	let loop_control = "def main() -> i64\n\tvar total = 0\n\tfor i in 0..10\n\t\tif i == 2\n\t\t\tcontinue\n\t\tif i == 5\n\t\t\tbreak\n\t\ttotal = total + i\n\treturn total + 34\n"
 	if not check(loop_control, 42, 1)
 		return 12
+	let constructor_scope = "rec Pair(left: i64, right: i64)\n\tpub left\n\tpub right\ndef main() -> i64\n\tlet left = 20\n\tlet right = 22\n\tlet pair = Pair(right, left)\n\treturn pair.left * 100 + pair.right\n"
+	if not check(constructor_scope, 2220, 1)
+		return 16
 	print("PASS HIR specialization worklist and MIR calls")
 	return 0

@@ -120,6 +120,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 		if typed.return_type == TYPE_TAG_INVALID
 			return HirSpecializedProgram(registry, bodies, types, entry, "cannot infer specialized function return type")
 		var calls = Array[HirSpecializedCall]()
+		var resolved_nodes = typed.nodes
 		for request in typed.requests
 			let called = hir_definition(declarations.functions, request.definition)
 			if called < 0
@@ -151,7 +152,8 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 			let started = hir_begin_specialization(registry, request.definition, request.arguments, result_type)
 			registry = started.registry
 			calls = calls.append(HirSpecializedCall(request.source, started.index))
-		bodies = bodies.append(HirSpecializedFunction(typed.nodes, calls, typed.return_type))
+			resolved_nodes = resolved_nodes.append(HirNode(request.source, HIR_TARGET, result_type, started.index))
+		bodies = bodies.append(HirSpecializedFunction(resolved_nodes, calls, typed.return_type))
 		registry = hir_complete_specialization(registry, cursor, typed.return_type)
 		cursor += 1
 	var result = HirSpecializedProgram(registry, bodies, types, entry, "")

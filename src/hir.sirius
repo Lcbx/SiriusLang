@@ -165,6 +165,8 @@ def hir_complete_specialization(registry: HirSpecializationRegistry, index: i64,
 # A checked call returns an interned result type, and (possibly) an extended
 # type table for results such as Optional[string].
 let HIR_CALL = 6
+# Resolved concrete callee IDs are attached to call expressions by the HIR worklist.
+let HIR_TARGET = 14
 
 rec HirCallCheck(table: TypeTable, type_id: i64, error: string)
 

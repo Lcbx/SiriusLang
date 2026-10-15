@@ -12,7 +12,7 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	output = check_sirius_driver(cache, 'hir-worklist', (
 		'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
-		'src/hir.sirius', 'src/hir_specialize.sirius',
+		'src/hir.sirius', 'src/hir_parametric.sirius', 'src/hir_specialize.sirius',
 		'tests/types/worklist_driver.sirius',
 	), 'PASS HIR worklist without backend\n')
 	print(output, end='')

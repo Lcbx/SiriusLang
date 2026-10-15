@@ -2,7 +2,7 @@
 # Nested record and checked-array projections rebuild their CoW path to the root.
 # Expressions require corresponding checked HIR nodes and preserve source order.
 
-rec MirSourceBinding(name: string, slot: i64, depth: i64)
+rec MirSourceBinding(name: string, slot: i64, depth: i64, symbol: i64)
 rec MirLowerField(name: string, slot: i64)
 
 # Source analysis is immutable during lowering; the builder owns only mutable CFG state.
@@ -60,10 +60,27 @@ def mir_lower_type(context: MirLowerContext, source: i64, operation: i64) -> i64
 		return context.hir[!at].type_id
 	return TYPE_TAG_INVALID
 
+def mir_lower_binding_index(context: MirLowerContext, source: i64) -> i64
+	let at = hir_annotation_find(context.hir, context.annotation_index, source, HIR_BINDING)
+	if at >= 0
+		return context.hir[!at].field_index
+	return -1
+
 def mir_lower_field_index(context: MirLowerContext, source: i64) -> i64
 	let at = hir_annotation_find(context.hir, context.annotation_index, source, HIR_FIELD)
 	if at >= 0
 		return context.hir[!at].field_index
+	return -1
+
+# Prefer the binding identity determined by HIR over resolving a name again.
+# A negative identity means HIR did not provide a local symbol.
+def mir_lower_symbol(state: MirBuilder, symbol: i64) -> i64
+	if symbol < 0
+		return -1
+	for i in 0..len(state.bindings)
+		let binding = state.bindings[!len(state.bindings) - 1 - i]
+		if binding.symbol == symbol
+			return binding.slot
 	return -1
 
 def mir_lower_binding(state: MirBuilder, name: string) -> i64
@@ -245,15 +262,21 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 	let text = hir_ast_text(context.tree, id)
 	var next = state
 	if node.kind == NODE_NAME
-		if mir_lower_type(context, id, HIR_NAME) == TYPE_TAG_INVALID
+		let annotation = hir_annotation_find(context.hir, context.annotation_index, id, HIR_NAME)
+		if annotation < 0 or context.hir[!annotation].type_id == TYPE_TAG_INVALID
 			return MirLowerExpr(mir_lower_error(state, "missing typed name"), -1)
-		let register = mir_lower_binding(state, text)
-		if register < 0
-			for constant in context.constants
-				if constant.name == text
-					return mir_lower_constant(next, context, constant.value)
-			return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
-		return MirLowerExpr(state, register)
+		if annotation >= 0 and context.hir[!annotation].field_index >= 0
+			let register = mir_lower_symbol(state, context.hir[!annotation].field_index)
+			if register < 0
+				return MirLowerExpr(mir_lower_error(state, "unresolved HIR binding '" + text + "'"), -1)
+			if state.register_types[!register] != context.hir[!annotation].type_id
+				return MirLowerExpr(mir_lower_error(state, "HIR symbol type mismatch for '" + text + "' in " + context.function_name + ": wanted " + str(context.hir[!annotation].type_id) + " got " + str(state.register_types[!register])), -1)
+			return MirLowerExpr(state, register)
+		# A negative HIR symbol identity denotes a module constant.
+		for constant in context.constants
+			if constant.name == text
+				return mir_lower_constant(next, context, constant.value)
+		return MirLowerExpr(mir_lower_error(state, "unknown MIR binding '" + text + "'"), -1)
 	if node.kind == NODE_ARRAY
 		let type_id = mir_lower_type(context, id, HIR_ARRAY)
 		if not mir_type_supported(context.types, type_id) or context.types.entries[!type_id].tag != TYPE_TAG_ARRAY
@@ -405,12 +428,17 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 						return MirLowerExpr(mir_lower_error(next, "constructor requires typed record result: " + name + " at source line " + str(hir_ast_line(context.tree, id))), -1)
 					if node.count - 1 != len(function.parameters)
 						return MirLowerExpr(mir_lower_error(next, "constructor argument count mismatch"), -1)
+					# Evaluate arguments in the caller's scope. Constructor parameter
+					# names only become visible while evaluating published fields.
 					let previous = next.bindings
+					var parameters = Array[MirSourceBinding]()
 					for j in 0..len(function.parameters)
 						let argument = mir_lower_expression(next, context, hir_ast_child(context.tree, id, j + 1))
 						next = argument.state
 						next.error == "" else return MirLowerExpr(next, -1)
-						next.bindings = next.bindings.append(MirSourceBinding(function.parameters[!j].name, argument.slot, next.depth + 1))
+						parameters = parameters.append(MirSourceBinding(function.parameters[!j].name, argument.slot, next.depth + 1, j))
+					for parameter in parameters
+						next.bindings = next.bindings.append(parameter)
 					var evaluated = Array[MirLowerField]()
 					let body = context.tree.nodes[!function.body]
 					for j in 0..body.count
@@ -605,9 +633,14 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					next = mir_lower_emit(next, mir_op(op, dst, value.slot, -1, 0))
 					return MirLowerExpr(next, dst)
 		var callee_id = -1
-		for target in context.call_targets
-			if target.source == id
-				callee_id = target.specialization
+		let resolved = hir_annotation_find(context.hir, context.annotation_index, id, HIR_TARGET)
+		if resolved >= 0
+			callee_id = context.hir[!resolved].field_index
+		else
+			# Compatibility with standalone MIR lowering drivers.
+			for target in context.call_targets
+				if target.source == id
+					callee_id = target.specialization
 		if callee_id < 0
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call target: " + hir_ast_text(context.tree, callee)), -1)
 		let type_id = mir_lower_type(context, id, HIR_CALL)
@@ -856,7 +889,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			let slot = len(next.register_types)
 			next = mir_lower_register(next, type_id)
 			next = mir_lower_emit(next, mir_record_get(slot, initializer.slot, index))
-			next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, field_id), slot, next.depth))
+			next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, field_id), slot, next.depth, mir_lower_binding_index(context, field_id)))
 		return next
 	if node.kind == NODE_LET or node.kind == NODE_VAR
 		var initializer = -1
@@ -903,7 +936,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		let register = len(next.register_types)
 		next = mir_lower_register(next, type_id)
 		next = mir_lower_emit(next, mir_op(MIR_COPY, register, value_slot, -1, 0))
-		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, id), register, next.depth))
+		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, id), register, next.depth, mir_lower_binding_index(context, id)))
 		return next
 	if node.kind == NODE_ASSIGN
 		let target = hir_ast_child(context.tree, id, 0)
@@ -1146,7 +1179,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		else
 			next = mir_lower_emit(next, mir_array_get(item, array_slot, index))
 		let initial = len(next.bindings)
-		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, id), item, next.depth + 1))
+		next.bindings = next.bindings.append(MirSourceBinding(hir_ast_text(context.tree, id), item, next.depth + 1, mir_lower_binding_index(context, id)))
 		next.break_targets = next.break_targets.append(exit_block)
 		next.continue_targets = next.continue_targets.append(step_block)
 		next = mir_lower_statements(next, context, body_id)
@@ -1217,7 +1250,7 @@ def mir_lower_function_module(tree: ParseState, header: HirFunctionDecl, hir: Ar
 		if not mir_type_supported(context.types, arguments[!i])
 			return MirLowerResult(MirFunction(0, return_type, state.register_types, state.blocks, 0), "unsupported MIR parameter type")
 		state = mir_lower_register(state, arguments[!i])
-		state.bindings = state.bindings.append(MirSourceBinding(header.parameters[!i].name, i, 0))
+		state.bindings = state.bindings.append(MirSourceBinding(header.parameters[!i].name, i, 0, i))
 	state = mir_lower_statements(state, context, header.body)
 	if state.error == "" and not mir_lower_ended(state)
 		state = mir_lower_error(state, "missing MIR return")

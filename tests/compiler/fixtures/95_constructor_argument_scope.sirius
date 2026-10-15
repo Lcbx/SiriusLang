@@ -1,0 +1,11 @@
+rec Pair(left: i64, right: i64)
+	pub left
+	pub right
+
+def main() -> i64
+	let left = 20
+	let right = 22
+	let made = Pair(right, left)
+	print(made.left)
+	print(made.right)
+	return 0
