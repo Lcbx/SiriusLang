@@ -115,9 +115,80 @@ def main() -> None:
 			'def identity(x)\n\treturn hidden(x)\n')
 		dependent_lib = work / 'dependent.smirl'
 		must_run(runner, '--emit-lib', dependent_lib, '--template', 'identity', dependent)
-		result = run(runner, '--link-lib', combined, imports[0], dependent_lib)
-		assert result.returncode == 2 and b'external dependencies' in result.stderr, result
-		print('PASS generic: unsupported external dependencies rejected explicitly')
+		# A specialized provider may import a concrete function from another library.
+		bonus = source('bonus', 'def hidden(x: i64) -> i64\n\treturn x + 9\n'
+			'def bonus_entry() -> i64\n\treturn hidden(0)\n')
+		bonus_lib = work / 'bonus.smirl'
+		must_run(runner, '--emit-lib', bonus_lib, '--export', 'bonus_entry', '--expose', 'hidden', bonus)
+		must_run(runner, '--link-lib', combined, imports[0], dependent_lib, bonus_lib)
+		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 51
+		must_run(runner, '--link-lib', combined, bonus_lib, dependent_lib, imports[0])
+		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 51
+		print('PASS generic: a specialization imports a concrete function in either link order')
+
+		# A newly generated specialization can request another generic template,
+		# which may in turn have an unresolved external dependency.
+		outer = source('outer', 'extern def middle(x: i64) -> i64\n'
+			'def outer(x)\n\treturn middle(x) + 1\n')
+		middle = source('middle', 'extern def last(x: i64) -> i64\n'
+			'def middle(x)\n\treturn last(x) + 1\n')
+		last = source('last', 'def last(x: i64) -> i64\n\treturn x * 2\n'
+			'def last_entry() -> i64\n\treturn last(0)\n')
+		outer_lib = work / 'outer.smirl'
+		middle_lib = work / 'middle.smirl'
+		last_lib = work / 'last.smirl'
+		must_run(runner, '--emit-lib', outer_lib, '--template', 'outer', outer)
+		must_run(runner, '--emit-lib', middle_lib, '--template', 'middle', middle)
+		must_run(runner, '--emit-lib', last_lib, '--export', 'last_entry', '--expose', 'last', last)
+		chain_consumer = source('chain', 'extern def outer(x: i64) -> i64\n'
+			'def chain() -> i64\n\treturn outer(5)\n')
+		chain_lib = work / 'chain.smirl'
+		must_run(runner, '--emit-lib', chain_lib, '--export', 'chain', chain_consumer)
+		must_run(runner, '--link-lib', combined, chain_lib, outer_lib, middle_lib, last_lib)
+		assert run(runner, '--entry', 'chain', '--load-lib', combined).returncode == 12
+		must_run(runner, '--link-lib', combined, last_lib, middle_lib, outer_lib, chain_lib)
+		assert run(runner, '--entry', 'chain', '--load-lib', combined).returncode == 12
+		assert run(runner, '--list-lib', combined).stdout == b'last_entry : ()->i64\nlast : (i64)->i64\nchain : ()->i64\n'
+		print('PASS generic: transitive template dependencies, private exports, link ordering')
+
+		# Missing, incompatible, and ambiguous providers must fail at link time.
+		missing = run(runner, '--link-lib', combined, chain_lib, outer_lib, middle_lib)
+		assert missing.returncode == 2 and b'unresolved MIR import: last' in missing.stderr, missing
+		wrong_provider = source('wrong_provider', 'def last(x: bool) -> i64\n\treturn 1\n'
+			'def wrong_entry() -> i64\n\treturn last(true)\n')
+		wrong_lib = work / 'wrong_provider.smirl'
+		must_run(runner, '--emit-lib', wrong_lib, '--export', 'wrong_entry', '--expose', 'last', wrong_provider)
+		wrong_result = run(runner, '--link-lib', combined, chain_lib, outer_lib, middle_lib, wrong_lib)
+		assert wrong_result.returncode == 2 and b'MIR import signature mismatch: last' in wrong_result.stderr, wrong_result
+		print('PASS generic: missing and mismatched transitive dependencies rejected')
+
+
+		# Independent structural record definitions must agree across a generic
+		# template, a concrete external provider, and its consumer.
+		point = 'rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\n'
+		record_wrapper = source('record_wrapper', point + 'extern def score(p: Point) -> i64\n'
+			'def score_plus_one(p)\n\treturn score(p) + 1\n')
+		record_provider = source('record_provider', point + 'def score(p: Point) -> i64\n'
+			'\treturn p.x + p.y\n'
+			'def score_entry() -> i64\n\treturn score(Point(0, 0))\n')
+		record_consumer = source('record_consumer', point +
+			'extern def score_plus_one(p: Point) -> i64\n'
+			'def point_entry() -> i64\n\treturn score_plus_one(Point(3, 4))\n')
+		record_wrapper_lib = work / 'record_wrapper.smirl'
+		record_provider_lib = work / 'record_provider.smirl'
+		record_consumer_lib = work / 'record_consumer.smirl'
+		must_run(runner, '--emit-lib', record_wrapper_lib, '--template', 'score_plus_one', record_wrapper)
+		must_run(runner, '--emit-lib', record_provider_lib, '--export', 'score_entry', '--expose', 'score', record_provider)
+		must_run(runner, '--emit-lib', record_consumer_lib, '--export', 'point_entry', record_consumer)
+		must_run(runner, '--link-lib', combined, record_consumer_lib, record_wrapper_lib, record_provider_lib)
+		assert run(runner, '--entry', 'point_entry', '--load-lib', combined).returncode == 8
+		must_run(runner, '--emit-c-lib', c_file, '--entry', 'point_entry', combined)
+		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(root / 'runtime'),
+			str(c_file), str(root / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
+			capture_output=True, timeout=90)
+		assert result.returncode == 0, result.stderr
+		assert run(native).returncode == 8
+		print('PASS generic: structural records and interpreted/native parity across dependencies')
 
 		provider = source('provider', 'def identity(x)\n\treturn x\n'
 			'def doubled(x)\n\treturn identity(x) + identity(x)\n')

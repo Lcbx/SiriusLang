@@ -94,9 +94,10 @@ def mir_link_concrete_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryL
 		return mir_link_failure("invalid linked MIR: " + verified)
 	return MirLibraryLink(program, exports, "")
 
-# Version-3 templates retain the provider module source. Specialize only when
-# an unresolved concrete import requests the template, using the importer's
+# Version-3 templates retain the provider module source. Specialize when an
+# unresolved concrete import requests the template, using the importer's
 # structural types as the initial type environment of the provider HIR pass.
+# Specialization can itself produce imports, which are resolved in later rounds.
 rec MirGenericExpansion(libraries: Array[MirLibraryLoad], error: string)
 	pub generated_names = Array[string]()
 
@@ -133,19 +134,21 @@ def mir_specialize_library_template(library: MirLibraryLoad, name: string, reque
 	let specialized = mir_build_program_roots(parsed.state, declarations, [name], arguments)
 	if specialized.error != ""
 		return mir_library_failure("generic specialization " + name + ": " + specialized.error)
-	if len(specialized.imports) != 0
-		return mir_library_failure("generic specialization with external dependencies is not supported yet: " + name)
 	if mir_function_signature(specialized.program, specialized.entry) != mir_function_signature(request, function_id)
 		return mir_library_failure("generic specialization signature mismatch: " + name)
-	return MirLibraryLoad(specialized.program, specialized.exports, "")
+	var result = MirLibraryLoad(specialized.program, specialized.exports, "")
+	for symbol in specialized.imports
+		result.imports = result.imports.append(MirNamedImport(symbol.name, symbol.function_id))
+	return result
 
 def mir_expand_generic_libraries(libraries: Array[MirLibraryLoad]) -> MirGenericExpansion
 	var expanded = libraries
 	var cached_keys = Array[string]()
 	var cached_names = Array[string]()
 	var generated = 0
-	for i in 0..len(libraries)
-		let consumer = libraries[!i]
+	var i = 0
+	while i < len(expanded)
+		let consumer = expanded[!i]
 		var next = consumer
 		var imports = Array[MirNamedImport]()
 		for symbol in consumer.imports
@@ -202,6 +205,7 @@ def mir_expand_generic_libraries(libraries: Array[MirLibraryLoad]) -> MirGeneric
 			imports = imports.append(MirNamedImport(private_name, symbol.function_id))
 		next.imports = imports
 		expanded[!i] = next
+		i += 1
 	var result = MirGenericExpansion(expanded, "")
 	result.generated_names = cached_names
 	return result

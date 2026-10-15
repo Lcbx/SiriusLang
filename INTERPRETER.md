@@ -124,9 +124,11 @@ linker instantiates missing imports against the provider module, remapping
 structural argument types and checking the full resulting signature. Equal
 requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
-backends. The initial implementation requires the specialized provider call
-graph to be self-contained (no unresolved externals). It does not yet persist
-typed generic HIR or support cross-artifact generic dependencies.
+backends. A specialization can import other concrete functions or templates from separate
+artifacts; the linker resolves these transitive dependencies using concrete
+structural signatures. Missing or mismatched providers are rejected. Saved
+templates are still source-backed, and external declarations must be concrete;
+typed generic HIR is not persisted.
 
 ### Native execution of linked concrete libraries
 
@@ -173,7 +175,7 @@ exercise native vs dynamic output, diagnostics, and selected failure cases.
 
 **Known gaps:** Complete cleanup during implicit runtime failure or budget
 termination, exact decimal-to-`f64` rounding at all IEEE-754 boundaries,
-integer overflow conventions, generic templates with external dependencies,
-native/IR cross-calls, and compile-time execution. General purity/effect inference can
+integer overflow conventions, generic extern declarations and typed template
+artifacts, native/IR cross-calls, and compile-time execution. General purity/effect inference can
 be developed later; it is **not a prerequisite** for the intended permissive
 compile-time MIR interpreter.

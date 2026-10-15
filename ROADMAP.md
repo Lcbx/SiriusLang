@@ -17,9 +17,8 @@ or completeness guarantee.
    with both interpreter and native tests.
 3. **Language features:** add missing semantic constructs in vertical slices
    (HIR → MIR → native/interpreter → tests), while preserving self-hosting.
-4. **Modules/libraries:** extend initial source-backed link-time generic
-   specialization to typed artifacts and imported dependencies, then mixed
-   native/interpreted function calls. Compile-time MIR execution is postponed.
+4. **Modules/libraries:** replace source-backed generic templates with typed
+   artifacts, then implement mixed native/interpreted function calls. Compile-time MIR execution is postponed.
 
 **Completed foundation:** MIR is the default C backend; the compiler produces a
 byte-identical native self-hosting fixed point. The legacy Sirius C emitter is
@@ -49,9 +48,11 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [x] Introduce source-backed generic exports (`SIRIUS-MIR-LIB/3`) and
   link-time specialization from concrete imported structural signatures,
   with reuse, validation and both interpreter/native output paths.
+- [x] Resolve external calls introduced by generic specialization, including
+  transitive concrete/template dependencies and structural types across libraries.
 - [ ] Replace retained generic source with persistent typed bodies/semantic
-  environments, including dependencies on other libraries and importable
-  constructors; support specialization without reparsing source.
+  environments, including importable constructors; support specialization
+  without reparsing source.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed

@@ -54,8 +54,9 @@ versioned formats**, not stable ABIs. `SIRIUS-MIR-LIB/3` retains provider
 source plus named templates. At link time a missing concrete import can
 specialize a template against the importer's canonical structural types,
 reusing the HIR/MIR pipeline; equal requests share a specialization. This is a
-source-backed first slice: the generic provider must be self-contained, and
-linked results contain only concrete specializations. `--emit-c-lib` emits
+source-backed first slice: generated specializations may have concrete external
+imports, including imports fulfilled by other templates, which are expanded
+transitively. Linked results contain only concrete specializations. `--emit-c-lib` emits
 standalone C from a resolved library,
 but does not implement cross-backend function-call dispatch.
 
@@ -76,12 +77,14 @@ longer-term transitive purity checking needed by parallel `map`.
 ## Generic specialization across libraries (partial)
 
 A signature alone cannot instantiate a generic body. Version-3 artifacts
-currently retain the entire provider source module, making self-contained
-generic functions available for specialization **without access to the
-original source file**. The linker remaps imported structural types into the
-provider's type table, builds concrete MIR, and checks the expected signature.
-The remaining target is persistent typed generic bodies and complete resolved
-semantic environments, not reparsed source text.
+currently retain the entire provider source module, making generic functions
+available for specialization **without access to the original source file**.
+The linker remaps imported structural types into the provider's type table,
+builds concrete MIR, recursively expands imports from other libraries, and
+checks each concrete signature. External function declarations in template
+sources still need concrete types. The remaining target is persistent typed
+generic bodies and complete resolved semantic environments, not reparsed source
+text.
 
 At a call boundary:
 

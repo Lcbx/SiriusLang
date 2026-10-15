@@ -126,10 +126,13 @@ request different specializations; equal requests share one implementation.
 Concrete exports take precedence over templates. Linked output is still a
 concrete version-1 library and works in the interpreter or native C emitter.
 
-This first slice stores **provider source**, not persistent typed generic HIR;
-providers must be self-contained (no unresolved external dependencies in the
-specialized call graph). Source-level modules, cross-artifact semantic imports,
-and mixed native/interpreted function calls remain unimplemented. See [INTERPRETER.md](INTERPRETER.md)
+This first slice stores **provider source**, not persistent typed generic HIR.
+Specialized functions can call typed external functions supplied by other
+libraries, including other generic templates. The linker expands transitive
+specialization requests, checks structural signatures and rejects missing or
+incompatible dependencies. Generic imports still require **concrete** `extern def`
+signatures in the retained source; generic external declarations, source-level
+modules, and mixed native/interpreted function calls remain unimplemented. See [INTERPRETER.md](INTERPRETER.md)
 and [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## Implemented language subset
@@ -156,8 +159,8 @@ and [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 **Not yet implemented:** source imports/modules; multidimensional numerical
 arrays, broadcasting, general vectorized operations, transitive purity/effects,
-first-class higher-order functional APIs, runtime `Any`, generic cross-library
-specialization, native library registration, and compile-time MIR execution.
+first-class higher-order functional APIs, runtime `Any`, persistent typed generic
+artifacts, native library registration, and compile-time MIR execution.
 The intended semantics are in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md), not
 inferred from current compiler limitations.
 
@@ -182,6 +185,7 @@ artifacts under `.build/cache/`.
 | `python tools/test_mir_library.py` | Named concrete-library behavior and invalid metadata |
 | `python tools/test_mir_link.py` | Merge independent concrete libraries |
 | `python tools/test_mir_import.py` | Resolve and type-check concrete imports |
+| `python tools/test_mir_generic.py` | Cross-library generic and transitive external dependencies |
 
 After editing `src/`, run focused tests, regenerate the bootstrap, then run
 `test_bootstrap.py`. Commit Sirius changes and generated `bootstrap/compiler.c`
