@@ -1157,6 +1157,8 @@ def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 					fields = edit.fields
 			elif field.kind == NODE_SPREAD
 				let symbol = resolve_hir_name(result.symbols, name)
+				if symbol.error == ""
+					result.nodes = result.nodes.append(HirNode(field_id, HIR_NAME, symbol.type_id, symbol.field_index))
 				if symbol.type_id == TYPE_TAG_INVALID
 					complete = false
 				elif complete
@@ -1328,6 +1330,9 @@ def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			let name = hir_ast_text(state.tree, root)
 			let resolved = resolve_hir_name(result.symbols, name)
 			if resolved.error == ""
+				# Assignment roots are reads of an existing local, not declarations.
+				# Preserve their lexical identity for MIR, including nested projections.
+				result.nodes = result.nodes.append(HirNode(root, HIR_NAME, resolved.type_id, resolved.field_index))
 				if not result.symbols[!resolved.field_index].mutable
 					if target.kind == NODE_CHECKED_INDEX
 						return hir_body_error(result, id, "indexed update requires a mutable local array")

@@ -45,14 +45,16 @@ callee. Return inference within one body analysis is also memoized; its key
 includes the active call chain to retain the recursion guard.
 
 MIR lowering consumes this typed result and still traverses AST structure for
-CFG generation. **Local name reads** use the semantic symbol identity recorded
-in `HIR_NAME`/`HIR_BINDING`, rather than performing another lexical name lookup.
-The specialization worklist attaches `HIR_TARGET` annotations containing stable
-concrete function IDs; MIR call lowering consumes these directly. Legacy
-standalone call-lowering tests can still supply the separate call-target list.
-Constructor arguments are evaluated in caller scope before their parameters
-become visible, including when names overlap. Assignment paths and some
-constructor/pub operations still use source-based lookup.
+CFG generation. **Local name reads, assignment roots and record spreads** use
+the lexical identities recorded in `HIR_NAME`/`HIR_BINDING`, instead of resolving
+their names again. Nested update paths carry that identity to their root; field
+selectors and CoW reconstruction still need typed MIR lowering. The worklist
+places concrete specialization IDs directly in `HIR_TARGET` annotations. It no
+longer builds a duplicate `HirSpecializedCall` array; standalone MIR tests can
+still provide the legacy call-target argument for compatibility. Constructor
+arguments are evaluated in the caller's scope, and shorthand `pub` fields refer
+only to constructor parameters, never to caller variables. Bare-name lookup
+remains a fallback for incomplete HIR supplied by standalone lowering tests.
 
 MIR validation is independent: it checks instruction types, control flow, and
 ownership, not HIR-level generic inference. HIR is not yet a standalone typed

@@ -1,0 +1,26 @@
+rec Pair(left: i64, right: i64)
+	pub left
+	pub right
+
+def main() -> i64
+	var value = 5
+	var data = {items = [1, 2], count = value}
+	let before = data
+	if true
+		var value = 8
+		value += 2
+		data.items[!0] = value
+		var data = {items = [3, 4], count = value}
+		data.count += value
+		print(data.count)
+		print(data.items[!0])
+	print(value)
+	print(data.items[!0])
+	print(before.items[!0])
+	let edited = {data.*, count = 7}
+	print(edited.count)
+	print(data.count)
+	let pair = Pair(edited.count, value)
+	print(pair.left)
+	print(pair.right)
+	return 0

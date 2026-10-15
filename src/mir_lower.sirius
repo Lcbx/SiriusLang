@@ -90,6 +90,20 @@ def mir_lower_binding(state: MirBuilder, name: string) -> i64
 			return state.bindings[!j].slot
 	return -1
 
+# Use the lexical identity recorded by HIR for assignment roots and spreads.
+# Standalone MIR tests may provide partial annotations; keep their name fallback.
+def mir_lower_target(state: MirBuilder, context: MirLowerContext, source: i64) -> i64
+	let at = hir_annotation_find(context.hir, context.annotation_index, source, HIR_NAME)
+	if at < 0
+		return mir_lower_binding(state, hir_ast_text(context.tree, source))
+	let resolved = context.hir[!at]
+	let slot = mir_lower_symbol(state, resolved.field_index)
+	if slot < 0
+		return -1
+	if resolved.type_id != TYPE_TAG_INVALID and state.register_types[!slot] != resolved.type_id
+		return -1
+	return slot
+
 # Record updates transfer ownership of the local record; the C backend
 # mutates uniquely owned records and clones when a snapshot is still alive.
 def mir_lower_record_update(state: MirBuilder, context: MirLowerContext, root: i64, field: i64, value: i64) -> MirBuilder
@@ -139,7 +153,7 @@ def mir_lower_augmented(state: MirBuilder, operator: string, previous: i64, valu
 def mir_lower_update_path(state: MirBuilder, context: MirLowerContext, target: i64) -> MirUpdatePath
 	let node = context.tree.nodes[!target]
 	if node.kind == NODE_NAME
-		let slot = mir_lower_binding(state, hir_ast_text(context.tree, target))
+		let slot = mir_lower_target(state, context, target)
 		if slot < 0
 			return MirUpdatePath(mir_lower_error(state, "unknown MIR assignment target"), -1, Array[MirUpdateStep]())
 		return MirUpdatePath(state, slot, Array[MirUpdateStep]())
@@ -331,7 +345,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			let field = hir_ast_child(context.tree, id, i)
 			let field_node = context.tree.nodes[!field]
 			if field_node.kind == NODE_SPREAD
-				let owner = mir_lower_binding(next, hir_ast_text(context.tree, field))
+				let owner = mir_lower_target(next, context, field)
 				if owner < 0
 					return MirLowerExpr(mir_lower_error(next, "unknown MIR record spread source"), -1)
 				let owner_type = next.register_types[!owner]
@@ -449,7 +463,9 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 						var field_name = hir_ast_text(context.tree, published)
 						var slot = -1
 						if pub.count == 0
-							slot = mir_lower_binding(next, field_name)
+							for parameter in parameters
+								if parameter.name == field_name
+									slot = parameter.slot
 						else
 							let expression_id = hir_ast_child(context.tree, published, 0)
 							if context.tree.nodes[!expression_id].kind == NODE_ATTR
@@ -954,7 +970,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				let base = hir_ast_child(context.tree, owner, 0)
 				if context.tree.nodes[!base].kind != NODE_NAME
 					return mir_lower_error(next, "nested MIR indexed update is not supported yet")
-				let root = mir_lower_binding(next, hir_ast_text(context.tree, base))
+				let root = mir_lower_target(next, context, base)
 				if root < 0
 					return mir_lower_error(next, "unknown MIR indexed record")
 				let record_type = next.register_types[!root]
@@ -976,7 +992,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				return mir_lower_record_update(next, context, root, field.field_index, array.slot)
 			if context.tree.nodes[!owner].kind != NODE_NAME
 				return mir_lower_error(next, "MIR indexed update requires a local array")
-			let register = mir_lower_binding(next, hir_ast_text(context.tree, owner))
+			let register = mir_lower_target(next, context, owner)
 			if register < 0 or context.types.entries[!next.register_types[!register]].tag != TYPE_TAG_ARRAY
 				return mir_lower_error(next, "MIR indexed update requires an array")
 			let index = mir_lower_expression(next, context, hir_ast_child(context.tree, target, 1))
@@ -990,7 +1006,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			let owner = hir_ast_child(context.tree, target, 0)
 			if context.tree.nodes[!owner].kind != NODE_NAME
 				return mir_lower_error(next, "nested MIR record updates are not supported yet")
-			let root = mir_lower_binding(next, hir_ast_text(context.tree, owner))
+			let root = mir_lower_target(next, context, owner)
 			if root < 0
 				return mir_lower_error(next, "unknown MIR record assignment target")
 			let record_type = next.register_types[!root]
@@ -1032,7 +1048,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			return mir_lower_record_update(next, context, root, field.field_index, updated_slot)
 		if context.tree.nodes[!target].kind != NODE_NAME
 			return mir_lower_error(next, "unsupported MIR assignment target")
-		let register = mir_lower_binding(next, hir_ast_text(context.tree, target))
+		let register = mir_lower_target(next, context, target)
 		if register < 0
 			return mir_lower_error(next, "unknown MIR assignment target")
 		let value = mir_lower_expression(next, context, hir_ast_child(context.tree, id, 1))

@@ -40,11 +40,12 @@ imports are implemented. There is no Python compiler in the active workflow.
   recursion-sensitive keys. The MIR verifier still checks CFG and ownership.
   Baseline self-compilation timing is essentially unchanged; keep profiling
   before attempting broader HIR/MIR storage changes.
-- [x] Have MIR consume resolved HIR symbol identities for local reads and
-  concrete specialization IDs for calls (rather than repeating name/call-list
-  searches); keep the source-based paths for assignments and constructors until
-  those operations have complete typed representation. Test constructor
-  argument scope and a byte-identical self-hosted bootstrap.
+- [x] Have MIR consume resolved HIR symbol identities for local reads,
+  assignment roots, nested-update roots and record spreads. Constructor
+  shorthand `pub` reads its own parameters, not caller locals. Specialization
+  worklists carry call IDs solely in `HIR_TARGET`, without a duplicate call
+  array; keep compatibility fallbacks for standalone MIR tests. Verify shadowed
+  scopes, CoW and a byte-identical self-hosted bootstrap.
 - [ ] Address remaining HIR/legacy-type coupling and source span diagnostics.
   Use canonical `TypeId`s for new code; avoid expanding legacy emitter-local
   type arithmetic. Retain the legacy emitter only for differential checks.

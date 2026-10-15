@@ -1,3 +1,11 @@
+# Specialization IDs are now carried exclusively by resolved HIR_TARGET nodes.
+def worklist_targets(body: HirSpecializedFunction) -> Array[i64]
+	var result = Array[i64]()
+	for node in body.nodes
+		if node.operation == HIR_TARGET
+			result = result.append(node.field_index)
+	return result
+
 # HIR worklist is usable without linking MIR or the C emitter.
 def main() -> i64
 	let source = "def size(values) -> i64\n\treturn len(values)\ndef main() -> i64\n\tlet a = [1, 2]\n\treturn size(a) + size([3, 4])\n"
@@ -15,9 +23,10 @@ def main() -> i64
 	# The unannotated callee is inferred once, then reused by the worklist.
 	if result.worklist_analyses != 2
 		return 13
-	if len(result.bodies[!0].calls) != 2
+	let first_targets = worklist_targets(result.bodies[!0])
+	if len(first_targets) != 2
 		return 4
-	if result.bodies[!0].calls[!0].specialization != 1 or result.bodies[!0].calls[!1].specialization != 1
+	if first_targets[!0] != 1 or first_targets[!1] != 1
 		return 5
 	let array_id = result.registry.entries[!1].arguments[!0]
 	if array_id < 0 or array_id >= len(result.types.entries)
@@ -35,9 +44,10 @@ def main() -> i64
 		return 9
 	if specialized.worklist_analyses != 3
 		return 14
-	if len(specialized.bodies[!0].calls) != 3
+	let distinct_targets = worklist_targets(specialized.bodies[!0])
+	if len(distinct_targets) != 3
 		return 10
-	if specialized.bodies[!0].calls[!0].specialization != 1 or specialized.bodies[!0].calls[!1].specialization != 2 or specialized.bodies[!0].calls[!2].specialization != 1
+	if distinct_targets[!0] != 1 or distinct_targets[!1] != 2 or distinct_targets[!2] != 1
 		return 11
 	for i in 0..len(specialized.bodies)
 		if specialized.registry.entries[!i].status != HIR_SPEC_COMPLETE

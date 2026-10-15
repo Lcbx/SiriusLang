@@ -26,7 +26,42 @@ def check(source: string, arguments: Array[MirValue], expected: i64) -> bool
 		return false
 	return true
 
+# Assignment roots and record spreads must use the lexical symbols resolved by HIR.
+def check_target_symbols() -> bool
+	let source = "def main() -> i64\n\tvar x = {a = 1}\n\tx.a = 2\n\tif true\n\t\tvar x = {a = 3}\n\t\tx.a = 4\n\t\tlet y = {x.*}\n\t\tprint(y.a)\n\treturn x.a\n"
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		return false
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return false
+	let typed = hir_analyze_module_body(parsed.state, declarations.functions[!0], declarations.functions, Array[string]())
+	if typed.error != ""
+		print(typed.error)
+		return false
+	let index = hir_annotation_index(typed.nodes, len(parsed.state.nodes))
+	var roots = Array[i64]()
+	var spreads = Array[i64]()
+	for i in 0..len(parsed.state.nodes)
+		let node = parsed.state.nodes[!i]
+		if node.kind == NODE_ASSIGN
+			let target = hir_ast_child(parsed.state, i, 0)
+			if parsed.state.nodes[!target].kind == NODE_ATTR
+				let root = hir_ast_child(parsed.state, target, 0)
+				let at = hir_annotation_find(typed.nodes, index, root, HIR_NAME)
+				if at < 0
+					return false
+				roots = roots.append(typed.nodes[!at].field_index)
+		if node.kind == NODE_SPREAD
+			let at = hir_annotation_find(typed.nodes, index, i, HIR_NAME)
+			if at < 0
+				return false
+			spreads = spreads.append(typed.nodes[!at].field_index)
+	return len(roots) == 2 and roots[!0] == 0 and roots[!1] == 1 and len(spreads) == 1 and spreads[!0] == 1
+
 def main() -> i64
+	if not check_target_symbols()
+		return 6
 	let loop_case = "def main() -> i64\n\tvar n = 0\n\tvar total = 0\n\twhile n < 5\n\t\tif n == 3\n\t\t\ttotal = total + 10\n\t\telse\n\t\t\ttotal = total + n\n\t\tn = n + 1\n\treturn total\n"
 	if not check(loop_case, Array[MirValue](), 17)
 		return 1
