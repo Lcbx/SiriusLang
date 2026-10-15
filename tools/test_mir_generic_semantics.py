@@ -102,6 +102,84 @@ def string_main() -> i64
 		assert result.returncode == 0, result.stderr
 		assert run(native).returncode == 0
 
+		# End-user syntax/semantics: generic structural records, field access and
+		# homogeneous arrays, with type identities fixed only at specialization.
+		structures = library('structures', '''def select(x)
+	let record = {value = x, enabled = true}
+	return record.value
+
+def wrap(x)
+	return {value = x, enabled = true}
+
+def read(x)
+	return x.value
+
+def pair(x)
+	let elements = [x, x]
+	return elements
+
+def mismatch(x)
+	return [x, 42]
+
+def size(x)
+	let values = [x, x]
+	return len(values)
+
+def as_text(x)
+	return str(x)
+
+def root(x)
+	return sqrt(x)
+
+def missing(x)
+	return x.absent
+''', '--template', 'select', '--template', 'wrap',
+			'--template', 'read', '--template', 'pair', '--template', 'size',
+			'--template', 'as_text', '--template', 'root', '--template', 'mismatch', '--template', 'missing')
+		structures_consumer = library('structures_consumer', '''rec Wrapped(value: i64, enabled: bool)
+extern def select(x: i64) -> i64
+extern def wrap(x: i64) -> Wrapped
+extern def read(x: Wrapped) -> i64
+extern def pair(x: string) -> Array[string]
+extern def size(x: bool) -> i64
+extern def as_text(x: i64) -> string
+extern def root(x: f64) -> f64
+
+def records_main() -> i64
+	var record = wrap(7)
+	let saved = record
+	record.value = 8
+	var values = pair("a")
+	let previous = values
+	values[!0] = "b"
+	if saved.value != 7 or record.value != 8 or previous[!0] != "a" or values[!0] != "b"
+		return 1
+	if select(4) != 4 or read(saved) != 7 or len(values) != 2 or size(true) != 2 or as_text(19) != "19" or root(9.0) != 3.0
+		return 2
+	return 0
+''', '--export', 'records_main')
+		for order in ((structures, structures_consumer), (structures_consumer, structures)):
+			must_run(runner, '--link-lib', linked, *order)
+			result = run(runner, '--entry', 'records_main', '--load-lib', linked)
+			assert (result.returncode, result.stdout, result.stderr) == (0, b'', b''), result
+		must_run(runner, '--emit-c-lib', c_file, '--entry', 'records_main', linked)
+		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'runtime'),
+			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
+			capture_output=True, timeout=90)
+		assert result.returncode == 0, result.stderr
+		assert run(native).returncode == 0
+
+		for name, definition, expression, fragment in (
+			('mismatch', 'extern def mismatch(x: bool) -> Array[bool]', 'mismatch(true)', b'expected bool, found i64'),
+			('missing', 'extern def missing(x: Wrapped) -> i64', 'missing(Wrapped(1, true))', b"unknown record field 'absent'"),
+			('as_text', 'extern def as_text(x: bool) -> string', 'as_text(true)', b'str expects one i64 argument'),
+		):
+			contents = ('rec Wrapped(value: i64, enabled: bool)\n' + definition +
+				'\ndef bad() -> i64\n\tlet unused = ' + expression + '\n\treturn 0\n')
+			broken = library('broken_' + name, contents, '--export', 'bad')
+			result = run(runner, '--link-lib', linked, broken, structures)
+			assert result.returncode == 2 and fragment in result.stderr, result
+
 		# Invalid concrete specializations must fail before execution.
 		bad = library('bad', '''extern def triple(x: bool) -> bool
 
@@ -112,7 +190,7 @@ def bad() -> i64
 ''', '--export', 'bad')
 		result = run(runner, '--link-lib', linked, bad, provider)
 		assert result.returncode == 2 and b'arithmetic requires numeric operands' in result.stderr, result
-		print('PASS generic semantics: let inference, specialization, structural CoW, fallback, native parity, diagnostics')
+		print('PASS generic semantics: let inference, records/arrays, builtin calls, structural CoW, fallback, native parity, diagnostics')
 
 
 def main() -> None:

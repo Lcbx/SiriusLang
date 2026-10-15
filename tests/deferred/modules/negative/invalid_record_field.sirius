@@ -1,0 +1,6 @@
+# DEFERRED: the generic body is invalid after concrete argument inference.
+import Math.Generic alias Generic
+
+def main() -> i64
+	let result = Generic.select("not a record")
+	return 0

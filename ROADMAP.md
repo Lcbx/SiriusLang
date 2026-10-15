@@ -64,8 +64,11 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [x] Persist simple immutable `let` bindings followed by a return in parameterized
   HIR; concretely validate inferred local types, operators and name resolution.
   Keep ordinary body analysis for unsupported constructs.
-- [ ] Generalize persisted parameterized HIR to control flow, calls,
-  record/collection expressions, semantic imports and constructors.
+- [x] Support parameterized record/array literals, record field selection and
+  value-returning builtins (`len`, `str`, `sqrt`) with concrete type interning,
+  operator checks and source-level native/interpreted tests.
+- [ ] Generalize persisted parameterized HIR to user function calls, control
+  flow, collection operations, semantic imports and constructors.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed

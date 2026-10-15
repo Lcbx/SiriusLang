@@ -6,3 +6,20 @@ export def triple(x)
 export def copy(x)
 	let original = x
 	return original
+
+export def wrap(x)
+	let value = {item = x, enabled = true}
+	return value
+
+export def select(x)
+	return x.item
+
+export def duplicate(x)
+	let values = [x, x]
+	return values
+
+export def count_pair(x)
+	return len([x, x])
+
+export def append_integer(x)
+	return [x, 42]

@@ -1042,60 +1042,60 @@ static S_String * s_mir_f152(int64_t a0);
 static bool s_mir_f153(S_MirRecord * a0, int64_t a1);
 static int64_t s_mir_f154(int64_t a0, S_MirRecord * a1);
 static int64_t s_mir_f155(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f156(S_MirRecord * a0, int64_t a1, int64_t a2, S_String * a3);
-static S_MirRecord * s_mir_f157(S_MirRecord * a0, int64_t a1, S_String * a2);
-static S_MirRecord * s_mir_f158(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f159(S_MirRecord * a0, S_String * a1);
-static S_MirRecord * s_mir_f160(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f161(S_MirRecord * a0, S_String * a1, int64_t a2);
-static S_MirRecord * s_mir_f162(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
-static S_MirRecord * s_mir_f163(S_MirRecord * a0, S_MirRecord * a1);
-static S_MirRecord * s_mir_f164(S_MirRecord * a0, S_MirRecord * a1);
-static int64_t s_mir_f165(S_MirRecord * a0, int64_t a1, int64_t a2);
-static int64_t s_mir_f166(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f167(int64_t a0, int64_t a1, int64_t a2);
-static S_MirRecord * s_mir_f168(int64_t a0);
-static S_MirRecord * s_mir_f169(int64_t a0, int64_t a1);
-static S_MirRecord * s_mir_f170(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3);
-static int64_t s_mir_f171(S_MirRecord * a0, S_String * a1);
-static S_MirRecord * s_mir_f172(S_MirRecord * a0, int64_t a1, S_String * a2);
-static S_MirRecord * s_mir_f173(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f174(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3, int64_t a4);
+static S_MirRecord * s_mir_f156(S_MirRecord * a0, int64_t a1, S_String * a2);
+static S_MirRecord * s_mir_f157(S_MirRecord * a0, S_MirRecord * a1);
+static S_MirRecord * s_mir_f158(S_MirRecord * a0, S_String * a1, S_MirRecord * a2);
+static S_MirRecord * s_mir_f159(S_MirRecord * a0, int64_t a1, int64_t a2, S_String * a3);
+static S_MirRecord * s_mir_f160(S_MirRecord * a0, int64_t a1, S_String * a2);
+static S_MirRecord * s_mir_f161(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f162(S_MirRecord * a0, S_String * a1);
+static S_MirRecord * s_mir_f163(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f164(S_MirRecord * a0, S_String * a1, int64_t a2);
+static S_MirRecord * s_mir_f165(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
+static S_MirRecord * s_mir_f166(S_MirRecord * a0, S_MirRecord * a1);
+static S_MirRecord * s_mir_f167(S_MirRecord * a0, S_MirRecord * a1);
+static int64_t s_mir_f168(S_MirRecord * a0, int64_t a1, int64_t a2);
+static int64_t s_mir_f169(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f170(int64_t a0, int64_t a1, int64_t a2);
+static S_MirRecord * s_mir_f171(int64_t a0);
+static S_MirRecord * s_mir_f172(int64_t a0, int64_t a1);
+static S_MirRecord * s_mir_f173(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3);
+static int64_t s_mir_f174(S_MirRecord * a0, S_String * a1);
 static S_MirRecord * s_mir_f175(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f176(S_MirRecord * a0, S_String * a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f177(int64_t a0, int64_t a1, int64_t a2);
-static S_String * s_mir_f178(int64_t a0);
-static S_MirRecord * s_mir_f179(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f180(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f176(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3, int64_t a4);
+static S_MirRecord * s_mir_f177(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
+static S_MirRecord * s_mir_f178(S_MirRecord * a0, S_String * a1, int64_t a2, int64_t a3);
+static S_MirRecord * s_mir_f179(int64_t a0, int64_t a1, int64_t a2);
+static S_String * s_mir_f180(int64_t a0);
 static S_MirRecord * s_mir_f181(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f182(int64_t a0);
-static S_MirRecord * s_mir_f183(S_MirRecord * a0, S_MirRecord * a1);
-static bool s_mir_f184(S_MirRecord * a0, S_MirRecord * a1);
-static int64_t s_mir_f185(int64_t a0);
-static bool s_mir_f186(S_String * a0);
-static S_MirRecord * s_mir_f187(S_MirRecord * a0, S_String * a1, S_MirRecord * a2);
-static bool s_mir_f188(S_String * a0);
-static S_MirRecord * s_mir_f189(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3);
-static S_MirRecord * s_mir_f190(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3);
-static S_MirRecord * s_mir_f191(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
-static S_MirRecord * s_mir_f192(S_MirRecord * a0, S_MirRecord * a1);
-static bool s_mir_f193(S_MirRecord * a0, int64_t a1);
-static S_MirRecord * s_mir_f194(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
-static S_MirRecord * s_mir_f195(int64_t a0, S_MirRecord * a1);
-static S_MirRecord * s_mir_f196(int64_t a0, int64_t a1, int64_t a2);
-static S_MirRecord * s_mir_f197(int64_t a0, S_MirRecord * a1);
-static S_MirRecord * s_mir_f198(S_String * a0);
-static S_MirRecord * s_mir_f199(int64_t a0, S_String * a1);
-static int64_t s_mir_f200(S_String * a0);
-static S_MirRecord * s_mir_f201(int64_t a0);
-static S_MirRecord * s_mir_f202(int64_t a0, int64_t a1, int64_t a2);
+static S_MirRecord * s_mir_f182(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f183(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f184(int64_t a0);
+static S_MirRecord * s_mir_f185(S_MirRecord * a0, S_MirRecord * a1);
+static bool s_mir_f186(S_MirRecord * a0, S_MirRecord * a1);
+static S_MirRecord * s_mir_f187(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord * a2, int64_t a3, S_String * a4);
+static int64_t s_mir_f188(int64_t a0);
+static bool s_mir_f189(S_String * a0);
+static bool s_mir_f190(S_String * a0);
+static S_MirRecord * s_mir_f191(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3);
+static S_MirRecord * s_mir_f192(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3);
+static S_MirRecord * s_mir_f193(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
+static bool s_mir_f194(S_MirRecord * a0, int64_t a1);
+static S_MirRecord * s_mir_f195(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
+static S_MirRecord * s_mir_f196(int64_t a0, S_MirRecord * a1);
+static S_MirRecord * s_mir_f197(int64_t a0, int64_t a1, int64_t a2);
+static S_MirRecord * s_mir_f198(int64_t a0, S_MirRecord * a1);
+static S_MirRecord * s_mir_f199(S_String * a0);
+static S_MirRecord * s_mir_f200(int64_t a0, S_String * a1);
+static int64_t s_mir_f201(S_String * a0);
+static S_MirRecord * s_mir_f202(int64_t a0);
 static S_MirRecord * s_mir_f203(int64_t a0, int64_t a1, int64_t a2);
-static S_MirRecord * s_mir_f204(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f205(int64_t a0, int64_t a1, S_MirRecord * a2);
-static int64_t s_mir_f206(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f207(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
-static S_MirRecord * s_mir_f208(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
-static S_MirRecord * s_mir_f209(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord * a2, int64_t a3, S_String * a4);
+static S_MirRecord * s_mir_f204(int64_t a0, int64_t a1, int64_t a2);
+static S_MirRecord * s_mir_f205(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
+static S_MirRecord * s_mir_f206(int64_t a0, int64_t a1, S_MirRecord * a2);
+static int64_t s_mir_f207(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3);
+static S_MirRecord * s_mir_f208(S_MirRecord * a0, S_MirRecord * a1, int64_t a2);
+static S_MirRecord * s_mir_f209(int64_t a0, int64_t a1, int64_t a2, int64_t a3);
 static S_MirRecord * s_mir_f210(S_MirRecord * a0, int64_t a1, int64_t a2);
 static int64_t s_mir_f211(S_MirRecord * a0, int64_t a1);
 static int64_t s_mir_f212(S_MirRecord * a0, int64_t a1, int64_t a2);
@@ -63986,7 +63986,7 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r5;
 	S_MirRecord * r6 = NULL;
 	(void)r6;
-	int64_t r7 = 0;
+	S_MirRecord * r7 = NULL;
 	(void)r7;
 	int64_t r8 = 0;
 	(void)r8;
@@ -63994,11 +63994,11 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r9;
 	int64_t r10 = 0;
 	(void)r10;
-	bool r11 = 0;
+	int64_t r11 = 0;
 	(void)r11;
-	S_MirRecord * r12 = NULL;
+	bool r12 = 0;
 	(void)r12;
-	int64_t r13 = 0;
+	S_MirRecord * r13 = NULL;
 	(void)r13;
 	int64_t r14 = 0;
 	(void)r14;
@@ -64008,13 +64008,13 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r16;
 	int64_t r17 = 0;
 	(void)r17;
-	bool r18 = 0;
+	int64_t r18 = 0;
 	(void)r18;
 	int64_t r19 = 0;
 	(void)r19;
 	int64_t r20 = 0;
 	(void)r20;
-	int64_t r21 = 0;
+	bool r21 = 0;
 	(void)r21;
 	int64_t r22 = 0;
 	(void)r22;
@@ -64022,41 +64022,41 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r23;
 	int64_t r24 = 0;
 	(void)r24;
-	bool r25 = 0;
+	int64_t r25 = 0;
 	(void)r25;
-	bool r26 = 0;
+	int64_t r26 = 0;
 	(void)r26;
 	int64_t r27 = 0;
 	(void)r27;
-	int64_t r28 = 0;
+	bool r28 = 0;
 	(void)r28;
 	bool r29 = 0;
 	(void)r29;
-	bool r30 = 0;
+	int64_t r30 = 0;
 	(void)r30;
 	int64_t r31 = 0;
 	(void)r31;
-	int64_t r32 = 0;
+	bool r32 = 0;
 	(void)r32;
-	int64_t r33 = 0;
+	bool r33 = 0;
 	(void)r33;
 	int64_t r34 = 0;
 	(void)r34;
-	bool r35 = 0;
+	int64_t r35 = 0;
 	(void)r35;
-	S_MirRecord * r36 = NULL;
+	int64_t r36 = 0;
 	(void)r36;
 	int64_t r37 = 0;
 	(void)r37;
-	int64_t r38 = 0;
+	bool r38 = 0;
 	(void)r38;
-	bool r39 = 0;
+	S_MirRecord * r39 = NULL;
 	(void)r39;
-	bool r40 = 0;
+	int64_t r40 = 0;
 	(void)r40;
 	int64_t r41 = 0;
 	(void)r41;
-	int64_t r42 = 0;
+	bool r42 = 0;
 	(void)r42;
 	bool r43 = 0;
 	(void)r43;
@@ -64064,17 +64064,17 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r44;
 	int64_t r45 = 0;
 	(void)r45;
-	int64_t r46 = 0;
+	bool r46 = 0;
 	(void)r46;
 	int64_t r47 = 0;
 	(void)r47;
-	bool r48 = 0;
+	int64_t r48 = 0;
 	(void)r48;
 	int64_t r49 = 0;
 	(void)r49;
 	int64_t r50 = 0;
 	(void)r50;
-	int64_t r51 = 0;
+	bool r51 = 0;
 	(void)r51;
 	int64_t r52 = 0;
 	(void)r52;
@@ -64088,125 +64088,125 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r56;
 	int64_t r57 = 0;
 	(void)r57;
-	int64_t r58 = 0;
+	S_String * r58 = NULL;
 	(void)r58;
-	int64_t r59 = 0;
+	S_MirRecord * r59 = NULL;
 	(void)r59;
-	S_String * r60 = NULL;
+	S_MirRecord * r60 = NULL;
 	(void)r60;
-	S_MirRecord * r61 = NULL;
+	S_String * r61 = NULL;
 	(void)r61;
-	S_MirRecord * r62 = NULL;
+	S_String * r62 = NULL;
 	(void)r62;
-	S_String * r63 = NULL;
+	bool r63 = 0;
 	(void)r63;
-	S_String * r64 = NULL;
+	bool r64 = 0;
 	(void)r64;
-	bool r65 = 0;
+	S_MirRecord * r65 = NULL;
 	(void)r65;
-	bool r66 = 0;
+	S_MirRecord * r66 = NULL;
 	(void)r66;
-	S_MirRecord * r67 = NULL;
+	int64_t r67 = 0;
 	(void)r67;
-	S_MirRecord * r68 = NULL;
+	S_String * r68 = NULL;
 	(void)r68;
 	int64_t r69 = 0;
 	(void)r69;
-	S_String * r70 = NULL;
+	int64_t r70 = 0;
 	(void)r70;
-	int64_t r71 = 0;
+	S_MirRecord * r71 = NULL;
 	(void)r71;
 	int64_t r72 = 0;
 	(void)r72;
-	S_MirRecord * r73 = NULL;
+	int64_t r73 = 0;
 	(void)r73;
 	int64_t r74 = 0;
 	(void)r74;
 	int64_t r75 = 0;
 	(void)r75;
-	int64_t r76 = 0;
+	bool r76 = 0;
 	(void)r76;
-	bool r77 = 0;
+	S_MirRecord * r77 = NULL;
 	(void)r77;
-	int64_t r78 = 0;
+	S_MirRecord * r78 = NULL;
 	(void)r78;
-	int64_t r79 = 0;
+	S_MirRecord * r79 = NULL;
 	(void)r79;
 	int64_t r80 = 0;
 	(void)r80;
-	int64_t r81 = 0;
+	S_MirRecord * r81 = NULL;
 	(void)r81;
-	int64_t r82 = 0;
+	S_MirRecord * r82 = NULL;
 	(void)r82;
 	int64_t r83 = 0;
 	(void)r83;
-	S_String * r84 = NULL;
+	int64_t r84 = 0;
 	(void)r84;
-	S_MirRecord * r85 = NULL;
+	int64_t r85 = 0;
 	(void)r85;
-	S_MirRecord * r86 = NULL;
+	int64_t r86 = 0;
 	(void)r86;
-	S_String * r87 = NULL;
+	bool r87 = 0;
 	(void)r87;
-	S_String * r88 = NULL;
+	int64_t r88 = 0;
 	(void)r88;
-	bool r89 = 0;
+	int64_t r89 = 0;
 	(void)r89;
-	bool r90 = 0;
+	int64_t r90 = 0;
 	(void)r90;
-	S_MirRecord * r91 = NULL;
+	int64_t r91 = 0;
 	(void)r91;
-	S_MirRecord * r92 = NULL;
+	int64_t r92 = 0;
 	(void)r92;
 	int64_t r93 = 0;
 	(void)r93;
-	S_String * r94 = NULL;
+	int64_t r94 = 0;
 	(void)r94;
 	int64_t r95 = 0;
 	(void)r95;
-	int64_t r96 = 0;
+	S_String * r96 = NULL;
 	(void)r96;
 	S_MirRecord * r97 = NULL;
 	(void)r97;
-	int64_t r98 = 0;
+	S_MirRecord * r98 = NULL;
 	(void)r98;
-	int64_t r99 = 0;
+	S_String * r99 = NULL;
 	(void)r99;
-	bool r100 = 0;
+	S_String * r100 = NULL;
 	(void)r100;
-	S_MirRecord * r101 = NULL;
+	bool r101 = 0;
 	(void)r101;
-	S_MirRecord * r102 = NULL;
+	bool r102 = 0;
 	(void)r102;
-	int64_t r103 = 0;
+	S_MirRecord * r103 = NULL;
 	(void)r103;
-	S_String * r104 = NULL;
+	S_MirRecord * r104 = NULL;
 	(void)r104;
 	int64_t r105 = 0;
 	(void)r105;
-	S_MirRecord * r106 = NULL;
+	S_String * r106 = NULL;
 	(void)r106;
 	int64_t r107 = 0;
 	(void)r107;
-	int64_t r108 = 0;
+	S_MirRecord * r108 = NULL;
 	(void)r108;
-	int64_t r109 = 0;
+	S_MirRecord * r109 = NULL;
 	(void)r109;
-	S_MirRecord * r110 = NULL;
+	int64_t r110 = 0;
 	(void)r110;
 	S_MirRecord * r111 = NULL;
 	(void)r111;
 	S_MirRecord * r112 = NULL;
 	(void)r112;
-	int64_t r113 = 0;
+	S_String * r113 = NULL;
 	(void)r113;
-	S_MirRecord * r114 = NULL;
+	S_String * r114 = NULL;
 	(void)r114;
-	int64_t r115 = 0;
+	bool r115 = 0;
 	(void)r115;
-	int64_t r116 = 0;
+	bool r116 = 0;
 	(void)r116;
-	int64_t r117 = 0;
+	S_MirRecord * r117 = NULL;
 	(void)r117;
 	S_MirRecord * r118 = NULL;
 	(void)r118;
@@ -64216,14 +64216,348 @@ static S_MirRecord * s_mir_f109(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord 
 	(void)r120;
 	int64_t r121 = 0;
 	(void)r121;
-	S_MirRecord * r122 = NULL;
+	int64_t r122 = 0;
 	(void)r122;
-	bool r123 = 0;
+	S_MirRecord * r123 = NULL;
 	(void)r123;
-	bool r124 = 0;
+	S_MirRecord * r124 = NULL;
 	(void)r124;
-	bool r125 = 0;
+	int64_t r125 = 0;
 	(void)r125;
+	int64_t r126 = 0;
+	(void)r126;
+	int64_t r127 = 0;
+	(void)r127;
+	bool r128 = 0;
+	(void)r128;
+	int64_t r129 = 0;
+	(void)r129;
+	int64_t r130 = 0;
+	(void)r130;
+	S_MirRecord * r131 = NULL;
+	(void)r131;
+	int64_t r132 = 0;
+	(void)r132;
+	S_MirRecord * r133 = NULL;
+	(void)r133;
+	S_MirRecord * r134 = NULL;
+	(void)r134;
+	int64_t r135 = 0;
+	(void)r135;
+	int64_t r136 = 0;
+	(void)r136;
+	int64_t r137 = 0;
+	(void)r137;
+	int64_t r138 = 0;
+	(void)r138;
+	bool r139 = 0;
+	(void)r139;
+	int64_t r140 = 0;
+	(void)r140;
+	int64_t r141 = 0;
+	(void)r141;
+	int64_t r142 = 0;
+	(void)r142;
+	int64_t r143 = 0;
+	(void)r143;
+	int64_t r144 = 0;
+	(void)r144;
+	int64_t r145 = 0;
+	(void)r145;
+	bool r146 = 0;
+	(void)r146;
+	bool r147 = 0;
+	(void)r147;
+	bool r148 = 0;
+	(void)r148;
+	S_MirRecord * r149 = NULL;
+	(void)r149;
+	S_MirRecord * r150 = NULL;
+	(void)r150;
+	int64_t r151 = 0;
+	(void)r151;
+	S_String * r152 = NULL;
+	(void)r152;
+	S_String * r153 = NULL;
+	(void)r153;
+	S_String * r154 = NULL;
+	(void)r154;
+	S_String * r155 = NULL;
+	(void)r155;
+	S_String * r156 = NULL;
+	(void)r156;
+	S_String * r157 = NULL;
+	(void)r157;
+	S_String * r158 = NULL;
+	(void)r158;
+	int64_t r159 = 0;
+	(void)r159;
+	int64_t r160 = 0;
+	(void)r160;
+	S_MirRecord * r161 = NULL;
+	(void)r161;
+	int64_t r162 = 0;
+	(void)r162;
+	int64_t r163 = 0;
+	(void)r163;
+	bool r164 = 0;
+	(void)r164;
+	int64_t r165 = 0;
+	(void)r165;
+	S_MirRecord * r166 = NULL;
+	(void)r166;
+	S_MirRecord * r167 = NULL;
+	(void)r167;
+	S_MirRecord * r168 = NULL;
+	(void)r168;
+	int64_t r169 = 0;
+	(void)r169;
+	int64_t r170 = 0;
+	(void)r170;
+	int64_t r171 = 0;
+	(void)r171;
+	bool r172 = 0;
+	(void)r172;
+	S_MirRecord * r173 = NULL;
+	(void)r173;
+	S_MirRecord * r174 = NULL;
+	(void)r174;
+	S_MirRecord * r175 = NULL;
+	(void)r175;
+	int64_t r176 = 0;
+	(void)r176;
+	S_MirRecord * r177 = NULL;
+	(void)r177;
+	S_MirRecord * r178 = NULL;
+	(void)r178;
+	int64_t r179 = 0;
+	(void)r179;
+	int64_t r180 = 0;
+	(void)r180;
+	int64_t r181 = 0;
+	(void)r181;
+	int64_t r182 = 0;
+	(void)r182;
+	bool r183 = 0;
+	(void)r183;
+	int64_t r184 = 0;
+	(void)r184;
+	int64_t r185 = 0;
+	(void)r185;
+	int64_t r186 = 0;
+	(void)r186;
+	int64_t r187 = 0;
+	(void)r187;
+	S_MirRecord * r188 = NULL;
+	(void)r188;
+	S_MirRecord * r189 = NULL;
+	(void)r189;
+	int64_t r190 = 0;
+	(void)r190;
+	int64_t r191 = 0;
+	(void)r191;
+	int64_t r192 = 0;
+	(void)r192;
+	int64_t r193 = 0;
+	(void)r193;
+	int64_t r194 = 0;
+	(void)r194;
+	S_String * r195 = NULL;
+	(void)r195;
+	S_MirRecord * r196 = NULL;
+	(void)r196;
+	S_MirRecord * r197 = NULL;
+	(void)r197;
+	S_String * r198 = NULL;
+	(void)r198;
+	S_String * r199 = NULL;
+	(void)r199;
+	bool r200 = 0;
+	(void)r200;
+	bool r201 = 0;
+	(void)r201;
+	S_MirRecord * r202 = NULL;
+	(void)r202;
+	S_MirRecord * r203 = NULL;
+	(void)r203;
+	int64_t r204 = 0;
+	(void)r204;
+	S_String * r205 = NULL;
+	(void)r205;
+	int64_t r206 = 0;
+	(void)r206;
+	int64_t r207 = 0;
+	(void)r207;
+	S_MirRecord * r208 = NULL;
+	(void)r208;
+	S_MirRecord * r209 = NULL;
+	(void)r209;
+	int64_t r210 = 0;
+	(void)r210;
+	int64_t r211 = 0;
+	(void)r211;
+	int64_t r212 = 0;
+	(void)r212;
+	bool r213 = 0;
+	(void)r213;
+	int64_t r214 = 0;
+	(void)r214;
+	int64_t r215 = 0;
+	(void)r215;
+	int64_t r216 = 0;
+	(void)r216;
+	int64_t r217 = 0;
+	(void)r217;
+	int64_t r218 = 0;
+	(void)r218;
+	int64_t r219 = 0;
+	(void)r219;
+	int64_t r220 = 0;
+	(void)r220;
+	int64_t r221 = 0;
+	(void)r221;
+	int64_t r222 = 0;
+	(void)r222;
+	int64_t r223 = 0;
+	(void)r223;
+	int64_t r224 = 0;
+	(void)r224;
+	S_String * r225 = NULL;
+	(void)r225;
+	S_MirRecord * r226 = NULL;
+	(void)r226;
+	S_MirRecord * r227 = NULL;
+	(void)r227;
+	S_String * r228 = NULL;
+	(void)r228;
+	S_String * r229 = NULL;
+	(void)r229;
+	bool r230 = 0;
+	(void)r230;
+	bool r231 = 0;
+	(void)r231;
+	S_MirRecord * r232 = NULL;
+	(void)r232;
+	S_MirRecord * r233 = NULL;
+	(void)r233;
+	int64_t r234 = 0;
+	(void)r234;
+	S_String * r235 = NULL;
+	(void)r235;
+	int64_t r236 = 0;
+	(void)r236;
+	int64_t r237 = 0;
+	(void)r237;
+	S_MirRecord * r238 = NULL;
+	(void)r238;
+	int64_t r239 = 0;
+	(void)r239;
+	int64_t r240 = 0;
+	(void)r240;
+	int64_t r241 = 0;
+	(void)r241;
+	bool r242 = 0;
+	(void)r242;
+	int64_t r243 = 0;
+	(void)r243;
+	int64_t r244 = 0;
+	(void)r244;
+	int64_t r245 = 0;
+	(void)r245;
+	int64_t r246 = 0;
+	(void)r246;
+	int64_t r247 = 0;
+	(void)r247;
+	int64_t r248 = 0;
+	(void)r248;
+	S_String * r249 = NULL;
+	(void)r249;
+	S_MirRecord * r250 = NULL;
+	(void)r250;
+	S_MirRecord * r251 = NULL;
+	(void)r251;
+	S_String * r252 = NULL;
+	(void)r252;
+	S_String * r253 = NULL;
+	(void)r253;
+	bool r254 = 0;
+	(void)r254;
+	bool r255 = 0;
+	(void)r255;
+	S_MirRecord * r256 = NULL;
+	(void)r256;
+	S_MirRecord * r257 = NULL;
+	(void)r257;
+	int64_t r258 = 0;
+	(void)r258;
+	S_String * r259 = NULL;
+	(void)r259;
+	int64_t r260 = 0;
+	(void)r260;
+	int64_t r261 = 0;
+	(void)r261;
+	S_MirRecord * r262 = NULL;
+	(void)r262;
+	int64_t r263 = 0;
+	(void)r263;
+	int64_t r264 = 0;
+	(void)r264;
+	bool r265 = 0;
+	(void)r265;
+	S_MirRecord * r266 = NULL;
+	(void)r266;
+	S_MirRecord * r267 = NULL;
+	(void)r267;
+	int64_t r268 = 0;
+	(void)r268;
+	S_String * r269 = NULL;
+	(void)r269;
+	int64_t r270 = 0;
+	(void)r270;
+	S_MirRecord * r271 = NULL;
+	(void)r271;
+	int64_t r272 = 0;
+	(void)r272;
+	int64_t r273 = 0;
+	(void)r273;
+	S_MirRecord * r274 = NULL;
+	(void)r274;
+	S_MirRecord * r275 = NULL;
+	(void)r275;
+	S_MirRecord * r276 = NULL;
+	(void)r276;
+	int64_t r277 = 0;
+	(void)r277;
+	S_MirRecord * r278 = NULL;
+	(void)r278;
+	int64_t r279 = 0;
+	(void)r279;
+	int64_t r280 = 0;
+	(void)r280;
+	int64_t r281 = 0;
+	(void)r281;
+	S_MirRecord * r282 = NULL;
+	(void)r282;
+	int64_t r283 = 0;
+	(void)r283;
+	S_String * r284 = NULL;
+	(void)r284;
+	int64_t r285 = 0;
+	(void)r285;
+	S_MirRecord * r286 = NULL;
+	(void)r286;
+	bool r287 = 0;
+	(void)r287;
+	bool r288 = 0;
+	(void)r288;
+	bool r289 = 0;
+	(void)r289;
+	bool r290 = 0;
+	(void)r290;
+	bool r291 = 0;
+	(void)r291;
+	bool r292 = 0;
+	(void)r292;
 	r0 = a0;
 	r1 = a1;
 	r2 = a2;
@@ -64235,457 +64569,1056 @@ block0: ;
 	s_mir_record_store(&r4, array);
 	}
 	{ S_MirRecord * owned = r4; r4 = NULL; s_mir_record_store(&r5, owned); }
-	s_mir_record_store(&r6, s_mir_record_retain(r1->fields[1].record));
+	{ S_MirRecord * owned = r2; r2 = NULL; s_mir_record_store(&r6, owned); }
+	s_mir_record_store(&r7, s_mir_record_retain(r1->fields[1].record));
 	s_mir_record_release(r1); r1 = NULL;
-	r7 = INT64_C(0);
-	r8 = (int64_t)r6->length;
-	r9 = r7;
-	r10 = INT64_C(1);
+	r8 = INT64_C(0);
+	r9 = (int64_t)r7->length;
+	r10 = r8;
+	r11 = INT64_C(1);
 	goto block1;
 block1: ;
-	r11 = (r9 < r8);
-	if (r11) goto block40;
-	goto block41;
+	r12 = (r10 < r9);
+	if (r12) goto block86;
+	goto block87;
 block2: ;
-	r123 = (r9 >= 0 && (uint64_t)r9 < r6->length);
-	if (r123) goto block42;
-	goto block43;
+	r287 = (r10 >= 0 && (uint64_t)r10 < r7->length);
+	if (r287) goto block88;
+	goto block89;
 block3: ;
-	r113 = (r9 + r10);
-	r9 = r113;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r277 = (r10 + r11);
+	r10 = r277;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block1;
 block4: ;
 	{ S_MirRecord *array = s_mir_record_new(69, 0);
-	s_mir_record_store(&r114, array);
+	s_mir_record_store(&r278, array);
 	}
-	r115 = (int64_t)r5->length;
-	r116 = INT64_C(1);
-	r117 = (r115 - r116);
-	r124 = (r117 >= 0 && (uint64_t)r117 < r5->length);
-	if (r124) goto block44;
-	goto block45;
+	r279 = (int64_t)r5->length;
+	r280 = INT64_C(1);
+	r281 = (r279 - r280);
+	r288 = (r281 >= 0 && (uint64_t)r281 < r5->length);
+	if (r288) goto block90;
+	goto block91;
 block5: ;
-	r19 = r12->fields[2].bits;
-	r20 = INT64_C(0);
-	r21 = s_mir_f12(s_mir_record_retain(r0), r19, r20);
-	r22 = s_mir_f155(s_mir_record_retain(r5), r21);
-	r15 = r22;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r22 = r13->fields[2].bits;
+	r23 = INT64_C(0);
+	r24 = s_mir_f12(s_mir_record_retain(r0), r22, r23);
+	r25 = s_mir_f155(s_mir_record_retain(r5), r24);
+	r16 = r25;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block7;
 block6: ;
-	r23 = r12->fields[1].bits;
-	r24 = INT64_C(3);
-	r25 = (r23 == r24);
-	r26 = r25;
-	if (r25) goto block46;
-	goto block47;
+	r26 = r13->fields[1].bits;
+	r27 = INT64_C(3);
+	r28 = (r26 == r27);
+	r29 = r28;
+	if (r28) goto block92;
+	goto block93;
 block7: ;
-	r99 = INT64_C(0);
-	r100 = (r15 == r99);
-	if (r100) goto block48;
-	goto block49;
+	r264 = INT64_C(0);
+	r265 = (r16 == r264);
+	if (r265) goto block94;
+	goto block95;
 block8: ;
-	r27 = r12->fields[0].bits;
-	r28 = (int64_t)r3->length;
-	r29 = (r27 < r28);
-	r30 = (!r29);
-	r26 = r30;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r30 = r13->fields[0].bits;
+	r31 = (int64_t)r3->length;
+	r32 = (r30 < r31);
+	r33 = (!r32);
+	r29 = r33;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block9;
 block9: ;
-	if (r26) goto block50;
-	goto block51;
+	if (r29) goto block96;
+	goto block97;
 block10: ;
-	r31 = INT64_C(0);
-	r32 = (int64_t)r5->length;
-	r33 = r31;
-	r34 = INT64_C(1);
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r34 = INT64_C(0);
+	r35 = (int64_t)r5->length;
+	r36 = r34;
+	r37 = INT64_C(1);
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block12;
 block11: ;
-	r46 = r12->fields[1].bits;
-	r47 = INT64_C(2);
-	r48 = (r46 == r47);
-	if (r48) goto block52;
-	goto block53;
+	r49 = r13->fields[1].bits;
+	r50 = INT64_C(1);
+	r51 = (r49 == r50);
+	if (r51) goto block98;
+	goto block99;
 block12: ;
-	r35 = (r33 < r32);
-	if (r35) goto block54;
-	goto block55;
+	r38 = (r36 < r35);
+	if (r38) goto block100;
+	goto block101;
 block13: ;
-	r125 = (r33 >= 0 && (uint64_t)r33 < r5->length);
-	if (r125) goto block56;
-	goto block57;
+	r289 = (r36 >= 0 && (uint64_t)r36 < r5->length);
+	if (r289) goto block102;
+	goto block103;
 block14: ;
-	r45 = (r33 + r34);
-	r33 = r45;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r48 = (r36 + r37);
+	r36 = r48;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block12;
 block15: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block7;
 block16: ;
-	r41 = r36->fields[0].bits;
-	r42 = r12->fields[0].bits;
-	r43 = (r41 == r42);
-	r40 = r43;
+	r44 = r39->fields[0].bits;
+	r45 = r13->fields[0].bits;
+	r46 = (r44 == r45);
+	r43 = r46;
 	goto block17;
 block17: ;
-	if (r40) goto block18;
-	goto block58;
+	if (r43) goto block18;
+	goto block104;
 block18: ;
-	r44 = r36->fields[3].bits;
-	s_mir_record_release(r36); r36 = NULL;
-	r15 = r44;
+	r47 = r39->fields[3].bits;
+	s_mir_record_release(r39); r39 = NULL;
+	r16 = r47;
 	goto block20;
 block19: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block20;
 block20: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block14;
 block21: ;
-	r49 = r12->fields[2].bits;
-	r50 = INT64_C(0);
-	r51 = s_mir_f12(s_mir_record_retain(r0), r49, r50);
-	r52 = s_mir_f155(s_mir_record_retain(r5), r51);
-	r53 = r52;
-	r54 = r12->fields[2].bits;
-	r55 = INT64_C(1);
-	r56 = s_mir_f12(s_mir_record_retain(r0), r54, r55);
-	r57 = s_mir_f155(s_mir_record_retain(r5), r56);
-	r58 = r57;
-	r59 = r12->fields[2].bits;
-	s_mir_string_store(&r60, s_mir_f13(s_mir_record_retain(r0), r59));
-	s_mir_record_store(&r61, s_mir_f156(s_mir_record_retain(r2), r53, r58, r60));
-	r60 = NULL;
-	{ S_MirRecord * owned = r61; r61 = NULL; s_mir_record_store(&r62, owned); }
-	s_mir_string_store(&r63, s_string_retain(r62->fields[0].text));
-	s_mir_string_store(&r64, s_string_from_bytes("", 0));
-	r65 = (s_string_compare(r63, r64) == 0);
-	s_string_release(r63); r63 = NULL;
-	s_string_release(r64); r64 = NULL;
-	r66 = (!r65);
-	if (r66) goto block59;
-	goto block60;
+	r52 = r13->fields[2].bits;
+	r53 = INT64_C(0);
+	r54 = s_mir_f12(s_mir_record_retain(r0), r52, r53);
+	r55 = s_mir_f155(s_mir_record_retain(r5), r54);
+	r56 = r55;
+	r57 = r13->fields[2].bits;
+	s_mir_string_store(&r58, s_mir_f13(s_mir_record_retain(r0), r57));
+	s_mir_record_store(&r59, s_mir_f156(s_mir_record_retain(r6), r56, r58));
+	r58 = NULL;
+	{ S_MirRecord * owned = r59; r59 = NULL; s_mir_record_store(&r60, owned); }
+	s_mir_string_store(&r61, s_string_retain(r60->fields[0].text));
+	s_mir_string_store(&r62, s_string_from_bytes("", 0));
+	r63 = (s_string_compare(r61, r62) == 0);
+	s_string_release(r61); r61 = NULL;
+	s_string_release(r62); r62 = NULL;
+	r64 = (!r63);
+	if (r64) goto block105;
+	goto block106;
 block22: ;
-	r75 = r12->fields[1].bits;
-	r76 = INT64_C(5);
-	r77 = (r75 == r76);
-	if (r77) goto block61;
-	goto block62;
+	r74 = r13->fields[1].bits;
+	r75 = INT64_C(7);
+	r76 = (r74 == r75);
+	if (r76) goto block107;
+	goto block108;
 block23: ;
 	{ S_MirRecord *array = s_mir_record_new(31, 0);
-	s_mir_record_store(&r67, array);
+	s_mir_record_store(&r65, array);
 	}
 	{ S_MirRecord *array = s_mir_record_new(69, 0);
-	s_mir_record_store(&r68, array);
+	s_mir_record_store(&r66, array);
 	}
-	r69 = INT64_C(0);
-	s_mir_string_store(&r70, s_string_retain(r62->fields[0].text));
-	s_mir_record_release(r62); r62 = NULL;
-	r71 = r12->fields[2].bits;
-	s_mir_record_release(r12); r12 = NULL;
-	r72 = s_mir_f14(r0, r71);
+	r67 = INT64_C(0);
+	s_mir_string_store(&r68, s_string_retain(r60->fields[0].text));
+	s_mir_record_release(r60); r60 = NULL;
+	r69 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r70 = s_mir_f14(r0, r69);
 	r0 = NULL;
 	{ S_MirRecord *record = s_mir_record_new(70, 6);
-		record->fields[0].text = s_string_retain(r70);
-		record->fields[1].bits = r72;
-		record->fields[2].record = s_mir_record_retain(r67);
-		record->fields[3].record = s_mir_record_retain(r68);
-		record->fields[4].bits = r69;
-		record->fields[5].record = s_mir_record_retain(r2);
-	s_mir_record_store(&r73, record);
+		record->fields[0].text = s_string_retain(r68);
+		record->fields[1].bits = r70;
+		record->fields[2].record = s_mir_record_retain(r65);
+		record->fields[3].record = s_mir_record_retain(r66);
+		record->fields[4].bits = r67;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r71, record);
 	}
-	s_string_release(r70); r70 = NULL;
-	s_mir_record_release(r67); r67 = NULL;
-	s_mir_record_release(r68); r68 = NULL;
-	s_mir_record_release(r2); r2 = NULL;
-	returned = r73;
-	r73 = NULL;
+	s_string_release(r68); r68 = NULL;
+	s_mir_record_release(r65); r65 = NULL;
+	s_mir_record_release(r66); r66 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r71;
+	r71 = NULL;
 	goto exit;
 block24: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block25;
 block25: ;
-	r74 = r62->fields[2].bits;
-	s_mir_record_release(r62); r62 = NULL;
-	r15 = r74;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	r72 = r60->fields[2].bits;
+	r16 = r72;
+	r73 = r60->fields[1].bits;
+	s_mir_record_release(r60); r60 = NULL;
+	r18 = r73;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block7;
 block26: ;
-	r78 = r12->fields[2].bits;
-	r79 = INT64_C(0);
-	r80 = s_mir_f12(s_mir_record_retain(r0), r78, r79);
-	r81 = s_mir_f155(s_mir_record_retain(r5), r80);
-	r82 = r81;
-	r83 = r12->fields[2].bits;
-	s_mir_string_store(&r84, s_mir_f13(s_mir_record_retain(r0), r83));
-	s_mir_record_store(&r85, s_mir_f157(s_mir_record_retain(r2), r82, r84));
-	r84 = NULL;
-	{ S_MirRecord * owned = r85; r85 = NULL; s_mir_record_store(&r86, owned); }
-	s_mir_string_store(&r87, s_string_retain(r86->fields[0].text));
-	s_mir_string_store(&r88, s_string_from_bytes("", 0));
-	r89 = (s_string_compare(r87, r88) == 0);
-	s_string_release(r87); r87 = NULL;
-	s_string_release(r88); r88 = NULL;
-	r90 = (!r89);
-	if (r90) goto block63;
-	goto block64;
+	{ S_MirRecord *array = s_mir_record_new(23, 0);
+	s_mir_record_store(&r77, array);
+	}
+	{ S_MirRecord * owned = r77; r77 = NULL; s_mir_record_store(&r78, owned); }
+	s_mir_record_store(&r79, s_mir_record_retain(r0->fields[4].record));
+	r80 = r13->fields[2].bits;
+	r290 = (r80 >= 0 && (uint64_t)r80 < r79->length);
+	if (r290) goto block109;
+	goto block110;
 block27: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block7;
+	r126 = r13->fields[1].bits;
+	r127 = INT64_C(11);
+	r128 = (r126 == r127);
+	if (r128) goto block111;
+	goto block112;
 block28: ;
+	r87 = (r85 < r84);
+	if (r87) goto block113;
+	goto block114;
+block29: ;
+	r88 = r85;
+	r89 = r13->fields[2].bits;
+	r90 = s_mir_f12(s_mir_record_retain(r0), r89, r88);
+	r91 = r90;
+	r92 = INT64_C(0);
+	r93 = s_mir_f12(s_mir_record_retain(r0), r91, r92);
+	r94 = s_mir_f155(s_mir_record_retain(r5), r93);
+	r95 = r94;
+	s_mir_string_store(&r96, s_mir_f13(s_mir_record_retain(r0), r91));
+	s_mir_record_store(&r97, s_mir_f49(r78, r96, r95));
+	r78 = NULL;
+	r96 = NULL;
+	{ S_MirRecord * owned = r97; r97 = NULL; s_mir_record_store(&r98, owned); }
+	s_mir_string_store(&r99, s_string_retain(r98->fields[0].text));
+	s_mir_string_store(&r100, s_string_from_bytes("", 0));
+	r101 = (s_string_compare(r99, r100) == 0);
+	s_string_release(r99); r99 = NULL;
+	s_string_release(r100); r100 = NULL;
+	r102 = (!r101);
+	if (r102) goto block115;
+	goto block116;
+block30: ;
+	r110 = (r85 + r86);
+	r85 = r110;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block28;
+block31: ;
+	s_mir_record_store(&r111, s_mir_f157(s_mir_record_retain(r6), r78));
+	r78 = NULL;
+	{ S_MirRecord * owned = r111; r111 = NULL; s_mir_record_store(&r112, owned); }
+	s_mir_string_store(&r113, s_string_retain(r112->fields[0].text));
+	s_mir_string_store(&r114, s_string_from_bytes("", 0));
+	r115 = (s_string_compare(r113, r114) == 0);
+	s_string_release(r113); r113 = NULL;
+	s_string_release(r114); r114 = NULL;
+	r116 = (!r115);
+	if (r116) goto block117;
+	goto block118;
+block32: ;
 	{ S_MirRecord *array = s_mir_record_new(31, 0);
-	s_mir_record_store(&r91, array);
+	s_mir_record_store(&r103, array);
 	}
 	{ S_MirRecord *array = s_mir_record_new(69, 0);
-	s_mir_record_store(&r92, array);
+	s_mir_record_store(&r104, array);
 	}
-	r93 = INT64_C(0);
-	s_mir_string_store(&r94, s_string_retain(r86->fields[0].text));
-	s_mir_record_release(r86); r86 = NULL;
-	r95 = r12->fields[2].bits;
-	s_mir_record_release(r12); r12 = NULL;
-	r96 = s_mir_f14(r0, r95);
+	r105 = INT64_C(0);
+	s_mir_string_store(&r106, s_string_retain(r98->fields[0].text));
+	s_mir_record_release(r98); r98 = NULL;
+	r107 = s_mir_f14(r0, r91);
 	r0 = NULL;
 	{ S_MirRecord *record = s_mir_record_new(70, 6);
-		record->fields[0].text = s_string_retain(r94);
-		record->fields[1].bits = r96;
-		record->fields[2].record = s_mir_record_retain(r91);
-		record->fields[3].record = s_mir_record_retain(r92);
-		record->fields[4].bits = r93;
-		record->fields[5].record = s_mir_record_retain(r2);
-	s_mir_record_store(&r97, record);
+		record->fields[0].text = s_string_retain(r106);
+		record->fields[1].bits = r107;
+		record->fields[2].record = s_mir_record_retain(r103);
+		record->fields[3].record = s_mir_record_retain(r104);
+		record->fields[4].bits = r105;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r108, record);
 	}
-	s_string_release(r94); r94 = NULL;
-	s_mir_record_release(r91); r91 = NULL;
-	s_mir_record_release(r92); r92 = NULL;
-	s_mir_record_release(r2); r2 = NULL;
-	returned = r97;
-	r97 = NULL;
+	s_string_release(r106); r106 = NULL;
+	s_mir_record_release(r103); r103 = NULL;
+	s_mir_record_release(r104); r104 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r108;
+	r108 = NULL;
 	goto exit;
-block29: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+block33: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block34;
+block34: ;
+	s_mir_record_store(&r109, s_mir_record_retain(r98->fields[1].record));
+	s_mir_record_release(r98); r98 = NULL;
+	{ S_MirRecord * owned = r109; r109 = NULL; s_mir_record_store(&r78, owned); }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block30;
-block30: ;
-	r98 = r86->fields[2].bits;
-	s_mir_record_release(r86); r86 = NULL;
-	r15 = r98;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block7;
-block31: ;
+block35: ;
 	{ S_MirRecord *array = s_mir_record_new(31, 0);
-	s_mir_record_store(&r101, array);
+	s_mir_record_store(&r117, array);
 	}
 	{ S_MirRecord *array = s_mir_record_new(69, 0);
-	s_mir_record_store(&r102, array);
+	s_mir_record_store(&r118, array);
 	}
-	r103 = INT64_C(0);
-	s_mir_string_store(&r104, s_string_from_bytes("\151\156\166\141\154\151\144\040\160\141\162\141\155\145\164\145\162\151\172\145\144\040\110\111\122\040\164\171\160\145", 30));
-	r105 = INT64_C(0);
-	{ S_MirRecord *record = s_mir_record_new(70, 6);
-		record->fields[0].text = s_string_retain(r104);
-		record->fields[1].bits = r105;
-		record->fields[2].record = s_mir_record_retain(r101);
-		record->fields[3].record = s_mir_record_retain(r102);
-		record->fields[4].bits = r103;
-		record->fields[5].record = s_mir_record_retain(r2);
-	s_mir_record_store(&r106, record);
-	}
-	s_string_release(r104); r104 = NULL;
-	s_mir_record_release(r101); r101 = NULL;
-	s_mir_record_release(r102); r102 = NULL;
-	s_mir_record_release(r2); r2 = NULL;
-	returned = r106;
-	r106 = NULL;
-	goto exit;
-block32: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block33;
-block33: ;
-	r107 = r12->fields[2].bits;
-	r108 = r12->fields[1].bits;
-	r109 = r12->fields[0].bits;
-	s_mir_record_release(r12); r12 = NULL;
-	{ S_MirRecord *record = s_mir_record_new(30, 4);
-		record->fields[0].bits = r109;
-		record->fields[1].bits = r108;
-		record->fields[2].bits = r107;
-		record->fields[3].bits = r15;
-	s_mir_record_store(&r110, record);
-	}
-	{ S_MirRecord * owned = r5; r5 = NULL; s_mir_record_store(&r111, owned); }
-	{ S_MirField added = {0}; added.record = s_mir_record_retain(r110);
-		S_MirRecord *updated = s_mir_array_append_owned(r111, added);
-		r111 = NULL;
-	s_mir_record_store(&r112, updated);
-	}
-	s_mir_record_release(r110); r110 = NULL;
-	{ S_MirRecord * owned = r112; r112 = NULL; s_mir_record_store(&r5, owned); }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block3;
-block34: ;
-	s_mir_record_store(&r12, s_mir_record_retain(r6->fields[r9].record));
-	r13 = r12->fields[3].bits;
-	r14 = s_mir_f154(r13, s_mir_record_retain(r3));
-	r15 = r14;
-	r16 = r12->fields[1].bits;
-	r17 = INT64_C(9);
-	r18 = (r16 == r17);
-	if (r18) goto block65;
-	goto block66;
-block35: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block36: ;
-	s_mir_record_store(&r118, s_mir_record_retain(r5->fields[r117].record));
-	r119 = r118->fields[3].bits;
-	s_mir_record_release(r118); r118 = NULL;
-	s_mir_string_store(&r120, s_string_from_bytes("", 0));
-	r121 = INT64_C(0);
+	r119 = INT64_C(0);
+	s_mir_string_store(&r120, s_string_retain(r112->fields[0].text));
+	s_mir_record_release(r112); r112 = NULL;
+	r121 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r122 = s_mir_f14(r0, r121);
+	r0 = NULL;
 	{ S_MirRecord *record = s_mir_record_new(70, 6);
 		record->fields[0].text = s_string_retain(r120);
-		record->fields[1].bits = r121;
-		record->fields[2].record = s_mir_record_retain(r5);
-		record->fields[3].record = s_mir_record_retain(r114);
+		record->fields[1].bits = r122;
+		record->fields[2].record = s_mir_record_retain(r117);
+		record->fields[3].record = s_mir_record_retain(r118);
 		record->fields[4].bits = r119;
-		record->fields[5].record = s_mir_record_retain(r2);
-	s_mir_record_store(&r122, record);
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r123, record);
 	}
 	s_string_release(r120); r120 = NULL;
-	s_mir_record_release(r5); r5 = NULL;
-	s_mir_record_release(r114); r114 = NULL;
-	s_mir_record_release(r2); r2 = NULL;
-	returned = r122;
-	r122 = NULL;
+	s_mir_record_release(r117); r117 = NULL;
+	s_mir_record_release(r118); r118 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r123;
+	r123 = NULL;
 	goto exit;
-block37: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block38: ;
-	s_mir_record_store(&r36, s_mir_record_retain(r5->fields[r33].record));
-	r37 = r36->fields[1].bits;
-	r38 = INT64_C(9);
-	r39 = (r37 == r38);
-	r40 = r39;
-	if (r39) goto block16;
-	goto block17;
-block39: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block40: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block2;
-block41: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+block36: ;
 	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block4;
-block42: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block34;
-block43: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r5) { s_mir_record_release(r5); r5 = NULL; }
-	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block35;
-block44: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block36;
-block45: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r5) { s_mir_record_release(r5); r5 = NULL; }
-	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	if (r114) { s_mir_record_release(r114); r114 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block37;
+block37: ;
+	s_mir_record_store(&r124, s_mir_record_retain(r112->fields[1].record));
+	{ S_MirRecord * owned = r124; r124 = NULL; s_mir_record_store(&r6, owned); }
+	r125 = r112->fields[2].bits;
+	s_mir_record_release(r112); r112 = NULL;
+	r16 = r125;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
+block38: ;
+	r129 = INT64_C(0);
+	r130 = r129;
+	s_mir_record_store(&r131, s_mir_record_retain(r0->fields[4].record));
+	r132 = r13->fields[2].bits;
+	r291 = (r132 >= 0 && (uint64_t)r132 < r131->length);
+	if (r291) goto block119;
+	goto block120;
+block39: ;
+	r170 = r13->fields[1].bits;
+	r171 = INT64_C(6);
+	r172 = (r170 == r171);
+	if (r172) goto block121;
+	goto block122;
+block40: ;
+	r139 = (r137 < r136);
+	if (r139) goto block123;
+	goto block124;
+block41: ;
+	r140 = r137;
+	r141 = r13->fields[2].bits;
+	r142 = s_mir_f12(s_mir_record_retain(r0), r141, r140);
+	r143 = s_mir_f155(s_mir_record_retain(r5), r142);
+	r144 = r143;
+	r145 = INT64_C(0);
+	r146 = (r130 == r145);
+	if (r146) goto block125;
+	goto block126;
+block42: ;
+	r162 = (r137 + r138);
+	r137 = r162;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block40;
+block43: ;
+	r163 = INT64_C(0);
+	r164 = (r130 == r163);
+	if (r164) goto block127;
+	goto block128;
+block44: ;
+	r130 = r144;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block46;
+block45: ;
+	r147 = (r144 == r130);
+	r148 = (!r147);
+	if (r148) goto block129;
+	goto block130;
 block46: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block8;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block42;
 block47: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block9;
+	{ S_MirRecord *array = s_mir_record_new(31, 0);
+	s_mir_record_store(&r149, array);
+	}
+	{ S_MirRecord *array = s_mir_record_new(69, 0);
+	s_mir_record_store(&r150, array);
+	}
+	r151 = INT64_C(0);
+	s_mir_string_store(&r152, s_string_from_bytes("\145\170\160\145\143\164\145\144\040", 9));
+	s_mir_string_store(&r153, s_mir_f113(s_mir_record_retain(r6), r130));
+	s_mir_string_store(&r154, s_string_concat(r152, r153));
+	s_string_release(r152); r152 = NULL;
+	s_string_release(r153); r153 = NULL;
+	s_mir_string_store(&r155, s_string_from_bytes("\054\040\146\157\165\156\144\040", 8));
+	s_mir_string_store(&r156, s_string_concat(r154, r155));
+	s_string_release(r154); r154 = NULL;
+	s_string_release(r155); r155 = NULL;
+	s_mir_string_store(&r157, s_mir_f113(s_mir_record_retain(r6), r144));
+	s_mir_string_store(&r158, s_string_concat(r156, r157));
+	s_string_release(r156); r156 = NULL;
+	s_string_release(r157); r157 = NULL;
+	r159 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r160 = s_mir_f14(r0, r159);
+	r0 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r158);
+		record->fields[1].bits = r160;
+		record->fields[2].record = s_mir_record_retain(r149);
+		record->fields[3].record = s_mir_record_retain(r150);
+		record->fields[4].bits = r151;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r161, record);
+	}
+	s_string_release(r158); r158 = NULL;
+	s_mir_record_release(r149); r149 = NULL;
+	s_mir_record_release(r150); r150 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r161;
+	r161 = NULL;
+	goto exit;
 block48: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r5) { s_mir_record_release(r5); r5 = NULL; }
-	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r12) { s_mir_record_release(r12); r12 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block31;
+	goto block46;
 block49: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block32;
+	r165 = INT64_C(1);
+	r130 = r165;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block51;
 block50: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block10;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block51;
 block51: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block11;
+	s_mir_record_store(&r166, s_mir_f47(r6, r130));
+	r6 = NULL;
+	{ S_MirRecord * owned = r166; r166 = NULL; s_mir_record_store(&r167, owned); }
+	s_mir_record_store(&r168, s_mir_record_retain(r167->fields[1].record));
+	{ S_MirRecord * owned = r168; r168 = NULL; s_mir_record_store(&r6, owned); }
+	r169 = r167->fields[0].bits;
+	s_mir_record_release(r167); r167 = NULL;
+	r16 = r169;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
 block52: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block21;
+	{ S_MirRecord *array = s_mir_record_new(13, 0);
+	s_mir_record_store(&r173, array);
+	}
+	{ S_MirRecord * owned = r173; r173 = NULL; s_mir_record_store(&r174, owned); }
+	s_mir_record_store(&r175, s_mir_record_retain(r0->fields[4].record));
+	r176 = r13->fields[2].bits;
+	r292 = (r176 >= 0 && (uint64_t)r176 < r175->length);
+	if (r292) goto block131;
+	goto block132;
 block53: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block22;
+	r211 = r13->fields[1].bits;
+	r212 = INT64_C(2);
+	r213 = (r211 == r212);
+	if (r213) goto block133;
+	goto block134;
 block54: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block13;
+	r183 = (r181 < r180);
+	if (r183) goto block135;
+	goto block136;
 block55: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block15;
+	r184 = r181;
+	r185 = r13->fields[2].bits;
+	r186 = s_mir_f12(s_mir_record_retain(r0), r185, r184);
+	r187 = s_mir_f155(s_mir_record_retain(r5), r186);
+	{ S_MirRecord * owned = r174; r174 = NULL; s_mir_record_store(&r188, owned); }
+	{ S_MirField added = {0}; added.bits = r187;
+		S_MirRecord *updated = s_mir_array_append_owned(r188, added);
+		r188 = NULL;
+	s_mir_record_store(&r189, updated);
+	}
+	{ S_MirRecord * owned = r189; r189 = NULL; s_mir_record_store(&r174, owned); }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block56;
 block56: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block38;
+	r190 = (r181 + r182);
+	r181 = r190;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block54;
 block57: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r5) { s_mir_record_release(r5); r5 = NULL; }
-	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r12) { s_mir_record_release(r12); r12 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block39;
+	r191 = r13->fields[2].bits;
+	r192 = INT64_C(0);
+	r193 = s_mir_f12(s_mir_record_retain(r0), r191, r192);
+	r194 = r193;
+	s_mir_string_store(&r195, s_mir_f13(s_mir_record_retain(r0), r194));
+	s_mir_record_store(&r196, s_mir_f158(s_mir_record_retain(r6), r195, r174));
+	r195 = NULL;
+	r174 = NULL;
+	{ S_MirRecord * owned = r196; r196 = NULL; s_mir_record_store(&r197, owned); }
+	s_mir_string_store(&r198, s_string_retain(r197->fields[0].text));
+	s_mir_string_store(&r199, s_string_from_bytes("", 0));
+	r200 = (s_string_compare(r198, r199) == 0);
+	s_string_release(r198); r198 = NULL;
+	s_string_release(r199); r199 = NULL;
+	r201 = (!r200);
+	if (r201) goto block137;
+	goto block138;
 block58: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block19;
+	{ S_MirRecord *array = s_mir_record_new(31, 0);
+	s_mir_record_store(&r202, array);
+	}
+	{ S_MirRecord *array = s_mir_record_new(69, 0);
+	s_mir_record_store(&r203, array);
+	}
+	r204 = INT64_C(0);
+	s_mir_string_store(&r205, s_string_retain(r197->fields[0].text));
+	s_mir_record_release(r197); r197 = NULL;
+	r206 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r207 = s_mir_f14(r0, r206);
+	r0 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r205);
+		record->fields[1].bits = r207;
+		record->fields[2].record = s_mir_record_retain(r202);
+		record->fields[3].record = s_mir_record_retain(r203);
+		record->fields[4].bits = r204;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r208, record);
+	}
+	s_string_release(r205); r205 = NULL;
+	s_mir_record_release(r202); r202 = NULL;
+	s_mir_record_release(r203); r203 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r208;
+	r208 = NULL;
+	goto exit;
 block59: ;
-	if (r3) { s_mir_record_release(r3); r3 = NULL; }
-	if (r5) { s_mir_record_release(r5); r5 = NULL; }
 	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block23;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block60;
 block60: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block24;
+	s_mir_record_store(&r209, s_mir_record_retain(r197->fields[1].record));
+	{ S_MirRecord * owned = r209; r209 = NULL; s_mir_record_store(&r6, owned); }
+	r210 = r197->fields[2].bits;
+	s_mir_record_release(r197); r197 = NULL;
+	r16 = r210;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
 block61: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block26;
+	r214 = r13->fields[2].bits;
+	r215 = INT64_C(0);
+	r216 = s_mir_f12(s_mir_record_retain(r0), r214, r215);
+	r217 = s_mir_f155(s_mir_record_retain(r5), r216);
+	r218 = r217;
+	r219 = r13->fields[2].bits;
+	r220 = INT64_C(1);
+	r221 = s_mir_f12(s_mir_record_retain(r0), r219, r220);
+	r222 = s_mir_f155(s_mir_record_retain(r5), r221);
+	r223 = r222;
+	r224 = r13->fields[2].bits;
+	s_mir_string_store(&r225, s_mir_f13(s_mir_record_retain(r0), r224));
+	s_mir_record_store(&r226, s_mir_f159(s_mir_record_retain(r6), r218, r223, r225));
+	r225 = NULL;
+	{ S_MirRecord * owned = r226; r226 = NULL; s_mir_record_store(&r227, owned); }
+	s_mir_string_store(&r228, s_string_retain(r227->fields[0].text));
+	s_mir_string_store(&r229, s_string_from_bytes("", 0));
+	r230 = (s_string_compare(r228, r229) == 0);
+	s_string_release(r228); r228 = NULL;
+	s_string_release(r229); r229 = NULL;
+	r231 = (!r230);
+	if (r231) goto block139;
+	goto block140;
 block62: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block27;
+	r240 = r13->fields[1].bits;
+	r241 = INT64_C(5);
+	r242 = (r240 == r241);
+	if (r242) goto block141;
+	goto block142;
 block63: ;
+	{ S_MirRecord *array = s_mir_record_new(31, 0);
+	s_mir_record_store(&r232, array);
+	}
+	{ S_MirRecord *array = s_mir_record_new(69, 0);
+	s_mir_record_store(&r233, array);
+	}
+	r234 = INT64_C(0);
+	s_mir_string_store(&r235, s_string_retain(r227->fields[0].text));
+	s_mir_record_release(r227); r227 = NULL;
+	r236 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r237 = s_mir_f14(r0, r236);
+	r0 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r235);
+		record->fields[1].bits = r237;
+		record->fields[2].record = s_mir_record_retain(r232);
+		record->fields[3].record = s_mir_record_retain(r233);
+		record->fields[4].bits = r234;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r238, record);
+	}
+	s_string_release(r235); r235 = NULL;
+	s_mir_record_release(r232); r232 = NULL;
+	s_mir_record_release(r233); r233 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r238;
+	r238 = NULL;
+	goto exit;
+block64: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block65;
+block65: ;
+	r239 = r227->fields[2].bits;
+	s_mir_record_release(r227); r227 = NULL;
+	r16 = r239;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
+block66: ;
+	r243 = r13->fields[2].bits;
+	r244 = INT64_C(0);
+	r245 = s_mir_f12(s_mir_record_retain(r0), r243, r244);
+	r246 = s_mir_f155(s_mir_record_retain(r5), r245);
+	r247 = r246;
+	r248 = r13->fields[2].bits;
+	s_mir_string_store(&r249, s_mir_f13(s_mir_record_retain(r0), r248));
+	s_mir_record_store(&r250, s_mir_f160(s_mir_record_retain(r6), r247, r249));
+	r249 = NULL;
+	{ S_MirRecord * owned = r250; r250 = NULL; s_mir_record_store(&r251, owned); }
+	s_mir_string_store(&r252, s_string_retain(r251->fields[0].text));
+	s_mir_string_store(&r253, s_string_from_bytes("", 0));
+	r254 = (s_string_compare(r252, r253) == 0);
+	s_string_release(r252); r252 = NULL;
+	s_string_release(r253); r253 = NULL;
+	r255 = (!r254);
+	if (r255) goto block143;
+	goto block144;
+block67: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
+block68: ;
+	{ S_MirRecord *array = s_mir_record_new(31, 0);
+	s_mir_record_store(&r256, array);
+	}
+	{ S_MirRecord *array = s_mir_record_new(69, 0);
+	s_mir_record_store(&r257, array);
+	}
+	r258 = INT64_C(0);
+	s_mir_string_store(&r259, s_string_retain(r251->fields[0].text));
+	s_mir_record_release(r251); r251 = NULL;
+	r260 = r13->fields[2].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	r261 = s_mir_f14(r0, r260);
+	r0 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r259);
+		record->fields[1].bits = r261;
+		record->fields[2].record = s_mir_record_retain(r256);
+		record->fields[3].record = s_mir_record_retain(r257);
+		record->fields[4].bits = r258;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r262, record);
+	}
+	s_string_release(r259); r259 = NULL;
+	s_mir_record_release(r256); r256 = NULL;
+	s_mir_record_release(r257); r257 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r262;
+	r262 = NULL;
+	goto exit;
+block69: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block70;
+block70: ;
+	r263 = r251->fields[2].bits;
+	s_mir_record_release(r251); r251 = NULL;
+	r16 = r263;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block7;
+block71: ;
+	{ S_MirRecord *array = s_mir_record_new(31, 0);
+	s_mir_record_store(&r266, array);
+	}
+	{ S_MirRecord *array = s_mir_record_new(69, 0);
+	s_mir_record_store(&r267, array);
+	}
+	r268 = INT64_C(0);
+	s_mir_string_store(&r269, s_string_from_bytes("\151\156\166\141\154\151\144\040\160\141\162\141\155\145\164\145\162\151\172\145\144\040\110\111\122\040\164\171\160\145", 30));
+	r270 = INT64_C(0);
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r269);
+		record->fields[1].bits = r270;
+		record->fields[2].record = s_mir_record_retain(r266);
+		record->fields[3].record = s_mir_record_retain(r267);
+		record->fields[4].bits = r268;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r271, record);
+	}
+	s_string_release(r269); r269 = NULL;
+	s_mir_record_release(r266); r266 = NULL;
+	s_mir_record_release(r267); r267 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r271;
+	r271 = NULL;
+	goto exit;
+block72: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block73;
+block73: ;
+	r272 = r13->fields[2].bits;
+	r273 = r13->fields[1].bits;
+	s_mir_record_release(r13); r13 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(30, 4);
+		record->fields[0].bits = r18;
+		record->fields[1].bits = r273;
+		record->fields[2].bits = r272;
+		record->fields[3].bits = r16;
+	s_mir_record_store(&r274, record);
+	}
+	{ S_MirRecord * owned = r5; r5 = NULL; s_mir_record_store(&r275, owned); }
+	{ S_MirField added = {0}; added.record = s_mir_record_retain(r274);
+		S_MirRecord *updated = s_mir_array_append_owned(r275, added);
+		r275 = NULL;
+	s_mir_record_store(&r276, updated);
+	}
+	s_mir_record_release(r274); r274 = NULL;
+	{ S_MirRecord * owned = r276; r276 = NULL; s_mir_record_store(&r5, owned); }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block3;
+block74: ;
+	s_mir_record_store(&r13, s_mir_record_retain(r7->fields[r10].record));
+	r14 = r13->fields[3].bits;
+	r15 = s_mir_f154(r14, s_mir_record_retain(r3));
+	r16 = r15;
+	r17 = r13->fields[0].bits;
+	r18 = r17;
+	r19 = r13->fields[1].bits;
+	r20 = INT64_C(9);
+	r21 = (r19 == r20);
+	if (r21) goto block145;
+	goto block146;
+block75: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block76: ;
+	s_mir_record_store(&r282, s_mir_record_retain(r5->fields[r281].record));
+	r283 = r282->fields[3].bits;
+	s_mir_record_release(r282); r282 = NULL;
+	s_mir_string_store(&r284, s_string_from_bytes("", 0));
+	r285 = INT64_C(0);
+	{ S_MirRecord *record = s_mir_record_new(70, 6);
+		record->fields[0].text = s_string_retain(r284);
+		record->fields[1].bits = r285;
+		record->fields[2].record = s_mir_record_retain(r5);
+		record->fields[3].record = s_mir_record_retain(r278);
+		record->fields[4].bits = r283;
+		record->fields[5].record = s_mir_record_retain(r6);
+	s_mir_record_store(&r286, record);
+	}
+	s_string_release(r284); r284 = NULL;
+	s_mir_record_release(r5); r5 = NULL;
+	s_mir_record_release(r278); r278 = NULL;
+	s_mir_record_release(r6); r6 = NULL;
+	returned = r286;
+	r286 = NULL;
+	goto exit;
+block77: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block78: ;
+	s_mir_record_store(&r39, s_mir_record_retain(r5->fields[r36].record));
+	r40 = r39->fields[1].bits;
+	r41 = INT64_C(9);
+	r42 = (r40 == r41);
+	r43 = r42;
+	if (r42) goto block16;
+	goto block17;
+block79: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block80: ;
+	s_mir_record_store(&r81, s_mir_record_retain(r79->fields[r80].record));
+	s_mir_record_release(r79); r79 = NULL;
+	{ S_MirRecord * owned = r81; r81 = NULL; s_mir_record_store(&r82, owned); }
+	r83 = INT64_C(0);
+	r84 = r82->fields[0].bits;
+	s_mir_record_release(r82); r82 = NULL;
+	r85 = r83;
+	r86 = INT64_C(1);
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block28;
+block81: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block82: ;
+	s_mir_record_store(&r133, s_mir_record_retain(r131->fields[r132].record));
+	s_mir_record_release(r131); r131 = NULL;
+	{ S_MirRecord * owned = r133; r133 = NULL; s_mir_record_store(&r134, owned); }
+	r135 = INT64_C(0);
+	r136 = r134->fields[0].bits;
+	s_mir_record_release(r134); r134 = NULL;
+	r137 = r135;
+	r138 = INT64_C(1);
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block40;
+block83: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block84: ;
+	s_mir_record_store(&r177, s_mir_record_retain(r175->fields[r176].record));
+	s_mir_record_release(r175); r175 = NULL;
+	{ S_MirRecord * owned = r177; r177 = NULL; s_mir_record_store(&r178, owned); }
+	r179 = INT64_C(1);
+	r180 = r178->fields[0].bits;
+	s_mir_record_release(r178); r178 = NULL;
+	r181 = r179;
+	r182 = INT64_C(1);
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block54;
+block85: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block86: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block2;
+block87: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block4;
+block88: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block74;
+block89: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
 	if (r3) { s_mir_record_release(r3); r3 = NULL; }
 	if (r5) { s_mir_record_release(r5); r5 = NULL; }
 	if (r6) { s_mir_record_release(r6); r6 = NULL; }
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
-	goto block28;
-block64: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block75;
+block90: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block76;
+block91: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	if (r278) { s_mir_record_release(r278); r278 = NULL; }
+	goto block77;
+block92: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block8;
+block93: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block9;
+block94: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block71;
+block95: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block72;
+block96: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block10;
+block97: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block11;
+block98: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block21;
+block99: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block22;
+block100: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block13;
+block101: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block15;
+block102: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block78;
+block103: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block79;
+block104: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block19;
+block105: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block23;
+block106: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block24;
+block107: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block26;
+block108: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block27;
+block109: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block80;
+block110: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	if (r78) { s_mir_record_release(r78); r78 = NULL; }
+	if (r79) { s_mir_record_release(r79); r79 = NULL; }
+	goto block81;
+block111: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block38;
+block112: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block39;
+block113: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block29;
-block65: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+block114: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block31;
+block115: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block32;
+block116: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block33;
+block117: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block35;
+block118: ;
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block36;
+block119: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block82;
+block120: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	if (r131) { s_mir_record_release(r131); r131 = NULL; }
+	goto block83;
+block121: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block52;
+block122: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block53;
+block123: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block41;
+block124: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block43;
+block125: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block44;
+block126: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block45;
+block127: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block49;
+block128: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block50;
+block129: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block47;
+block130: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block48;
+block131: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block84;
+block132: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r13) { s_mir_record_release(r13); r13 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	if (r174) { s_mir_record_release(r174); r174 = NULL; }
+	if (r175) { s_mir_record_release(r175); r175 = NULL; }
+	goto block85;
+block133: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block61;
+block134: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block62;
+block135: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block55;
+block136: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block57;
+block137: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block58;
+block138: ;
+	if (r6) { s_mir_record_release(r6); r6 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block59;
+block139: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block63;
+block140: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block64;
+block141: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block66;
+block142: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block67;
+block143: ;
+	if (r3) { s_mir_record_release(r3); r3 = NULL; }
+	if (r5) { s_mir_record_release(r5); r5 = NULL; }
+	if (r7) { s_mir_record_release(r7); r7 = NULL; }
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block68;
+block144: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
+	goto block69;
+block145: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block5;
-block66: ;
-	if (r36) { s_mir_record_release(r36); r36 = NULL; }
+block146: ;
+	if (r39) { s_mir_record_release(r39); r39 = NULL; }
 	goto block6;
 exit: ;
 	return returned;
@@ -65088,7 +66021,7 @@ block2: ;
 	s_mir_record_store(&r19, s_mir_record_retain(r2->fields[14].record));
 	r20 = s_mir_f12(r19, r1, r18);
 	r19 = NULL;
-	s_mir_record_store(&r21, s_mir_f158(r2, r20));
+	s_mir_record_store(&r21, s_mir_f161(r2, r20));
 	r2 = NULL;
 	{ S_MirRecord * owned = r21; r21 = NULL; s_mir_record_store(&r2, owned); }
 	s_mir_string_store(&r22, s_string_retain(r2->fields[4].text));
@@ -67601,7 +68534,7 @@ block46: ;
 	goto block163;
 block47: ;
 	s_mir_record_store(&r174, s_mir_record_retain(r121->fields[13].record));
-	s_mir_record_store(&r175, s_mir_f159(r174, s_string_retain(r168)));
+	s_mir_record_store(&r175, s_mir_f162(r174, s_string_retain(r168)));
 	r174 = NULL;
 	{ S_MirRecord * owned = r175; r175 = NULL; s_mir_record_store(&r176, owned); }
 	r177 = r176->fields[2].bits;
@@ -67657,7 +68590,7 @@ block51: ;
 	if (r60) { s_mir_record_release(r60); r60 = NULL; }
 	goto block52;
 block52: ;
-	s_mir_record_store(&r190, s_mir_f160(r121, r181));
+	s_mir_record_store(&r190, s_mir_f163(r121, r181));
 	r121 = NULL;
 	{ S_MirRecord * owned = r190; r190 = NULL; s_mir_record_store(&r121, owned); }
 	r191 = r121->fields[8].bits;
@@ -67696,7 +68629,7 @@ block56: ;
 	if (r60) { s_mir_record_release(r60); r60 = NULL; }
 	goto block57;
 block57: ;
-	s_mir_record_store(&r199, s_mir_f161(r142, r168, r170));
+	s_mir_record_store(&r199, s_mir_f164(r142, r168, r170));
 	r142 = NULL;
 	r168 = NULL;
 	{ S_MirRecord * owned = r199; r199 = NULL; s_mir_record_store(&r200, owned); }
@@ -71991,7 +72924,7 @@ block20: ;
 	r71 = (r68 + r70);
 	r72 = s_mir_f12(r69, r23, r71);
 	r69 = NULL;
-	s_mir_record_store(&r73, s_mir_f162(r10, s_mir_record_retain(r1), r72));
+	s_mir_record_store(&r73, s_mir_f165(r10, s_mir_record_retain(r1), r72));
 	r10 = NULL;
 	{ S_MirRecord * owned = r73; r73 = NULL; s_mir_record_store(&r74, owned); }
 	s_mir_record_store(&r75, s_mir_record_retain(r74->fields[1].record));
@@ -72060,7 +72993,7 @@ block30: ;
 block31: ;
 	r118 = INT64_C(0);
 	s_mir_record_store(&r119, s_mir_f125(r118));
-	s_mir_record_store(&r120, s_mir_f164(r10, r119));
+	s_mir_record_store(&r120, s_mir_f167(r10, r119));
 	r10 = NULL;
 	r119 = NULL;
 	returned = r120;
@@ -72170,7 +73103,7 @@ block47: ;
 	goto block48;
 block48: ;
 	s_mir_record_store(&r165, s_mir_f125(r130));
-	s_mir_record_store(&r166, s_mir_f164(r10, r165));
+	s_mir_record_store(&r166, s_mir_f167(r10, r165));
 	r10 = NULL;
 	r165 = NULL;
 	returned = r166;
@@ -72259,7 +73192,7 @@ block60: ;
 	r206 = INT64_C(1);
 	r207 = s_mir_f12(r205, r173, r206);
 	r205 = NULL;
-	s_mir_record_store(&r208, s_mir_f162(r10, s_mir_record_retain(r1), r207));
+	s_mir_record_store(&r208, s_mir_f165(r10, s_mir_record_retain(r1), r207));
 	r10 = NULL;
 	{ S_MirRecord * owned = r208; r208 = NULL; s_mir_record_store(&r209, owned); }
 	s_mir_record_store(&r210, s_mir_record_retain(r209->fields[1].record));
@@ -72311,7 +73244,7 @@ block66: ;
 	r225 = (-r224);
 	r226 = INT64_C(0);
 	s_mir_record_store(&r227, s_mir_f122(r215, r222, r223, r225, r226));
-	s_mir_record_store(&r228, s_mir_f163(r10, r227));
+	s_mir_record_store(&r228, s_mir_f166(r10, r227));
 	r10 = NULL;
 	r227 = NULL;
 	returned = r228;
@@ -72322,7 +73255,7 @@ block67: ;
 	if (r177) { s_mir_record_release(r177); r177 = NULL; }
 	goto block68;
 block68: ;
-	s_mir_record_store(&r229, s_mir_f162(r10, r1, r173));
+	s_mir_record_store(&r229, s_mir_f165(r10, r1, r173));
 	r10 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r229; r229 = NULL; s_mir_record_store(&r230, owned); }
@@ -72342,7 +73275,7 @@ block70: ;
 	r236 = INT64_C(0);
 	r237 = s_mir_f12(r235, r2, r236);
 	r235 = NULL;
-	s_mir_record_store(&r238, s_mir_f162(r10, s_mir_record_retain(r1), r237));
+	s_mir_record_store(&r238, s_mir_f165(r10, s_mir_record_retain(r1), r237));
 	r10 = NULL;
 	{ S_MirRecord * owned = r238; r238 = NULL; s_mir_record_store(&r239, owned); }
 	s_mir_record_store(&r240, s_mir_record_retain(r239->fields[1].record));
@@ -72378,9 +73311,9 @@ block75: ;
 	r250 = NULL;
 	r252 = r251;
 	r253 = INT64_C(9);
-	r254 = s_mir_f165(s_mir_record_retain(r1), r252, r253);
+	r254 = s_mir_f168(s_mir_record_retain(r1), r252, r253);
 	r255 = r254;
-	r256 = s_mir_f166(s_mir_record_retain(r1), r252);
+	r256 = s_mir_f169(s_mir_record_retain(r1), r252);
 	r257 = r256;
 	r258 = INT64_C(0);
 	r259 = (r257 < r258);
@@ -72424,8 +73357,8 @@ block82: ;
 	r10 = NULL;
 	{ S_MirRecord * owned = r269; r269 = NULL; s_mir_record_store(&r10, owned); }
 	r270 = r239->fields[0].bits;
-	s_mir_record_store(&r271, s_mir_f167(r268, r270, r257));
-	s_mir_record_store(&r272, s_mir_f163(r10, r271));
+	s_mir_record_store(&r271, s_mir_f170(r268, r270, r257));
+	s_mir_record_store(&r272, s_mir_f166(r10, r271));
 	r10 = NULL;
 	r271 = NULL;
 	{ S_MirRecord * owned = r272; r272 = NULL; s_mir_record_store(&r10, owned); }
@@ -72535,7 +73468,7 @@ block97: ;
 block98: ;
 	goto block99;
 block99: ;
-	s_mir_record_store(&r321, s_mir_f162(r10, s_mir_record_retain(r1), r287));
+	s_mir_record_store(&r321, s_mir_f165(r10, s_mir_record_retain(r1), r287));
 	r10 = NULL;
 	{ S_MirRecord * owned = r321; r321 = NULL; s_mir_record_store(&r322, owned); }
 	s_mir_record_store(&r323, s_mir_record_retain(r322->fields[1].record));
@@ -72589,7 +73522,7 @@ block106: ;
 	{ S_MirRecord * owned = r349; r349 = NULL; s_mir_record_store(&r10, owned); }
 	r350 = r322->fields[0].bits;
 	s_mir_record_store(&r351, s_mir_f123(r347, r350));
-	s_mir_record_store(&r352, s_mir_f163(r10, r351));
+	s_mir_record_store(&r352, s_mir_f166(r10, r351));
 	r10 = NULL;
 	r351 = NULL;
 	{ S_MirRecord * owned = r352; r352 = NULL; s_mir_record_store(&r10, owned); }
@@ -72611,7 +73544,7 @@ block106: ;
 		r10 = NULL;
 		r10 = updated; }
 	s_mir_record_store(&r361, s_mir_f124(r347, r357, r360));
-	s_mir_record_store(&r362, s_mir_f164(r10, r361));
+	s_mir_record_store(&r362, s_mir_f167(r10, r361));
 	r10 = NULL;
 	r361 = NULL;
 	{ S_MirRecord * owned = r362; r362 = NULL; s_mir_record_store(&r10, owned); }
@@ -72620,7 +73553,7 @@ block106: ;
 		updated->fields[0] = replacement;
 		r10 = NULL;
 		r10 = updated; }
-	s_mir_record_store(&r363, s_mir_f162(r10, s_mir_record_retain(r1), r290));
+	s_mir_record_store(&r363, s_mir_f165(r10, s_mir_record_retain(r1), r290));
 	r10 = NULL;
 	{ S_MirRecord * owned = r363; r363 = NULL; s_mir_record_store(&r364, owned); }
 	s_mir_record_store(&r365, s_mir_record_retain(r364->fields[1].record));
@@ -72635,8 +73568,8 @@ block106: ;
 block107: ;
 	r369 = r364->fields[0].bits;
 	s_mir_record_release(r364); r364 = NULL;
-	s_mir_record_store(&r370, s_mir_f168(r369));
-	s_mir_record_store(&r371, s_mir_f164(r10, r370));
+	s_mir_record_store(&r370, s_mir_f171(r369));
+	s_mir_record_store(&r371, s_mir_f167(r10, r370));
 	r10 = NULL;
 	r370 = NULL;
 	{ S_MirRecord * owned = r371; r371 = NULL; s_mir_record_store(&r10, owned); }
@@ -72661,7 +73594,7 @@ block108: ;
 	goto exit;
 block109: ;
 	r383 = INT64_C(9);
-	r384 = s_mir_f165(s_mir_record_retain(r1), r2, r383);
+	r384 = s_mir_f168(s_mir_record_retain(r1), r2, r383);
 	r385 = r384;
 	s_mir_record_store(&r386, s_mir_record_retain(r1->fields[8].record));
 	r387 = s_mir_f53(r386, r385);
@@ -72693,7 +73626,7 @@ block112: ;
 	r397 = (-r396);
 	r398 = INT64_C(0);
 	s_mir_record_store(&r399, s_mir_f122(r395, r393, r328, r397, r398));
-	s_mir_record_store(&r400, s_mir_f163(r10, r399));
+	s_mir_record_store(&r400, s_mir_f166(r10, r399));
 	r10 = NULL;
 	r399 = NULL;
 	{ S_MirRecord * owned = r400; r400 = NULL; s_mir_record_store(&r10, owned); }
@@ -72764,7 +73697,7 @@ block119: ;
 	if (r9) { s_mir_record_release(r9); r9 = NULL; }
 	goto block123;
 block120: ;
-	s_mir_record_store(&r436, s_mir_f170(r10, r1, r2, r411));
+	s_mir_record_store(&r436, s_mir_f173(r10, r1, r2, r411));
 	r10 = NULL;
 	r1 = NULL;
 	returned = r436;
@@ -72798,7 +73731,7 @@ block125: ;
 	if (r9) { s_mir_record_release(r9); r9 = NULL; }
 	goto block164;
 block126: ;
-	s_mir_record_store(&r448, s_mir_f170(r10, r1, r2, r411));
+	s_mir_record_store(&r448, s_mir_f173(r10, r1, r2, r411));
 	r10 = NULL;
 	r1 = NULL;
 	returned = r448;
@@ -72849,7 +73782,7 @@ block133: ;
 	s_mir_record_store(&r472, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r473, s_mir_f13(r472, r462));
 	r472 = NULL;
-	r474 = s_mir_f171(s_mir_record_retain(r10), r473);
+	r474 = s_mir_f174(s_mir_record_retain(r10), r473);
 	r473 = NULL;
 	r475 = r474;
 	r476 = INT64_C(0);
@@ -72888,7 +73821,7 @@ block139: ;
 	s_mir_record_store(&r493, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r494, s_mir_f13(r493, r452));
 	r493 = NULL;
-	s_mir_record_store(&r495, s_mir_f172(r492, r482, r494));
+	s_mir_record_store(&r495, s_mir_f156(r492, r482, r494));
 	r492 = NULL;
 	r494 = NULL;
 	{ S_MirRecord * owned = r495; r495 = NULL; s_mir_record_store(&r496, owned); }
@@ -72924,7 +73857,7 @@ block143: ;
 	if (r9) { s_mir_record_release(r9); r9 = NULL; }
 	goto block144;
 block144: ;
-	s_mir_record_store(&r512, s_mir_f162(r10, s_mir_record_retain(r1), r452));
+	s_mir_record_store(&r512, s_mir_f165(r10, s_mir_record_retain(r1), r452));
 	r10 = NULL;
 	{ S_MirRecord * owned = r512; r512 = NULL; s_mir_record_store(&r513, owned); }
 	s_mir_record_store(&r514, s_mir_record_retain(r513->fields[1].record));
@@ -72941,7 +73874,7 @@ block145: ;
 	r519 = INT64_C(1);
 	r520 = s_mir_f12(r518, r411, r519);
 	r518 = NULL;
-	s_mir_record_store(&r521, s_mir_f162(r10, s_mir_record_retain(r1), r520));
+	s_mir_record_store(&r521, s_mir_f165(r10, s_mir_record_retain(r1), r520));
 	r10 = NULL;
 	{ S_MirRecord * owned = r521; r521 = NULL; s_mir_record_store(&r522, owned); }
 	s_mir_record_store(&r523, s_mir_record_retain(r522->fields[1].record));
@@ -72962,7 +73895,7 @@ block147: ;
 	r528 = INT64_C(1);
 	r529 = s_mir_f12(r527, r2, r528);
 	r527 = NULL;
-	s_mir_record_store(&r530, s_mir_f162(r10, s_mir_record_retain(r1), r529));
+	s_mir_record_store(&r530, s_mir_f165(r10, s_mir_record_retain(r1), r529));
 	r10 = NULL;
 	{ S_MirRecord * owned = r530; r530 = NULL; s_mir_record_store(&r531, owned); }
 	s_mir_record_store(&r532, s_mir_record_retain(r531->fields[1].record));
@@ -72985,8 +73918,8 @@ block149: ;
 	s_mir_record_release(r522); r522 = NULL;
 	r539 = r531->fields[0].bits;
 	s_mir_record_release(r531); r531 = NULL;
-	s_mir_record_store(&r540, s_mir_f173(r536, r537, r538, r539));
-	s_mir_record_store(&r541, s_mir_f163(r10, r540));
+	s_mir_record_store(&r540, s_mir_f175(r536, r537, r538, r539));
+	s_mir_record_store(&r541, s_mir_f166(r10, r540));
 	r10 = NULL;
 	r540 = NULL;
 	{ S_MirRecord * owned = r541; r541 = NULL; s_mir_record_store(&r10, owned); }
@@ -72994,7 +73927,7 @@ block149: ;
 	s_mir_record_release(r496); r496 = NULL;
 	r543 = r513->fields[0].bits;
 	s_mir_record_release(r513); r513 = NULL;
-	s_mir_record_store(&r544, s_mir_f174(r10, r1, r475, r542, r543));
+	s_mir_record_store(&r544, s_mir_f176(r10, r1, r475, r542, r543));
 	r10 = NULL;
 	r1 = NULL;
 	returned = r544;
@@ -73026,7 +73959,7 @@ block154: ;
 	s_mir_record_store(&r554, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r555, s_mir_f13(r554, r452));
 	r554 = NULL;
-	r556 = s_mir_f171(s_mir_record_retain(r10), r555);
+	r556 = s_mir_f174(s_mir_record_retain(r10), r555);
 	r555 = NULL;
 	r557 = r556;
 	r558 = INT64_C(0);
@@ -73061,7 +73994,7 @@ block159: ;
 	r573 = INT64_C(1);
 	r574 = s_mir_f12(r572, r411, r573);
 	r572 = NULL;
-	s_mir_record_store(&r575, s_mir_f162(r10, s_mir_record_retain(r1), r574));
+	s_mir_record_store(&r575, s_mir_f165(r10, s_mir_record_retain(r1), r574));
 	r10 = NULL;
 	{ S_MirRecord * owned = r575; r575 = NULL; s_mir_record_store(&r576, owned); }
 	s_mir_record_store(&r577, s_mir_record_retain(r576->fields[1].record));
@@ -73078,7 +74011,7 @@ block160: ;
 	r582 = INT64_C(1);
 	r583 = s_mir_f12(r581, r2, r582);
 	r581 = NULL;
-	s_mir_record_store(&r584, s_mir_f162(r10, r1, r583));
+	s_mir_record_store(&r584, s_mir_f165(r10, r1, r583));
 	r10 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r584; r584 = NULL; s_mir_record_store(&r585, owned); }
@@ -73100,8 +74033,8 @@ block162: ;
 	s_mir_record_release(r576); r576 = NULL;
 	r591 = r585->fields[0].bits;
 	s_mir_record_release(r585); r585 = NULL;
-	s_mir_record_store(&r592, s_mir_f173(r557, r557, r590, r591));
-	s_mir_record_store(&r593, s_mir_f163(r10, r592));
+	s_mir_record_store(&r592, s_mir_f175(r557, r557, r590, r591));
+	s_mir_record_store(&r593, s_mir_f166(r10, r592));
 	r10 = NULL;
 	r592 = NULL;
 	returned = r593;
@@ -73148,7 +74081,7 @@ block169: ;
 	s_mir_record_store(&r613, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r614, s_mir_f13(r613, r603));
 	r613 = NULL;
-	r615 = s_mir_f171(s_mir_record_retain(r10), r614);
+	r615 = s_mir_f174(s_mir_record_retain(r10), r614);
 	r614 = NULL;
 	r616 = r615;
 	r617 = INT64_C(0);
@@ -73187,7 +74120,7 @@ block175: ;
 	s_mir_record_store(&r634, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r635, s_mir_f13(r634, r411));
 	r634 = NULL;
-	s_mir_record_store(&r636, s_mir_f172(r633, r623, r635));
+	s_mir_record_store(&r636, s_mir_f156(r633, r623, r635));
 	r633 = NULL;
 	r635 = NULL;
 	{ S_MirRecord * owned = r636; r636 = NULL; s_mir_record_store(&r637, owned); }
@@ -73356,7 +74289,7 @@ block197: ;
 	r722 = INT64_C(1);
 	r723 = s_mir_f12(r721, r647, r722);
 	r721 = NULL;
-	s_mir_record_store(&r724, s_mir_f162(r10, s_mir_record_retain(r1), r723));
+	s_mir_record_store(&r724, s_mir_f165(r10, s_mir_record_retain(r1), r723));
 	r10 = NULL;
 	{ S_MirRecord * owned = r724; r724 = NULL; s_mir_record_store(&r725, owned); }
 	s_mir_record_store(&r726, s_mir_record_retain(r725->fields[1].record));
@@ -73386,8 +74319,8 @@ block201: ;
 	s_mir_record_release(r637); r637 = NULL;
 	r740 = r725->fields[0].bits;
 	s_mir_record_release(r725); r725 = NULL;
-	s_mir_record_store(&r741, s_mir_f175(r616, r616, r739, r740));
-	s_mir_record_store(&r742, s_mir_f163(r10, r741));
+	s_mir_record_store(&r741, s_mir_f177(r616, r616, r739, r740));
+	s_mir_record_store(&r742, s_mir_f166(r10, r741));
 	r10 = NULL;
 	r741 = NULL;
 	returned = r742;
@@ -73414,7 +74347,7 @@ block206: ;
 	if (r725) { s_mir_record_release(r725); r725 = NULL; }
 	goto block207;
 block207: ;
-	s_mir_record_store(&r743, s_mir_f162(r10, s_mir_record_retain(r1), r647));
+	s_mir_record_store(&r743, s_mir_f165(r10, s_mir_record_retain(r1), r647));
 	r10 = NULL;
 	{ S_MirRecord * owned = r743; r743 = NULL; s_mir_record_store(&r744, owned); }
 	s_mir_record_store(&r745, s_mir_record_retain(r744->fields[1].record));
@@ -73485,14 +74418,14 @@ block213: ;
 	r10 = NULL;
 	{ S_MirRecord * owned = r781; r781 = NULL; s_mir_record_store(&r10, owned); }
 	r782 = r637->fields[1].bits;
-	s_mir_record_store(&r783, s_mir_f167(r779, r616, r782));
-	s_mir_record_store(&r784, s_mir_f163(r10, r783));
+	s_mir_record_store(&r783, s_mir_f170(r779, r616, r782));
+	s_mir_record_store(&r784, s_mir_f166(r10, r783));
 	r10 = NULL;
 	r783 = NULL;
 	{ S_MirRecord * owned = r784; r784 = NULL; s_mir_record_store(&r10, owned); }
 	r785 = r744->fields[0].bits;
 	s_mir_record_release(r744); r744 = NULL;
-	s_mir_record_store(&r786, s_mir_f176(r10, r773, r779, r785));
+	s_mir_record_store(&r786, s_mir_f178(r10, r773, r779, r785));
 	r10 = NULL;
 	r773 = NULL;
 	{ S_MirRecord * owned = r786; r786 = NULL; s_mir_record_store(&r787, owned); }
@@ -73525,7 +74458,7 @@ block216: ;
 block217: ;
 	r793 = r637->fields[1].bits;
 	s_mir_record_release(r637); r637 = NULL;
-	s_mir_record_store(&r794, s_mir_f174(r10, r1, r616, r793, r770));
+	s_mir_record_store(&r794, s_mir_f176(r10, r1, r616, r793, r770));
 	r10 = NULL;
 	r1 = NULL;
 	returned = r794;
@@ -73553,7 +74486,7 @@ block221: ;
 	s_mir_record_store(&r804, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r805, s_mir_f13(r804, r411));
 	r804 = NULL;
-	r806 = s_mir_f171(s_mir_record_retain(r10), r805);
+	r806 = s_mir_f174(s_mir_record_retain(r10), r805);
 	r805 = NULL;
 	r807 = r806;
 	r808 = INT64_C(0);
@@ -73576,7 +74509,7 @@ block224: ;
 	r813 = INT64_C(1);
 	r814 = s_mir_f12(r812, r2, r813);
 	r812 = NULL;
-	s_mir_record_store(&r815, s_mir_f162(r10, s_mir_record_retain(r1), r814));
+	s_mir_record_store(&r815, s_mir_f165(r10, s_mir_record_retain(r1), r814));
 	r10 = NULL;
 	{ S_MirRecord * owned = r815; r815 = NULL; s_mir_record_store(&r816, owned); }
 	s_mir_record_store(&r817, s_mir_record_retain(r816->fields[1].record));
@@ -73611,7 +74544,7 @@ block227: ;
 	r829 = (-r828);
 	r830 = INT64_C(0);
 	s_mir_record_store(&r831, s_mir_f122(r826, r807, r827, r829, r830));
-	s_mir_record_store(&r832, s_mir_f163(r10, r831));
+	s_mir_record_store(&r832, s_mir_f166(r10, r831));
 	r10 = NULL;
 	r831 = NULL;
 	returned = r832;
@@ -73623,7 +74556,7 @@ block228: ;
 block229: ;
 	r833 = r816->fields[0].bits;
 	s_mir_record_release(r816); r816 = NULL;
-	s_mir_record_store(&r834, s_mir_f176(r10, r823, r807, r833));
+	s_mir_record_store(&r834, s_mir_f178(r10, r823, r807, r833));
 	r10 = NULL;
 	r823 = NULL;
 	{ S_MirRecord * owned = r834; r834 = NULL; s_mir_record_store(&r835, owned); }
@@ -73644,7 +74577,7 @@ block230: ;
 	r843 = (-r842);
 	r844 = INT64_C(0);
 	s_mir_record_store(&r845, s_mir_f122(r840, r807, r841, r843, r844));
-	s_mir_record_store(&r846, s_mir_f163(r10, r845));
+	s_mir_record_store(&r846, s_mir_f166(r10, r845));
 	r10 = NULL;
 	r845 = NULL;
 	returned = r846;
@@ -73665,7 +74598,7 @@ block233: ;
 	r851 = INT64_C(0);
 	r852 = s_mir_f12(r850, r2, r851);
 	r850 = NULL;
-	s_mir_record_store(&r853, s_mir_f162(r10, s_mir_record_retain(r1), r852));
+	s_mir_record_store(&r853, s_mir_f165(r10, s_mir_record_retain(r1), r852));
 	r10 = NULL;
 	{ S_MirRecord * owned = r853; r853 = NULL; s_mir_record_store(&r854, owned); }
 	s_mir_record_store(&r855, s_mir_record_retain(r854->fields[1].record));
@@ -73721,7 +74654,7 @@ block239: ;
 	r875 = r854->fields[0].bits;
 	s_mir_record_release(r854); r854 = NULL;
 	s_mir_record_store(&r876, s_mir_f124(r875, r871, r874));
-	s_mir_record_store(&r877, s_mir_f164(r10, r876));
+	s_mir_record_store(&r877, s_mir_f167(r10, r876));
 	r10 = NULL;
 	r876 = NULL;
 	{ S_MirRecord * owned = r877; r877 = NULL; s_mir_record_store(&r10, owned); }
@@ -73805,7 +74738,7 @@ block250: ;
 	r899 = INT64_C(0);
 	r900 = s_mir_f12(r898, r2, r899);
 	r898 = NULL;
-	s_mir_record_store(&r901, s_mir_f162(r10, r1, r900));
+	s_mir_record_store(&r901, s_mir_f165(r10, r1, r900));
 	r10 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r901; r901 = NULL; s_mir_record_store(&r902, owned); }
@@ -73821,8 +74754,8 @@ block250: ;
 block251: ;
 	r907 = r902->fields[0].bits;
 	s_mir_record_release(r902); r902 = NULL;
-	s_mir_record_store(&r908, s_mir_f168(r907));
-	s_mir_record_store(&r909, s_mir_f164(r10, r908));
+	s_mir_record_store(&r908, s_mir_f171(r907));
+	s_mir_record_store(&r909, s_mir_f167(r10, r908));
 	r10 = NULL;
 	r908 = NULL;
 	returned = r909;
@@ -73895,7 +74828,7 @@ block261: ;
 	r942 = INT64_C(0);
 	r943 = s_mir_f12(r941, r928, r942);
 	r941 = NULL;
-	s_mir_record_store(&r944, s_mir_f162(r10, s_mir_record_retain(r1), r943));
+	s_mir_record_store(&r944, s_mir_f165(r10, s_mir_record_retain(r1), r943));
 	r10 = NULL;
 	{ S_MirRecord * owned = r944; r944 = NULL; s_mir_record_store(&r945, owned); }
 	s_mir_record_store(&r946, s_mir_record_retain(r945->fields[1].record));
@@ -73936,7 +74869,7 @@ block263: ;
 	r958 = r945->fields[0].bits;
 	s_mir_record_release(r945); r945 = NULL;
 	s_mir_record_store(&r959, s_mir_f124(r958, r954, r957));
-	s_mir_record_store(&r960, s_mir_f164(r10, r959));
+	s_mir_record_store(&r960, s_mir_f167(r10, r959));
 	r10 = NULL;
 	r959 = NULL;
 	{ S_MirRecord * owned = r960; r960 = NULL; s_mir_record_store(&r10, owned); }
@@ -73985,7 +74918,7 @@ block268: ;
 	r973 = true;
 	r917 = r973;
 	s_mir_record_store(&r974, s_mir_f125(r915));
-	s_mir_record_store(&r975, s_mir_f164(r10, r974));
+	s_mir_record_store(&r975, s_mir_f167(r10, r974));
 	r10 = NULL;
 	r974 = NULL;
 	{ S_MirRecord * owned = r975; r975 = NULL; s_mir_record_store(&r10, owned); }
@@ -74021,7 +74954,7 @@ block275: ;
 	r987 = true;
 	r917 = r987;
 	s_mir_record_store(&r988, s_mir_f125(r915));
-	s_mir_record_store(&r989, s_mir_f164(r10, r988));
+	s_mir_record_store(&r989, s_mir_f167(r10, r988));
 	r10 = NULL;
 	r988 = NULL;
 	{ S_MirRecord * owned = r989; r989 = NULL; s_mir_record_store(&r10, owned); }
@@ -74056,7 +74989,7 @@ block282: ;
 	s_mir_string_store(&r996, s_string_from_bytes("\165\156\162\145\141\143\150\141\142\154\145", 11));
 	s_mir_record_store(&r997, s_mir_f54(r996));
 	r996 = NULL;
-	s_mir_record_store(&r998, s_mir_f164(r10, r997));
+	s_mir_record_store(&r998, s_mir_f167(r10, r997));
 	r10 = NULL;
 	r997 = NULL;
 	{ S_MirRecord * owned = r998; r998 = NULL; s_mir_record_store(&r10, owned); }
@@ -74135,7 +75068,7 @@ block291: ;
 	r1039 = INT64_C(0);
 	r1040 = s_mir_f12(r1038, r1007, r1039);
 	r1038 = NULL;
-	s_mir_record_store(&r1041, s_mir_f162(r10, s_mir_record_retain(r1), r1040));
+	s_mir_record_store(&r1041, s_mir_f165(r10, s_mir_record_retain(r1), r1040));
 	r10 = NULL;
 	{ S_MirRecord * owned = r1041; r1041 = NULL; s_mir_record_store(&r1042, owned); }
 	s_mir_record_store(&r1043, s_mir_record_retain(r1042->fields[1].record));
@@ -74148,7 +75081,7 @@ block291: ;
 	if (r1046) goto block293;
 	goto block623;
 block292: ;
-	s_mir_record_store(&r1058, s_mir_f162(r10, s_mir_record_retain(r1), r1007));
+	s_mir_record_store(&r1058, s_mir_f165(r10, s_mir_record_retain(r1), r1007));
 	r10 = NULL;
 	{ S_MirRecord * owned = r1058; r1058 = NULL; s_mir_record_store(&r1059, owned); }
 	s_mir_record_store(&r1060, s_mir_record_retain(r1059->fields[1].record));
@@ -74165,7 +75098,7 @@ block293: ;
 	r1048 = INT64_C(1);
 	r1049 = s_mir_f12(r1047, r1007, r1048);
 	r1047 = NULL;
-	s_mir_record_store(&r1050, s_mir_f162(r10, s_mir_record_retain(r1), r1049));
+	s_mir_record_store(&r1050, s_mir_f165(r10, s_mir_record_retain(r1), r1049));
 	r10 = NULL;
 	{ S_MirRecord * owned = r1050; r1050 = NULL; s_mir_record_store(&r1051, owned); }
 	s_mir_record_store(&r1052, s_mir_record_retain(r1051->fields[1].record));
@@ -74207,7 +75140,7 @@ block297: ;
 	r1112 = (-r1111);
 	r1113 = INT64_C(0);
 	s_mir_record_store(&r1114, s_mir_f122(r1110, r1107, r1029, r1112, r1113));
-	s_mir_record_store(&r1115, s_mir_f163(r10, r1114));
+	s_mir_record_store(&r1115, s_mir_f166(r10, r1114));
 	r10 = NULL;
 	r1114 = NULL;
 	{ S_MirRecord * owned = r1115; r1115 = NULL; s_mir_record_store(&r10, owned); }
@@ -74226,7 +75159,7 @@ block297: ;
 	r1125 = (-r1124);
 	r1126 = INT64_C(1);
 	s_mir_record_store(&r1127, s_mir_f122(r1121, r1118, r1123, r1125, r1126));
-	s_mir_record_store(&r1128, s_mir_f163(r10, r1127));
+	s_mir_record_store(&r1128, s_mir_f166(r10, r1127));
 	r10 = NULL;
 	r1127 = NULL;
 	{ S_MirRecord * owned = r1128; r1128 = NULL; s_mir_record_store(&r10, owned); }
@@ -74243,7 +75176,7 @@ block297: ;
 		r10 = NULL;
 		r10 = updated; }
 	s_mir_record_store(&r1134, s_mir_f125(r1133));
-	s_mir_record_store(&r1135, s_mir_f164(r10, r1134));
+	s_mir_record_store(&r1135, s_mir_f167(r10, r1134));
 	r10 = NULL;
 	r1134 = NULL;
 	{ S_MirRecord * owned = r1135; r1135 = NULL; s_mir_record_store(&r10, owned); }
@@ -74263,7 +75196,7 @@ block297: ;
 	r1141 = INT64_C(10);
 	r1142 = INT64_C(0);
 	s_mir_record_store(&r1143, s_mir_f122(r1141, r1138, r1107, r1032, r1142));
-	s_mir_record_store(&r1144, s_mir_f163(r10, r1143));
+	s_mir_record_store(&r1144, s_mir_f166(r10, r1143));
 	r10 = NULL;
 	r1143 = NULL;
 	{ S_MirRecord * owned = r1144; r1144 = NULL; s_mir_record_store(&r10, owned); }
@@ -74288,7 +75221,7 @@ block297: ;
 		r10 = NULL;
 		r10 = updated; }
 	s_mir_record_store(&r1154, s_mir_f124(r1138, r1147, r1153));
-	s_mir_record_store(&r1155, s_mir_f164(r10, r1154));
+	s_mir_record_store(&r1155, s_mir_f167(r10, r1154));
 	r10 = NULL;
 	r1154 = NULL;
 	{ S_MirRecord * owned = r1155; r1155 = NULL; s_mir_record_store(&r10, owned); }
@@ -74341,14 +75274,14 @@ block303: ;
 	r1162 = (-r1161);
 	r1163 = INT64_C(0);
 	s_mir_record_store(&r1164, s_mir_f122(r1160, r1158, r1107, r1162, r1163));
-	s_mir_record_store(&r1165, s_mir_f163(r10, r1164));
+	s_mir_record_store(&r1165, s_mir_f166(r10, r1164));
 	r10 = NULL;
 	r1164 = NULL;
 	{ S_MirRecord * owned = r1165; r1165 = NULL; s_mir_record_store(&r10, owned); }
 	goto block305;
 block304: ;
-	s_mir_record_store(&r1166, s_mir_f177(r1158, r1035, r1107));
-	s_mir_record_store(&r1167, s_mir_f163(r10, r1166));
+	s_mir_record_store(&r1166, s_mir_f179(r1158, r1035, r1107));
+	s_mir_record_store(&r1167, s_mir_f166(r10, r1166));
 	r10 = NULL;
 	r1166 = NULL;
 	{ S_MirRecord * owned = r1167; r1167 = NULL; s_mir_record_store(&r10, owned); }
@@ -74485,7 +75418,7 @@ block315: ;
 	goto block317;
 block316: ;
 	s_mir_record_store(&r1217, s_mir_f125(r1150));
-	s_mir_record_store(&r1218, s_mir_f164(r10, r1217));
+	s_mir_record_store(&r1218, s_mir_f167(r10, r1217));
 	r10 = NULL;
 	r1217 = NULL;
 	{ S_MirRecord * owned = r1218; r1218 = NULL; s_mir_record_store(&r10, owned); }
@@ -74509,7 +75442,7 @@ block318: ;
 	r1224 = INT64_C(4);
 	r1225 = INT64_C(0);
 	s_mir_record_store(&r1226, s_mir_f122(r1224, r1221, r1107, r1118, r1225));
-	s_mir_record_store(&r1227, s_mir_f163(r10, r1226));
+	s_mir_record_store(&r1227, s_mir_f166(r10, r1226));
 	r10 = NULL;
 	r1226 = NULL;
 	{ S_MirRecord * owned = r1227; r1227 = NULL; s_mir_record_store(&r10, owned); }
@@ -74518,12 +75451,12 @@ block318: ;
 	r1230 = (-r1229);
 	r1231 = INT64_C(0);
 	s_mir_record_store(&r1232, s_mir_f122(r1228, r1107, r1221, r1230, r1231));
-	s_mir_record_store(&r1233, s_mir_f163(r10, r1232));
+	s_mir_record_store(&r1233, s_mir_f166(r10, r1232));
 	r10 = NULL;
 	r1232 = NULL;
 	{ S_MirRecord * owned = r1233; r1233 = NULL; s_mir_record_store(&r10, owned); }
 	s_mir_record_store(&r1234, s_mir_f125(r1133));
-	s_mir_record_store(&r1235, s_mir_f164(r10, r1234));
+	s_mir_record_store(&r1235, s_mir_f167(r10, r1234));
 	r10 = NULL;
 	r1234 = NULL;
 	{ S_MirRecord * owned = r1235; r1235 = NULL; s_mir_record_store(&r10, owned); }
@@ -74555,7 +75488,7 @@ block320: ;
 		r10 = NULL;
 		r10 = updated; }
 	s_mir_record_store(&r1244, s_mir_f125(r1243));
-	s_mir_record_store(&r1245, s_mir_f164(r10, r1244));
+	s_mir_record_store(&r1245, s_mir_f167(r10, r1244));
 	r10 = NULL;
 	r1244 = NULL;
 	{ S_MirRecord * owned = r1245; r1245 = NULL; s_mir_record_store(&r10, owned); }
@@ -74568,7 +75501,7 @@ block320: ;
 	r1247 = INT64_C(0);
 	r1248 = s_mir_f12(r1246, r2, r1247);
 	r1246 = NULL;
-	s_mir_record_store(&r1249, s_mir_f162(r10, s_mir_record_retain(r1), r1248));
+	s_mir_record_store(&r1249, s_mir_f165(r10, s_mir_record_retain(r1), r1248));
 	r10 = NULL;
 	{ S_MirRecord * owned = r1249; r1249 = NULL; s_mir_record_store(&r1250, owned); }
 	s_mir_record_store(&r1251, s_mir_record_retain(r1250->fields[1].record));
@@ -74604,7 +75537,7 @@ block322: ;
 	r1263 = r1250->fields[0].bits;
 	s_mir_record_release(r1250); r1250 = NULL;
 	s_mir_record_store(&r1264, s_mir_f124(r1263, r1259, r1262));
-	s_mir_record_store(&r1265, s_mir_f164(r10, r1264));
+	s_mir_record_store(&r1265, s_mir_f167(r10, r1264));
 	r10 = NULL;
 	r1264 = NULL;
 	{ S_MirRecord * owned = r1265; r1265 = NULL; s_mir_record_store(&r10, owned); }
@@ -74701,7 +75634,7 @@ block329: ;
 	goto block641;
 block330: ;
 	s_mir_record_store(&r1297, s_mir_f125(r1243));
-	s_mir_record_store(&r1298, s_mir_f164(r10, r1297));
+	s_mir_record_store(&r1298, s_mir_f167(r10, r1297));
 	r10 = NULL;
 	r1297 = NULL;
 	{ S_MirRecord * owned = r1298; r1298 = NULL; s_mir_record_store(&r10, owned); }
@@ -74723,7 +75656,7 @@ block333: ;
 	s_mir_string_store(&r1299, s_string_from_bytes("\165\156\163\165\160\160\157\162\164\145\144\040\163\157\165\162\143\145\040\163\164\141\164\145\155\145\156\164\040\146\157\162\040\115\111\122\072\040", 38));
 	r1300 = r9->fields[2].bits;
 	s_mir_record_release(r9); r9 = NULL;
-	s_mir_string_store(&r1301, s_mir_f178(r1300));
+	s_mir_string_store(&r1301, s_mir_f180(r1300));
 	s_mir_string_store(&r1302, s_string_concat(r1299, r1301));
 	s_string_release(r1299); r1299 = NULL;
 	s_string_release(r1301); r1301 = NULL;
@@ -74801,7 +75734,7 @@ block344: ;
 	r97 = (-r96);
 	r98 = INT64_C(0);
 	s_mir_record_store(&r99, s_mir_f122(r94, r90, r95, r97, r98));
-	s_mir_record_store(&r100, s_mir_f163(r10, r99));
+	s_mir_record_store(&r100, s_mir_f166(r10, r99));
 	r10 = NULL;
 	r99 = NULL;
 	{ S_MirRecord * owned = r100; r100 = NULL; s_mir_record_store(&r10, owned); }
@@ -74821,7 +75754,7 @@ block346: ;
 	r113 = (-r112);
 	r114 = INT64_C(0);
 	s_mir_record_store(&r115, s_mir_f122(r110, r109, r111, r113, r114));
-	s_mir_record_store(&r116, s_mir_f163(r10, r115));
+	s_mir_record_store(&r116, s_mir_f166(r10, r115));
 	r10 = NULL;
 	r115 = NULL;
 	{ S_MirRecord * owned = r116; r116 = NULL; s_mir_record_store(&r10, owned); }
@@ -74926,8 +75859,8 @@ block364: ;
 	{ S_MirRecord * owned = r379; r379 = NULL; s_mir_record_store(&r10, owned); }
 	r380 = r322->fields[0].bits;
 	s_mir_record_release(r322); r322 = NULL;
-	s_mir_record_store(&r381, s_mir_f169(r374, r380));
-	s_mir_record_store(&r382, s_mir_f163(r10, r381));
+	s_mir_record_store(&r381, s_mir_f172(r374, r380));
+	s_mir_record_store(&r382, s_mir_f166(r10, r381));
 	r10 = NULL;
 	r381 = NULL;
 	{ S_MirRecord * owned = r382; r382 = NULL; s_mir_record_store(&r10, owned); }
@@ -75334,7 +76267,7 @@ block430: ;
 	r1090 = (-r1089);
 	r1091 = INT64_C(0);
 	s_mir_record_store(&r1092, s_mir_f122(r1086, r1083, r1088, r1090, r1091));
-	s_mir_record_store(&r1093, s_mir_f163(r10, r1092));
+	s_mir_record_store(&r1093, s_mir_f166(r10, r1092));
 	r10 = NULL;
 	r1092 = NULL;
 	{ S_MirRecord * owned = r1093; r1093 = NULL; s_mir_record_store(&r10, owned); }
@@ -75352,7 +76285,7 @@ block430: ;
 	r1101 = (-r1100);
 	r1102 = INT64_C(0);
 	s_mir_record_store(&r1103, s_mir_f122(r1099, r1096, r1035, r1101, r1102));
-	s_mir_record_store(&r1104, s_mir_f163(r10, r1103));
+	s_mir_record_store(&r1104, s_mir_f166(r10, r1103));
 	r10 = NULL;
 	r1103 = NULL;
 	{ S_MirRecord * owned = r1104; r1104 = NULL; s_mir_record_store(&r10, owned); }
@@ -85201,7 +86134,7 @@ block2: ;
 block3: ;
 	r9 = r0->fields[3].bits;
 	s_mir_record_release(r0); r0 = NULL;
-	s_mir_record_store(&r10, s_mir_f179(r1, r9));
+	s_mir_record_store(&r10, s_mir_f181(r1, r9));
 	r1 = NULL;
 	returned = r10;
 	r10 = NULL;
@@ -86011,7 +86944,7 @@ block40: ;
 	goto block42;
 block41: ;
 	r82 = r0->fields[2].bits;
-	s_mir_record_store(&r83, s_mir_f180(r2, r82));
+	s_mir_record_store(&r83, s_mir_f182(r2, r82));
 	r2 = NULL;
 	{ S_MirRecord * owned = r83; r83 = NULL; s_mir_record_store(&r2, owned); }
 	goto block43;
@@ -86199,7 +87132,7 @@ block77: ;
 block78: ;
 	r158 = r0->fields[5].bits;
 	s_mir_record_release(r0); r0 = NULL;
-	s_mir_record_store(&r159, s_mir_f180(r2, r158));
+	s_mir_record_store(&r159, s_mir_f182(r2, r158));
 	r2 = NULL;
 	{ S_MirRecord * owned = r159; r159 = NULL; s_mir_record_store(&r2, owned); }
 	goto block80;
@@ -86212,7 +87145,7 @@ block80: ;
 	goto exit;
 block81: ;
 	r68 = r62->fields[r65].bits;
-	s_mir_record_store(&r69, s_mir_f180(r2, r68));
+	s_mir_record_store(&r69, s_mir_f182(r2, r68));
 	r2 = NULL;
 	{ S_MirRecord * owned = r69; r69 = NULL; s_mir_record_store(&r2, owned); }
 	goto block34;
@@ -86677,7 +87610,7 @@ block2: ;
 	goto block4;
 block3: ;
 	r12 = r0->fields[0].bits;
-	s_mir_record_store(&r13, s_mir_f181(r2, r12));
+	s_mir_record_store(&r13, s_mir_f183(r2, r12));
 	r2 = NULL;
 	{ S_MirRecord * owned = r13; r13 = NULL; s_mir_record_store(&r2, owned); }
 	goto block5;
@@ -86689,7 +87622,7 @@ block5: ;
 	goto block7;
 block6: ;
 	r15 = r0->fields[1].bits;
-	s_mir_record_store(&r16, s_mir_f181(r2, r15));
+	s_mir_record_store(&r16, s_mir_f183(r2, r15));
 	r2 = NULL;
 	{ S_MirRecord * owned = r16; r16 = NULL; s_mir_record_store(&r2, owned); }
 	goto block8;
@@ -86762,7 +87695,7 @@ block22: ;
 block23: ;
 	r29 = r28->fields[r26].bits;
 	s_mir_record_release(r28); r28 = NULL;
-	s_mir_record_store(&r30, s_mir_f181(r2, r29));
+	s_mir_record_store(&r30, s_mir_f183(r2, r29));
 	r2 = NULL;
 	{ S_MirRecord * owned = r30; r30 = NULL; s_mir_record_store(&r2, owned); }
 	goto block17;
@@ -86770,7 +87703,7 @@ block24: ;
 	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
 block25: ;
 	r38 = r32->fields[r35].bits;
-	s_mir_record_store(&r39, s_mir_f179(r2, r38));
+	s_mir_record_store(&r39, s_mir_f181(r2, r38));
 	r2 = NULL;
 	{ S_MirRecord * owned = r39; r39 = NULL; s_mir_record_store(&r2, owned); }
 	goto block21;
@@ -87112,7 +88045,7 @@ block0: ;
 	s_mir_record_store(&r7, s_mir_record_retain(r1->fields[1].record));
 	s_mir_record_release(r1); r1 = NULL;
 	{ S_MirRecord * owned = r7; r7 = NULL; s_mir_record_store(&r8, owned); }
-	s_mir_record_store(&r9, s_mir_f182(r4));
+	s_mir_record_store(&r9, s_mir_f184(r4));
 	{ S_MirRecord * owned = r9; r9 = NULL; s_mir_record_store(&r10, owned); }
 	{ S_MirRecord *array = s_mir_record_new(91, 0);
 	s_mir_record_store(&r11, array);
@@ -87426,7 +88359,7 @@ block51: ;
 	s_mir_record_store(&r75, s_mir_record_retain(r12->fields[r74].record));
 	s_mir_record_store(&r76, s_mir_record_retain(r75->fields[0].record));
 	s_mir_record_release(r75); r75 = NULL;
-	s_mir_record_store(&r77, s_mir_f183(r63, r76));
+	s_mir_record_store(&r77, s_mir_f185(r63, r76));
 	r63 = NULL;
 	r76 = NULL;
 	{ S_MirRecord * owned = r77; r77 = NULL; s_mir_record_store(&r63, owned); }
@@ -87439,7 +88372,7 @@ block53: ;
 	s_mir_record_store(&r84, s_mir_record_retain(r12->fields[r83].record));
 	s_mir_record_store(&r85, s_mir_record_retain(r84->fields[0].record));
 	s_mir_record_release(r84); r84 = NULL;
-	s_mir_record_store(&r86, s_mir_f183(r63, r85));
+	s_mir_record_store(&r86, s_mir_f185(r63, r85));
 	r63 = NULL;
 	r85 = NULL;
 	{ S_MirRecord * owned = r86; r86 = NULL; s_mir_record_store(&r63, owned); }
@@ -87464,7 +88397,7 @@ block57: ;
 	s_mir_record_store(&r107, s_mir_record_retain(r12->fields[r56].record));
 	s_mir_record_store(&r108, s_mir_record_retain(r107->fields[0].record));
 	s_mir_record_release(r107); r107 = NULL;
-	r109 = s_mir_f184(s_mir_record_retain(r89), r108);
+	r109 = s_mir_f186(s_mir_record_retain(r89), r108);
 	r108 = NULL;
 	r110 = (!r109);
 	r111 = r110;
@@ -87476,7 +88409,7 @@ block59: ;
 	s_mir_record_store(&r112, s_mir_record_retain(r12->fields[r56].record));
 	s_mir_record_store(&r113, s_mir_record_retain(r112->fields[1].record));
 	s_mir_record_release(r112); r112 = NULL;
-	r114 = s_mir_f184(s_mir_record_retain(r63), r113);
+	r114 = s_mir_f186(s_mir_record_retain(r63), r113);
 	r113 = NULL;
 	r115 = (!r114);
 	r111 = r115;
@@ -91964,7 +92897,1176 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f156(S_MirRecord * a0, int64_t a1, int64_t a2, S_String * a3)
+static S_MirRecord * s_mir_f156(S_MirRecord * a0, int64_t a1, S_String * a2)
+{
+	S_MirRecord * r0 = NULL;
+	(void)r0;
+	int64_t r1 = 0;
+	(void)r1;
+	S_String * r2 = NULL;
+	(void)r2;
+	int64_t r3 = 0;
+	(void)r3;
+	bool r4 = 0;
+	(void)r4;
+	bool r5 = 0;
+	(void)r5;
+	S_MirRecord * r6 = NULL;
+	(void)r6;
+	int64_t r7 = 0;
+	(void)r7;
+	bool r8 = 0;
+	(void)r8;
+	bool r9 = 0;
+	(void)r9;
+	int64_t r10 = 0;
+	(void)r10;
+	int64_t r11 = 0;
+	(void)r11;
+	int64_t r12 = 0;
+	(void)r12;
+	S_String * r13 = NULL;
+	(void)r13;
+	S_String * r14 = NULL;
+	(void)r14;
+	S_String * r15 = NULL;
+	(void)r15;
+	S_String * r16 = NULL;
+	(void)r16;
+	S_MirRecord * r17 = NULL;
+	(void)r17;
+	S_MirRecord * r18 = NULL;
+	(void)r18;
+	S_MirRecord * r19 = NULL;
+	(void)r19;
+	S_MirRecord * r20 = NULL;
+	(void)r20;
+	int64_t r21 = 0;
+	(void)r21;
+	int64_t r22 = 0;
+	(void)r22;
+	bool r23 = 0;
+	(void)r23;
+	int64_t r24 = 0;
+	(void)r24;
+	S_MirRecord * r25 = NULL;
+	(void)r25;
+	int64_t r26 = 0;
+	(void)r26;
+	int64_t r27 = 0;
+	(void)r27;
+	int64_t r28 = 0;
+	(void)r28;
+	bool r29 = 0;
+	(void)r29;
+	int64_t r30 = 0;
+	(void)r30;
+	S_MirRecord * r31 = NULL;
+	(void)r31;
+	S_MirRecord * r32 = NULL;
+	(void)r32;
+	S_MirRecord * r33 = NULL;
+	(void)r33;
+	S_String * r34 = NULL;
+	(void)r34;
+	bool r35 = 0;
+	(void)r35;
+	int64_t r36 = 0;
+	(void)r36;
+	S_String * r37 = NULL;
+	(void)r37;
+	S_MirRecord * r38 = NULL;
+	(void)r38;
+	int64_t r39 = 0;
+	(void)r39;
+	int64_t r40 = 0;
+	(void)r40;
+	int64_t r41 = 0;
+	(void)r41;
+	int64_t r42 = 0;
+	(void)r42;
+	S_String * r43 = NULL;
+	(void)r43;
+	S_String * r44 = NULL;
+	(void)r44;
+	S_String * r45 = NULL;
+	(void)r45;
+	S_String * r46 = NULL;
+	(void)r46;
+	S_MirRecord * r47 = NULL;
+	(void)r47;
+	bool r48 = 0;
+	(void)r48;
+	bool r49 = 0;
+	(void)r49;
+	r0 = a0;
+	r1 = a1;
+	r2 = a2;
+	S_MirRecord * returned = 0;
+	goto block0;
+block0: ;
+	r3 = INT64_C(0);
+	r4 = (r1 < r3);
+	r5 = r4;
+	if (r4) goto block2;
+	goto block1;
+block1: ;
+	s_mir_record_store(&r6, s_mir_record_retain(r0->fields[0].record));
+	r7 = (int64_t)r6->length;
+	s_mir_record_release(r6); r6 = NULL;
+	r8 = (r1 < r7);
+	r9 = (!r8);
+	r5 = r9;
+	goto block2;
+block2: ;
+	if (r5) goto block20;
+	goto block4;
+block3: ;
+	r10 = INT64_C(0);
+	r11 = INT64_C(1);
+	r12 = (-r11);
+	s_mir_string_store(&r13, s_string_from_bytes("\165\156\153\156\157\167\156\040\162\145\143\157\162\144\040\146\151\145\154\144\040\047", 22));
+	s_mir_string_store(&r14, s_string_concat(r13, r2));
+	s_string_release(r13); r13 = NULL;
+	s_string_release(r2); r2 = NULL;
+	s_mir_string_store(&r15, s_string_from_bytes("\047", 1));
+	s_mir_string_store(&r16, s_string_concat(r14, r15));
+	s_string_release(r14); r14 = NULL;
+	s_string_release(r15); r15 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(94, 3);
+		record->fields[0].text = s_string_retain(r16);
+		record->fields[1].bits = r12;
+		record->fields[2].bits = r10;
+	s_mir_record_store(&r17, record);
+	}
+	s_string_release(r16); r16 = NULL;
+	returned = r17;
+	r17 = NULL;
+	goto exit;
+block4: ;
+	goto block5;
+block5: ;
+	s_mir_record_store(&r18, s_mir_record_retain(r0->fields[0].record));
+	s_mir_record_release(r0); r0 = NULL;
+	r48 = (r1 >= 0 && (uint64_t)r1 < r18->length);
+	if (r48) goto block16;
+	goto block21;
+block6: ;
+	r24 = INT64_C(0);
+	s_mir_record_store(&r25, s_mir_record_retain(r20->fields[0].record));
+	r26 = (int64_t)r25->length;
+	s_mir_record_release(r25); r25 = NULL;
+	r27 = r24;
+	r28 = INT64_C(1);
+	goto block8;
+block7: ;
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block15;
+block8: ;
+	r29 = (r27 < r26);
+	if (r29) goto block22;
+	goto block23;
+block9: ;
+	r30 = r27;
+	s_mir_record_store(&r31, s_mir_record_retain(r20->fields[0].record));
+	r49 = (r30 >= 0 && (uint64_t)r30 < r31->length);
+	if (r49) goto block24;
+	goto block25;
+block10: ;
+	r39 = (r27 + r28);
+	r27 = r39;
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block8;
+block11: ;
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block15;
+block12: ;
+	r36 = r33->fields[0].bits;
+	s_mir_record_release(r33); r33 = NULL;
+	s_mir_string_store(&r37, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(94, 3);
+		record->fields[0].text = s_string_retain(r37);
+		record->fields[1].bits = r30;
+		record->fields[2].bits = r36;
+	s_mir_record_store(&r38, record);
+	}
+	s_string_release(r37); r37 = NULL;
+	returned = r38;
+	r38 = NULL;
+	goto exit;
+block13: ;
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block14;
+block14: ;
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block10;
+block15: ;
+	r40 = INT64_C(0);
+	r41 = INT64_C(1);
+	r42 = (-r41);
+	s_mir_string_store(&r43, s_string_from_bytes("\165\156\153\156\157\167\156\040\162\145\143\157\162\144\040\146\151\145\154\144\040\047", 22));
+	s_mir_string_store(&r44, s_string_concat(r43, r2));
+	s_string_release(r43); r43 = NULL;
+	s_string_release(r2); r2 = NULL;
+	s_mir_string_store(&r45, s_string_from_bytes("\047", 1));
+	s_mir_string_store(&r46, s_string_concat(r44, r45));
+	s_string_release(r44); r44 = NULL;
+	s_string_release(r45); r45 = NULL;
+	{ S_MirRecord *record = s_mir_record_new(94, 3);
+		record->fields[0].text = s_string_retain(r46);
+		record->fields[1].bits = r42;
+		record->fields[2].bits = r40;
+	s_mir_record_store(&r47, record);
+	}
+	s_string_release(r46); r46 = NULL;
+	returned = r47;
+	r47 = NULL;
+	goto exit;
+block16: ;
+	s_mir_record_store(&r19, s_mir_record_retain(r18->fields[r1].record));
+	s_mir_record_release(r18); r18 = NULL;
+	{ S_MirRecord * owned = r19; r19 = NULL; s_mir_record_store(&r20, owned); }
+	r21 = r20->fields[3].bits;
+	r22 = INT64_C(6);
+	r23 = (r21 == r22);
+	if (r23) goto block6;
+	goto block7;
+block17: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block18: ;
+	s_mir_record_store(&r32, s_mir_record_retain(r31->fields[r30].record));
+	s_mir_record_release(r31); r31 = NULL;
+	{ S_MirRecord * owned = r32; r32 = NULL; s_mir_record_store(&r33, owned); }
+	s_mir_string_store(&r34, s_string_retain(r33->fields[1].text));
+	r35 = (s_string_compare(r34, r2) == 0);
+	s_string_release(r34); r34 = NULL;
+	if (r35) goto block26;
+	goto block13;
+block19: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block20: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	goto block3;
+block21: ;
+	if (r2) { s_string_release(r2); r2 = NULL; }
+	if (r18) { s_mir_record_release(r18); r18 = NULL; }
+	goto block17;
+block22: ;
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block9;
+block23: ;
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block11;
+block24: ;
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block18;
+block25: ;
+	if (r2) { s_string_release(r2); r2 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	if (r31) { s_mir_record_release(r31); r31 = NULL; }
+	if (r33) { s_mir_record_release(r33); r33 = NULL; }
+	goto block19;
+block26: ;
+	if (r2) { s_string_release(r2); r2 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block12;
+exit: ;
+	return returned;
+}
+
+static S_MirRecord * s_mir_f157(S_MirRecord * a0, S_MirRecord * a1)
+{
+	S_MirRecord * r0 = NULL;
+	(void)r0;
+	S_MirRecord * r1 = NULL;
+	(void)r1;
+	int64_t r2 = 0;
+	(void)r2;
+	int64_t r3 = 0;
+	(void)r3;
+	bool r4 = 0;
+	(void)r4;
+	int64_t r5 = 0;
+	(void)r5;
+	S_String * r6 = NULL;
+	(void)r6;
+	S_MirRecord * r7 = NULL;
+	(void)r7;
+	S_MirRecord * r8 = NULL;
+	(void)r8;
+	S_MirRecord * r9 = NULL;
+	(void)r9;
+	S_MirRecord * r10 = NULL;
+	(void)r10;
+	int64_t r11 = 0;
+	(void)r11;
+	S_String * r12 = NULL;
+	(void)r12;
+	S_MirRecord * r13 = NULL;
+	(void)r13;
+	r0 = a0;
+	r1 = a1;
+	S_MirRecord * returned = 0;
+	goto block0;
+block0: ;
+	r2 = (int64_t)r1->length;
+	r3 = INT64_C(0);
+	r4 = (r2 == r3);
+	if (r4) goto block4;
+	goto block2;
+block1: ;
+	r5 = INT64_C(0);
+	s_mir_string_store(&r6, s_string_from_bytes("\145\155\160\164\171\040\162\145\143\157\162\144\163\040\141\162\145\040\156\157\164\040\163\165\160\160\157\162\164\145\144\040\171\145\164", 35));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r6);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r5;
+	s_mir_record_store(&r7, record);
+	}
+	s_string_release(r6); r6 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r7;
+	r7 = NULL;
+	goto exit;
+block2: ;
+	goto block3;
+block3: ;
+	s_mir_record_store(&r8, s_mir_f50(r0, r1));
+	r0 = NULL;
+	r1 = NULL;
+	{ S_MirRecord * owned = r8; r8 = NULL; s_mir_record_store(&r9, owned); }
+	s_mir_record_store(&r10, s_mir_record_retain(r9->fields[1].record));
+	r11 = r9->fields[0].bits;
+	s_mir_record_release(r9); r9 = NULL;
+	s_mir_string_store(&r12, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r12);
+		record->fields[1].record = s_mir_record_retain(r10);
+		record->fields[2].bits = r11;
+	s_mir_record_store(&r13, record);
+	}
+	s_string_release(r12); r12 = NULL;
+	s_mir_record_release(r10); r10 = NULL;
+	returned = r13;
+	r13 = NULL;
+	goto exit;
+block4: ;
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	goto block1;
+exit: ;
+	return returned;
+}
+
+static S_MirRecord * s_mir_f158(S_MirRecord * a0, S_String * a1, S_MirRecord * a2)
+{
+	S_MirRecord * r0 = NULL;
+	(void)r0;
+	S_String * r1 = NULL;
+	(void)r1;
+	S_MirRecord * r2 = NULL;
+	(void)r2;
+	S_String * r3 = NULL;
+	(void)r3;
+	bool r4 = 0;
+	(void)r4;
+	int64_t r5 = 0;
+	(void)r5;
+	S_MirRecord * r6 = NULL;
+	(void)r6;
+	S_MirRecord * r7 = NULL;
+	(void)r7;
+	S_MirRecord * r8 = NULL;
+	(void)r8;
+	S_MirRecord * r9 = NULL;
+	(void)r9;
+	int64_t r10 = 0;
+	(void)r10;
+	S_String * r11 = NULL;
+	(void)r11;
+	S_MirRecord * r12 = NULL;
+	(void)r12;
+	S_String * r13 = NULL;
+	(void)r13;
+	bool r14 = 0;
+	(void)r14;
+	int64_t r15 = 0;
+	(void)r15;
+	S_MirRecord * r16 = NULL;
+	(void)r16;
+	S_MirRecord * r17 = NULL;
+	(void)r17;
+	S_MirRecord * r18 = NULL;
+	(void)r18;
+	int64_t r19 = 0;
+	(void)r19;
+	S_MirRecord * r20 = NULL;
+	(void)r20;
+	int64_t r21 = 0;
+	(void)r21;
+	S_String * r22 = NULL;
+	(void)r22;
+	S_MirRecord * r23 = NULL;
+	(void)r23;
+	S_String * r24 = NULL;
+	(void)r24;
+	bool r25 = 0;
+	(void)r25;
+	int64_t r26 = 0;
+	(void)r26;
+	int64_t r27 = 0;
+	(void)r27;
+	S_MirRecord * r28 = NULL;
+	(void)r28;
+	int64_t r29 = 0;
+	(void)r29;
+	S_String * r30 = NULL;
+	(void)r30;
+	S_MirRecord * r31 = NULL;
+	(void)r31;
+	S_String * r32 = NULL;
+	(void)r32;
+	bool r33 = 0;
+	(void)r33;
+	int64_t r34 = 0;
+	(void)r34;
+	int64_t r35 = 0;
+	(void)r35;
+	bool r36 = 0;
+	(void)r36;
+	bool r37 = 0;
+	(void)r37;
+	bool r38 = 0;
+	(void)r38;
+	int64_t r39 = 0;
+	(void)r39;
+	int64_t r40 = 0;
+	(void)r40;
+	int64_t r41 = 0;
+	(void)r41;
+	bool r42 = 0;
+	(void)r42;
+	bool r43 = 0;
+	(void)r43;
+	int64_t r44 = 0;
+	(void)r44;
+	S_String * r45 = NULL;
+	(void)r45;
+	S_MirRecord * r46 = NULL;
+	(void)r46;
+	int64_t r47 = 0;
+	(void)r47;
+	S_String * r48 = NULL;
+	(void)r48;
+	S_MirRecord * r49 = NULL;
+	(void)r49;
+	S_String * r50 = NULL;
+	(void)r50;
+	bool r51 = 0;
+	(void)r51;
+	int64_t r52 = 0;
+	(void)r52;
+	S_MirRecord * r53 = NULL;
+	(void)r53;
+	int64_t r54 = 0;
+	(void)r54;
+	S_String * r55 = NULL;
+	(void)r55;
+	S_MirRecord * r56 = NULL;
+	(void)r56;
+	S_String * r57 = NULL;
+	(void)r57;
+	bool r58 = 0;
+	(void)r58;
+	bool r59 = 0;
+	(void)r59;
+	S_String * r60 = NULL;
+	(void)r60;
+	bool r61 = 0;
+	(void)r61;
+	int64_t r62 = 0;
+	(void)r62;
+	int64_t r63 = 0;
+	(void)r63;
+	bool r64 = 0;
+	(void)r64;
+	bool r65 = 0;
+	(void)r65;
+	int64_t r66 = 0;
+	(void)r66;
+	S_String * r67 = NULL;
+	(void)r67;
+	S_MirRecord * r68 = NULL;
+	(void)r68;
+	int64_t r69 = 0;
+	(void)r69;
+	int64_t r70 = 0;
+	(void)r70;
+	int64_t r71 = 0;
+	(void)r71;
+	int64_t r72 = 0;
+	(void)r72;
+	bool r73 = 0;
+	(void)r73;
+	bool r74 = 0;
+	(void)r74;
+	int64_t r75 = 0;
+	(void)r75;
+	bool r76 = 0;
+	(void)r76;
+	bool r77 = 0;
+	(void)r77;
+	int64_t r78 = 0;
+	(void)r78;
+	bool r79 = 0;
+	(void)r79;
+	bool r80 = 0;
+	(void)r80;
+	int64_t r81 = 0;
+	(void)r81;
+	bool r82 = 0;
+	(void)r82;
+	int64_t r83 = 0;
+	(void)r83;
+	S_String * r84 = NULL;
+	(void)r84;
+	S_MirRecord * r85 = NULL;
+	(void)r85;
+	int64_t r86 = 0;
+	(void)r86;
+	S_String * r87 = NULL;
+	(void)r87;
+	S_MirRecord * r88 = NULL;
+	(void)r88;
+	S_String * r89 = NULL;
+	(void)r89;
+	bool r90 = 0;
+	(void)r90;
+	int64_t r91 = 0;
+	(void)r91;
+	int64_t r92 = 0;
+	(void)r92;
+	bool r93 = 0;
+	(void)r93;
+	bool r94 = 0;
+	(void)r94;
+	int64_t r95 = 0;
+	(void)r95;
+	S_String * r96 = NULL;
+	(void)r96;
+	S_MirRecord * r97 = NULL;
+	(void)r97;
+	int64_t r98 = 0;
+	(void)r98;
+	int64_t r99 = 0;
+	(void)r99;
+	int64_t r100 = 0;
+	(void)r100;
+	int64_t r101 = 0;
+	(void)r101;
+	bool r102 = 0;
+	(void)r102;
+	bool r103 = 0;
+	(void)r103;
+	bool r104 = 0;
+	(void)r104;
+	S_MirRecord * r105 = NULL;
+	(void)r105;
+	int64_t r106 = 0;
+	(void)r106;
+	bool r107 = 0;
+	(void)r107;
+	S_MirRecord * r108 = NULL;
+	(void)r108;
+	S_MirRecord * r109 = NULL;
+	(void)r109;
+	int64_t r110 = 0;
+	(void)r110;
+	int64_t r111 = 0;
+	(void)r111;
+	int64_t r112 = 0;
+	(void)r112;
+	bool r113 = 0;
+	(void)r113;
+	bool r114 = 0;
+	(void)r114;
+	int64_t r115 = 0;
+	(void)r115;
+	bool r116 = 0;
+	(void)r116;
+	bool r117 = 0;
+	(void)r117;
+	int64_t r118 = 0;
+	(void)r118;
+	bool r119 = 0;
+	(void)r119;
+	int64_t r120 = 0;
+	(void)r120;
+	S_String * r121 = NULL;
+	(void)r121;
+	S_MirRecord * r122 = NULL;
+	(void)r122;
+	int64_t r123 = 0;
+	(void)r123;
+	S_String * r124 = NULL;
+	(void)r124;
+	S_MirRecord * r125 = NULL;
+	(void)r125;
+	int64_t r126 = 0;
+	(void)r126;
+	S_String * r127 = NULL;
+	(void)r127;
+	S_MirRecord * r128 = NULL;
+	(void)r128;
+	bool r129 = 0;
+	(void)r129;
+	bool r130 = 0;
+	(void)r130;
+	bool r131 = 0;
+	(void)r131;
+	bool r132 = 0;
+	(void)r132;
+	r0 = a0;
+	r1 = a1;
+	r2 = a2;
+	S_MirRecord * returned = 0;
+	goto block0;
+block0: ;
+	s_mir_string_store(&r3, s_string_from_bytes("\141\162\147\165\155\145\156\164\163", 9));
+	r4 = (s_string_compare(r1, r3) == 0);
+	s_string_release(r3); r3 = NULL;
+	if (r4) goto block64;
+	goto block2;
+block1: ;
+	r5 = INT64_C(4);
+	s_mir_record_store(&r6, s_mir_f47(r0, r5));
+	r0 = NULL;
+	{ S_MirRecord * owned = r6; r6 = NULL; s_mir_record_store(&r7, owned); }
+	s_mir_record_store(&r8, s_mir_record_retain(r7->fields[1].record));
+	{ S_MirRecord *array = s_mir_record_new(13, 0);
+	s_mir_record_store(&r9, array);
+	}
+	r10 = r7->fields[0].bits;
+	s_mir_record_release(r7); r7 = NULL;
+	s_mir_string_store(&r11, s_string_from_bytes("\141\162\147\165\155\145\156\164\163\040\145\170\160\145\143\164\163\040\156\157\040\141\162\147\165\155\145\156\164\163", 30));
+	s_mir_record_store(&r12, s_mir_f187(r8, r2, r9, r10, r11));
+	r8 = NULL;
+	r2 = NULL;
+	r9 = NULL;
+	r11 = NULL;
+	returned = r12;
+	r12 = NULL;
+	goto exit;
+block2: ;
+	goto block3;
+block3: ;
+	s_mir_string_store(&r13, s_string_from_bytes("\162\145\141\144\137\164\145\170\164", 9));
+	r14 = (s_string_compare(r1, r13) == 0);
+	s_string_release(r13); r13 = NULL;
+	if (r14) goto block65;
+	goto block5;
+block4: ;
+	r15 = INT64_C(4);
+	s_mir_record_store(&r16, s_mir_f116(r0, r15));
+	r0 = NULL;
+	{ S_MirRecord * owned = r16; r16 = NULL; s_mir_record_store(&r17, owned); }
+	s_mir_record_store(&r18, s_mir_record_retain(r17->fields[1].record));
+	r19 = INT64_C(4);
+	{ S_MirRecord *array = s_mir_record_new(13, 1);
+		array->fields[0].bits = r19;
+	s_mir_record_store(&r20, array);
+	}
+	r21 = r17->fields[0].bits;
+	s_mir_record_release(r17); r17 = NULL;
+	s_mir_string_store(&r22, s_string_from_bytes("\162\145\141\144\137\164\145\170\164\040\145\170\160\145\143\164\163\040\157\156\145\040\163\164\162\151\156\147\040\141\162\147\165\155\145\156\164", 37));
+	s_mir_record_store(&r23, s_mir_f187(r18, r2, r20, r21, r22));
+	r18 = NULL;
+	r2 = NULL;
+	r20 = NULL;
+	r22 = NULL;
+	returned = r23;
+	r23 = NULL;
+	goto exit;
+block5: ;
+	goto block6;
+block6: ;
+	s_mir_string_store(&r24, s_string_from_bytes("\167\162\151\164\145\137\164\145\170\164", 10));
+	r25 = (s_string_compare(r1, r24) == 0);
+	s_string_release(r24); r24 = NULL;
+	if (r25) goto block66;
+	goto block8;
+block7: ;
+	r26 = INT64_C(4);
+	r27 = INT64_C(4);
+	{ S_MirRecord *array = s_mir_record_new(13, 2);
+		array->fields[0].bits = r26;
+		array->fields[1].bits = r27;
+	s_mir_record_store(&r28, array);
+	}
+	r29 = INT64_C(3);
+	s_mir_string_store(&r30, s_string_from_bytes("\167\162\151\164\145\137\164\145\170\164\040\145\170\160\145\143\164\163\040\164\167\157\040\163\164\162\151\156\147\040\141\162\147\165\155\145\156\164\163", 39));
+	s_mir_record_store(&r31, s_mir_f187(r0, r2, r28, r29, r30));
+	r0 = NULL;
+	r2 = NULL;
+	r28 = NULL;
+	r30 = NULL;
+	returned = r31;
+	r31 = NULL;
+	goto exit;
+block8: ;
+	goto block9;
+block9: ;
+	s_mir_string_store(&r32, s_string_from_bytes("\163\164\162", 3));
+	r33 = (s_string_compare(r1, r32) == 0);
+	s_string_release(r32); r32 = NULL;
+	if (r33) goto block67;
+	goto block11;
+block10: ;
+	r34 = (int64_t)r2->length;
+	r35 = INT64_C(1);
+	r36 = (r34 == r35);
+	r37 = (!r36);
+	r38 = r37;
+	if (r37) goto block68;
+	goto block69;
+block11: ;
+	goto block17;
+block12: ;
+	r39 = INT64_C(0);
+	r129 = (r39 >= 0 && (uint64_t)r39 < r2->length);
+	if (r129) goto block70;
+	goto block71;
+block13: ;
+	if (r38) goto block72;
+	goto block73;
+block14: ;
+	r44 = INT64_C(0);
+	s_mir_string_store(&r45, s_string_from_bytes("\163\164\162\040\145\170\160\145\143\164\163\040\157\156\145\040\151\066\064\040\141\162\147\165\155\145\156\164", 28));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r45);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r44;
+	s_mir_record_store(&r46, record);
+	}
+	s_string_release(r45); r45 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r46;
+	r46 = NULL;
+	goto exit;
+block15: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block16;
+block16: ;
+	r47 = INT64_C(4);
+	s_mir_string_store(&r48, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r48);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r47;
+	s_mir_record_store(&r49, record);
+	}
+	s_string_release(r48); r48 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r49;
+	r49 = NULL;
+	goto exit;
+block17: ;
+	s_mir_string_store(&r50, s_string_from_bytes("\163\161\162\164", 4));
+	r51 = (s_string_compare(r1, r50) == 0);
+	s_string_release(r50); r50 = NULL;
+	if (r51) goto block74;
+	goto block19;
+block18: ;
+	r52 = INT64_C(2);
+	{ S_MirRecord *array = s_mir_record_new(13, 1);
+		array->fields[0].bits = r52;
+	s_mir_record_store(&r53, array);
+	}
+	r54 = INT64_C(2);
+	s_mir_string_store(&r55, s_string_from_bytes("\163\161\162\164\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 25));
+	s_mir_record_store(&r56, s_mir_f187(r0, r2, r53, r54, r55));
+	r0 = NULL;
+	r2 = NULL;
+	r53 = NULL;
+	r55 = NULL;
+	returned = r56;
+	r56 = NULL;
+	goto exit;
+block19: ;
+	goto block20;
+block20: ;
+	s_mir_string_store(&r57, s_string_from_bytes("\160\162\151\156\164", 5));
+	r58 = (s_string_compare(r1, r57) == 0);
+	s_string_release(r57); r57 = NULL;
+	r59 = r58;
+	if (r58) goto block22;
+	goto block21;
+block21: ;
+	s_mir_string_store(&r60, s_string_from_bytes("\145\160\162\151\156\164", 6));
+	r61 = (s_string_compare(r1, r60) == 0);
+	s_string_release(r60); r60 = NULL;
+	r59 = r61;
+	goto block22;
+block22: ;
+	if (r59) goto block75;
+	goto block24;
+block23: ;
+	r62 = (int64_t)r2->length;
+	r63 = INT64_C(1);
+	r64 = (r62 == r63);
+	r65 = (!r64);
+	if (r65) goto block76;
+	goto block77;
+block24: ;
+	goto block37;
+block25: ;
+	r66 = INT64_C(0);
+	s_mir_string_store(&r67, s_string_from_bytes("\160\162\151\156\164\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 26));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r67);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r66;
+	s_mir_record_store(&r68, record);
+	}
+	s_string_release(r67); r67 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r68;
+	r68 = NULL;
+	goto exit;
+block26: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block27;
+block27: ;
+	r69 = INT64_C(0);
+	r130 = (r69 >= 0 && (uint64_t)r69 < r2->length);
+	if (r130) goto block78;
+	goto block79;
+block28: ;
+	r75 = INT64_C(2);
+	r76 = (r71 == r75);
+	r74 = r76;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block29;
+block29: ;
+	r77 = r74;
+	if (r74) goto block80;
+	goto block81;
+block30: ;
+	r78 = INT64_C(3);
+	r79 = (r71 == r78);
+	r77 = r79;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block31;
+block31: ;
+	r80 = r77;
+	if (r77) goto block82;
+	goto block83;
+block32: ;
+	r81 = INT64_C(4);
+	r82 = (r71 == r81);
+	r80 = r82;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block33;
+block33: ;
+	if (r80) goto block84;
+	goto block85;
+block34: ;
+	r83 = INT64_C(5);
+	s_mir_string_store(&r84, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r84);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r83;
+	s_mir_record_store(&r85, record);
+	}
+	s_string_release(r84); r84 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r85;
+	r85 = NULL;
+	goto exit;
+block35: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block36;
+block36: ;
+	r86 = INT64_C(0);
+	s_mir_string_store(&r87, s_string_from_bytes("\143\141\156\156\157\164\040\160\162\151\156\164\040\164\150\151\163\040\164\171\160\145", 22));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r87);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r86;
+	s_mir_record_store(&r88, record);
+	}
+	s_string_release(r87); r87 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r88;
+	r88 = NULL;
+	goto exit;
+block37: ;
+	s_mir_string_store(&r89, s_string_from_bytes("\154\145\156", 3));
+	r90 = (s_string_compare(r1, r89) == 0);
+	s_string_release(r1); r1 = NULL;
+	s_string_release(r89); r89 = NULL;
+	if (r90) goto block38;
+	goto block86;
+block38: ;
+	r91 = (int64_t)r2->length;
+	r92 = INT64_C(1);
+	r93 = (r91 == r92);
+	r94 = (!r93);
+	if (r94) goto block87;
+	goto block41;
+block39: ;
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block55;
+block40: ;
+	r95 = INT64_C(0);
+	s_mir_string_store(&r96, s_string_from_bytes("\154\145\156\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 24));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r96);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r95;
+	s_mir_record_store(&r97, record);
+	}
+	s_string_release(r96); r96 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r97;
+	r97 = NULL;
+	goto exit;
+block41: ;
+	goto block42;
+block42: ;
+	r98 = INT64_C(0);
+	r131 = (r98 >= 0 && (uint64_t)r98 < r2->length);
+	if (r131) goto block60;
+	goto block88;
+block43: ;
+	s_mir_record_store(&r105, s_mir_record_retain(r0->fields[0].record));
+	r106 = (int64_t)r105->length;
+	s_mir_record_release(r105); r105 = NULL;
+	r107 = (r100 < r106);
+	r104 = r107;
+	goto block44;
+block44: ;
+	if (r104) goto block45;
+	goto block46;
+block45: ;
+	s_mir_record_store(&r108, s_mir_record_retain(r0->fields[0].record));
+	r132 = (r100 >= 0 && (uint64_t)r100 < r108->length);
+	if (r132) goto block62;
+	goto block89;
+block46: ;
+	goto block54;
+block47: ;
+	r115 = INT64_C(7);
+	r116 = (r111 == r115);
+	r114 = r116;
+	goto block48;
+block48: ;
+	r117 = r114;
+	if (r114) goto block50;
+	goto block49;
+block49: ;
+	r118 = INT64_C(8);
+	r119 = (r111 == r118);
+	r117 = r119;
+	goto block50;
+block50: ;
+	if (r117) goto block51;
+	goto block52;
+block51: ;
+	r120 = INT64_C(1);
+	s_mir_string_store(&r121, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r121);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r120;
+	s_mir_record_store(&r122, record);
+	}
+	s_string_release(r121); r121 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r122;
+	r122 = NULL;
+	goto exit;
+block52: ;
+	goto block53;
+block53: ;
+	goto block54;
+block54: ;
+	r123 = INT64_C(0);
+	s_mir_string_store(&r124, s_string_from_bytes("\154\145\156\040\145\170\160\145\143\164\163\040\141\040\163\164\162\151\156\147\040\157\162\040\141\162\162\141\171", 29));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r124);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r123;
+	s_mir_record_store(&r125, record);
+	}
+	s_string_release(r124); r124 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r125;
+	r125 = NULL;
+	goto exit;
+block55: ;
+	r126 = INT64_C(0);
+	s_mir_string_store(&r127, s_string_from_bytes("\165\156\153\156\157\167\156\040\142\165\151\154\164\151\156", 15));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r127);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r126;
+	s_mir_record_store(&r128, record);
+	}
+	s_string_release(r127); r127 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r128;
+	r128 = NULL;
+	goto exit;
+block56: ;
+	r40 = r2->fields[r39].bits;
+	s_mir_record_release(r2); r2 = NULL;
+	r41 = INT64_C(1);
+	r42 = (r40 == r41);
+	r43 = (!r42);
+	r38 = r43;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block13;
+block57: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block58: ;
+	r70 = r2->fields[r69].bits;
+	s_mir_record_release(r2); r2 = NULL;
+	r71 = r70;
+	r72 = INT64_C(1);
+	r73 = (r71 == r72);
+	r74 = r73;
+	if (r73) goto block90;
+	goto block91;
+block59: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block60: ;
+	r99 = r2->fields[r98].bits;
+	s_mir_record_release(r2); r2 = NULL;
+	r100 = r99;
+	r101 = INT64_C(0);
+	r102 = (r100 < r101);
+	r103 = (!r102);
+	r104 = r103;
+	if (r103) goto block43;
+	goto block44;
+block61: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block62: ;
+	s_mir_record_store(&r109, s_mir_record_retain(r108->fields[r100].record));
+	s_mir_record_release(r108); r108 = NULL;
+	r110 = r109->fields[3].bits;
+	s_mir_record_release(r109); r109 = NULL;
+	r111 = r110;
+	r112 = INT64_C(4);
+	r113 = (r111 == r112);
+	r114 = r113;
+	if (r113) goto block48;
+	goto block47;
+block63: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block64: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block1;
+block65: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block4;
+block66: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block7;
+block67: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block10;
+block68: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block13;
+block69: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block12;
+block70: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block56;
+block71: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block57;
+block72: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block14;
+block73: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block15;
+block74: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block18;
+block75: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block23;
+block76: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block25;
+block77: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block26;
+block78: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block58;
+block79: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block59;
+block80: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block31;
+block81: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block30;
+block82: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block33;
+block83: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block32;
+block84: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block34;
+block85: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block35;
+block86: ;
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block39;
+block87: ;
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block40;
+block88: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block61;
+block89: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r108) { s_mir_record_release(r108); r108 = NULL; }
+	goto block63;
+block90: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block29;
+block91: ;
+	if (r1) { s_string_release(r1); r1 = NULL; }
+	goto block28;
+exit: ;
+	return returned;
+}
+
+static S_MirRecord * s_mir_f159(S_MirRecord * a0, int64_t a1, int64_t a2, S_String * a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -92741,7 +94843,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f157(S_MirRecord * a0, int64_t a1, S_String * a2)
+static S_MirRecord * s_mir_f160(S_MirRecord * a0, int64_t a1, S_String * a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -93023,7 +95125,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f158(S_MirRecord * a0, int64_t a1)
+static S_MirRecord * s_mir_f161(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -94136,7 +96238,7 @@ block3: ;
 	r15 = s_mir_f12(r13, r1, r14);
 	r13 = NULL;
 	r16 = r15;
-	s_mir_record_store(&r17, s_mir_f160(r9, r16));
+	s_mir_record_store(&r17, s_mir_f163(r9, r16));
 	r9 = NULL;
 	{ S_MirRecord * owned = r17; r17 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_string_store(&r18, s_string_retain(r9->fields[4].text));
@@ -94206,7 +96308,7 @@ block13: ;
 	s_mir_record_store(&r49, s_mir_record_retain(r0->fields[14].record));
 	s_mir_string_store(&r50, s_mir_f13(r49, r47));
 	r49 = NULL;
-	s_mir_record_store(&r51, s_mir_f172(r48, r22, r50));
+	s_mir_record_store(&r51, s_mir_f156(r48, r22, r50));
 	r48 = NULL;
 	r50 = NULL;
 	{ S_MirRecord * owned = r51; r51 = NULL; s_mir_record_store(&r52, owned); }
@@ -94376,7 +96478,7 @@ block34: ;
 	r83 = r95;
 	goto block32;
 block35: ;
-	s_mir_record_store(&r120, s_mir_f160(r9, r83));
+	s_mir_record_store(&r120, s_mir_f163(r9, r83));
 	r9 = NULL;
 	{ S_MirRecord * owned = r120; r120 = NULL; s_mir_record_store(&r9, owned); }
 	goto block37;
@@ -94403,7 +96505,7 @@ block39: ;
 block40: ;
 	r127 = r9->fields[8].bits;
 	r128 = r127;
-	s_mir_record_store(&r129, s_mir_f160(r9, r86));
+	s_mir_record_store(&r129, s_mir_f163(r9, r86));
 	r9 = NULL;
 	{ S_MirRecord * owned = r129; r129 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_string_store(&r130, s_string_retain(r9->fields[4].text));
@@ -94604,7 +96706,7 @@ block69: ;
 	r218 = NULL;
 	{ S_String * owned = r219; r219 = NULL; s_mir_string_store(&r220, owned); }
 	s_mir_record_store(&r221, s_mir_record_retain(r9->fields[13].record));
-	s_mir_record_store(&r222, s_mir_f159(r221, s_string_retain(r220)));
+	s_mir_record_store(&r222, s_mir_f162(r221, s_string_retain(r220)));
 	r221 = NULL;
 	{ S_MirRecord * owned = r222; r222 = NULL; s_mir_record_store(&r223, owned); }
 	s_mir_string_store(&r224, s_string_retain(r223->fields[0].text));
@@ -94685,7 +96787,7 @@ block80: ;
 	if (r246) goto block232;
 	goto block233;
 block81: ;
-	s_mir_record_store(&r247, s_mir_f160(r9, r186));
+	s_mir_record_store(&r247, s_mir_f163(r9, r186));
 	r9 = NULL;
 	{ S_MirRecord * owned = r247; r247 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_string_store(&r248, s_string_retain(r9->fields[4].text));
@@ -94714,7 +96816,7 @@ block84: ;
 	r9 = NULL;
 	goto exit;
 block85: ;
-	s_mir_record_store(&r271, s_mir_f160(r9, r190));
+	s_mir_record_store(&r271, s_mir_f163(r9, r190));
 	r9 = NULL;
 	{ S_MirRecord * owned = r271; r271 = NULL; s_mir_record_store(&r9, owned); }
 	r272 = INT64_C(0);
@@ -94738,7 +96840,7 @@ block87: ;
 	if (r255) goto block242;
 	goto block243;
 block88: ;
-	s_mir_record_store(&r266, s_mir_f160(r9, r186));
+	s_mir_record_store(&r266, s_mir_f163(r9, r186));
 	r9 = NULL;
 	{ S_MirRecord * owned = r266; r266 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_string_store(&r267, s_string_retain(r9->fields[4].text));
@@ -94854,7 +96956,7 @@ block102: ;
 	s_mir_record_release(r0); r0 = NULL;
 	s_mir_string_store(&r305, s_mir_f13(r304, r186));
 	r304 = NULL;
-	s_mir_record_store(&r306, s_mir_f159(r303, r305));
+	s_mir_record_store(&r306, s_mir_f162(r303, r305));
 	r303 = NULL;
 	r305 = NULL;
 	{ S_MirRecord * owned = r306; r306 = NULL; s_mir_record_store(&r307, owned); }
@@ -95026,7 +97128,7 @@ block122: ;
 	r367 = INT64_C(0);
 	r368 = s_mir_f12(r366, r354, r367);
 	r366 = NULL;
-	s_mir_record_store(&r369, s_mir_f160(r9, r368));
+	s_mir_record_store(&r369, s_mir_f163(r9, r368));
 	r9 = NULL;
 	{ S_MirRecord * owned = r369; r369 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_record_store(&r370, s_mir_record_retain(r0->fields[14].record));
@@ -95050,7 +97152,7 @@ block125: ;
 	r379 = INT64_C(0);
 	r380 = s_mir_f12(r378, r1, r379);
 	r378 = NULL;
-	s_mir_record_store(&r381, s_mir_f160(r9, r380));
+	s_mir_record_store(&r381, s_mir_f163(r9, r380));
 	r9 = NULL;
 	{ S_MirRecord * owned = r381; r381 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_record_store(&r382, s_mir_record_retain(r0->fields[14].record));
@@ -95079,7 +97181,7 @@ block128: ;
 	r393 = s_mir_f12(r389, r1, r392);
 	r389 = NULL;
 	r394 = r393;
-	s_mir_record_store(&r395, s_mir_f160(r9, r394));
+	s_mir_record_store(&r395, s_mir_f163(r9, r394));
 	r9 = NULL;
 	{ S_MirRecord * owned = r395; r395 = NULL; s_mir_record_store(&r9, owned); }
 	s_mir_record_store(&r396, s_mir_record_retain(r9->fields[13].record));
@@ -95222,7 +97324,7 @@ block144: ;
 	r462 = INT64_C(0);
 	r463 = s_mir_f12(r461, r1, r462);
 	r461 = NULL;
-	s_mir_record_store(&r464, s_mir_f160(r9, r463));
+	s_mir_record_store(&r464, s_mir_f163(r9, r463));
 	r9 = NULL;
 	{ S_MirRecord * owned = r464; r464 = NULL; s_mir_record_store(&r9, owned); }
 	r465 = r9->fields[8].bits;
@@ -95270,7 +97372,7 @@ block150: ;
 	r482 = s_mir_f12(r480, r1, r481);
 	r480 = NULL;
 	r483 = r482;
-	s_mir_record_store(&r484, s_mir_f158(r9, r483));
+	s_mir_record_store(&r484, s_mir_f161(r9, r483));
 	r9 = NULL;
 	returned = r484;
 	r484 = NULL;
@@ -95320,7 +97422,7 @@ block159: ;
 	s_mir_record_store(&r502, s_mir_record_retain(r0->fields[14].record));
 	r503 = s_mir_f12(r502, r1, r501);
 	r502 = NULL;
-	s_mir_record_store(&r504, s_mir_f160(r9, r503));
+	s_mir_record_store(&r504, s_mir_f163(r9, r503));
 	r9 = NULL;
 	{ S_MirRecord * owned = r504; r504 = NULL; s_mir_record_store(&r9, owned); }
 	goto block160;
@@ -95965,7 +98067,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f159(S_MirRecord * a0, S_String * a1)
+static S_MirRecord * s_mir_f162(S_MirRecord * a0, S_String * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -96131,7 +98233,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f160(S_MirRecord * a0, int64_t a1)
+static S_MirRecord * s_mir_f163(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -97627,7 +99729,7 @@ block6: ;
 	r24 = NULL;
 	{ S_String * owned = r25; r25 = NULL; s_mir_string_store(&r26, owned); }
 	s_mir_record_store(&r27, s_mir_record_retain(r11->fields[13].record));
-	s_mir_record_store(&r28, s_mir_f159(r27, s_string_retain(r26)));
+	s_mir_record_store(&r28, s_mir_f162(r27, s_string_retain(r26)));
 	r27 = NULL;
 	{ S_MirRecord * owned = r28; r28 = NULL; s_mir_record_store(&r29, owned); }
 	s_mir_string_store(&r30, s_string_retain(r29->fields[0].text));
@@ -97888,7 +99990,7 @@ block35: ;
 	r106 = INT64_C(0);
 	r107 = s_mir_f12(r105, r88, r106);
 	r105 = NULL;
-	s_mir_record_store(&r108, s_mir_f160(r11, r107));
+	s_mir_record_store(&r108, s_mir_f163(r11, r107));
 	r11 = NULL;
 	{ S_MirRecord * owned = r108; r108 = NULL; s_mir_record_store(&r11, owned); }
 	r109 = r11->fields[8].bits;
@@ -97923,7 +100025,7 @@ block39: ;
 	if (r113) goto block40;
 	goto block41;
 block40: ;
-	s_mir_record_store(&r117, s_mir_f160(r11, r88));
+	s_mir_record_store(&r117, s_mir_f163(r11, r88));
 	r11 = NULL;
 	{ S_MirRecord * owned = r117; r117 = NULL; s_mir_record_store(&r11, owned); }
 	goto block37;
@@ -97938,7 +100040,7 @@ block43: ;
 	s_mir_record_store(&r128, s_mir_record_retain(r0->fields[14].record));
 	r129 = s_mir_f12(r128, r1, r127);
 	r128 = NULL;
-	s_mir_record_store(&r130, s_mir_f160(r11, r129));
+	s_mir_record_store(&r130, s_mir_f163(r11, r129));
 	r11 = NULL;
 	{ S_MirRecord * owned = r130; r130 = NULL; s_mir_record_store(&r11, owned); }
 	s_mir_string_store(&r131, s_string_retain(r11->fields[4].text));
@@ -98081,7 +100183,7 @@ block62: ;
 	s_mir_string_store(&r166, s_mir_f13(r165, r88));
 	r165 = NULL;
 	{ S_String * owned = r166; r166 = NULL; s_mir_string_store(&r167, owned); }
-	r168 = s_mir_f186(s_string_retain(r167));
+	r168 = s_mir_f189(s_string_retain(r167));
 	if (r168) goto block345;
 	goto block346;
 block63: ;
@@ -98090,7 +100192,7 @@ block63: ;
 	goto block348;
 block64: ;
 	s_mir_record_store(&r169, s_mir_record_retain(r11->fields[15].record));
-	s_mir_record_store(&r170, s_mir_f187(r169, r167, r119));
+	s_mir_record_store(&r170, s_mir_f158(r169, r167, r119));
 	r169 = NULL;
 	r167 = NULL;
 	r119 = NULL;
@@ -98210,7 +100312,7 @@ block80: ;
 	if (r119) { s_mir_record_release(r119); r119 = NULL; }
 	goto block59;
 block81: ;
-	r210 = s_mir_f188(s_string_retain(r97));
+	r210 = s_mir_f190(s_string_retain(r97));
 	r209 = r210;
 	if (r0) { s_mir_record_release(r0); r0 = NULL; }
 	if (r8) { s_mir_record_release(r8); r8 = NULL; }
@@ -98220,7 +100322,7 @@ block82: ;
 	goto block360;
 block83: ;
 	s_mir_record_store(&r211, s_mir_record_retain(r11->fields[15].record));
-	s_mir_record_store(&r212, s_mir_f189(r211, r95, r97, r119));
+	s_mir_record_store(&r212, s_mir_f191(r211, r95, r97, r119));
 	r211 = NULL;
 	r97 = NULL;
 	r119 = NULL;
@@ -98291,7 +100393,7 @@ block93: ;
 	goto block91;
 block94: ;
 	s_mir_record_store(&r227, s_mir_record_retain(r11->fields[15].record));
-	s_mir_record_store(&r228, s_mir_f190(r227, r95, r97, r119));
+	s_mir_record_store(&r228, s_mir_f192(r227, r95, r97, r119));
 	r227 = NULL;
 	r97 = NULL;
 	r119 = NULL;
@@ -98384,7 +100486,7 @@ block103: ;
 	r247 = INT64_C(0);
 	r248 = s_mir_f12(r246, r1, r247);
 	r246 = NULL;
-	s_mir_record_store(&r249, s_mir_f160(r11, r248));
+	s_mir_record_store(&r249, s_mir_f163(r11, r248));
 	r11 = NULL;
 	{ S_MirRecord * owned = r249; r249 = NULL; s_mir_record_store(&r11, owned); }
 	r250 = r11->fields[8].bits;
@@ -98402,7 +100504,7 @@ block105: ;
 	s_mir_record_release(r0); r0 = NULL;
 	s_mir_string_store(&r257, s_mir_f13(r256, r1));
 	r256 = NULL;
-	s_mir_record_store(&r258, s_mir_f157(r254, r255, r257));
+	s_mir_record_store(&r258, s_mir_f160(r254, r255, r257));
 	r254 = NULL;
 	r257 = NULL;
 	{ S_MirRecord * owned = r258; r258 = NULL; s_mir_record_store(&r259, owned); }
@@ -98471,7 +100573,7 @@ block112: ;
 	r275 = INT64_C(0);
 	r276 = s_mir_f12(r274, r1, r275);
 	r274 = NULL;
-	s_mir_record_store(&r277, s_mir_f160(r11, r276));
+	s_mir_record_store(&r277, s_mir_f163(r11, r276));
 	r11 = NULL;
 	{ S_MirRecord * owned = r277; r277 = NULL; s_mir_record_store(&r278, owned); }
 	r279 = r278->fields[8].bits;
@@ -98480,7 +100582,7 @@ block112: ;
 	r282 = INT64_C(1);
 	r283 = s_mir_f12(r281, r1, r282);
 	r281 = NULL;
-	s_mir_record_store(&r284, s_mir_f160(r278, r283));
+	s_mir_record_store(&r284, s_mir_f163(r278, r283));
 	r278 = NULL;
 	{ S_MirRecord * owned = r284; r284 = NULL; s_mir_record_store(&r11, owned); }
 	r285 = r11->fields[8].bits;
@@ -98625,7 +100727,7 @@ block129: ;
 	goto block396;
 block130: ;
 	s_mir_record_store(&r339, s_mir_record_retain(r11->fields[15].record));
-	s_mir_record_store(&r340, s_mir_f156(r339, r280, r286, r289));
+	s_mir_record_store(&r340, s_mir_f159(r339, r280, r286, r289));
 	r339 = NULL;
 	r289 = NULL;
 	{ S_MirRecord * owned = r340; r340 = NULL; s_mir_record_store(&r341, owned); }
@@ -98696,7 +100798,7 @@ block136: ;
 	r358 = INT64_C(0);
 	r359 = s_mir_f12(r357, r1, r358);
 	r357 = NULL;
-	s_mir_record_store(&r360, s_mir_f160(r11, r359));
+	s_mir_record_store(&r360, s_mir_f163(r11, r359));
 	r11 = NULL;
 	{ S_MirRecord * owned = r360; r360 = NULL; s_mir_record_store(&r11, owned); }
 	r361 = r11->fields[8].bits;
@@ -98725,7 +100827,7 @@ block140: ;
 	s_mir_record_release(r0); r0 = NULL;
 	s_mir_string_store(&r375, s_mir_f13(r374, r1));
 	r374 = NULL;
-	s_mir_record_store(&r376, s_mir_f172(r373, r362, r375));
+	s_mir_record_store(&r376, s_mir_f156(r373, r362, r375));
 	r373 = NULL;
 	r375 = NULL;
 	{ S_MirRecord * owned = r376; r376 = NULL; s_mir_record_store(&r377, owned); }
@@ -98857,7 +100959,7 @@ block156: ;
 	r418 = INT64_C(0);
 	r419 = s_mir_f12(r417, r406, r418);
 	r417 = NULL;
-	s_mir_record_store(&r420, s_mir_f160(r11, r419));
+	s_mir_record_store(&r420, s_mir_f163(r11, r419));
 	r11 = NULL;
 	{ S_MirRecord * owned = r420; r420 = NULL; s_mir_record_store(&r11, owned); }
 	s_mir_string_store(&r421, s_string_retain(r11->fields[4].text));
@@ -98944,7 +101046,7 @@ block169: ;
 	goto block154;
 block170: ;
 	s_mir_record_store(&r442, s_mir_record_retain(r11->fields[13].record));
-	s_mir_record_store(&r443, s_mir_f159(r442, r413));
+	s_mir_record_store(&r443, s_mir_f162(r442, r413));
 	r442 = NULL;
 	r413 = NULL;
 	{ S_MirRecord * owned = r443; r443 = NULL; s_mir_record_store(&r444, owned); }
@@ -98976,7 +101078,7 @@ block175: ;
 	s_mir_record_store(&r449, s_mir_record_retain(r11->fields[15].record));
 	r450 = r444->fields[2].bits;
 	s_mir_record_release(r444); r444 = NULL;
-	s_mir_record_store(&r451, s_mir_f191(r449, r395, r450));
+	s_mir_record_store(&r451, s_mir_f193(r449, r395, r450));
 	r449 = NULL;
 	r395 = NULL;
 	{ S_MirRecord * owned = r451; r451 = NULL; s_mir_record_store(&r452, owned); }
@@ -99051,7 +101153,7 @@ block186: ;
 	goto block169;
 block187: ;
 	s_mir_record_store(&r475, s_mir_record_retain(r11->fields[15].record));
-	s_mir_record_store(&r476, s_mir_f192(r475, r395));
+	s_mir_record_store(&r476, s_mir_f157(r475, r395));
 	r475 = NULL;
 	r395 = NULL;
 	{ S_MirRecord * owned = r476; r476 = NULL; s_mir_record_store(&r477, owned); }
@@ -99154,7 +101256,7 @@ block197: ;
 	s_mir_record_store(&r503, s_mir_record_retain(r0->fields[14].record));
 	r504 = s_mir_f12(r503, r1, r502);
 	r503 = NULL;
-	s_mir_record_store(&r505, s_mir_f160(r11, r504));
+	s_mir_record_store(&r505, s_mir_f163(r11, r504));
 	r11 = NULL;
 	{ S_MirRecord * owned = r505; r505 = NULL; s_mir_record_store(&r11, owned); }
 	s_mir_string_store(&r506, s_string_retain(r11->fields[4].text));
@@ -99408,7 +101510,7 @@ block239: ;
 	r582 = INT64_C(0);
 	r583 = s_mir_f12(r581, r1, r582);
 	r581 = NULL;
-	s_mir_record_store(&r584, s_mir_f160(r11, r583));
+	s_mir_record_store(&r584, s_mir_f163(r11, r583));
 	r11 = NULL;
 	{ S_MirRecord * owned = r584; r584 = NULL; s_mir_record_store(&r585, owned); }
 	r586 = r585->fields[8].bits;
@@ -99429,7 +101531,7 @@ block241: ;
 	s_mir_record_store(&r594, s_mir_record_retain(r0->fields[14].record));
 	r595 = s_mir_f12(r594, r1, r593);
 	r594 = NULL;
-	s_mir_record_store(&r596, s_mir_f160(r11, r595));
+	s_mir_record_store(&r596, s_mir_f163(r11, r595));
 	r11 = NULL;
 	{ S_MirRecord * owned = r596; r596 = NULL; s_mir_record_store(&r11, owned); }
 	s_mir_string_store(&r597, s_string_retain(r11->fields[4].text));
@@ -99517,7 +101619,7 @@ block253: ;
 block254: ;
 	s_mir_record_store(&r628, s_mir_record_retain(r0->fields[14].record));
 	s_mir_record_release(r0); r0 = NULL;
-	r629 = s_mir_f193(r628, r1);
+	r629 = s_mir_f194(r628, r1);
 	r628 = NULL;
 	r630 = (!r629);
 	r627 = r630;
@@ -99656,7 +101758,7 @@ block270: ;
 	r665 = INT64_C(0);
 	r666 = s_mir_f12(r664, r1, r665);
 	r664 = NULL;
-	s_mir_record_store(&r667, s_mir_f160(r11, r666));
+	s_mir_record_store(&r667, s_mir_f163(r11, r666));
 	r11 = NULL;
 	{ S_MirRecord * owned = r667; r667 = NULL; s_mir_record_store(&r11, owned); }
 	r668 = r11->fields[8].bits;
@@ -99745,7 +101847,7 @@ block282: ;
 	s_mir_record_store(&r697, s_mir_record_retain(r0->fields[14].record));
 	r698 = s_mir_f12(r697, r1, r696);
 	r697 = NULL;
-	s_mir_record_store(&r699, s_mir_f160(r11, r698));
+	s_mir_record_store(&r699, s_mir_f163(r11, r698));
 	r11 = NULL;
 	{ S_MirRecord * owned = r699; r699 = NULL; s_mir_record_store(&r11, owned); }
 	goto block283;
@@ -99774,7 +101876,7 @@ block286: ;
 		updated->fields[8] = replacement;
 		r11 = NULL;
 		r11 = updated; }
-	r13 = s_mir_f185(r10);
+	r13 = s_mir_f188(r10);
 	r14 = r13;
 	r15 = INT64_C(0);
 	r16 = (r14 == r15);
@@ -100757,7 +102859,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f161(S_MirRecord * a0, S_String * a1, int64_t a2)
+static S_MirRecord * s_mir_f164(S_MirRecord * a0, S_String * a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -100826,7 +102928,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f162(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
+static S_MirRecord * s_mir_f165(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -104608,7 +106710,7 @@ block2: ;
 	goto exit;
 block3: ;
 	r20 = INT64_C(3);
-	r21 = s_mir_f165(s_mir_record_retain(r1), r2, r20);
+	r21 = s_mir_f168(s_mir_record_retain(r1), r2, r20);
 	r22 = INT64_C(0);
 	r23 = (r21 == r22);
 	if (r23) goto block658;
@@ -104635,7 +106737,7 @@ block6: ;
 	if (r12) { s_mir_record_release(r12); r12 = NULL; }
 	goto block7;
 block7: ;
-	r29 = s_mir_f171(s_mir_record_retain(r0), s_string_retain(r15));
+	r29 = s_mir_f174(s_mir_record_retain(r0), s_string_retain(r15));
 	r30 = r29;
 	r31 = INT64_C(0);
 	r32 = (r30 < r31);
@@ -104695,7 +106797,7 @@ block13: ;
 block14: ;
 	r42 = r39->fields[2].bits;
 	s_mir_record_release(r39); r39 = NULL;
-	s_mir_record_store(&r43, s_mir_f194(r16, r1, r42));
+	s_mir_record_store(&r43, s_mir_f195(r16, r1, r42));
 	r16 = NULL;
 	r1 = NULL;
 	returned = r43;
@@ -104727,7 +106829,7 @@ block18: ;
 	goto block20;
 block19: ;
 	r57 = INT64_C(11);
-	r58 = s_mir_f165(s_mir_record_retain(r1), r2, r57);
+	r58 = s_mir_f168(s_mir_record_retain(r1), r2, r57);
 	r59 = r58;
 	s_mir_record_store(&r60, s_mir_record_retain(r1->fields[8].record));
 	r61 = s_mir_f53(r60, r59);
@@ -104790,7 +106892,7 @@ block27: ;
 	s_mir_record_store(&r84, s_mir_record_retain(r1->fields[7].record));
 	r85 = s_mir_f12(r84, r2, r83);
 	r84 = NULL;
-	s_mir_record_store(&r86, s_mir_f162(r16, s_mir_record_retain(r1), r85));
+	s_mir_record_store(&r86, s_mir_f165(r16, s_mir_record_retain(r1), r85));
 	r16 = NULL;
 	{ S_MirRecord * owned = r86; r86 = NULL; s_mir_record_store(&r87, owned); }
 	s_mir_record_store(&r88, s_mir_record_retain(r87->fields[1].record));
@@ -104816,9 +106918,9 @@ block29: ;
 	s_mir_record_store(&r102, s_mir_f83(r16, r59));
 	r16 = NULL;
 	{ S_MirRecord * owned = r102; r102 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r103, s_mir_f195(r101, r77));
+	s_mir_record_store(&r103, s_mir_f196(r101, r77));
 	r77 = NULL;
-	s_mir_record_store(&r104, s_mir_f163(r16, r103));
+	s_mir_record_store(&r104, s_mir_f166(r16, r103));
 	r16 = NULL;
 	r103 = NULL;
 	{ S_MirRecord * owned = r104; r104 = NULL; s_mir_record_store(&r16, owned); }
@@ -104893,7 +106995,7 @@ block38: ;
 	goto block56;
 block39: ;
 	s_mir_record_store(&r121, s_mir_record_retain(r1->fields[7].record));
-	r122 = s_mir_f193(r121, r2);
+	r122 = s_mir_f194(r121, r2);
 	r121 = NULL;
 	r123 = (!r122);
 	r120 = r123;
@@ -104928,7 +107030,7 @@ block43: ;
 	r130 = INT64_C(0);
 	r131 = s_mir_f12(r129, r2, r130);
 	r129 = NULL;
-	s_mir_record_store(&r132, s_mir_f162(r16, s_mir_record_retain(r1), r131));
+	s_mir_record_store(&r132, s_mir_f165(r16, s_mir_record_retain(r1), r131));
 	r16 = NULL;
 	{ S_MirRecord * owned = r132; r132 = NULL; s_mir_record_store(&r133, owned); }
 	s_mir_record_store(&r134, s_mir_record_retain(r133->fields[1].record));
@@ -104945,7 +107047,7 @@ block44: ;
 	r142 = INT64_C(1);
 	r143 = s_mir_f12(r141, r2, r142);
 	r141 = NULL;
-	s_mir_record_store(&r144, s_mir_f162(r16, s_mir_record_retain(r1), r143));
+	s_mir_record_store(&r144, s_mir_f165(r16, s_mir_record_retain(r1), r143));
 	r16 = NULL;
 	{ S_MirRecord * owned = r144; r144 = NULL; s_mir_record_store(&r145, owned); }
 	s_mir_record_store(&r146, s_mir_record_retain(r145->fields[1].record));
@@ -104971,7 +107073,7 @@ block45: ;
 	goto exit;
 block46: ;
 	r153 = INT64_C(12);
-	r154 = s_mir_f165(s_mir_record_retain(r1), r2, r153);
+	r154 = s_mir_f168(s_mir_record_retain(r1), r2, r153);
 	r155 = r154;
 	s_mir_record_store(&r156, s_mir_record_retain(r1->fields[8].record));
 	s_mir_record_release(r1); r1 = NULL;
@@ -105041,8 +107143,8 @@ block53: ;
 	s_mir_record_release(r133); r133 = NULL;
 	r179 = r145->fields[0].bits;
 	s_mir_record_release(r145); r145 = NULL;
-	s_mir_record_store(&r180, s_mir_f196(r173, r178, r179));
-	s_mir_record_store(&r181, s_mir_f163(r16, r180));
+	s_mir_record_store(&r180, s_mir_f197(r173, r178, r179));
+	s_mir_record_store(&r181, s_mir_f166(r16, r180));
 	r16 = NULL;
 	r180 = NULL;
 	{ S_MirRecord * owned = r181; r181 = NULL; s_mir_record_store(&r16, owned); }
@@ -105054,8 +107156,8 @@ block54: ;
 	s_mir_record_release(r133); r133 = NULL;
 	r183 = r145->fields[0].bits;
 	s_mir_record_release(r145); r145 = NULL;
-	s_mir_record_store(&r184, s_mir_f177(r173, r182, r183));
-	s_mir_record_store(&r185, s_mir_f163(r16, r184));
+	s_mir_record_store(&r184, s_mir_f179(r173, r182, r183));
+	s_mir_record_store(&r185, s_mir_f166(r16, r184));
 	r16 = NULL;
 	r184 = NULL;
 	{ S_MirRecord * owned = r185; r185 = NULL; s_mir_record_store(&r16, owned); }
@@ -105083,7 +107185,7 @@ block57: ;
 	r191 = INT64_C(0);
 	r192 = s_mir_f12(r190, r2, r191);
 	r190 = NULL;
-	s_mir_record_store(&r193, s_mir_f162(r16, s_mir_record_retain(r1), r192));
+	s_mir_record_store(&r193, s_mir_f165(r16, s_mir_record_retain(r1), r192));
 	r16 = NULL;
 	{ S_MirRecord * owned = r193; r193 = NULL; s_mir_record_store(&r194, owned); }
 	s_mir_record_store(&r195, s_mir_record_retain(r194->fields[1].record));
@@ -105099,7 +107201,7 @@ block58: ;
 	goto block64;
 block59: ;
 	r202 = INT64_C(13);
-	r203 = s_mir_f165(s_mir_record_retain(r1), r2, r202);
+	r203 = s_mir_f168(s_mir_record_retain(r1), r2, r202);
 	r204 = r203;
 	s_mir_record_store(&r205, s_mir_record_retain(r1->fields[8].record));
 	s_mir_record_release(r1); r1 = NULL;
@@ -105151,8 +107253,8 @@ block63: ;
 	{ S_MirRecord * owned = r216; r216 = NULL; s_mir_record_store(&r16, owned); }
 	r217 = r194->fields[0].bits;
 	s_mir_record_release(r194); r194 = NULL;
-	s_mir_record_store(&r218, s_mir_f169(r215, r217));
-	s_mir_record_store(&r219, s_mir_f163(r16, r218));
+	s_mir_record_store(&r218, s_mir_f172(r215, r217));
+	s_mir_record_store(&r219, s_mir_f166(r16, r218));
 	r16 = NULL;
 	r218 = NULL;
 	{ S_MirRecord * owned = r219; r219 = NULL; s_mir_record_store(&r16, owned); }
@@ -105173,7 +107275,7 @@ block64: ;
 	goto block66;
 block65: ;
 	r224 = INT64_C(7);
-	r225 = s_mir_f165(s_mir_record_retain(r1), r2, r224);
+	r225 = s_mir_f168(s_mir_record_retain(r1), r2, r224);
 	r226 = r225;
 	s_mir_record_store(&r227, s_mir_record_retain(r1->fields[8].record));
 	r228 = s_mir_f53(r227, r226);
@@ -105264,7 +107366,7 @@ block76: ;
 	s_mir_record_store(&r261, s_mir_record_retain(r1->fields[7].record));
 	s_mir_string_store(&r262, s_mir_f13(r261, r253));
 	r261 = NULL;
-	r263 = s_mir_f171(s_mir_record_retain(r16), r262);
+	r263 = s_mir_f174(s_mir_record_retain(r16), r262);
 	r262 = NULL;
 	r264 = r263;
 	r265 = INT64_C(0);
@@ -105499,7 +107601,7 @@ block103: ;
 	r350 = INT64_C(0);
 	r351 = s_mir_f12(r349, r253, r350);
 	r349 = NULL;
-	s_mir_record_store(&r352, s_mir_f162(r16, s_mir_record_retain(r1), r351));
+	s_mir_record_store(&r352, s_mir_f165(r16, s_mir_record_retain(r1), r351));
 	r16 = NULL;
 	{ S_MirRecord * owned = r352; r352 = NULL; s_mir_record_store(&r353, owned); }
 	s_mir_record_store(&r354, s_mir_record_retain(r353->fields[1].record));
@@ -105587,9 +107689,9 @@ block110: ;
 	s_mir_record_store(&r413, s_mir_f83(r16, r226));
 	r16 = NULL;
 	{ S_MirRecord * owned = r413; r413 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r414, s_mir_f197(r412, r379));
+	s_mir_record_store(&r414, s_mir_f198(r412, r379));
 	r379 = NULL;
-	s_mir_record_store(&r415, s_mir_f163(r16, r414));
+	s_mir_record_store(&r415, s_mir_f166(r16, r414));
 	r16 = NULL;
 	r414 = NULL;
 	{ S_MirRecord * owned = r415; r415 = NULL; s_mir_record_store(&r16, owned); }
@@ -105703,7 +107805,7 @@ block122: ;
 	r421 = INT64_C(0);
 	r422 = s_mir_f12(r420, r2, r421);
 	r420 = NULL;
-	s_mir_record_store(&r423, s_mir_f162(r16, s_mir_record_retain(r1), r422));
+	s_mir_record_store(&r423, s_mir_f165(r16, s_mir_record_retain(r1), r422));
 	r16 = NULL;
 	{ S_MirRecord * owned = r423; r423 = NULL; s_mir_record_store(&r424, owned); }
 	s_mir_record_store(&r425, s_mir_record_retain(r424->fields[1].record));
@@ -105719,9 +107821,9 @@ block123: ;
 	goto block131;
 block124: ;
 	r432 = INT64_C(1);
-	r433 = s_mir_f165(s_mir_record_retain(r1), r2, r432);
+	r433 = s_mir_f168(s_mir_record_retain(r1), r2, r432);
 	r434 = r433;
-	r435 = s_mir_f166(s_mir_record_retain(r1), r2);
+	r435 = s_mir_f169(s_mir_record_retain(r1), r2);
 	r436 = r435;
 	r437 = INT64_C(0);
 	r438 = (r436 < r437);
@@ -105786,8 +107888,8 @@ block130: ;
 	{ S_MirRecord * owned = r451; r451 = NULL; s_mir_record_store(&r16, owned); }
 	r452 = r424->fields[0].bits;
 	s_mir_record_release(r424); r424 = NULL;
-	s_mir_record_store(&r453, s_mir_f167(r450, r452, r436));
-	s_mir_record_store(&r454, s_mir_f163(r16, r453));
+	s_mir_record_store(&r453, s_mir_f170(r450, r452, r436));
+	s_mir_record_store(&r454, s_mir_f166(r16, r453));
 	r16 = NULL;
 	r453 = NULL;
 	{ S_MirRecord * owned = r454; r454 = NULL; s_mir_record_store(&r16, owned); }
@@ -105808,7 +107910,7 @@ block131: ;
 	goto block133;
 block132: ;
 	r459 = INT64_C(4);
-	r460 = s_mir_f165(r1, r2, r459);
+	r460 = s_mir_f168(r1, r2, r459);
 	r1 = NULL;
 	r461 = INT64_C(4);
 	r462 = (r460 == r461);
@@ -105838,7 +107940,7 @@ block135: ;
 	if (r12) { s_mir_record_release(r12); r12 = NULL; }
 	goto block136;
 block136: ;
-	s_mir_record_store(&r469, s_mir_f198(r15));
+	s_mir_record_store(&r469, s_mir_f199(r15));
 	r15 = NULL;
 	{ S_MirRecord * owned = r469; r469 = NULL; s_mir_record_store(&r470, owned); }
 	s_mir_string_store(&r471, s_string_retain(r470->fields[0].text));
@@ -105881,9 +107983,9 @@ block139: ;
 	{ S_MirRecord * owned = r484; r484 = NULL; s_mir_record_store(&r16, owned); }
 	s_mir_string_store(&r485, s_string_retain(r470->fields[1].text));
 	s_mir_record_release(r470); r470 = NULL;
-	s_mir_record_store(&r486, s_mir_f199(r482, r485));
+	s_mir_record_store(&r486, s_mir_f200(r482, r485));
 	r485 = NULL;
-	s_mir_record_store(&r487, s_mir_f163(r16, r486));
+	s_mir_record_store(&r487, s_mir_f166(r16, r486));
 	r16 = NULL;
 	r486 = NULL;
 	{ S_MirRecord * owned = r487; r487 = NULL; s_mir_record_store(&r16, owned); }
@@ -105904,7 +108006,7 @@ block140: ;
 	goto block142;
 block141: ;
 	r492 = INT64_C(4);
-	r493 = s_mir_f165(r1, r2, r492);
+	r493 = s_mir_f168(r1, r2, r492);
 	r1 = NULL;
 	r494 = INT64_C(2);
 	r495 = (r493 == r494);
@@ -105963,7 +108065,7 @@ block145: ;
 	}
 	s_mir_record_release(r513); r513 = NULL;
 	s_string_release(r15); r15 = NULL;
-	s_mir_record_store(&r515, s_mir_f163(r16, r514));
+	s_mir_record_store(&r515, s_mir_f166(r16, r514));
 	r16 = NULL;
 	r514 = NULL;
 	{ S_MirRecord * owned = r515; r515 = NULL; s_mir_record_store(&r16, owned); }
@@ -105994,7 +108096,7 @@ block148: ;
 	goto block762;
 block149: ;
 	r524 = INT64_C(4);
-	r525 = s_mir_f165(r1, r2, r524);
+	r525 = s_mir_f168(r1, r2, r524);
 	r1 = NULL;
 	r526 = r525;
 	r527 = INT64_C(0);
@@ -106041,7 +108143,7 @@ block153: ;
 	if (r543) goto block765;
 	goto block766;
 block154: ;
-	r544 = s_mir_f200(r15);
+	r544 = s_mir_f201(r15);
 	r15 = NULL;
 	r539 = r544;
 	r545 = INT64_C(1);
@@ -106062,7 +108164,7 @@ block156: ;
 	r551 = INT64_C(1);
 	r552 = (-r551);
 	s_mir_record_store(&r553, s_mir_f122(r541, r536, r550, r552, r539));
-	s_mir_record_store(&r554, s_mir_f163(r16, r553));
+	s_mir_record_store(&r554, s_mir_f166(r16, r553));
 	r16 = NULL;
 	r553 = NULL;
 	{ S_MirRecord * owned = r554; r554 = NULL; s_mir_record_store(&r16, owned); }
@@ -106156,7 +108258,7 @@ block169: ;
 	goto block778;
 block170: ;
 	r583 = INT64_C(6);
-	r584 = s_mir_f165(s_mir_record_retain(r1), r2, r583);
+	r584 = s_mir_f168(s_mir_record_retain(r1), r2, r583);
 	r585 = r584;
 	s_mir_record_store(&r586, s_mir_record_retain(r1->fields[8].record));
 	r587 = s_mir_f53(r586, r585);
@@ -106276,7 +108378,7 @@ block181: ;
 	r632 = (r629 + r631);
 	r633 = s_mir_f12(r630, r2, r632);
 	r630 = NULL;
-	s_mir_record_store(&r634, s_mir_f162(r16, s_mir_record_retain(r1), r633));
+	s_mir_record_store(&r634, s_mir_f165(r16, s_mir_record_retain(r1), r633));
 	r16 = NULL;
 	{ S_MirRecord * owned = r634; r634 = NULL; s_mir_record_store(&r635, owned); }
 	s_mir_record_store(&r636, s_mir_record_retain(r635->fields[1].record));
@@ -106406,7 +108508,7 @@ block192: ;
 	if (r690) goto block801;
 	goto block802;
 block193: ;
-	r691 = s_mir_f171(s_mir_record_retain(r16), s_string_retain(r684));
+	r691 = s_mir_f174(s_mir_record_retain(r16), s_string_retain(r684));
 	r687 = r691;
 	if (r0) { s_mir_record_release(r0); r0 = NULL; }
 	if (r15) { s_string_release(r15); r15 = NULL; }
@@ -106447,7 +108549,7 @@ block197: ;
 	if (r572) { s_mir_record_release(r572); r572 = NULL; }
 	goto block198;
 block198: ;
-	s_mir_record_store(&r704, s_mir_f162(r16, s_mir_record_retain(r1), r695));
+	s_mir_record_store(&r704, s_mir_f165(r16, s_mir_record_retain(r1), r695));
 	r16 = NULL;
 	{ S_MirRecord * owned = r704; r704 = NULL; s_mir_record_store(&r705, owned); }
 	s_mir_record_store(&r706, s_mir_record_retain(r705->fields[1].record));
@@ -106549,9 +108651,9 @@ block207: ;
 	s_mir_record_store(&r764, s_mir_f83(r16, r585));
 	r16 = NULL;
 	{ S_MirRecord * owned = r764; r764 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r765, s_mir_f197(r763, r726));
+	s_mir_record_store(&r765, s_mir_f198(r763, r726));
 	r726 = NULL;
-	s_mir_record_store(&r766, s_mir_f163(r16, r765));
+	s_mir_record_store(&r766, s_mir_f166(r16, r765));
 	r16 = NULL;
 	r765 = NULL;
 	{ S_MirRecord * owned = r766; r766 = NULL; s_mir_record_store(&r16, owned); }
@@ -106682,7 +108784,7 @@ block221: ;
 	goto block822;
 block222: ;
 	r779 = INT64_C(6);
-	r780 = s_mir_f165(s_mir_record_retain(r1), r2, r779);
+	r780 = s_mir_f168(s_mir_record_retain(r1), r2, r779);
 	r781 = r780;
 	s_mir_record_store(&r782, s_mir_record_retain(r1->fields[8].record));
 	r783 = s_mir_f53(r782, r781);
@@ -106718,9 +108820,9 @@ block226: ;
 	{ S_MirRecord *array = s_mir_record_new(13, 0);
 	s_mir_record_store(&r795, array);
 	}
-	s_mir_record_store(&r796, s_mir_f195(r793, r795));
+	s_mir_record_store(&r796, s_mir_f196(r793, r795));
 	r795 = NULL;
-	s_mir_record_store(&r797, s_mir_f163(r16, r796));
+	s_mir_record_store(&r797, s_mir_f166(r16, r796));
 	r16 = NULL;
 	r796 = NULL;
 	{ S_MirRecord * owned = r797; r797 = NULL; s_mir_record_store(&r16, owned); }
@@ -106765,8 +108867,8 @@ block231: ;
 	s_mir_record_store(&r811, s_mir_f83(r16, r781));
 	r16 = NULL;
 	{ S_MirRecord * owned = r811; r811 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r812, s_mir_f201(r810));
-	s_mir_record_store(&r813, s_mir_f163(r16, r812));
+	s_mir_record_store(&r812, s_mir_f202(r810));
+	s_mir_record_store(&r813, s_mir_f166(r16, r812));
 	r16 = NULL;
 	r812 = NULL;
 	{ S_MirRecord * owned = r813; r813 = NULL; s_mir_record_store(&r16, owned); }
@@ -107014,7 +109116,7 @@ block261: ;
 	goto block241;
 block262: ;
 	r871 = INT64_C(6);
-	r872 = s_mir_f165(s_mir_record_retain(r1), r2, r871);
+	r872 = s_mir_f168(s_mir_record_retain(r1), r2, r871);
 	r873 = r872;
 	s_mir_record_store(&r874, s_mir_record_retain(r1->fields[8].record));
 	r875 = s_mir_f53(r874, r873);
@@ -107034,7 +109136,7 @@ block264: ;
 	r877 = INT64_C(0);
 	r878 = s_mir_f12(r876, r562, r877);
 	r876 = NULL;
-	s_mir_record_store(&r879, s_mir_f162(r16, s_mir_record_retain(r1), r878));
+	s_mir_record_store(&r879, s_mir_f165(r16, s_mir_record_retain(r1), r878));
 	r16 = NULL;
 	{ S_MirRecord * owned = r879; r879 = NULL; s_mir_record_store(&r880, owned); }
 	s_mir_record_store(&r881, s_mir_record_retain(r880->fields[1].record));
@@ -107107,7 +109209,7 @@ block271: ;
 	s_mir_record_store(&r901, s_mir_record_retain(r1->fields[7].record));
 	r902 = s_mir_f12(r901, r2, r900);
 	r901 = NULL;
-	s_mir_record_store(&r903, s_mir_f162(r16, s_mir_record_retain(r1), r902));
+	s_mir_record_store(&r903, s_mir_f165(r16, s_mir_record_retain(r1), r902));
 	r16 = NULL;
 	{ S_MirRecord * owned = r903; r903 = NULL; s_mir_record_store(&r904, owned); }
 	s_mir_record_store(&r905, s_mir_record_retain(r904->fields[1].record));
@@ -107268,7 +109370,7 @@ block286: ;
 	goto block884;
 block287: ;
 	r949 = INT64_C(6);
-	r950 = s_mir_f165(s_mir_record_retain(r1), r2, r949);
+	r950 = s_mir_f168(s_mir_record_retain(r1), r2, r949);
 	r951 = r950;
 	s_mir_record_store(&r952, s_mir_record_retain(r1->fields[8].record));
 	r953 = s_mir_f53(r952, r951);
@@ -107300,7 +109402,7 @@ block291: ;
 	r962 = INT64_C(0);
 	r963 = s_mir_f12(r961, r562, r962);
 	r961 = NULL;
-	s_mir_record_store(&r964, s_mir_f162(r16, s_mir_record_retain(r1), r963));
+	s_mir_record_store(&r964, s_mir_f165(r16, s_mir_record_retain(r1), r963));
 	r16 = NULL;
 	{ S_MirRecord * owned = r964; r964 = NULL; s_mir_record_store(&r965, owned); }
 	s_mir_record_store(&r966, s_mir_record_retain(r965->fields[1].record));
@@ -107326,7 +109428,7 @@ block293: ;
 	r974 = INT64_C(1);
 	r975 = s_mir_f12(r973, r2, r974);
 	r973 = NULL;
-	s_mir_record_store(&r976, s_mir_f162(r16, r1, r975));
+	s_mir_record_store(&r976, s_mir_f165(r16, r1, r975));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r976; r976 = NULL; s_mir_record_store(&r977, owned); }
@@ -107366,7 +109468,7 @@ block295: ;
 	r992 = (-r991);
 	r993 = INT64_C(0);
 	s_mir_record_store(&r994, s_mir_f122(r989, r987, r990, r992, r993));
-	s_mir_record_store(&r995, s_mir_f163(r16, r994));
+	s_mir_record_store(&r995, s_mir_f166(r16, r994));
 	r16 = NULL;
 	r994 = NULL;
 	{ S_MirRecord * owned = r995; r995 = NULL; s_mir_record_store(&r16, owned); }
@@ -107379,8 +109481,8 @@ block295: ;
 	{ S_MirRecord * owned = r999; r999 = NULL; s_mir_record_store(&r16, owned); }
 	r1000 = r977->fields[0].bits;
 	s_mir_record_release(r977); r977 = NULL;
-	s_mir_record_store(&r1001, s_mir_f202(r998, r987, r1000));
-	s_mir_record_store(&r1002, s_mir_f163(r16, r1001));
+	s_mir_record_store(&r1001, s_mir_f203(r998, r987, r1000));
+	s_mir_record_store(&r1002, s_mir_f166(r16, r1001));
 	r16 = NULL;
 	r1001 = NULL;
 	{ S_MirRecord * owned = r1002; r1002 = NULL; s_mir_record_store(&r16, owned); }
@@ -107460,7 +109562,7 @@ block302: ;
 	goto block900;
 block303: ;
 	r1019 = INT64_C(6);
-	r1020 = s_mir_f165(s_mir_record_retain(r1), r2, r1019);
+	r1020 = s_mir_f168(s_mir_record_retain(r1), r2, r1019);
 	r1021 = r1020;
 	s_mir_record_store(&r1022, s_mir_record_retain(r1->fields[8].record));
 	r1023 = s_mir_f53(r1022, r1021);
@@ -107492,7 +109594,7 @@ block307: ;
 	r1032 = INT64_C(0);
 	r1033 = s_mir_f12(r1031, r562, r1032);
 	r1031 = NULL;
-	s_mir_record_store(&r1034, s_mir_f162(r16, s_mir_record_retain(r1), r1033));
+	s_mir_record_store(&r1034, s_mir_f165(r16, s_mir_record_retain(r1), r1033));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1034; r1034 = NULL; s_mir_record_store(&r1035, owned); }
 	s_mir_record_store(&r1036, s_mir_record_retain(r1035->fields[1].record));
@@ -107565,7 +109667,7 @@ block313: ;
 	r1059 = INT64_C(1);
 	r1060 = s_mir_f12(r1058, r2, r1059);
 	r1058 = NULL;
-	s_mir_record_store(&r1061, s_mir_f162(r16, r1, r1060));
+	s_mir_record_store(&r1061, s_mir_f165(r16, r1, r1060));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r1061; r1061 = NULL; s_mir_record_store(&r1062, owned); }
@@ -107590,8 +109692,8 @@ block314: ;
 	s_mir_record_release(r1035); r1035 = NULL;
 	r1075 = r1062->fields[0].bits;
 	s_mir_record_release(r1062); r1062 = NULL;
-	s_mir_record_store(&r1076, s_mir_f203(r1072, r1074, r1075));
-	s_mir_record_store(&r1077, s_mir_f163(r16, r1076));
+	s_mir_record_store(&r1076, s_mir_f204(r1072, r1074, r1075));
+	s_mir_record_store(&r1077, s_mir_f166(r16, r1076));
 	r16 = NULL;
 	r1076 = NULL;
 	{ S_MirRecord * owned = r1077; r1077 = NULL; s_mir_record_store(&r16, owned); }
@@ -107671,7 +109773,7 @@ block321: ;
 	goto block918;
 block322: ;
 	r1094 = INT64_C(6);
-	r1095 = s_mir_f165(s_mir_record_retain(r1), r2, r1094);
+	r1095 = s_mir_f168(s_mir_record_retain(r1), r2, r1094);
 	r1096 = r1095;
 	s_mir_record_store(&r1097, s_mir_record_retain(r1->fields[8].record));
 	r1098 = s_mir_f53(r1097, r1096);
@@ -107703,7 +109805,7 @@ block326: ;
 	r1107 = INT64_C(0);
 	r1108 = s_mir_f12(r1106, r562, r1107);
 	r1106 = NULL;
-	s_mir_record_store(&r1109, s_mir_f162(r16, s_mir_record_retain(r1), r1108));
+	s_mir_record_store(&r1109, s_mir_f165(r16, s_mir_record_retain(r1), r1108));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1109; r1109 = NULL; s_mir_record_store(&r1110, owned); }
 	s_mir_record_store(&r1111, s_mir_record_retain(r1110->fields[1].record));
@@ -107729,7 +109831,7 @@ block328: ;
 	r1119 = INT64_C(1);
 	r1120 = s_mir_f12(r1118, r2, r1119);
 	r1118 = NULL;
-	s_mir_record_store(&r1121, s_mir_f162(r16, s_mir_record_retain(r1), r1120));
+	s_mir_record_store(&r1121, s_mir_f165(r16, s_mir_record_retain(r1), r1120));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1121; r1121 = NULL; s_mir_record_store(&r1122, owned); }
 	s_mir_record_store(&r1123, s_mir_record_retain(r1122->fields[1].record));
@@ -107758,7 +109860,7 @@ block330: ;
 	r1131 = INT64_C(2);
 	r1132 = s_mir_f12(r1130, r2, r1131);
 	r1130 = NULL;
-	s_mir_record_store(&r1133, s_mir_f162(r16, r1, r1132));
+	s_mir_record_store(&r1133, s_mir_f165(r16, r1, r1132));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r1133; r1133 = NULL; s_mir_record_store(&r1134, owned); }
@@ -107798,7 +109900,7 @@ block332: ;
 	r1149 = (-r1148);
 	r1150 = INT64_C(0);
 	s_mir_record_store(&r1151, s_mir_f122(r1146, r1144, r1147, r1149, r1150));
-	s_mir_record_store(&r1152, s_mir_f163(r16, r1151));
+	s_mir_record_store(&r1152, s_mir_f166(r16, r1151));
 	r16 = NULL;
 	r1151 = NULL;
 	{ S_MirRecord * owned = r1152; r1152 = NULL; s_mir_record_store(&r16, owned); }
@@ -107813,8 +109915,8 @@ block332: ;
 	s_mir_record_release(r1122); r1122 = NULL;
 	r1158 = r1134->fields[0].bits;
 	s_mir_record_release(r1134); r1134 = NULL;
-	s_mir_record_store(&r1159, s_mir_f204(r1155, r1144, r1157, r1158));
-	s_mir_record_store(&r1160, s_mir_f163(r16, r1159));
+	s_mir_record_store(&r1159, s_mir_f205(r1155, r1144, r1157, r1158));
+	s_mir_record_store(&r1160, s_mir_f166(r16, r1159));
 	r16 = NULL;
 	r1159 = NULL;
 	{ S_MirRecord * owned = r1160; r1160 = NULL; s_mir_record_store(&r16, owned); }
@@ -107897,7 +109999,7 @@ block340: ;
 	r1178 = INT64_C(1);
 	r1179 = s_mir_f12(r1177, r2, r1178);
 	r1177 = NULL;
-	s_mir_record_store(&r1180, s_mir_f162(r16, s_mir_record_retain(r1), r1179));
+	s_mir_record_store(&r1180, s_mir_f165(r16, s_mir_record_retain(r1), r1179));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1180; r1180 = NULL; s_mir_record_store(&r1181, owned); }
 	s_mir_record_store(&r1182, s_mir_record_retain(r1181->fields[1].record));
@@ -107938,7 +110040,7 @@ block343: ;
 	goto exit;
 block344: ;
 	r1196 = INT64_C(6);
-	r1197 = s_mir_f165(r1, r2, r1196);
+	r1197 = s_mir_f168(r1, r2, r1196);
 	r1 = NULL;
 	r1198 = INT64_C(2);
 	r1199 = (r1197 == r1198);
@@ -107999,7 +110101,7 @@ block348: ;
 	r1214 = (-r1213);
 	r1215 = INT64_C(0);
 	s_mir_record_store(&r1216, s_mir_f122(r1211, r1208, r1212, r1214, r1215));
-	s_mir_record_store(&r1217, s_mir_f163(r16, r1216));
+	s_mir_record_store(&r1217, s_mir_f166(r16, r1216));
 	r16 = NULL;
 	r1216 = NULL;
 	{ S_MirRecord * owned = r1217; r1217 = NULL; s_mir_record_store(&r16, owned); }
@@ -108191,7 +110293,7 @@ block368: ;
 	goto block356;
 block369: ;
 	r1261 = INT64_C(6);
-	r1262 = s_mir_f165(s_mir_record_retain(r1), r2, r1261);
+	r1262 = s_mir_f168(s_mir_record_retain(r1), r2, r1261);
 	r1263 = r1262;
 	s_mir_record_store(&r1264, s_mir_record_retain(r1->fields[8].record));
 	r1265 = s_mir_f53(r1264, r1263);
@@ -108263,7 +110365,7 @@ block375: ;
 	s_mir_record_store(&r1280, s_mir_record_retain(r1->fields[7].record));
 	r1281 = s_mir_f12(r1280, r2, r1279);
 	r1280 = NULL;
-	s_mir_record_store(&r1282, s_mir_f162(r16, s_mir_record_retain(r1), r1281));
+	s_mir_record_store(&r1282, s_mir_f165(r16, s_mir_record_retain(r1), r1281));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1282; r1282 = NULL; s_mir_record_store(&r1283, owned); }
 	s_mir_record_store(&r1284, s_mir_record_retain(r1283->fields[1].record));
@@ -108381,7 +110483,7 @@ block385: ;
 	{ S_MirRecord * owned = r1316; r1316 = NULL; s_mir_record_store(&r16, owned); }
 	r1317 = INT64_C(0);
 	s_mir_record_store(&r1318, s_mir_f122(r1229, r1315, r1297, r1300, r1317));
-	s_mir_record_store(&r1319, s_mir_f163(r16, r1318));
+	s_mir_record_store(&r1319, s_mir_f166(r16, r1318));
 	r16 = NULL;
 	r1318 = NULL;
 	{ S_MirRecord * owned = r1319; r1319 = NULL; s_mir_record_store(&r16, owned); }
@@ -108455,7 +110557,7 @@ block392: ;
 	r1337 = INT64_C(1);
 	r1338 = s_mir_f12(r1336, r2, r1337);
 	r1336 = NULL;
-	s_mir_record_store(&r1339, s_mir_f162(r16, s_mir_record_retain(r1), r1338));
+	s_mir_record_store(&r1339, s_mir_f165(r16, s_mir_record_retain(r1), r1338));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1339; r1339 = NULL; s_mir_record_store(&r1340, owned); }
 	s_mir_record_store(&r1341, s_mir_record_retain(r1340->fields[1].record));
@@ -108479,7 +110581,7 @@ block393: ;
 	goto block409;
 block394: ;
 	r1348 = INT64_C(6);
-	r1349 = s_mir_f165(s_mir_record_retain(r1), r2, r1348);
+	r1349 = s_mir_f168(s_mir_record_retain(r1), r2, r1348);
 	r1350 = INT64_C(1);
 	r1351 = (r1349 == r1350);
 	if (r1351) goto block985;
@@ -108594,7 +110696,7 @@ block405: ;
 	r1385 = (-r1384);
 	r1386 = INT64_C(0);
 	s_mir_record_store(&r1387, s_mir_f122(r1357, r1380, r1383, r1385, r1386));
-	s_mir_record_store(&r1388, s_mir_f163(r16, r1387));
+	s_mir_record_store(&r1388, s_mir_f166(r16, r1387));
 	r16 = NULL;
 	r1387 = NULL;
 	{ S_MirRecord * owned = r1388; r1388 = NULL; s_mir_record_store(&r16, owned); }
@@ -108762,7 +110864,7 @@ block418: ;
 	goto block419;
 block419: ;
 	r1414 = INT64_C(6);
-	r1415 = s_mir_f165(s_mir_record_retain(r1), r2, r1414);
+	r1415 = s_mir_f168(s_mir_record_retain(r1), r2, r1414);
 	r1416 = r1415;
 	s_mir_record_store(&r1417, s_mir_record_retain(r1->fields[8].record));
 	r1418 = s_mir_f53(r1417, r1416);
@@ -108830,7 +110932,7 @@ block424: ;
 	s_mir_record_store(&r1433, s_mir_record_retain(r1->fields[7].record));
 	r1434 = s_mir_f12(r1433, r2, r1432);
 	r1433 = NULL;
-	s_mir_record_store(&r1435, s_mir_f162(r16, s_mir_record_retain(r1), r1434));
+	s_mir_record_store(&r1435, s_mir_f165(r16, s_mir_record_retain(r1), r1434));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1435; r1435 = NULL; s_mir_record_store(&r1436, owned); }
 	s_mir_record_store(&r1437, s_mir_record_retain(r1436->fields[1].record));
@@ -108865,9 +110967,9 @@ block426: ;
 	s_mir_record_store(&r1451, s_mir_f83(r16, r1416));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1451; r1451 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r1452, s_mir_f205(r1450, r1392, r1426));
+	s_mir_record_store(&r1452, s_mir_f206(r1450, r1392, r1426));
 	r1426 = NULL;
-	s_mir_record_store(&r1453, s_mir_f163(r16, r1452));
+	s_mir_record_store(&r1453, s_mir_f166(r16, r1452));
 	r16 = NULL;
 	r1452 = NULL;
 	{ S_MirRecord * owned = r1453; r1453 = NULL; s_mir_record_store(&r16, owned); }
@@ -108925,7 +111027,7 @@ block430: ;
 	r1459 = INT64_C(0);
 	r1460 = s_mir_f12(r1458, r2, r1459);
 	r1458 = NULL;
-	s_mir_record_store(&r1461, s_mir_f162(r16, s_mir_record_retain(r1), r1460));
+	s_mir_record_store(&r1461, s_mir_f165(r16, s_mir_record_retain(r1), r1460));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1461; r1461 = NULL; s_mir_record_store(&r1462, owned); }
 	s_mir_record_store(&r1463, s_mir_record_retain(r1462->fields[1].record));
@@ -108942,7 +111044,7 @@ block431: ;
 	goto block447;
 block432: ;
 	r1470 = INT64_C(5);
-	r1471 = s_mir_f165(r1, r2, r1470);
+	r1471 = s_mir_f168(r1, r2, r1470);
 	r1 = NULL;
 	r1472 = r1471;
 	s_mir_record_store(&r1473, s_mir_record_retain(r16->fields[7].record));
@@ -109072,7 +111174,7 @@ block446: ;
 	r1506 = (-r1505);
 	r1507 = INT64_C(0);
 	s_mir_record_store(&r1508, s_mir_f122(r1477, r1475, r1504, r1506, r1507));
-	s_mir_record_store(&r1509, s_mir_f163(r16, r1508));
+	s_mir_record_store(&r1509, s_mir_f166(r16, r1508));
 	r16 = NULL;
 	r1508 = NULL;
 	{ S_MirRecord * owned = r1509; r1509 = NULL; s_mir_record_store(&r16, owned); }
@@ -109097,7 +111199,7 @@ block448: ;
 	r1515 = INT64_C(0);
 	r1516 = s_mir_f12(r1514, r2, r1515);
 	r1514 = NULL;
-	s_mir_record_store(&r1517, s_mir_f162(r16, s_mir_record_retain(r1), r1516));
+	s_mir_record_store(&r1517, s_mir_f165(r16, s_mir_record_retain(r1), r1516));
 	r16 = NULL;
 	{ S_MirRecord * owned = r1517; r1517 = NULL; s_mir_record_store(&r1518, owned); }
 	s_mir_record_store(&r1519, s_mir_record_retain(r1518->fields[1].record));
@@ -109116,7 +111218,7 @@ block449: ;
 	goto block537;
 block450: ;
 	r1526 = INT64_C(2);
-	r1527 = s_mir_f165(s_mir_record_retain(r1), r2, r1526);
+	r1527 = s_mir_f168(s_mir_record_retain(r1), r2, r1526);
 	r1528 = r1527;
 	s_mir_string_store(&r1529, s_string_from_bytes("\157\162", 2));
 	r1530 = (s_string_compare(r15, r1529) == 0);
@@ -109196,7 +111298,7 @@ block458: ;
 	{ S_MirRecord * owned = r1557; r1557 = NULL; s_mir_record_store(&r16, owned); }
 	r1558 = r1518->fields[0].bits;
 	s_mir_record_store(&r1559, s_mir_f123(r1555, r1558));
-	s_mir_record_store(&r1560, s_mir_f163(r16, r1559));
+	s_mir_record_store(&r1560, s_mir_f166(r16, r1559));
 	r16 = NULL;
 	r1559 = NULL;
 	{ S_MirRecord * owned = r1560; r1560 = NULL; s_mir_record_store(&r16, owned); }
@@ -109223,7 +111325,7 @@ block458: ;
 		r16 = NULL;
 		r16 = updated; }
 	s_mir_record_store(&r1572, s_mir_f124(r1555, r1565, r1568));
-	s_mir_record_store(&r1573, s_mir_f164(r16, r1572));
+	s_mir_record_store(&r1573, s_mir_f167(r16, r1572));
 	r16 = NULL;
 	r1572 = NULL;
 	{ S_MirRecord * owned = r1573; r1573 = NULL; s_mir_record_store(&r16, owned); }
@@ -109241,8 +111343,8 @@ block458: ;
 	{ S_MirRecord * owned = r1577; r1577 = NULL; s_mir_record_store(&r16, owned); }
 	r1578 = r1518->fields[0].bits;
 	s_mir_record_release(r1518); r1518 = NULL;
-	s_mir_record_store(&r1579, s_mir_f169(r1576, r1578));
-	s_mir_record_store(&r1580, s_mir_f163(r16, r1579));
+	s_mir_record_store(&r1579, s_mir_f172(r1576, r1578));
+	s_mir_record_store(&r1580, s_mir_f166(r16, r1579));
 	r16 = NULL;
 	r1579 = NULL;
 	{ S_MirRecord * owned = r1580; r1580 = NULL; s_mir_record_store(&r16, owned); }
@@ -109251,12 +111353,12 @@ block458: ;
 	r1583 = (-r1582);
 	r1584 = INT64_C(0);
 	s_mir_record_store(&r1585, s_mir_f122(r1581, r1551, r1576, r1583, r1584));
-	s_mir_record_store(&r1586, s_mir_f163(r16, r1585));
+	s_mir_record_store(&r1586, s_mir_f166(r16, r1585));
 	r16 = NULL;
 	r1585 = NULL;
 	{ S_MirRecord * owned = r1586; r1586 = NULL; s_mir_record_store(&r16, owned); }
 	s_mir_record_store(&r1587, s_mir_f125(r1571));
-	s_mir_record_store(&r1588, s_mir_f164(r16, r1587));
+	s_mir_record_store(&r1588, s_mir_f167(r16, r1587));
 	r16 = NULL;
 	r1587 = NULL;
 	{ S_MirRecord * owned = r1588; r1588 = NULL; s_mir_record_store(&r16, owned); }
@@ -109269,7 +111371,7 @@ block458: ;
 	r1590 = INT64_C(1);
 	r1591 = s_mir_f12(r1589, r2, r1590);
 	r1589 = NULL;
-	s_mir_record_store(&r1592, s_mir_f162(r16, r1, r1591));
+	s_mir_record_store(&r1592, s_mir_f165(r16, r1, r1591));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r1592; r1592 = NULL; s_mir_record_store(&r1593, owned); }
@@ -109290,12 +111392,12 @@ block459: ;
 	r1604 = (-r1603);
 	r1605 = INT64_C(0);
 	s_mir_record_store(&r1606, s_mir_f122(r1601, r1551, r1602, r1604, r1605));
-	s_mir_record_store(&r1607, s_mir_f163(r16, r1606));
+	s_mir_record_store(&r1607, s_mir_f166(r16, r1606));
 	r16 = NULL;
 	r1606 = NULL;
 	{ S_MirRecord * owned = r1607; r1607 = NULL; s_mir_record_store(&r16, owned); }
 	s_mir_record_store(&r1608, s_mir_f125(r1571));
-	s_mir_record_store(&r1609, s_mir_f164(r16, r1608));
+	s_mir_record_store(&r1609, s_mir_f167(r16, r1608));
 	r16 = NULL;
 	r1608 = NULL;
 	{ S_MirRecord * owned = r1609; r1609 = NULL; s_mir_record_store(&r16, owned); }
@@ -109381,7 +111483,7 @@ block467: ;
 	r1631 = (-r1630);
 	r1632 = INT64_C(0);
 	s_mir_record_store(&r1633, s_mir_f122(r1628, r1625, r1629, r1631, r1632));
-	s_mir_record_store(&r1634, s_mir_f163(r16, r1633));
+	s_mir_record_store(&r1634, s_mir_f166(r16, r1633));
 	r16 = NULL;
 	r1633 = NULL;
 	{ S_MirRecord * owned = r1634; r1634 = NULL; s_mir_record_store(&r16, owned); }
@@ -109415,7 +111517,7 @@ block469: ;
 	r1645 = r1518->fields[0].bits;
 	s_mir_record_release(r1518); r1518 = NULL;
 	s_mir_record_store(&r1646, s_mir_f124(r1645, r1639, r1642));
-	s_mir_record_store(&r1647, s_mir_f164(r16, r1646));
+	s_mir_record_store(&r1647, s_mir_f167(r16, r1646));
 	r16 = NULL;
 	r1646 = NULL;
 	{ S_MirRecord * owned = r1647; r1647 = NULL; s_mir_record_store(&r16, owned); }
@@ -109425,7 +111527,7 @@ block470: ;
 	r1648 = r1518->fields[0].bits;
 	s_mir_record_release(r1518); r1518 = NULL;
 	s_mir_record_store(&r1649, s_mir_f124(r1648, r1642, r1639));
-	s_mir_record_store(&r1650, s_mir_f164(r16, r1649));
+	s_mir_record_store(&r1650, s_mir_f167(r16, r1649));
 	r16 = NULL;
 	r1649 = NULL;
 	{ S_MirRecord * owned = r1650; r1650 = NULL; s_mir_record_store(&r16, owned); }
@@ -109441,7 +111543,7 @@ block471: ;
 	r1652 = INT64_C(1);
 	r1653 = s_mir_f12(r1651, r2, r1652);
 	r1651 = NULL;
-	s_mir_record_store(&r1654, s_mir_f162(r16, r1, r1653));
+	s_mir_record_store(&r1654, s_mir_f165(r16, r1, r1653));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r1654; r1654 = NULL; s_mir_record_store(&r1655, owned); }
@@ -109462,12 +111564,12 @@ block472: ;
 	r1666 = (-r1665);
 	r1667 = INT64_C(0);
 	s_mir_record_store(&r1668, s_mir_f122(r1663, r1625, r1664, r1666, r1667));
-	s_mir_record_store(&r1669, s_mir_f163(r16, r1668));
+	s_mir_record_store(&r1669, s_mir_f166(r16, r1668));
 	r16 = NULL;
 	r1668 = NULL;
 	{ S_MirRecord * owned = r1669; r1669 = NULL; s_mir_record_store(&r16, owned); }
 	s_mir_record_store(&r1670, s_mir_f125(r1642));
-	s_mir_record_store(&r1671, s_mir_f164(r16, r1670));
+	s_mir_record_store(&r1671, s_mir_f167(r16, r1670));
 	r16 = NULL;
 	r1670 = NULL;
 	{ S_MirRecord * owned = r1671; r1671 = NULL; s_mir_record_store(&r16, owned); }
@@ -109502,7 +111604,7 @@ block474: ;
 	r1674 = INT64_C(1);
 	r1675 = s_mir_f12(r1673, r2, r1674);
 	r1673 = NULL;
-	s_mir_record_store(&r1676, s_mir_f162(r16, r1, r1675));
+	s_mir_record_store(&r1676, s_mir_f165(r16, r1, r1675));
 	r16 = NULL;
 	r1 = NULL;
 	{ S_MirRecord * owned = r1676; r1676 = NULL; s_mir_record_store(&r1677, owned); }
@@ -109863,7 +111965,7 @@ block533: ;
 	{ S_MirRecord * owned = r1792; r1792 = NULL; s_mir_record_store(&r16, owned); }
 	r1793 = INT64_C(0);
 	s_mir_record_store(&r1794, s_mir_f122(r1686, r1791, r1688, r1690, r1793));
-	s_mir_record_store(&r1795, s_mir_f163(r16, r1794));
+	s_mir_record_store(&r1795, s_mir_f166(r16, r1794));
 	r16 = NULL;
 	r1794 = NULL;
 	{ S_MirRecord * owned = r1795; r1795 = NULL; s_mir_record_store(&r16, owned); }
@@ -109883,7 +111985,7 @@ block534: ;
 	r1803 = (-r1802);
 	r1804 = INT64_C(0);
 	s_mir_record_store(&r1805, s_mir_f122(r1801, r1798, r1791, r1803, r1804));
-	s_mir_record_store(&r1806, s_mir_f163(r16, r1805));
+	s_mir_record_store(&r1806, s_mir_f166(r16, r1805));
 	r16 = NULL;
 	r1805 = NULL;
 	{ S_MirRecord * owned = r1806; r1806 = NULL; s_mir_record_store(&r16, owned); }
@@ -110072,8 +112174,8 @@ block558: ;
 	s_mir_record_store(&r303, s_mir_f83(r16, r302));
 	r16 = NULL;
 	{ S_MirRecord * owned = r303; r303 = NULL; s_mir_record_store(&r16, owned); }
-	s_mir_record_store(&r304, s_mir_f167(r300, r264, r297));
-	s_mir_record_store(&r305, s_mir_f163(r16, r304));
+	s_mir_record_store(&r304, s_mir_f170(r300, r264, r297));
+	s_mir_record_store(&r305, s_mir_f166(r16, r304));
 	r16 = NULL;
 	r304 = NULL;
 	{ S_MirRecord * owned = r305; r305 = NULL; s_mir_record_store(&r16, owned); }
@@ -110378,7 +112480,7 @@ block600: ;
 	r930 = r894->fields[r929].bits;
 	s_mir_record_release(r894); r894 = NULL;
 	s_mir_record_store(&r931, s_mir_f122(r825, r918, r928, r930, r921));
-	s_mir_record_store(&r932, s_mir_f163(r16, r931));
+	s_mir_record_store(&r932, s_mir_f166(r16, r931));
 	r16 = NULL;
 	r931 = NULL;
 	{ S_MirRecord * owned = r932; r932 = NULL; s_mir_record_store(&r16, owned); }
@@ -114429,7 +116531,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f163(S_MirRecord * a0, S_MirRecord * a1)
+static S_MirRecord * s_mir_f166(S_MirRecord * a0, S_MirRecord * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -114552,7 +116654,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f164(S_MirRecord * a0, S_MirRecord * a1)
+static S_MirRecord * s_mir_f167(S_MirRecord * a0, S_MirRecord * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -114661,7 +116763,7 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f165(S_MirRecord * a0, int64_t a1, int64_t a2)
+static int64_t s_mir_f168(S_MirRecord * a0, int64_t a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -114701,7 +116803,7 @@ static int64_t s_mir_f165(S_MirRecord * a0, int64_t a1, int64_t a2)
 block0: ;
 	s_mir_record_store(&r3, s_mir_record_retain(r0->fields[6].record));
 	s_mir_record_store(&r4, s_mir_record_retain(r0->fields[0].record));
-	r5 = s_mir_f206(r3, r4, r1, r2);
+	r5 = s_mir_f207(r3, r4, r1, r2);
 	r3 = NULL;
 	r4 = NULL;
 	r6 = r5;
@@ -114742,7 +116844,7 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f166(S_MirRecord * a0, int64_t a1)
+static int64_t s_mir_f169(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -114784,7 +116886,7 @@ block0: ;
 	s_mir_record_store(&r2, s_mir_record_retain(r0->fields[6].record));
 	s_mir_record_store(&r3, s_mir_record_retain(r0->fields[0].record));
 	r4 = INT64_C(1);
-	r5 = s_mir_f206(r2, r3, r1, r4);
+	r5 = s_mir_f207(r2, r3, r1, r4);
 	r2 = NULL;
 	r3 = NULL;
 	r6 = r5;
@@ -114826,7 +116928,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f167(int64_t a0, int64_t a1, int64_t a2)
+static S_MirRecord * s_mir_f170(int64_t a0, int64_t a1, int64_t a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -114859,7 +116961,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f168(int64_t a0)
+static S_MirRecord * s_mir_f171(int64_t a0)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -114903,7 +117005,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f169(int64_t a0, int64_t a1)
+static S_MirRecord * s_mir_f172(int64_t a0, int64_t a1)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -114936,7 +117038,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f170(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f173(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -115151,7 +117253,7 @@ static S_MirRecord * s_mir_f170(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, 
 	S_MirRecord * returned = 0;
 	goto block0;
 block0: ;
-	s_mir_record_store(&r4, s_mir_f207(r0, s_mir_record_retain(r1), r3));
+	s_mir_record_store(&r4, s_mir_f208(r0, s_mir_record_retain(r1), r3));
 	r0 = NULL;
 	{ S_MirRecord * owned = r4; r4 = NULL; s_mir_record_store(&r5, owned); }
 	s_mir_record_store(&r6, s_mir_record_retain(r5->fields[1].record));
@@ -115194,7 +117296,7 @@ block5: ;
 	r21 = INT64_C(1);
 	r22 = s_mir_f12(r20, r2, r21);
 	r20 = NULL;
-	s_mir_record_store(&r23, s_mir_f162(r7, s_mir_record_retain(r1), r22));
+	s_mir_record_store(&r23, s_mir_f165(r7, s_mir_record_retain(r1), r22));
 	r7 = NULL;
 	{ S_MirRecord * owned = r23; r23 = NULL; s_mir_record_store(&r24, owned); }
 	s_mir_record_store(&r25, s_mir_record_retain(r24->fields[1].record));
@@ -115240,7 +117342,7 @@ block11: ;
 	r58 = r5->fields[0].bits;
 	r59 = r24->fields[0].bits;
 	s_mir_record_release(r24); r24 = NULL;
-	s_mir_record_store(&r60, s_mir_f176(r7, r19, r58, r59));
+	s_mir_record_store(&r60, s_mir_f178(r7, r19, r58, r59));
 	r7 = NULL;
 	r19 = NULL;
 	{ S_MirRecord * owned = r60; r60 = NULL; s_mir_record_store(&r61, owned); }
@@ -115305,7 +117407,7 @@ block19: ;
 block20: ;
 	r85 = r81->fields[1].bits;
 	r86 = r81->fields[2].bits;
-	s_mir_record_store(&r87, s_mir_f174(r7, s_mir_record_retain(r1), r85, r86, r54));
+	s_mir_record_store(&r87, s_mir_f176(r7, s_mir_record_retain(r1), r85, r86, r54));
 	r7 = NULL;
 	{ S_MirRecord * owned = r87; r87 = NULL; s_mir_record_store(&r7, owned); }
 	if (r19) { s_string_release(r19); r19 = NULL; }
@@ -115315,8 +117417,8 @@ block21: ;
 	r88 = r81->fields[1].bits;
 	r89 = r81->fields[1].bits;
 	r90 = r81->fields[2].bits;
-	s_mir_record_store(&r91, s_mir_f173(r88, r89, r90, r54));
-	s_mir_record_store(&r92, s_mir_f163(r7, r91));
+	s_mir_record_store(&r91, s_mir_f175(r88, r89, r90, r54));
+	s_mir_record_store(&r92, s_mir_f166(r7, r91));
 	r7 = NULL;
 	r91 = NULL;
 	{ S_MirRecord * owned = r92; r92 = NULL; s_mir_record_store(&r7, owned); }
@@ -115519,7 +117621,7 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f171(S_MirRecord * a0, S_String * a1)
+static int64_t s_mir_f174(S_MirRecord * a0, S_String * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -115666,286 +117768,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f172(S_MirRecord * a0, int64_t a1, S_String * a2)
-{
-	S_MirRecord * r0 = NULL;
-	(void)r0;
-	int64_t r1 = 0;
-	(void)r1;
-	S_String * r2 = NULL;
-	(void)r2;
-	int64_t r3 = 0;
-	(void)r3;
-	bool r4 = 0;
-	(void)r4;
-	bool r5 = 0;
-	(void)r5;
-	S_MirRecord * r6 = NULL;
-	(void)r6;
-	int64_t r7 = 0;
-	(void)r7;
-	bool r8 = 0;
-	(void)r8;
-	bool r9 = 0;
-	(void)r9;
-	int64_t r10 = 0;
-	(void)r10;
-	int64_t r11 = 0;
-	(void)r11;
-	int64_t r12 = 0;
-	(void)r12;
-	S_String * r13 = NULL;
-	(void)r13;
-	S_String * r14 = NULL;
-	(void)r14;
-	S_String * r15 = NULL;
-	(void)r15;
-	S_String * r16 = NULL;
-	(void)r16;
-	S_MirRecord * r17 = NULL;
-	(void)r17;
-	S_MirRecord * r18 = NULL;
-	(void)r18;
-	S_MirRecord * r19 = NULL;
-	(void)r19;
-	S_MirRecord * r20 = NULL;
-	(void)r20;
-	int64_t r21 = 0;
-	(void)r21;
-	int64_t r22 = 0;
-	(void)r22;
-	bool r23 = 0;
-	(void)r23;
-	int64_t r24 = 0;
-	(void)r24;
-	S_MirRecord * r25 = NULL;
-	(void)r25;
-	int64_t r26 = 0;
-	(void)r26;
-	int64_t r27 = 0;
-	(void)r27;
-	int64_t r28 = 0;
-	(void)r28;
-	bool r29 = 0;
-	(void)r29;
-	int64_t r30 = 0;
-	(void)r30;
-	S_MirRecord * r31 = NULL;
-	(void)r31;
-	S_MirRecord * r32 = NULL;
-	(void)r32;
-	S_MirRecord * r33 = NULL;
-	(void)r33;
-	S_String * r34 = NULL;
-	(void)r34;
-	bool r35 = 0;
-	(void)r35;
-	int64_t r36 = 0;
-	(void)r36;
-	S_String * r37 = NULL;
-	(void)r37;
-	S_MirRecord * r38 = NULL;
-	(void)r38;
-	int64_t r39 = 0;
-	(void)r39;
-	int64_t r40 = 0;
-	(void)r40;
-	int64_t r41 = 0;
-	(void)r41;
-	int64_t r42 = 0;
-	(void)r42;
-	S_String * r43 = NULL;
-	(void)r43;
-	S_String * r44 = NULL;
-	(void)r44;
-	S_String * r45 = NULL;
-	(void)r45;
-	S_String * r46 = NULL;
-	(void)r46;
-	S_MirRecord * r47 = NULL;
-	(void)r47;
-	bool r48 = 0;
-	(void)r48;
-	bool r49 = 0;
-	(void)r49;
-	r0 = a0;
-	r1 = a1;
-	r2 = a2;
-	S_MirRecord * returned = 0;
-	goto block0;
-block0: ;
-	r3 = INT64_C(0);
-	r4 = (r1 < r3);
-	r5 = r4;
-	if (r4) goto block2;
-	goto block1;
-block1: ;
-	s_mir_record_store(&r6, s_mir_record_retain(r0->fields[0].record));
-	r7 = (int64_t)r6->length;
-	s_mir_record_release(r6); r6 = NULL;
-	r8 = (r1 < r7);
-	r9 = (!r8);
-	r5 = r9;
-	goto block2;
-block2: ;
-	if (r5) goto block20;
-	goto block4;
-block3: ;
-	r10 = INT64_C(0);
-	r11 = INT64_C(1);
-	r12 = (-r11);
-	s_mir_string_store(&r13, s_string_from_bytes("\165\156\153\156\157\167\156\040\162\145\143\157\162\144\040\146\151\145\154\144\040\047", 22));
-	s_mir_string_store(&r14, s_string_concat(r13, r2));
-	s_string_release(r13); r13 = NULL;
-	s_string_release(r2); r2 = NULL;
-	s_mir_string_store(&r15, s_string_from_bytes("\047", 1));
-	s_mir_string_store(&r16, s_string_concat(r14, r15));
-	s_string_release(r14); r14 = NULL;
-	s_string_release(r15); r15 = NULL;
-	{ S_MirRecord *record = s_mir_record_new(94, 3);
-		record->fields[0].text = s_string_retain(r16);
-		record->fields[1].bits = r12;
-		record->fields[2].bits = r10;
-	s_mir_record_store(&r17, record);
-	}
-	s_string_release(r16); r16 = NULL;
-	returned = r17;
-	r17 = NULL;
-	goto exit;
-block4: ;
-	goto block5;
-block5: ;
-	s_mir_record_store(&r18, s_mir_record_retain(r0->fields[0].record));
-	s_mir_record_release(r0); r0 = NULL;
-	r48 = (r1 >= 0 && (uint64_t)r1 < r18->length);
-	if (r48) goto block16;
-	goto block21;
-block6: ;
-	r24 = INT64_C(0);
-	s_mir_record_store(&r25, s_mir_record_retain(r20->fields[0].record));
-	r26 = (int64_t)r25->length;
-	s_mir_record_release(r25); r25 = NULL;
-	r27 = r24;
-	r28 = INT64_C(1);
-	goto block8;
-block7: ;
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block15;
-block8: ;
-	r29 = (r27 < r26);
-	if (r29) goto block22;
-	goto block23;
-block9: ;
-	r30 = r27;
-	s_mir_record_store(&r31, s_mir_record_retain(r20->fields[0].record));
-	r49 = (r30 >= 0 && (uint64_t)r30 < r31->length);
-	if (r49) goto block24;
-	goto block25;
-block10: ;
-	r39 = (r27 + r28);
-	r27 = r39;
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block8;
-block11: ;
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block15;
-block12: ;
-	r36 = r33->fields[0].bits;
-	s_mir_record_release(r33); r33 = NULL;
-	s_mir_string_store(&r37, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(94, 3);
-		record->fields[0].text = s_string_retain(r37);
-		record->fields[1].bits = r30;
-		record->fields[2].bits = r36;
-	s_mir_record_store(&r38, record);
-	}
-	s_string_release(r37); r37 = NULL;
-	returned = r38;
-	r38 = NULL;
-	goto exit;
-block13: ;
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block14;
-block14: ;
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block10;
-block15: ;
-	r40 = INT64_C(0);
-	r41 = INT64_C(1);
-	r42 = (-r41);
-	s_mir_string_store(&r43, s_string_from_bytes("\165\156\153\156\157\167\156\040\162\145\143\157\162\144\040\146\151\145\154\144\040\047", 22));
-	s_mir_string_store(&r44, s_string_concat(r43, r2));
-	s_string_release(r43); r43 = NULL;
-	s_string_release(r2); r2 = NULL;
-	s_mir_string_store(&r45, s_string_from_bytes("\047", 1));
-	s_mir_string_store(&r46, s_string_concat(r44, r45));
-	s_string_release(r44); r44 = NULL;
-	s_string_release(r45); r45 = NULL;
-	{ S_MirRecord *record = s_mir_record_new(94, 3);
-		record->fields[0].text = s_string_retain(r46);
-		record->fields[1].bits = r42;
-		record->fields[2].bits = r40;
-	s_mir_record_store(&r47, record);
-	}
-	s_string_release(r46); r46 = NULL;
-	returned = r47;
-	r47 = NULL;
-	goto exit;
-block16: ;
-	s_mir_record_store(&r19, s_mir_record_retain(r18->fields[r1].record));
-	s_mir_record_release(r18); r18 = NULL;
-	{ S_MirRecord * owned = r19; r19 = NULL; s_mir_record_store(&r20, owned); }
-	r21 = r20->fields[3].bits;
-	r22 = INT64_C(6);
-	r23 = (r21 == r22);
-	if (r23) goto block6;
-	goto block7;
-block17: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block18: ;
-	s_mir_record_store(&r32, s_mir_record_retain(r31->fields[r30].record));
-	s_mir_record_release(r31); r31 = NULL;
-	{ S_MirRecord * owned = r32; r32 = NULL; s_mir_record_store(&r33, owned); }
-	s_mir_string_store(&r34, s_string_retain(r33->fields[1].text));
-	r35 = (s_string_compare(r34, r2) == 0);
-	s_string_release(r34); r34 = NULL;
-	if (r35) goto block26;
-	goto block13;
-block19: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block20: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	goto block3;
-block21: ;
-	if (r2) { s_string_release(r2); r2 = NULL; }
-	if (r18) { s_mir_record_release(r18); r18 = NULL; }
-	goto block17;
-block22: ;
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block9;
-block23: ;
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block11;
-block24: ;
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block18;
-block25: ;
-	if (r2) { s_string_release(r2); r2 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	if (r31) { s_mir_record_release(r31); r31 = NULL; }
-	if (r33) { s_mir_record_release(r33); r33 = NULL; }
-	goto block19;
-block26: ;
-	if (r2) { s_string_release(r2); r2 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block12;
-exit: ;
-	return returned;
-}
-
-static S_MirRecord * s_mir_f173(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f175(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -115994,7 +117817,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f174(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3, int64_t a4)
+static S_MirRecord * s_mir_f176(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3, int64_t a4)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -116105,8 +117928,8 @@ block6: ;
 	if (r12) { s_mir_record_release(r12); r12 = NULL; }
 	goto block7;
 block7: ;
-	s_mir_record_store(&r28, s_mir_f208(r2, r2, r3, r4));
-	s_mir_record_store(&r29, s_mir_f163(r0, r28));
+	s_mir_record_store(&r28, s_mir_f209(r2, r2, r3, r4));
+	s_mir_record_store(&r29, s_mir_f166(r0, r28));
 	r0 = NULL;
 	r28 = NULL;
 	returned = r29;
@@ -116188,7 +118011,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f175(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f177(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -116218,7 +118041,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f176(S_MirRecord * a0, S_String * a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f178(S_MirRecord * a0, S_String * a1, int64_t a2, int64_t a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -116553,7 +118376,7 @@ block34: ;
 	{ S_MirRecord * owned = r63; r63 = NULL; s_mir_record_store(&r4, owned); }
 	r64 = INT64_C(0);
 	s_mir_record_store(&r65, s_mir_f122(r19, r62, r2, r3, r64));
-	s_mir_record_store(&r66, s_mir_f163(r4, r65));
+	s_mir_record_store(&r66, s_mir_f166(r4, r65));
 	r4 = NULL;
 	r65 = NULL;
 	{ S_MirRecord * owned = r66; r66 = NULL; s_mir_record_store(&r4, owned); }
@@ -116644,7 +118467,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f177(int64_t a0, int64_t a1, int64_t a2)
+static S_MirRecord * s_mir_f179(int64_t a0, int64_t a1, int64_t a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -116674,7 +118497,7 @@ exit: ;
 	return returned;
 }
 
-static S_String * s_mir_f178(int64_t a0)
+static S_String * s_mir_f180(int64_t a0)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -117520,7 +119343,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f179(S_MirRecord * a0, int64_t a1)
+static S_MirRecord * s_mir_f181(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -117619,7 +119442,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f180(S_MirRecord * a0, int64_t a1)
+static S_MirRecord * s_mir_f182(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -117716,7 +119539,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f181(S_MirRecord * a0, int64_t a1)
+static S_MirRecord * s_mir_f183(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -117818,7 +119641,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f182(int64_t a0)
+static S_MirRecord * s_mir_f184(int64_t a0)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -117883,7 +119706,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f183(S_MirRecord * a0, S_MirRecord * a1)
+static S_MirRecord * s_mir_f185(S_MirRecord * a0, S_MirRecord * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -118018,7 +119841,7 @@ exit: ;
 	return returned;
 }
 
-static bool s_mir_f184(S_MirRecord * a0, S_MirRecord * a1)
+static bool s_mir_f186(S_MirRecord * a0, S_MirRecord * a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -118151,7 +119974,209 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f185(int64_t a0)
+static S_MirRecord * s_mir_f187(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord * a2, int64_t a3, S_String * a4)
+{
+	S_MirRecord * r0 = NULL;
+	(void)r0;
+	S_MirRecord * r1 = NULL;
+	(void)r1;
+	S_MirRecord * r2 = NULL;
+	(void)r2;
+	int64_t r3 = 0;
+	(void)r3;
+	S_String * r4 = NULL;
+	(void)r4;
+	int64_t r5 = 0;
+	(void)r5;
+	int64_t r6 = 0;
+	(void)r6;
+	bool r7 = 0;
+	(void)r7;
+	bool r8 = 0;
+	(void)r8;
+	int64_t r9 = 0;
+	(void)r9;
+	S_MirRecord * r10 = NULL;
+	(void)r10;
+	int64_t r11 = 0;
+	(void)r11;
+	int64_t r12 = 0;
+	(void)r12;
+	int64_t r13 = 0;
+	(void)r13;
+	int64_t r14 = 0;
+	(void)r14;
+	bool r15 = 0;
+	(void)r15;
+	int64_t r16 = 0;
+	(void)r16;
+	int64_t r17 = 0;
+	(void)r17;
+	int64_t r18 = 0;
+	(void)r18;
+	S_MirRecord * r19 = NULL;
+	(void)r19;
+	S_MirRecord * r20 = NULL;
+	(void)r20;
+	S_String * r21 = NULL;
+	(void)r21;
+	S_String * r22 = NULL;
+	(void)r22;
+	bool r23 = 0;
+	(void)r23;
+	int64_t r24 = 0;
+	(void)r24;
+	S_String * r25 = NULL;
+	(void)r25;
+	S_MirRecord * r26 = NULL;
+	(void)r26;
+	bool r27 = 0;
+	(void)r27;
+	bool r28 = 0;
+	(void)r28;
+	r0 = a0;
+	r1 = a1;
+	r2 = a2;
+	r3 = a3;
+	r4 = a4;
+	S_MirRecord * returned = 0;
+	goto block0;
+block0: ;
+	r5 = (int64_t)r1->length;
+	r6 = (int64_t)r2->length;
+	r7 = (r5 == r6);
+	r8 = (!r7);
+	if (r8) goto block14;
+	goto block15;
+block1: ;
+	r9 = INT64_C(0);
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r4);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r9;
+	s_mir_record_store(&r10, record);
+	}
+	s_string_release(r4); r4 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r10;
+	r10 = NULL;
+	goto exit;
+block2: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	goto block3;
+block3: ;
+	r11 = INT64_C(0);
+	r12 = (int64_t)r1->length;
+	r13 = r11;
+	r14 = INT64_C(1);
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	goto block4;
+block4: ;
+	r15 = (r13 < r12);
+	if (r15) goto block16;
+	goto block17;
+block5: ;
+	r16 = r13;
+	r27 = (r16 >= 0 && (uint64_t)r16 < r2->length);
+	if (r27) goto block18;
+	goto block19;
+block6: ;
+	r24 = (r13 + r14);
+	r13 = r24;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block4;
+block7: ;
+	s_mir_string_store(&r25, s_string_from_bytes("", 0));
+	{ S_MirRecord *record = s_mir_record_new(71, 3);
+		record->fields[0].text = s_string_retain(r25);
+		record->fields[1].record = s_mir_record_retain(r0);
+		record->fields[2].bits = r3;
+	s_mir_record_store(&r26, record);
+	}
+	s_string_release(r25); r25 = NULL;
+	s_mir_record_release(r0); r0 = NULL;
+	returned = r26;
+	r26 = NULL;
+	goto exit;
+block8: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block6;
+block9: ;
+	returned = r20;
+	r20 = NULL;
+	goto exit;
+block10: ;
+	r17 = r2->fields[r16].bits;
+	r28 = (r16 >= 0 && (uint64_t)r16 < r1->length);
+	if (r28) goto block20;
+	goto block21;
+block11: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block12: ;
+	r18 = r1->fields[r16].bits;
+	s_mir_record_store(&r19, s_mir_f210(s_mir_record_retain(r0), r17, r18));
+	{ S_MirRecord * owned = r19; r19 = NULL; s_mir_record_store(&r20, owned); }
+	s_mir_string_store(&r21, s_string_retain(r20->fields[0].text));
+	s_mir_string_store(&r22, s_string_from_bytes("", 0));
+	r23 = (s_string_compare(r21, r22) == 0);
+	s_string_release(r21); r21 = NULL;
+	s_string_release(r22); r22 = NULL;
+	if (r23) goto block8;
+	goto block22;
+block13: ;
+	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
+block14: ;
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	goto block1;
+block15: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	goto block2;
+block16: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block5;
+block17: ;
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block7;
+block18: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block10;
+block19: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block11;
+block20: ;
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block12;
+block21: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	if (r20) { s_mir_record_release(r20); r20 = NULL; }
+	goto block13;
+block22: ;
+	if (r0) { s_mir_record_release(r0); r0 = NULL; }
+	if (r1) { s_mir_record_release(r1); r1 = NULL; }
+	if (r2) { s_mir_record_release(r2); r2 = NULL; }
+	if (r4) { s_string_release(r4); r4 = NULL; }
+	goto block9;
+exit: ;
+	return returned;
+}
+
+static int64_t s_mir_f188(int64_t a0)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -118236,7 +120261,7 @@ exit: ;
 	return returned;
 }
 
-static bool s_mir_f186(S_String * a0)
+static bool s_mir_f189(S_String * a0)
 {
 	S_String * r0 = NULL;
 	(void)r0;
@@ -118373,814 +120398,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f187(S_MirRecord * a0, S_String * a1, S_MirRecord * a2)
-{
-	S_MirRecord * r0 = NULL;
-	(void)r0;
-	S_String * r1 = NULL;
-	(void)r1;
-	S_MirRecord * r2 = NULL;
-	(void)r2;
-	S_String * r3 = NULL;
-	(void)r3;
-	bool r4 = 0;
-	(void)r4;
-	int64_t r5 = 0;
-	(void)r5;
-	S_MirRecord * r6 = NULL;
-	(void)r6;
-	S_MirRecord * r7 = NULL;
-	(void)r7;
-	S_MirRecord * r8 = NULL;
-	(void)r8;
-	S_MirRecord * r9 = NULL;
-	(void)r9;
-	int64_t r10 = 0;
-	(void)r10;
-	S_String * r11 = NULL;
-	(void)r11;
-	S_MirRecord * r12 = NULL;
-	(void)r12;
-	S_String * r13 = NULL;
-	(void)r13;
-	bool r14 = 0;
-	(void)r14;
-	int64_t r15 = 0;
-	(void)r15;
-	S_MirRecord * r16 = NULL;
-	(void)r16;
-	S_MirRecord * r17 = NULL;
-	(void)r17;
-	S_MirRecord * r18 = NULL;
-	(void)r18;
-	int64_t r19 = 0;
-	(void)r19;
-	S_MirRecord * r20 = NULL;
-	(void)r20;
-	int64_t r21 = 0;
-	(void)r21;
-	S_String * r22 = NULL;
-	(void)r22;
-	S_MirRecord * r23 = NULL;
-	(void)r23;
-	S_String * r24 = NULL;
-	(void)r24;
-	bool r25 = 0;
-	(void)r25;
-	int64_t r26 = 0;
-	(void)r26;
-	int64_t r27 = 0;
-	(void)r27;
-	S_MirRecord * r28 = NULL;
-	(void)r28;
-	int64_t r29 = 0;
-	(void)r29;
-	S_String * r30 = NULL;
-	(void)r30;
-	S_MirRecord * r31 = NULL;
-	(void)r31;
-	S_String * r32 = NULL;
-	(void)r32;
-	bool r33 = 0;
-	(void)r33;
-	int64_t r34 = 0;
-	(void)r34;
-	int64_t r35 = 0;
-	(void)r35;
-	bool r36 = 0;
-	(void)r36;
-	bool r37 = 0;
-	(void)r37;
-	bool r38 = 0;
-	(void)r38;
-	int64_t r39 = 0;
-	(void)r39;
-	int64_t r40 = 0;
-	(void)r40;
-	int64_t r41 = 0;
-	(void)r41;
-	bool r42 = 0;
-	(void)r42;
-	bool r43 = 0;
-	(void)r43;
-	int64_t r44 = 0;
-	(void)r44;
-	S_String * r45 = NULL;
-	(void)r45;
-	S_MirRecord * r46 = NULL;
-	(void)r46;
-	int64_t r47 = 0;
-	(void)r47;
-	S_String * r48 = NULL;
-	(void)r48;
-	S_MirRecord * r49 = NULL;
-	(void)r49;
-	S_String * r50 = NULL;
-	(void)r50;
-	bool r51 = 0;
-	(void)r51;
-	int64_t r52 = 0;
-	(void)r52;
-	S_MirRecord * r53 = NULL;
-	(void)r53;
-	int64_t r54 = 0;
-	(void)r54;
-	S_String * r55 = NULL;
-	(void)r55;
-	S_MirRecord * r56 = NULL;
-	(void)r56;
-	S_String * r57 = NULL;
-	(void)r57;
-	bool r58 = 0;
-	(void)r58;
-	bool r59 = 0;
-	(void)r59;
-	S_String * r60 = NULL;
-	(void)r60;
-	bool r61 = 0;
-	(void)r61;
-	int64_t r62 = 0;
-	(void)r62;
-	int64_t r63 = 0;
-	(void)r63;
-	bool r64 = 0;
-	(void)r64;
-	bool r65 = 0;
-	(void)r65;
-	int64_t r66 = 0;
-	(void)r66;
-	S_String * r67 = NULL;
-	(void)r67;
-	S_MirRecord * r68 = NULL;
-	(void)r68;
-	int64_t r69 = 0;
-	(void)r69;
-	int64_t r70 = 0;
-	(void)r70;
-	int64_t r71 = 0;
-	(void)r71;
-	int64_t r72 = 0;
-	(void)r72;
-	bool r73 = 0;
-	(void)r73;
-	bool r74 = 0;
-	(void)r74;
-	int64_t r75 = 0;
-	(void)r75;
-	bool r76 = 0;
-	(void)r76;
-	bool r77 = 0;
-	(void)r77;
-	int64_t r78 = 0;
-	(void)r78;
-	bool r79 = 0;
-	(void)r79;
-	bool r80 = 0;
-	(void)r80;
-	int64_t r81 = 0;
-	(void)r81;
-	bool r82 = 0;
-	(void)r82;
-	int64_t r83 = 0;
-	(void)r83;
-	S_String * r84 = NULL;
-	(void)r84;
-	S_MirRecord * r85 = NULL;
-	(void)r85;
-	int64_t r86 = 0;
-	(void)r86;
-	S_String * r87 = NULL;
-	(void)r87;
-	S_MirRecord * r88 = NULL;
-	(void)r88;
-	S_String * r89 = NULL;
-	(void)r89;
-	bool r90 = 0;
-	(void)r90;
-	int64_t r91 = 0;
-	(void)r91;
-	int64_t r92 = 0;
-	(void)r92;
-	bool r93 = 0;
-	(void)r93;
-	bool r94 = 0;
-	(void)r94;
-	int64_t r95 = 0;
-	(void)r95;
-	S_String * r96 = NULL;
-	(void)r96;
-	S_MirRecord * r97 = NULL;
-	(void)r97;
-	int64_t r98 = 0;
-	(void)r98;
-	int64_t r99 = 0;
-	(void)r99;
-	int64_t r100 = 0;
-	(void)r100;
-	int64_t r101 = 0;
-	(void)r101;
-	bool r102 = 0;
-	(void)r102;
-	bool r103 = 0;
-	(void)r103;
-	bool r104 = 0;
-	(void)r104;
-	S_MirRecord * r105 = NULL;
-	(void)r105;
-	int64_t r106 = 0;
-	(void)r106;
-	bool r107 = 0;
-	(void)r107;
-	S_MirRecord * r108 = NULL;
-	(void)r108;
-	S_MirRecord * r109 = NULL;
-	(void)r109;
-	int64_t r110 = 0;
-	(void)r110;
-	int64_t r111 = 0;
-	(void)r111;
-	int64_t r112 = 0;
-	(void)r112;
-	bool r113 = 0;
-	(void)r113;
-	bool r114 = 0;
-	(void)r114;
-	int64_t r115 = 0;
-	(void)r115;
-	bool r116 = 0;
-	(void)r116;
-	bool r117 = 0;
-	(void)r117;
-	int64_t r118 = 0;
-	(void)r118;
-	bool r119 = 0;
-	(void)r119;
-	int64_t r120 = 0;
-	(void)r120;
-	S_String * r121 = NULL;
-	(void)r121;
-	S_MirRecord * r122 = NULL;
-	(void)r122;
-	int64_t r123 = 0;
-	(void)r123;
-	S_String * r124 = NULL;
-	(void)r124;
-	S_MirRecord * r125 = NULL;
-	(void)r125;
-	int64_t r126 = 0;
-	(void)r126;
-	S_String * r127 = NULL;
-	(void)r127;
-	S_MirRecord * r128 = NULL;
-	(void)r128;
-	bool r129 = 0;
-	(void)r129;
-	bool r130 = 0;
-	(void)r130;
-	bool r131 = 0;
-	(void)r131;
-	bool r132 = 0;
-	(void)r132;
-	r0 = a0;
-	r1 = a1;
-	r2 = a2;
-	S_MirRecord * returned = 0;
-	goto block0;
-block0: ;
-	s_mir_string_store(&r3, s_string_from_bytes("\141\162\147\165\155\145\156\164\163", 9));
-	r4 = (s_string_compare(r1, r3) == 0);
-	s_string_release(r3); r3 = NULL;
-	if (r4) goto block64;
-	goto block2;
-block1: ;
-	r5 = INT64_C(4);
-	s_mir_record_store(&r6, s_mir_f47(r0, r5));
-	r0 = NULL;
-	{ S_MirRecord * owned = r6; r6 = NULL; s_mir_record_store(&r7, owned); }
-	s_mir_record_store(&r8, s_mir_record_retain(r7->fields[1].record));
-	{ S_MirRecord *array = s_mir_record_new(13, 0);
-	s_mir_record_store(&r9, array);
-	}
-	r10 = r7->fields[0].bits;
-	s_mir_record_release(r7); r7 = NULL;
-	s_mir_string_store(&r11, s_string_from_bytes("\141\162\147\165\155\145\156\164\163\040\145\170\160\145\143\164\163\040\156\157\040\141\162\147\165\155\145\156\164\163", 30));
-	s_mir_record_store(&r12, s_mir_f209(r8, r2, r9, r10, r11));
-	r8 = NULL;
-	r2 = NULL;
-	r9 = NULL;
-	r11 = NULL;
-	returned = r12;
-	r12 = NULL;
-	goto exit;
-block2: ;
-	goto block3;
-block3: ;
-	s_mir_string_store(&r13, s_string_from_bytes("\162\145\141\144\137\164\145\170\164", 9));
-	r14 = (s_string_compare(r1, r13) == 0);
-	s_string_release(r13); r13 = NULL;
-	if (r14) goto block65;
-	goto block5;
-block4: ;
-	r15 = INT64_C(4);
-	s_mir_record_store(&r16, s_mir_f116(r0, r15));
-	r0 = NULL;
-	{ S_MirRecord * owned = r16; r16 = NULL; s_mir_record_store(&r17, owned); }
-	s_mir_record_store(&r18, s_mir_record_retain(r17->fields[1].record));
-	r19 = INT64_C(4);
-	{ S_MirRecord *array = s_mir_record_new(13, 1);
-		array->fields[0].bits = r19;
-	s_mir_record_store(&r20, array);
-	}
-	r21 = r17->fields[0].bits;
-	s_mir_record_release(r17); r17 = NULL;
-	s_mir_string_store(&r22, s_string_from_bytes("\162\145\141\144\137\164\145\170\164\040\145\170\160\145\143\164\163\040\157\156\145\040\163\164\162\151\156\147\040\141\162\147\165\155\145\156\164", 37));
-	s_mir_record_store(&r23, s_mir_f209(r18, r2, r20, r21, r22));
-	r18 = NULL;
-	r2 = NULL;
-	r20 = NULL;
-	r22 = NULL;
-	returned = r23;
-	r23 = NULL;
-	goto exit;
-block5: ;
-	goto block6;
-block6: ;
-	s_mir_string_store(&r24, s_string_from_bytes("\167\162\151\164\145\137\164\145\170\164", 10));
-	r25 = (s_string_compare(r1, r24) == 0);
-	s_string_release(r24); r24 = NULL;
-	if (r25) goto block66;
-	goto block8;
-block7: ;
-	r26 = INT64_C(4);
-	r27 = INT64_C(4);
-	{ S_MirRecord *array = s_mir_record_new(13, 2);
-		array->fields[0].bits = r26;
-		array->fields[1].bits = r27;
-	s_mir_record_store(&r28, array);
-	}
-	r29 = INT64_C(3);
-	s_mir_string_store(&r30, s_string_from_bytes("\167\162\151\164\145\137\164\145\170\164\040\145\170\160\145\143\164\163\040\164\167\157\040\163\164\162\151\156\147\040\141\162\147\165\155\145\156\164\163", 39));
-	s_mir_record_store(&r31, s_mir_f209(r0, r2, r28, r29, r30));
-	r0 = NULL;
-	r2 = NULL;
-	r28 = NULL;
-	r30 = NULL;
-	returned = r31;
-	r31 = NULL;
-	goto exit;
-block8: ;
-	goto block9;
-block9: ;
-	s_mir_string_store(&r32, s_string_from_bytes("\163\164\162", 3));
-	r33 = (s_string_compare(r1, r32) == 0);
-	s_string_release(r32); r32 = NULL;
-	if (r33) goto block67;
-	goto block11;
-block10: ;
-	r34 = (int64_t)r2->length;
-	r35 = INT64_C(1);
-	r36 = (r34 == r35);
-	r37 = (!r36);
-	r38 = r37;
-	if (r37) goto block68;
-	goto block69;
-block11: ;
-	goto block17;
-block12: ;
-	r39 = INT64_C(0);
-	r129 = (r39 >= 0 && (uint64_t)r39 < r2->length);
-	if (r129) goto block70;
-	goto block71;
-block13: ;
-	if (r38) goto block72;
-	goto block73;
-block14: ;
-	r44 = INT64_C(0);
-	s_mir_string_store(&r45, s_string_from_bytes("\163\164\162\040\145\170\160\145\143\164\163\040\157\156\145\040\151\066\064\040\141\162\147\165\155\145\156\164", 28));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r45);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r44;
-	s_mir_record_store(&r46, record);
-	}
-	s_string_release(r45); r45 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r46;
-	r46 = NULL;
-	goto exit;
-block15: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block16;
-block16: ;
-	r47 = INT64_C(4);
-	s_mir_string_store(&r48, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r48);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r47;
-	s_mir_record_store(&r49, record);
-	}
-	s_string_release(r48); r48 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r49;
-	r49 = NULL;
-	goto exit;
-block17: ;
-	s_mir_string_store(&r50, s_string_from_bytes("\163\161\162\164", 4));
-	r51 = (s_string_compare(r1, r50) == 0);
-	s_string_release(r50); r50 = NULL;
-	if (r51) goto block74;
-	goto block19;
-block18: ;
-	r52 = INT64_C(2);
-	{ S_MirRecord *array = s_mir_record_new(13, 1);
-		array->fields[0].bits = r52;
-	s_mir_record_store(&r53, array);
-	}
-	r54 = INT64_C(2);
-	s_mir_string_store(&r55, s_string_from_bytes("\163\161\162\164\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 25));
-	s_mir_record_store(&r56, s_mir_f209(r0, r2, r53, r54, r55));
-	r0 = NULL;
-	r2 = NULL;
-	r53 = NULL;
-	r55 = NULL;
-	returned = r56;
-	r56 = NULL;
-	goto exit;
-block19: ;
-	goto block20;
-block20: ;
-	s_mir_string_store(&r57, s_string_from_bytes("\160\162\151\156\164", 5));
-	r58 = (s_string_compare(r1, r57) == 0);
-	s_string_release(r57); r57 = NULL;
-	r59 = r58;
-	if (r58) goto block22;
-	goto block21;
-block21: ;
-	s_mir_string_store(&r60, s_string_from_bytes("\145\160\162\151\156\164", 6));
-	r61 = (s_string_compare(r1, r60) == 0);
-	s_string_release(r60); r60 = NULL;
-	r59 = r61;
-	goto block22;
-block22: ;
-	if (r59) goto block75;
-	goto block24;
-block23: ;
-	r62 = (int64_t)r2->length;
-	r63 = INT64_C(1);
-	r64 = (r62 == r63);
-	r65 = (!r64);
-	if (r65) goto block76;
-	goto block77;
-block24: ;
-	goto block37;
-block25: ;
-	r66 = INT64_C(0);
-	s_mir_string_store(&r67, s_string_from_bytes("\160\162\151\156\164\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 26));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r67);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r66;
-	s_mir_record_store(&r68, record);
-	}
-	s_string_release(r67); r67 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r68;
-	r68 = NULL;
-	goto exit;
-block26: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block27;
-block27: ;
-	r69 = INT64_C(0);
-	r130 = (r69 >= 0 && (uint64_t)r69 < r2->length);
-	if (r130) goto block78;
-	goto block79;
-block28: ;
-	r75 = INT64_C(2);
-	r76 = (r71 == r75);
-	r74 = r76;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block29;
-block29: ;
-	r77 = r74;
-	if (r74) goto block80;
-	goto block81;
-block30: ;
-	r78 = INT64_C(3);
-	r79 = (r71 == r78);
-	r77 = r79;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block31;
-block31: ;
-	r80 = r77;
-	if (r77) goto block82;
-	goto block83;
-block32: ;
-	r81 = INT64_C(4);
-	r82 = (r71 == r81);
-	r80 = r82;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block33;
-block33: ;
-	if (r80) goto block84;
-	goto block85;
-block34: ;
-	r83 = INT64_C(5);
-	s_mir_string_store(&r84, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r84);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r83;
-	s_mir_record_store(&r85, record);
-	}
-	s_string_release(r84); r84 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r85;
-	r85 = NULL;
-	goto exit;
-block35: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block36;
-block36: ;
-	r86 = INT64_C(0);
-	s_mir_string_store(&r87, s_string_from_bytes("\143\141\156\156\157\164\040\160\162\151\156\164\040\164\150\151\163\040\164\171\160\145", 22));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r87);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r86;
-	s_mir_record_store(&r88, record);
-	}
-	s_string_release(r87); r87 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r88;
-	r88 = NULL;
-	goto exit;
-block37: ;
-	s_mir_string_store(&r89, s_string_from_bytes("\154\145\156", 3));
-	r90 = (s_string_compare(r1, r89) == 0);
-	s_string_release(r1); r1 = NULL;
-	s_string_release(r89); r89 = NULL;
-	if (r90) goto block38;
-	goto block86;
-block38: ;
-	r91 = (int64_t)r2->length;
-	r92 = INT64_C(1);
-	r93 = (r91 == r92);
-	r94 = (!r93);
-	if (r94) goto block87;
-	goto block41;
-block39: ;
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block55;
-block40: ;
-	r95 = INT64_C(0);
-	s_mir_string_store(&r96, s_string_from_bytes("\154\145\156\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 24));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r96);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r95;
-	s_mir_record_store(&r97, record);
-	}
-	s_string_release(r96); r96 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r97;
-	r97 = NULL;
-	goto exit;
-block41: ;
-	goto block42;
-block42: ;
-	r98 = INT64_C(0);
-	r131 = (r98 >= 0 && (uint64_t)r98 < r2->length);
-	if (r131) goto block60;
-	goto block88;
-block43: ;
-	s_mir_record_store(&r105, s_mir_record_retain(r0->fields[0].record));
-	r106 = (int64_t)r105->length;
-	s_mir_record_release(r105); r105 = NULL;
-	r107 = (r100 < r106);
-	r104 = r107;
-	goto block44;
-block44: ;
-	if (r104) goto block45;
-	goto block46;
-block45: ;
-	s_mir_record_store(&r108, s_mir_record_retain(r0->fields[0].record));
-	r132 = (r100 >= 0 && (uint64_t)r100 < r108->length);
-	if (r132) goto block62;
-	goto block89;
-block46: ;
-	goto block54;
-block47: ;
-	r115 = INT64_C(7);
-	r116 = (r111 == r115);
-	r114 = r116;
-	goto block48;
-block48: ;
-	r117 = r114;
-	if (r114) goto block50;
-	goto block49;
-block49: ;
-	r118 = INT64_C(8);
-	r119 = (r111 == r118);
-	r117 = r119;
-	goto block50;
-block50: ;
-	if (r117) goto block51;
-	goto block52;
-block51: ;
-	r120 = INT64_C(1);
-	s_mir_string_store(&r121, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r121);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r120;
-	s_mir_record_store(&r122, record);
-	}
-	s_string_release(r121); r121 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r122;
-	r122 = NULL;
-	goto exit;
-block52: ;
-	goto block53;
-block53: ;
-	goto block54;
-block54: ;
-	r123 = INT64_C(0);
-	s_mir_string_store(&r124, s_string_from_bytes("\154\145\156\040\145\170\160\145\143\164\163\040\141\040\163\164\162\151\156\147\040\157\162\040\141\162\162\141\171", 29));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r124);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r123;
-	s_mir_record_store(&r125, record);
-	}
-	s_string_release(r124); r124 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r125;
-	r125 = NULL;
-	goto exit;
-block55: ;
-	r126 = INT64_C(0);
-	s_mir_string_store(&r127, s_string_from_bytes("\165\156\153\156\157\167\156\040\142\165\151\154\164\151\156", 15));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r127);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r126;
-	s_mir_record_store(&r128, record);
-	}
-	s_string_release(r127); r127 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r128;
-	r128 = NULL;
-	goto exit;
-block56: ;
-	r40 = r2->fields[r39].bits;
-	s_mir_record_release(r2); r2 = NULL;
-	r41 = INT64_C(1);
-	r42 = (r40 == r41);
-	r43 = (!r42);
-	r38 = r43;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block13;
-block57: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block58: ;
-	r70 = r2->fields[r69].bits;
-	s_mir_record_release(r2); r2 = NULL;
-	r71 = r70;
-	r72 = INT64_C(1);
-	r73 = (r71 == r72);
-	r74 = r73;
-	if (r73) goto block90;
-	goto block91;
-block59: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block60: ;
-	r99 = r2->fields[r98].bits;
-	s_mir_record_release(r2); r2 = NULL;
-	r100 = r99;
-	r101 = INT64_C(0);
-	r102 = (r100 < r101);
-	r103 = (!r102);
-	r104 = r103;
-	if (r103) goto block43;
-	goto block44;
-block61: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block62: ;
-	s_mir_record_store(&r109, s_mir_record_retain(r108->fields[r100].record));
-	s_mir_record_release(r108); r108 = NULL;
-	r110 = r109->fields[3].bits;
-	s_mir_record_release(r109); r109 = NULL;
-	r111 = r110;
-	r112 = INT64_C(4);
-	r113 = (r111 == r112);
-	r114 = r113;
-	if (r113) goto block48;
-	goto block47;
-block63: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block64: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block1;
-block65: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block4;
-block66: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block7;
-block67: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block10;
-block68: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block13;
-block69: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block12;
-block70: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block56;
-block71: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block57;
-block72: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block14;
-block73: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block15;
-block74: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block18;
-block75: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block23;
-block76: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block25;
-block77: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block26;
-block78: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block58;
-block79: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block59;
-block80: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block31;
-block81: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block30;
-block82: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block33;
-block83: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block32;
-block84: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block34;
-block85: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block35;
-block86: ;
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block39;
-block87: ;
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block40;
-block88: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block61;
-block89: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r108) { s_mir_record_release(r108); r108 = NULL; }
-	goto block63;
-block90: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block29;
-block91: ;
-	if (r1) { s_string_release(r1); r1 = NULL; }
-	goto block28;
-exit: ;
-	return returned;
-}
-
-static bool s_mir_f188(S_String * a0)
+static bool s_mir_f190(S_String * a0)
 {
 	S_String * r0 = NULL;
 	(void)r0;
@@ -119285,7 +120503,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f189(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3)
+static S_MirRecord * s_mir_f191(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -119568,7 +120786,7 @@ block19: ;
 	goto block20;
 block20: ;
 	s_mir_string_store(&r55, s_string_from_bytes("\163\164\162\151\156\147\040\155\145\164\150\157\144\040\141\162\147\165\155\145\156\164\040\143\157\165\156\164\040\155\151\163\155\141\164\143\150", 37));
-	s_mir_record_store(&r56, s_mir_f209(r4, r3, r12, r14, r55));
+	s_mir_record_store(&r56, s_mir_f187(r4, r3, r12, r14, r55));
 	r4 = NULL;
 	r3 = NULL;
 	r12 = NULL;
@@ -119648,7 +120866,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f190(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3)
+static S_MirRecord * s_mir_f192(S_MirRecord * a0, int64_t a1, S_String * a2, S_MirRecord * a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -119846,7 +121064,7 @@ block10: ;
 	s_mir_record_store(&r27, array);
 	}
 	s_mir_string_store(&r28, s_string_from_bytes("\141\160\160\145\156\144\040\145\170\160\145\143\164\163\040\157\156\145\040\141\162\147\165\155\145\156\164", 27));
-	s_mir_record_store(&r29, s_mir_f209(r0, r3, r27, r1, r28));
+	s_mir_record_store(&r29, s_mir_f187(r0, r3, r27, r1, r28));
 	r0 = NULL;
 	r3 = NULL;
 	r27 = NULL;
@@ -119893,7 +121111,7 @@ block15: ;
 	s_mir_record_store(&r41, array);
 	}
 	s_mir_string_store(&r42, s_string_from_bytes("\144\151\143\164\151\157\156\141\162\171\040\155\145\164\150\157\144\040\141\162\147\165\155\145\156\164\040\143\157\165\156\164\040\155\151\163\155\141\164\143\150", 41));
-	s_mir_record_store(&r43, s_mir_f209(r0, r3, r41, r1, r42));
+	s_mir_record_store(&r43, s_mir_f187(r0, r3, r41, r1, r42));
 	r0 = NULL;
 	r3 = NULL;
 	r41 = NULL;
@@ -119925,7 +121143,7 @@ block18: ;
 	r52 = r48->fields[0].bits;
 	s_mir_record_release(r48); r48 = NULL;
 	s_mir_string_store(&r53, s_string_from_bytes("\144\151\143\164\151\157\156\141\162\171\040\155\145\164\150\157\144\040\141\162\147\165\155\145\156\164\040\143\157\165\156\164\040\155\151\163\155\141\164\143\150", 41));
-	s_mir_record_store(&r54, s_mir_f209(r49, r3, r51, r52, r53));
+	s_mir_record_store(&r54, s_mir_f187(r49, r3, r51, r52, r53));
 	r49 = NULL;
 	r3 = NULL;
 	r51 = NULL;
@@ -119999,7 +121217,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f191(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
+static S_MirRecord * s_mir_f193(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -120234,90 +121452,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f192(S_MirRecord * a0, S_MirRecord * a1)
-{
-	S_MirRecord * r0 = NULL;
-	(void)r0;
-	S_MirRecord * r1 = NULL;
-	(void)r1;
-	int64_t r2 = 0;
-	(void)r2;
-	int64_t r3 = 0;
-	(void)r3;
-	bool r4 = 0;
-	(void)r4;
-	int64_t r5 = 0;
-	(void)r5;
-	S_String * r6 = NULL;
-	(void)r6;
-	S_MirRecord * r7 = NULL;
-	(void)r7;
-	S_MirRecord * r8 = NULL;
-	(void)r8;
-	S_MirRecord * r9 = NULL;
-	(void)r9;
-	S_MirRecord * r10 = NULL;
-	(void)r10;
-	int64_t r11 = 0;
-	(void)r11;
-	S_String * r12 = NULL;
-	(void)r12;
-	S_MirRecord * r13 = NULL;
-	(void)r13;
-	r0 = a0;
-	r1 = a1;
-	S_MirRecord * returned = 0;
-	goto block0;
-block0: ;
-	r2 = (int64_t)r1->length;
-	r3 = INT64_C(0);
-	r4 = (r2 == r3);
-	if (r4) goto block4;
-	goto block2;
-block1: ;
-	r5 = INT64_C(0);
-	s_mir_string_store(&r6, s_string_from_bytes("\145\155\160\164\171\040\162\145\143\157\162\144\163\040\141\162\145\040\156\157\164\040\163\165\160\160\157\162\164\145\144\040\171\145\164", 35));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r6);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r5;
-	s_mir_record_store(&r7, record);
-	}
-	s_string_release(r6); r6 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r7;
-	r7 = NULL;
-	goto exit;
-block2: ;
-	goto block3;
-block3: ;
-	s_mir_record_store(&r8, s_mir_f50(r0, r1));
-	r0 = NULL;
-	r1 = NULL;
-	{ S_MirRecord * owned = r8; r8 = NULL; s_mir_record_store(&r9, owned); }
-	s_mir_record_store(&r10, s_mir_record_retain(r9->fields[1].record));
-	r11 = r9->fields[0].bits;
-	s_mir_record_release(r9); r9 = NULL;
-	s_mir_string_store(&r12, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r12);
-		record->fields[1].record = s_mir_record_retain(r10);
-		record->fields[2].bits = r11;
-	s_mir_record_store(&r13, record);
-	}
-	s_string_release(r12); r12 = NULL;
-	s_mir_record_release(r10); r10 = NULL;
-	returned = r13;
-	r13 = NULL;
-	goto exit;
-block4: ;
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	goto block1;
-exit: ;
-	return returned;
-}
-
-static bool s_mir_f193(S_MirRecord * a0, int64_t a1)
+static bool s_mir_f194(S_MirRecord * a0, int64_t a1)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -120495,7 +121630,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f194(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
+static S_MirRecord * s_mir_f195(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -120808,7 +121943,7 @@ block7: ;
 	r29 = r5->fields[0].bits;
 	s_mir_record_release(r5); r5 = NULL;
 	s_mir_record_store(&r30, s_mir_f122(r20, r16, r26, r28, r29));
-	s_mir_record_store(&r31, s_mir_f163(r6, r30));
+	s_mir_record_store(&r31, s_mir_f166(r6, r30));
 	r6 = NULL;
 	r30 = NULL;
 	{ S_MirRecord * owned = r31; r31 = NULL; s_mir_record_store(&r6, owned); }
@@ -120838,9 +121973,9 @@ block9: ;
 	{ S_MirRecord * owned = r40; r40 = NULL; s_mir_record_store(&r6, owned); }
 	s_mir_string_store(&r41, s_string_retain(r5->fields[2].text));
 	s_mir_record_release(r5); r5 = NULL;
-	s_mir_record_store(&r42, s_mir_f199(r38, r41));
+	s_mir_record_store(&r42, s_mir_f200(r38, r41));
 	r41 = NULL;
-	s_mir_record_store(&r43, s_mir_f163(r6, r42));
+	s_mir_record_store(&r43, s_mir_f166(r6, r42));
 	r6 = NULL;
 	r42 = NULL;
 	{ S_MirRecord * owned = r43; r43 = NULL; s_mir_record_store(&r6, owned); }
@@ -120898,9 +122033,9 @@ block17: ;
 	s_mir_record_store(&r78, s_mir_f83(r6, r77));
 	r6 = NULL;
 	{ S_MirRecord * owned = r78; r78 = NULL; s_mir_record_store(&r6, owned); }
-	s_mir_record_store(&r79, s_mir_f195(r76, r53));
+	s_mir_record_store(&r79, s_mir_f196(r76, r53));
 	r53 = NULL;
-	s_mir_record_store(&r80, s_mir_f163(r6, r79));
+	s_mir_record_store(&r80, s_mir_f166(r6, r79));
 	r6 = NULL;
 	r79 = NULL;
 	{ S_MirRecord * owned = r80; r80 = NULL; s_mir_record_store(&r6, owned); }
@@ -120981,9 +122116,9 @@ block26: ;
 	s_mir_record_store(&r115, s_mir_f83(r6, r114));
 	r6 = NULL;
 	{ S_MirRecord * owned = r115; r115 = NULL; s_mir_record_store(&r6, owned); }
-	s_mir_record_store(&r116, s_mir_f197(r113, r90));
+	s_mir_record_store(&r116, s_mir_f198(r113, r90));
 	r90 = NULL;
-	s_mir_record_store(&r117, s_mir_f163(r6, r116));
+	s_mir_record_store(&r117, s_mir_f166(r6, r116));
 	r6 = NULL;
 	r116 = NULL;
 	{ S_MirRecord * owned = r117; r117 = NULL; s_mir_record_store(&r6, owned); }
@@ -121061,7 +122196,7 @@ block33: ;
 	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
 block34: ;
 	r60 = r54->fields[r57].bits;
-	s_mir_record_store(&r61, s_mir_f194(r6, s_mir_record_retain(r1), r60));
+	s_mir_record_store(&r61, s_mir_f195(r6, s_mir_record_retain(r1), r60));
 	r6 = NULL;
 	{ S_MirRecord * owned = r61; r61 = NULL; s_mir_record_store(&r62, owned); }
 	s_mir_record_store(&r63, s_mir_record_retain(r62->fields[1].record));
@@ -121088,7 +122223,7 @@ block37: ;
 	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
 block38: ;
 	r97 = r91->fields[r94].bits;
-	s_mir_record_store(&r98, s_mir_f194(r6, s_mir_record_retain(r1), r97));
+	s_mir_record_store(&r98, s_mir_f195(r6, s_mir_record_retain(r1), r97));
 	r6 = NULL;
 	{ S_MirRecord * owned = r98; r98 = NULL; s_mir_record_store(&r99, owned); }
 	s_mir_record_store(&r100, s_mir_record_retain(r99->fields[1].record));
@@ -121171,7 +122306,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f195(int64_t a0, S_MirRecord * a1)
+static S_MirRecord * s_mir_f196(int64_t a0, S_MirRecord * a1)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121224,7 +122359,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f196(int64_t a0, int64_t a1, int64_t a2)
+static S_MirRecord * s_mir_f197(int64_t a0, int64_t a1, int64_t a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121254,7 +122389,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f197(int64_t a0, S_MirRecord * a1)
+static S_MirRecord * s_mir_f198(int64_t a0, S_MirRecord * a1)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121307,7 +122442,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f198(S_String * a0)
+static S_MirRecord * s_mir_f199(S_String * a0)
 {
 	S_String * r0 = NULL;
 	(void)r0;
@@ -121345,7 +122480,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f199(int64_t a0, S_String * a1)
+static S_MirRecord * s_mir_f200(int64_t a0, S_String * a1)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121400,7 +122535,7 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f200(S_String * a0)
+static int64_t s_mir_f201(S_String * a0)
 {
 	S_String * r0 = NULL;
 	(void)r0;
@@ -121520,7 +122655,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f201(int64_t a0)
+static S_MirRecord * s_mir_f202(int64_t a0)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121556,7 +122691,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f202(int64_t a0, int64_t a1, int64_t a2)
+static S_MirRecord * s_mir_f203(int64_t a0, int64_t a1, int64_t a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121586,7 +122721,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f203(int64_t a0, int64_t a1, int64_t a2)
+static S_MirRecord * s_mir_f204(int64_t a0, int64_t a1, int64_t a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121616,7 +122751,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f204(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f205(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121676,7 +122811,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f205(int64_t a0, int64_t a1, S_MirRecord * a2)
+static S_MirRecord * s_mir_f206(int64_t a0, int64_t a1, S_MirRecord * a2)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -121729,7 +122864,7 @@ exit: ;
 	return returned;
 }
 
-static int64_t s_mir_f206(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3)
+static int64_t s_mir_f207(S_MirRecord * a0, S_MirRecord * a1, int64_t a2, int64_t a3)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -121945,7 +123080,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f207(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
+static S_MirRecord * s_mir_f208(S_MirRecord * a0, S_MirRecord * a1, int64_t a2)
 {
 	S_MirRecord * r0 = NULL;
 	(void)r0;
@@ -122294,7 +123429,7 @@ block1: ;
 	s_mir_record_release(r1); r1 = NULL;
 	s_mir_string_store(&r11, s_mir_f13(r10, r2));
 	r10 = NULL;
-	r12 = s_mir_f171(s_mir_record_retain(r0), r11);
+	r12 = s_mir_f174(s_mir_record_retain(r0), r11);
 	r11 = NULL;
 	r13 = r12;
 	r14 = INT64_C(0);
@@ -122388,7 +123523,7 @@ block11: ;
 	r40 = INT64_C(0);
 	r41 = s_mir_f12(r39, r2, r40);
 	r39 = NULL;
-	s_mir_record_store(&r42, s_mir_f207(r0, s_mir_record_retain(r1), r41));
+	s_mir_record_store(&r42, s_mir_f208(r0, s_mir_record_retain(r1), r41));
 	r0 = NULL;
 	{ S_MirRecord * owned = r42; r42 = NULL; s_mir_record_store(&r43, owned); }
 	s_mir_record_store(&r44, s_mir_record_retain(r43->fields[1].record));
@@ -122447,7 +123582,7 @@ block18: ;
 	s_mir_record_release(r1); r1 = NULL;
 	s_mir_string_store(&r71, s_mir_f13(r70, r2));
 	r70 = NULL;
-	s_mir_record_store(&r72, s_mir_f172(r69, r52, r71));
+	s_mir_record_store(&r72, s_mir_f156(r69, r52, r71));
 	r69 = NULL;
 	r71 = NULL;
 	{ S_MirRecord * owned = r72; r72 = NULL; s_mir_record_store(&r73, owned); }
@@ -122493,8 +123628,8 @@ block21: ;
 	{ S_MirRecord * owned = r88; r88 = NULL; s_mir_record_store(&r45, owned); }
 	r89 = r43->fields[0].bits;
 	r90 = r73->fields[1].bits;
-	s_mir_record_store(&r91, s_mir_f167(r86, r89, r90));
-	s_mir_record_store(&r92, s_mir_f163(r45, r91));
+	s_mir_record_store(&r91, s_mir_f170(r86, r89, r90));
+	s_mir_record_store(&r92, s_mir_f166(r45, r91));
 	r45 = NULL;
 	r91 = NULL;
 	{ S_MirRecord * owned = r92; r92 = NULL; s_mir_record_store(&r45, owned); }
@@ -122562,7 +123697,7 @@ block25: ;
 	r115 = INT64_C(1);
 	r116 = s_mir_f12(r114, r2, r115);
 	r114 = NULL;
-	s_mir_record_store(&r117, s_mir_f162(r45, s_mir_record_retain(r1), r116));
+	s_mir_record_store(&r117, s_mir_f165(r45, s_mir_record_retain(r1), r116));
 	r45 = NULL;
 	{ S_MirRecord * owned = r117; r117 = NULL; s_mir_record_store(&r118, owned); }
 	s_mir_record_store(&r119, s_mir_record_retain(r118->fields[1].record));
@@ -122697,8 +123832,8 @@ block41: ;
 	{ S_MirRecord * owned = r146; r146 = NULL; s_mir_record_store(&r45, owned); }
 	r147 = r43->fields[0].bits;
 	r148 = r118->fields[0].bits;
-	s_mir_record_store(&r149, s_mir_f177(r141, r147, r148));
-	s_mir_record_store(&r150, s_mir_f163(r45, r149));
+	s_mir_record_store(&r149, s_mir_f179(r141, r147, r148));
+	s_mir_record_store(&r150, s_mir_f166(r45, r149));
 	r45 = NULL;
 	r149 = NULL;
 	{ S_MirRecord * owned = r150; r150 = NULL; s_mir_record_store(&r45, owned); }
@@ -122807,7 +123942,7 @@ exit: ;
 	return returned;
 }
 
-static S_MirRecord * s_mir_f208(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
+static S_MirRecord * s_mir_f209(int64_t a0, int64_t a1, int64_t a2, int64_t a3)
 {
 	int64_t r0 = 0;
 	(void)r0;
@@ -122833,208 +123968,6 @@ block0: ;
 	returned = r5;
 	r5 = NULL;
 	goto exit;
-exit: ;
-	return returned;
-}
-
-static S_MirRecord * s_mir_f209(S_MirRecord * a0, S_MirRecord * a1, S_MirRecord * a2, int64_t a3, S_String * a4)
-{
-	S_MirRecord * r0 = NULL;
-	(void)r0;
-	S_MirRecord * r1 = NULL;
-	(void)r1;
-	S_MirRecord * r2 = NULL;
-	(void)r2;
-	int64_t r3 = 0;
-	(void)r3;
-	S_String * r4 = NULL;
-	(void)r4;
-	int64_t r5 = 0;
-	(void)r5;
-	int64_t r6 = 0;
-	(void)r6;
-	bool r7 = 0;
-	(void)r7;
-	bool r8 = 0;
-	(void)r8;
-	int64_t r9 = 0;
-	(void)r9;
-	S_MirRecord * r10 = NULL;
-	(void)r10;
-	int64_t r11 = 0;
-	(void)r11;
-	int64_t r12 = 0;
-	(void)r12;
-	int64_t r13 = 0;
-	(void)r13;
-	int64_t r14 = 0;
-	(void)r14;
-	bool r15 = 0;
-	(void)r15;
-	int64_t r16 = 0;
-	(void)r16;
-	int64_t r17 = 0;
-	(void)r17;
-	int64_t r18 = 0;
-	(void)r18;
-	S_MirRecord * r19 = NULL;
-	(void)r19;
-	S_MirRecord * r20 = NULL;
-	(void)r20;
-	S_String * r21 = NULL;
-	(void)r21;
-	S_String * r22 = NULL;
-	(void)r22;
-	bool r23 = 0;
-	(void)r23;
-	int64_t r24 = 0;
-	(void)r24;
-	S_String * r25 = NULL;
-	(void)r25;
-	S_MirRecord * r26 = NULL;
-	(void)r26;
-	bool r27 = 0;
-	(void)r27;
-	bool r28 = 0;
-	(void)r28;
-	r0 = a0;
-	r1 = a1;
-	r2 = a2;
-	r3 = a3;
-	r4 = a4;
-	S_MirRecord * returned = 0;
-	goto block0;
-block0: ;
-	r5 = (int64_t)r1->length;
-	r6 = (int64_t)r2->length;
-	r7 = (r5 == r6);
-	r8 = (!r7);
-	if (r8) goto block14;
-	goto block15;
-block1: ;
-	r9 = INT64_C(0);
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r4);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r9;
-	s_mir_record_store(&r10, record);
-	}
-	s_string_release(r4); r4 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r10;
-	r10 = NULL;
-	goto exit;
-block2: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	goto block3;
-block3: ;
-	r11 = INT64_C(0);
-	r12 = (int64_t)r1->length;
-	r13 = r11;
-	r14 = INT64_C(1);
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	goto block4;
-block4: ;
-	r15 = (r13 < r12);
-	if (r15) goto block16;
-	goto block17;
-block5: ;
-	r16 = r13;
-	r27 = (r16 >= 0 && (uint64_t)r16 < r2->length);
-	if (r27) goto block18;
-	goto block19;
-block6: ;
-	r24 = (r13 + r14);
-	r13 = r24;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block4;
-block7: ;
-	s_mir_string_store(&r25, s_string_from_bytes("", 0));
-	{ S_MirRecord *record = s_mir_record_new(71, 3);
-		record->fields[0].text = s_string_retain(r25);
-		record->fields[1].record = s_mir_record_retain(r0);
-		record->fields[2].bits = r3;
-	s_mir_record_store(&r26, record);
-	}
-	s_string_release(r25); r25 = NULL;
-	s_mir_record_release(r0); r0 = NULL;
-	returned = r26;
-	r26 = NULL;
-	goto exit;
-block8: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block6;
-block9: ;
-	returned = r20;
-	r20 = NULL;
-	goto exit;
-block10: ;
-	r17 = r2->fields[r16].bits;
-	r28 = (r16 >= 0 && (uint64_t)r16 < r1->length);
-	if (r28) goto block20;
-	goto block21;
-block11: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block12: ;
-	r18 = r1->fields[r16].bits;
-	s_mir_record_store(&r19, s_mir_f210(s_mir_record_retain(r0), r17, r18));
-	{ S_MirRecord * owned = r19; r19 = NULL; s_mir_record_store(&r20, owned); }
-	s_mir_string_store(&r21, s_string_retain(r20->fields[0].text));
-	s_mir_string_store(&r22, s_string_from_bytes("", 0));
-	r23 = (s_string_compare(r21, r22) == 0);
-	s_string_release(r21); r21 = NULL;
-	s_string_release(r22); r22 = NULL;
-	if (r23) goto block8;
-	goto block22;
-block13: ;
-	s_panic("\141\162\162\141\171\040\151\156\144\145\170\040\157\165\164\040\157\146\040\142\157\165\156\144\163");
-block14: ;
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	goto block1;
-block15: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	goto block2;
-block16: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block5;
-block17: ;
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block7;
-block18: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block10;
-block19: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block11;
-block20: ;
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block12;
-block21: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	if (r20) { s_mir_record_release(r20); r20 = NULL; }
-	goto block13;
-block22: ;
-	if (r0) { s_mir_record_release(r0); r0 = NULL; }
-	if (r1) { s_mir_record_release(r1); r1 = NULL; }
-	if (r2) { s_mir_record_release(r2); r2 = NULL; }
-	if (r4) { s_string_release(r4); r4 = NULL; }
-	goto block9;
 exit: ;
 	return returned;
 }

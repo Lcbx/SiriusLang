@@ -1,0 +1,6 @@
+# DEFERRED: a generic array must have homogeneous element types.
+import Math.Generic alias Generic
+
+def main() -> i64
+	let result = Generic.append_integer(true)
+	return 0
