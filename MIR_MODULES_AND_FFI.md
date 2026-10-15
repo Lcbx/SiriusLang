@@ -78,11 +78,11 @@ longer-term transitive purity checking needed by parallel `map`.
 
 ## Generic specialization across libraries (partial)
 
-A signature alone cannot instantiate a generic body. Version-5 artifacts persist syntax, token spellings and verified module declarations (function headers, module constant values and canonical types) instead of provider text. This avoids reparsing and repeated module declaration analysis per specialization. Version-3 source-backed and version-4 syntax-backed artifacts remain readable.
+A signature alone cannot instantiate a generic body. Version-6 artifacts persist syntax, token spellings, verified module declarations (function headers, module constant values and canonical types), and simple symbolic-type HIR bodies instead of provider text. This avoids reparsing and repeated module declaration analysis per specialization. Versions 3–5 remain readable. Version 6 validates the saved simple HIR plans against syntax and substitutes canonical concrete argument types when linking. Operators are checked again after substitution; complex bodies still use ordinary HIR analysis.
 The linker remaps imported structural types into the provider's type table,
 builds concrete MIR, recursively expands imports from other libraries, and
 checks each concrete signature. External function declarations in template
-sources still need concrete types. The remaining target is persistent typed or parametric generic bodies and importable constructors. Concrete body typing still runs for each new specialization.
+sources still need concrete types. The remaining target is general parameterized HIR for control flow, calls, record/array operations and importable constructors.
 
 At a call boundary:
 

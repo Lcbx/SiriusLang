@@ -20,6 +20,27 @@ def must_run(binary: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
 	return result
 
 
+def legacy_v5(data: bytes) -> bytes:
+	"""Extract the embedded v5 declaration snapshot from a v6 HIR provider."""
+	old_header = b'SIRIUS-MIR-LIB/6\n'
+	new_header = b'SIRIUS-MIR-LIB/5\n'
+	magic = b'SIRIUS-TEMPLATE-HIR/1\n'
+	assert data.startswith(old_header)
+	start = data.index(magic)
+	length_start = data.rfind(b'\n', 0, start - 1) + 1
+	snapshot_length = int(data[length_start:start - 1])
+	end = start + snapshot_length
+	assert data[end:end + 1] == b'\n'
+	at = start + len(magic)
+	length_end = data.index(b'\n', at)
+	semantic_length = int(data[at:length_end])
+	semantic = data[length_end + 1:length_end + 1 + semantic_length]
+	assert semantic.startswith(b'SIRIUS-TEMPLATE-DECL/1\n')
+	assert data[length_end + 1 + semantic_length:length_end + 2 + semantic_length] == b'\n'
+	return (new_header + data[len(old_header):length_start]
+		+ str(len(semantic)).encode() + b'\n' + semantic + b'\n' + data[end + 1:])
+
+
 def legacy_v4(data: bytes) -> bytes:
 	"""Rewrite a v5 declaration snapshot as a historical v4 syntax provider."""
 	assert data.startswith(b'SIRIUS-MIR-LIB/5\n')
@@ -114,19 +135,23 @@ def main() -> None:
 		provider = source('provider', provider_text)
 		lib = work / 'provider.smirl'
 		must_run(runner, '--emit-lib', lib, '--template', 'identity', '--template', 'doubled', provider)
-		assert lib.read_bytes().startswith(b'SIRIUS-MIR-LIB/5\n')
+		assert lib.read_bytes().startswith(b'SIRIUS-MIR-LIB/6\n')
+		assert b'SIRIUS-TEMPLATE-HIR/1\n' in lib.read_bytes()
 		assert b'SIRIUS-TEMPLATE-DECL/1\n' in lib.read_bytes()
 		assert b'SIRIUS-TEMPLATE-AST/1\n' in lib.read_bytes()
 		assert b'PRIVATE_SOURCE_COMMENT' not in lib.read_bytes()
 		again = work / 'provider_again.smirl'
 		must_run(runner, '--emit-lib', again, '--template', 'identity', '--template', 'doubled', provider)
 		assert again.read_bytes() == lib.read_bytes()
+		v5_lib = work / 'v5_provider.smirl'
+		v5_lib.write_bytes(legacy_v5(lib.read_bytes()))
 		v4_lib = work / 'v4_provider.smirl'
-		v4_lib.write_bytes(legacy_v4(lib.read_bytes()))
+		v4_lib.write_bytes(legacy_v4(v5_lib.read_bytes()))
 		old_lib = work / 'old_provider.smirl'
 		old_lib.write_bytes(legacy_v3(v4_lib.read_bytes(), provider_text))
 		assert run(runner, '--list-lib', old_lib).stdout == b'template identity\ntemplate doubled\n'
 		assert run(runner, '--list-lib', v4_lib).stdout == b'template identity\ntemplate doubled\n'
+		assert run(runner, '--list-lib', v5_lib).stdout == b'template identity\ntemplate doubled\n'
 		assert run(runner, '--list-lib', lib).stdout == b'template identity\ntemplate doubled\n'
 		provider.unlink()  # The saved library is independent of its source file.
 		assert run(runner, '--load-lib', lib).returncode == 2
@@ -149,11 +174,13 @@ def main() -> None:
 			output = work / f'{name}.smirl'
 			must_run(runner, '--emit-lib', output, '--export', f'test_{name}', file)
 			imports.append(output)
-		# Versions 3 and 4 remain loadable and linkable.
+		# Versions 3-5 remain loadable and linkable.
 		combined = work / 'linked.smirl'
 		must_run(runner, '--link-lib', combined, imports[0], old_lib)
 		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 42
 		must_run(runner, '--link-lib', combined, imports[0], v4_lib)
+		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 42
+		must_run(runner, '--link-lib', combined, imports[0], v5_lib)
 		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 42
 		must_run(runner, '--link-lib', combined, *imports, lib)
 		assert run(runner, '--list-lib', combined).stdout == b''.join(
@@ -164,7 +191,7 @@ def main() -> None:
 		must_run(runner, '--link-lib', combined, lib, *imports)
 		for name, _, expected in consumers:
 			assert run(runner, '--entry', f'test_{name}', '--load-lib', combined).returncode == expected
-		print('PASS generic: template-only v5, i64/string/array/record, nested functions, reuse, link orders')
+		print('PASS generic: template-only v6, i64/string/array/record, nested functions, reuse, link orders')
 
 		# The resulting concrete library uses the unchanged native/interpreted MIR
 		# representation; both backends must execute the same specialization.
@@ -178,6 +205,32 @@ def main() -> None:
 		assert result.returncode == 0, result.stderr
 		assert run(native).returncode == 12
 		print('PASS generic: native and interpreted linked program parity')
+
+		# Parameterized HIR uses symbolic argument type IDs for simple expressions.
+		# Each instantiated operator must still be checked against real operand types.
+		fast_provider = source('fast_provider', 'def twice(x)\n\treturn x + x\n'
+			'def negate(x)\n\treturn -x\n'
+			'def same(x)\n\treturn x == x\n'
+			'def fallback(x)\n\tif x > 0\n\t\treturn x + 1\n\treturn x\n')
+		fast_lib = work / 'fast_provider.smirl'
+		must_run(runner, '--emit-lib', fast_lib, '--template', 'twice', '--template', 'negate',
+			'--template', 'same', '--template', 'fallback', fast_provider)
+		fast_consumer = source('fast_consumer', 'extern def twice(x: i64) -> i64\n'
+			'extern def negate(x: i64) -> i64\nextern def same(x: i64) -> bool\n'
+			'extern def fallback(x: i64) -> i64\n'
+			'def parametric_entry() -> i64\n\tif same(2)\n\t\treturn twice(8) + negate(3) + fallback(5)\n\treturn 0\n')
+		fast_consumer_lib = work / 'fast_consumer.smirl'
+		must_run(runner, '--emit-lib', fast_consumer_lib, '--export', 'parametric_entry', fast_consumer)
+		must_run(runner, '--link-lib', combined, fast_consumer_lib, fast_lib)
+		assert run(runner, '--entry', 'parametric_entry', '--load-lib', combined).returncode == 19
+		bad_consumer = source('bad_parametric', 'extern def twice(x: bool) -> bool\n'
+			'def bad() -> i64\n\tif twice(true)\n\t\treturn 1\n\treturn 0\n')
+		bad_consumer_lib = work / 'bad_parametric.smirl'
+		must_run(runner, '--emit-lib', bad_consumer_lib, '--export', 'bad', bad_consumer)
+		failed = run(runner, '--link-lib', combined, bad_consumer_lib, fast_lib)
+		assert failed.returncode == 2 and b'arithmetic requires numeric operands' in failed.stderr, failed
+		print('PASS generic: parameterized HIR, concrete operator validation and complex-body fallback')
+
 
 		# A concrete export remains a higher-priority match than any template.
 		exact = source('exact', 'def identity(x: i64) -> i64\n\treturn x + 100\n'
@@ -334,11 +387,25 @@ def main() -> None:
 		bad.write_bytes(corrupt)
 		result = run(runner, '--list-lib', bad)
 		assert result.returncode == 2 and b'generic declaration metadata mismatch' in result.stderr, result
+		# Tamper with the saved HIR_NAME opcode without affecting field lengths:
+		# the loader must compare parameterized nodes to the validated AST.
+		good = lib.read_bytes()
+		pos = good.index(b'SIRIUS-TEMPLATE-HIR/1\n') + len(b'SIRIUS-TEMPLATE-HIR/1\n')
+		semantic_length_end = good.index(b'\n', pos)
+		pos = semantic_length_end + 1 + int(good[pos:semantic_length_end]) + 1
+		# function count, body id, result type, node count, source id, opcode
+		for _ in range(5):
+			pos = good.index(b'\n', pos) + 1
+		opcode_end = good.index(b'\n', pos)
+		assert good[pos:opcode_end] == b'3', good[pos:opcode_end]
+		bad.write_bytes(good[:pos] + b'4' + good[opcode_end:])
+		result = run(runner, '--list-lib', bad)
+		assert result.returncode == 2 and b'parameterized HIR metadata mismatch' in result.stderr, result
 		# Template export names must correspond to a real generic declaration.
 		bad.write_bytes(data.replace(b'7\ncombine\n', b'7\nchanged\n', 1))
 		result = run(runner, '--list-lib', bad)
 		assert result.returncode == 2 and b'missing generic template declaration' in result.stderr, result
-		print('PASS generic: version-5 semantic constants, canonical validation')
+		print('PASS generic: version-6 HIR and semantic constants, canonical validation')
 		print('PASS generic: declaration errors and corrupted artifact rejection')
 
 

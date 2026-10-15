@@ -9,7 +9,10 @@ rec HirSpecializedRoot(name: string, function_id: i64)
 rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: TypeTable, entry: i64, error: string)
 	pub roots = Array[HirSpecializedRoot]()
 
-def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
+def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64], plans: Array[HirParametricBody]) -> HirConcreteBody
+	for plan in plans
+		if plan.definition == header.body and len(plan.nodes) > 0 and len(arguments) == len(header.parameters)
+			return hir_instantiate_parametric(tree, plan, types, arguments)
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)
@@ -77,7 +80,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 		let header = declarations.functions[!definition]
 		if header.constructor
 			return HirSpecializedProgram(registry, bodies, types, entry, "constructor specialization not supported yet")
-		let typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments)
+		let typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments, declarations.parametric)
 		types = typed.types
 		if typed.error != ""
 			return HirSpecializedProgram(registry, bodies, types, entry, typed.error)
@@ -96,7 +99,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 				types = declared.table
 				result_type = declared.type_id
 			else
-				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments)
+				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments, declarations.parametric)
 				types = inferred.types
 				if inferred.error != ""
 					return HirSpecializedProgram(registry, bodies, types, entry, inferred.error)

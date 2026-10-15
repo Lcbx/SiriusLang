@@ -118,7 +118,7 @@ typed-placeholder sources, but is no longer needed for new code.
 python tools/test_mir_generic.py
 ```
 
-`SIRIUS-MIR-LIB/5` stores a parsed syntax snapshot, validated resolved declarations and named templates, which need not
+`SIRIUS-MIR-LIB/6` stores a parsed syntax snapshot, validated resolved declarations, a limited parameterized HIR subset and named templates, which need not
 have concrete roots. Consumers use concrete `extern def` declarations; the
 linker instantiates missing imports against the provider module, remapping
 structural argument types and checking the full resulting signature. Equal
@@ -126,7 +126,7 @@ requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
 backends. A specialization can import other concrete functions or templates from separate
 artifacts; the linker resolves these transitive dependencies using concrete
-structural signatures. Missing or mismatched providers are rejected. Version-5 templates contain module constants and canonical declaration types and no longer retain original source text. The loader checks the metadata against the syntax once; one shared semantic context is used for each provider during linking. Version-3 (source) and version-4 (syntax) libraries remain readable; external declarations must still be concrete. Parameterized typed function bodies are not yet persisted.
+structural signatures. Missing or mismatched providers are rejected. Version-6 templates contain module constants, canonical declaration types and symbolic-type HIR annotations for supported single-expression generic bodies, without retaining original source text. The loader checks metadata against syntax; concrete operator validity is still checked at specialization. More complex bodies fall back to the normal concrete analyzer. Versions 3–5 remain readable; external declarations must still be concrete.
 
 ### Native execution of linked concrete libraries
 
@@ -142,7 +142,7 @@ resolved artifact and a zero-argument `i64` entry; this is whole-program backend
 selection, **not** per-function mixed native/interpreted dispatch.
 
 Imports can resolve either to concrete exports or to syntax-backed generic templates.
-True source modules, persisted typed generic artifacts, native registration,
+True source modules, general parameterized HIR, native registration,
 and mixed native/interpreted calls remain unimplemented. See
 [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 

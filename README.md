@@ -105,7 +105,7 @@ allows native compilation of the *same linked concrete MIR*; mixed calls
 between native and interpreted function implementations are not yet supported.
 
 A first link-time generic specialization path is available using template-bearing
-`SIRIUS-MIR-LIB/5` artifacts (versions 3 and 4 remain readable). A generic provider may contain only templates:
+`SIRIUS-MIR-LIB/6` artifacts (versions 3–5 remain readable). A generic provider may contain only templates:
 
 ```sirius
 # generic.sirius
@@ -126,7 +126,15 @@ request different specializations; equal requests share one implementation.
 Concrete exports take precedence over templates. Linked output is still a
 concrete version-1 library and works in the interpreter or native C emitter.
 
-Version-5 libraries persist token/AST syntax **and resolved module declarations**, including canonical type tables and module constant values. They omit original provider source and comments. The loader validates declaration metadata against syntax once; the linker reuses one semantic context across specializations. Versions 3 (source) and 4 (syntax) remain readable. Parameterized typed function bodies are not yet persisted.
+Version-6 libraries persist the syntax arena, resolved module declarations,
+canonical types, constants, and a **limited parameterized HIR** representation
+for generic bodies that return a single expression built from parameters,
+literals, and scalar unary/binary operations. Type parameters are bound at link
+time and operators checked for the concrete types; other bodies use the existing
+concrete analyzer. The loader validates stored HIR against syntax. Version-3
+(source), version-4 (syntax), and version-5 (declarations) remain readable.
+Full parameterized HIR for control flow, calls, collections, and constructors
+remains to be implemented.
 Specialized functions can call typed external functions supplied by other
 libraries, including other generic templates. The linker expands transitive
 specialization requests, checks structural signatures and rejects missing or

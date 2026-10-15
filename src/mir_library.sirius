@@ -6,6 +6,7 @@ let MIR_LIBRARY_IMPORT_MAGIC = "SIRIUS-MIR-LIB/2\n"
 let MIR_LIBRARY_GENERIC_MAGIC = "SIRIUS-MIR-LIB/3\n"
 let MIR_LIBRARY_SYNTAX_MAGIC = "SIRIUS-MIR-LIB/4\n"
 let MIR_LIBRARY_SEMANTIC_MAGIC = "SIRIUS-MIR-LIB/5\n"
+let MIR_LIBRARY_PARAMETRIC_MAGIC = "SIRIUS-MIR-LIB/6\n"
 
 # An import occupies a normal, statically typed function slot. Its source
 # declaration has no body and is never executed before linking.
@@ -123,6 +124,8 @@ def mir_serialize_library_generic(program: MirProgram, exports: Array[MirNamedEx
 		parts = [MIR_LIBRARY_SYNTAX_MAGIC]
 		if snapshot.starts_with(MIR_SEMANTIC_MAGIC)
 			parts = [MIR_LIBRARY_SEMANTIC_MAGIC]
+		elif snapshot.starts_with(MIR_PARAMETRIC_MAGIC)
+			parts = [MIR_LIBRARY_PARAMETRIC_MAGIC]
 	elif len(imports) > 0
 		parts = [MIR_LIBRARY_IMPORT_MAGIC]
 	parts = mir_wire_num(parts, len(exports))
@@ -160,7 +163,9 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 	if len(data) > MIR_WIRE_MAX_SIZE
 		return mir_library_failure("unsupported MIR library format or size")
 	var version = 1
-	if data.starts_with(MIR_LIBRARY_SEMANTIC_MAGIC)
+	if data.starts_with(MIR_LIBRARY_PARAMETRIC_MAGIC)
+		version = 6
+	elif data.starts_with(MIR_LIBRARY_SEMANTIC_MAGIC)
 		version = 5
 	elif data.starts_with(MIR_LIBRARY_SYNTAX_MAGIC)
 		version = 4
@@ -179,6 +184,8 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 		start = len(MIR_LIBRARY_SYNTAX_MAGIC)
 	elif version == 5
 		start = len(MIR_LIBRARY_SEMANTIC_MAGIC)
+	elif version == 6
+		start = len(MIR_LIBRARY_PARAMETRIC_MAGIC)
 	var reader = MirWireReader(data, start, "")
 	let count = mir_wire_count(reader)
 	reader = count.reader
@@ -231,8 +238,10 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 			source = stored_source.value
 		else
 			snapshot = stored_source.value
-			if version == 5
-				let validated = mir_deserialize_semantic(snapshot)
+			if version >= 5
+				var validated = mir_deserialize_semantic(snapshot)
+				if version == 6
+					validated = mir_deserialize_parametric(snapshot)
 				if validated.error != ""
 					return mir_library_failure(validated.error)
 				for name in templates

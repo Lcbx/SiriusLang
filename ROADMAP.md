@@ -56,8 +56,12 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [x] Persist resolved module declarations, constants and canonical type tables
   in version-5 generic artifacts, validating them against syntax at load and
   reusing a provider context for all link-time specializations.
-- [ ] Persist parameterized typed HIR bodies and semantic imports, including
-  importable constructors. Concrete typing still occurs at specialization time.
+- [x] Persist a first parameterized HIR subset in version-6 libraries: symbolic
+  argument types for single-expression returns (names, literals, scalar unary/
+  binary expressions), validated during loading and instantiated with concrete
+  operator checks. All other bodies fall back to concrete HIR analysis.
+- [ ] Generalize persisted parameterized HIR to bindings, control flow, calls,
+  record/collection expressions, semantic imports and constructors.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed

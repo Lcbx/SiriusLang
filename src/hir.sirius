@@ -368,7 +368,9 @@ rec HirModuleConstant(name: string, value: i64, type_id: i64)
 rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64], text: string)
 rec HirConstantEval(table: TypeTable, values: Array[HirConstantValue], index: i64, valid: bool)
 rec HirConstantField(name: string, value: i64)
+rec HirParametricBody(definition: i64, nodes: Array[HirNode], result_type: i64)
 rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, values: Array[HirConstantValue], error: string, error_line: i64)
+	pub parametric = Array[HirParametricBody]()
 
 def hir_constant_push_text(types: TypeTable, values: Array[HirConstantValue], type_id: i64, bits: i64, fields: Array[i64], text: string) -> HirConstantEval
 	let index = len(values)

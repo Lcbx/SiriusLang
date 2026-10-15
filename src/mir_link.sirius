@@ -104,6 +104,8 @@ rec MirGenericExpansion(libraries: Array[MirLibraryLoad], error: string)
 # Cache the provider's verified declaration environment once per link, rather
 # than reconstructing it for every concrete template request.
 def mir_library_template_context(library: MirLibraryLoad) -> MirSemanticLoad
+	if library.snapshot.starts_with(MIR_PARAMETRIC_MAGIC)
+		return mir_deserialize_parametric(library.snapshot)
 	if library.snapshot.starts_with(MIR_SEMANTIC_MAGIC)
 		return mir_deserialize_semantic(library.snapshot)
 	var parsed = ParseResult(ParseState("", Array[Token]()), -1)

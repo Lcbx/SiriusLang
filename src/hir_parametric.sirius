@@ -1,0 +1,99 @@
+# Type-parameterized HIR for single-expression generic returns.
+# Negative type IDs below -1 represent argument type parameters. More
+# complex bodies continue through the ordinary concrete HIR analyzer.
+
+rec HirParametricExpression(nodes: Array[HirNode], type_id: i64, valid: bool)
+
+def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64) -> HirParametricExpression
+	let node = tree.nodes[!id]
+	let literal = resolve_hir_literal(node.kind)
+	if literal != TYPE_TAG_INVALID
+		return HirParametricExpression([HirNode(id, HIR_LITERAL, literal, -1)], literal, true)
+	if node.kind == NODE_NAME
+		let name = hir_ast_text(tree, id)
+		for offset in 0..len(header.parameters)
+			let i = len(header.parameters) - 1 - offset
+			if header.parameters[!i].name == name
+				let type_id = -2 - i
+				return HirParametricExpression([HirNode(id, HIR_NAME, type_id, i)], type_id, true)
+	if node.kind == NODE_BINARY and node.count == 2
+		let lhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0))
+		let rhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 1))
+		if lhs.valid and rhs.valid
+			let operator = hir_ast_text(tree, id)
+			if operator != "+" and operator != "-" and operator != "*" and operator != "/" and operator != "%" and operator != "and" and operator != "==" and operator != "!=" and operator != "<" and operator != "<=" and operator != ">" and operator != ">="
+				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
+			var result_type = lhs.type_id
+			if operator == "==" or operator == "!=" or operator == "<" or operator == "<=" or operator == ">" or operator == ">=" or operator == "and" or operator == "or"
+				result_type = TYPE_TAG_BOOL
+			var nodes = lhs.nodes
+			for typed in rhs.nodes
+				nodes = nodes.append(typed)
+			return HirParametricExpression(nodes.append(HirNode(id, HIR_BINARY, result_type, -1)), result_type, true)
+	if node.kind == NODE_UNARY and node.count == 1
+		let value = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0))
+		if value.valid
+			let operator = hir_ast_text(tree, id)
+			if operator != "-" and operator != "+" and operator != "not"
+				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
+			var result_type = value.type_id
+			if hir_ast_text(tree, id) == "not"
+				result_type = TYPE_TAG_BOOL
+			return HirParametricExpression(value.nodes.append(HirNode(id, HIR_UNARY, result_type, -1)), result_type, true)
+	return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
+
+def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl) -> HirParametricBody
+	var empty = HirParametricBody(header.body, Array[HirNode](), TYPE_TAG_INVALID)
+	if header.external or header.constructor or header.result_type_node >= 0
+		return empty
+	for param in header.parameters
+		if param.type_node >= 0
+			return empty
+	let block = tree.nodes[!header.body]
+	if block.kind != NODE_BLOCK or block.count != 1
+		return empty
+	let statement = hir_ast_child(tree, header.body, 0)
+	if tree.nodes[!statement].kind != NODE_RETURN or tree.nodes[!statement].count != 1
+		return empty
+	let result = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0))
+	if not result.valid
+		return empty
+	return HirParametricBody(header.body, result.nodes, result.type_id)
+
+def hir_parametric_type(symbolic: i64, arguments: Array[i64]) -> i64
+	if symbolic >= 0
+		return symbolic
+	let index = -2 - symbolic
+	if index >= 0 and index < len(arguments)
+		return arguments[!index]
+	return TYPE_TAG_INVALID
+
+def hir_parametric_node_type(nodes: Array[HirNode], source: i64) -> i64
+	for node in nodes
+		if node.source == source
+			return node.type_id
+	return TYPE_TAG_INVALID
+
+# Instantiate and check every operator against actual canonical types. Never
+# infer arithmetic legality merely from symbolic agreement between operands.
+def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
+	var nodes = Array[HirNode]()
+	for node in plan.nodes
+		var type_id = hir_parametric_type(node.type_id, arguments)
+		if node.operation == HIR_BINARY
+			let lhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 0))
+			let rhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 1))
+			let checked = resolve_hir_binary(types, lhs, rhs, hir_ast_text(tree, node.source))
+			if checked.error != ""
+				return HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), types, TYPE_TAG_INVALID, checked.error, hir_ast_line(tree, node.source))
+			type_id = checked.type_id
+		elif node.operation == HIR_UNARY
+			let operand = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 0))
+			let checked = resolve_hir_unary(types, operand, hir_ast_text(tree, node.source))
+			if checked.error != ""
+				return HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), types, TYPE_TAG_INVALID, checked.error, hir_ast_line(tree, node.source))
+			type_id = checked.type_id
+		if type_id == TYPE_TAG_INVALID
+			return HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), types, TYPE_TAG_INVALID, "invalid parameterized HIR type", 0)
+		nodes = nodes.append(HirNode(node.source, node.operation, type_id, node.field_index))
+	return HirConcreteBody(nodes, Array[HirSpecializationRequest](), types, nodes[!len(nodes) - 1].type_id, "", 0)

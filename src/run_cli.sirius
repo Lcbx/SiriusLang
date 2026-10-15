@@ -265,7 +265,7 @@ def main() -> i64
 					return 2
 			var snapshot = ""
 			if len(template_names) > 0
-				let stored = mir_serialize_semantic(parsed.state, parsed.node, declarations)
+				let stored = mir_serialize_parametric(parsed.state, parsed.node, declarations)
 				if stored.error != ""
 					eprint("cannot save generic syntax: " + stored.error)
 					return 2
