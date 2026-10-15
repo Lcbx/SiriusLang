@@ -118,7 +118,7 @@ typed-placeholder sources, but is no longer needed for new code.
 python tools/test_mir_generic.py
 ```
 
-`SIRIUS-MIR-LIB/4` stores a parsed syntax snapshot and named templates, which need not
+`SIRIUS-MIR-LIB/5` stores a parsed syntax snapshot, validated resolved declarations and named templates, which need not
 have concrete roots. Consumers use concrete `extern def` declarations; the
 linker instantiates missing imports against the provider module, remapping
 structural argument types and checking the full resulting signature. Equal
@@ -126,9 +126,7 @@ requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
 backends. A specialization can import other concrete functions or templates from separate
 artifacts; the linker resolves these transitive dependencies using concrete
-structural signatures. Missing or mismatched providers are rejected. Version-4 templates no longer retain original source text or reparse it during linking.
-Version-3 source-backed libraries remain readable; external declarations must still be concrete.
-Typed generic HIR and resolved declaration environments are not yet persisted.
+structural signatures. Missing or mismatched providers are rejected. Version-5 templates contain module constants and canonical declaration types and no longer retain original source text. The loader checks the metadata against the syntax once; one shared semantic context is used for each provider during linking. Version-3 (source) and version-4 (syntax) libraries remain readable; external declarations must still be concrete. Parameterized typed function bodies are not yet persisted.
 
 ### Native execution of linked concrete libraries
 

@@ -17,8 +17,8 @@ or completeness guarantee.
    with both interpreter and native tests.
 3. **Language features:** add missing semantic constructs in vertical slices
    (HIR → MIR → native/interpreter → tests), while preserving self-hosting.
-4. **Modules/libraries:** persist generic syntax and then resolved semantic
-   environments/parametric IR; follow with mixed native/interpreted calls. Compile-time MIR execution is postponed.
+4. **Modules/libraries:** build on persistent syntax and resolved declaration
+   environments with parametric IR; follow with mixed native/interpreted calls. Compile-time MIR execution is postponed.
 
 **Completed foundation:** MIR is the default C backend; the compiler produces a
 byte-identical native self-hosting fixed point. The legacy Sirius C emitter is
@@ -53,9 +53,11 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [x] Replace retained provider text with version-4 persistent syntax arenas
   (token spellings, AST nodes/edges), avoiding source reparsing at link time;
   continue to load version-3 source-backed libraries.
-- [ ] Persist resolved generic declarations, parameterized HIR and semantic
-  environments, including importable constructors. Concrete typing still
-  occurs at specialization time.
+- [x] Persist resolved module declarations, constants and canonical type tables
+  in version-5 generic artifacts, validating them against syntax at load and
+  reusing a provider context for all link-time specializations.
+- [ ] Persist parameterized typed HIR bodies and semantic imports, including
+  importable constructors. Concrete typing still occurs at specialization time.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed

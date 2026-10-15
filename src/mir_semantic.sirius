@@ -1,0 +1,181 @@
+# Persist the resolved module declarations alongside the generic syntax arena.
+# Generic bodies still undergo concrete HIR specialization. The declaration
+# snapshot is checked against the syntax once when a library is loaded, rather
+# than recomputed for every requested specialization.
+let MIR_SEMANTIC_MAGIC = "SIRIUS-TEMPLATE-DECL/1\n"
+
+rec MirSemanticLoad(tree: ParseState, root: i64, declarations: HirModuleDecl, error: string)
+
+def mir_semantic_failure(message: string) -> MirSemanticLoad
+	return MirSemanticLoad(ParseState("", Array[Token]()), -1, hir_declaration_error(Array[HirFunctionDecl](), Array[HirModuleConstant](), message, 0), message)
+
+def mir_serialize_semantic(tree: ParseState, root: i64, declarations: HirModuleDecl) -> MirWireSave
+	if declarations.error != ""
+		return MirWireSave("", declarations.error)
+	let syntax = mir_serialize_template(tree, root)
+	if syntax.error != ""
+		return syntax
+	var parts = [MIR_SEMANTIC_MAGIC]
+	parts = mir_wire_str(parts, syntax.text)
+	parts = mir_wire_num(parts, len(declarations.functions))
+	for function in declarations.functions
+		parts = mir_wire_str(parts, function.name)
+		parts = mir_wire_num(parts, function.source)
+		parts = mir_wire_num(parts, function.body)
+		var constructor = 0
+		if function.constructor
+			constructor = 1
+		var external = 0
+		if function.external
+			external = 1
+		parts = mir_wire_num(parts, constructor)
+		parts = mir_wire_num(parts, external)
+		parts = mir_wire_num(parts, function.result_type_node)
+		parts = mir_wire_num(parts, len(function.parameters))
+		for parameter in function.parameters
+			parts = mir_wire_str(parts, parameter.name)
+			parts = mir_wire_num(parts, parameter.source)
+			parts = mir_wire_num(parts, parameter.type_node)
+	parts = mir_wire_num(parts, len(declarations.types.entries))
+	for i in 6..len(declarations.types.entries)
+		let descriptor = declarations.types.entries[!i]
+		parts = mir_wire_num(parts, descriptor.tag)
+		parts = mir_wire_num(parts, descriptor.first)
+		parts = mir_wire_num(parts, descriptor.second)
+		parts = mir_wire_num(parts, len(descriptor.fields))
+		for field in descriptor.fields
+			parts = mir_wire_str(parts, field.name)
+			parts = mir_wire_num(parts, field.kind)
+	parts = mir_wire_num(parts, len(declarations.values))
+	for value in declarations.values
+		parts = mir_wire_num(parts, value.type_id)
+		parts = mir_wire_num(parts, value.bits)
+		parts = mir_wire_num(parts, len(value.fields))
+		for field in value.fields
+			parts = mir_wire_num(parts, field)
+		parts = mir_wire_str(parts, value.text)
+	parts = mir_wire_num(parts, len(declarations.constants))
+	for constant in declarations.constants
+		parts = mir_wire_str(parts, constant.name)
+		parts = mir_wire_num(parts, constant.value)
+		parts = mir_wire_num(parts, constant.type_id)
+	let data = "".join(parts)
+	if len(data) > MIR_WIRE_MAX_SIZE
+		return MirWireSave("", "generic declaration snapshot exceeds format size limit")
+	return MirWireSave(data, "")
+
+def mir_deserialize_semantic(data: string) -> MirSemanticLoad
+	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_SEMANTIC_MAGIC)
+		return mir_semantic_failure("unsupported generic declaration snapshot")
+	var reader = MirWireReader(data, len(MIR_SEMANTIC_MAGIC), "")
+	let syntax = mir_wire_string(reader)
+	reader = syntax.reader
+	if reader.error != ""
+		return mir_semantic_failure(reader.error)
+	let parsed = mir_deserialize_template(syntax.value)
+	if parsed.error != ""
+		return mir_semantic_failure(parsed.error)
+	let count = mir_wire_count(reader)
+	reader = count.reader
+	if reader.error != "" or count.value > 4096
+		return mir_semantic_failure("invalid generic declaration count")
+	var functions = Array[HirFunctionDecl]()
+	for i in 0..count.value
+		let name = mir_wire_string(reader)
+		let source = mir_wire_number(name.reader)
+		let body = mir_wire_number(source.reader)
+		let constructor = mir_wire_number(body.reader)
+		let external = mir_wire_number(constructor.reader)
+		let result_type_node = mir_wire_number(external.reader)
+		let parameters_count = mir_wire_count(result_type_node.reader)
+		reader = parameters_count.reader
+		if reader.error != "" or parameters_count.value > 4096
+			return mir_semantic_failure("invalid generic function declaration")
+		var parameters = Array[HirParameterDecl]()
+		for j in 0..parameters_count.value
+			let pname = mir_wire_string(reader)
+			let psource = mir_wire_number(pname.reader)
+			let ptype = mir_wire_number(psource.reader)
+			reader = ptype.reader
+			if reader.error != ""
+				return mir_semantic_failure(reader.error)
+			parameters = parameters.append(HirParameterDecl(pname.value, psource.value, ptype.value))
+		if constructor.value < 0 or constructor.value > 1 or external.value < 0 or external.value > 1
+			return mir_semantic_failure("invalid generic declaration flags")
+		var function = HirFunctionDecl(name.value, source.value, body.value, constructor.value == 1, result_type_node.value, parameters)
+		function.external = external.value == 1
+		functions = functions.append(function)
+	let type_count = mir_wire_count(reader)
+	reader = type_count.reader
+	if reader.error != "" or type_count.value < 6
+		return mir_semantic_failure("invalid generic declaration type count")
+	var types = new_type_table()
+	for i in 6..type_count.value
+		let tag = mir_wire_number(reader)
+		let first = mir_wire_number(tag.reader)
+		let second = mir_wire_number(first.reader)
+		let fields_count = mir_wire_count(second.reader)
+		reader = fields_count.reader
+		if reader.error != ""
+			return mir_semantic_failure(reader.error)
+		var fields = Array[RecordField]()
+		for j in 0..fields_count.value
+			let fname = mir_wire_string(reader)
+			let kind = mir_wire_number(fname.reader)
+			reader = kind.reader
+			if reader.error != ""
+				return mir_semantic_failure(reader.error)
+			fields = fields.append(RecordField(fname.value, kind.value))
+		let interned = intern_type(types, tag.value, first.value, second.value, fields)
+		if interned.id != i
+			return mir_semantic_failure("noncanonical generic declaration types")
+		types = interned.table
+	let value_count = mir_wire_count(reader)
+	reader = value_count.reader
+	if reader.error != ""
+		return mir_semantic_failure(reader.error)
+	var values = Array[HirConstantValue]()
+	for i in 0..value_count.value
+		let kind = mir_wire_number(reader)
+		let bits = mir_wire_number(kind.reader)
+		let field_count = mir_wire_count(bits.reader)
+		reader = field_count.reader
+		if reader.error != ""
+			return mir_semantic_failure(reader.error)
+		var fields = Array[i64]()
+		for j in 0..field_count.value
+			let field = mir_wire_number(reader)
+			reader = field.reader
+			if reader.error != ""
+				return mir_semantic_failure(reader.error)
+			fields = fields.append(field.value)
+		let value_text = mir_wire_string(reader)
+		reader = value_text.reader
+		if reader.error != ""
+			return mir_semantic_failure(reader.error)
+		values = values.append(HirConstantValue(kind.value, bits.value, fields, value_text.value))
+	let constant_count = mir_wire_count(reader)
+	reader = constant_count.reader
+	if reader.error != "" or constant_count.value > 4096
+		return mir_semantic_failure("invalid generic constant count")
+	var constants = Array[HirModuleConstant]()
+	for i in 0..constant_count.value
+		let name = mir_wire_string(reader)
+		let value = mir_wire_number(name.reader)
+		let kind = mir_wire_number(value.reader)
+		reader = kind.reader
+		if reader.error != ""
+			return mir_semantic_failure(reader.error)
+		constants = constants.append(HirModuleConstant(name.value, value.value, kind.value))
+	if reader.error != "" or reader.at != len(data)
+		return mir_semantic_failure("invalid generic declaration payload")
+	let declarations = HirModuleDecl(functions, constants, types, values, "", 0)
+	# Verify the persisted environment against its syntax at the untrusted
+	# artifact boundary. Link-time specializations reuse this verified state.
+	let checked = hir_module_declarations(parsed.tree, parsed.root)
+	if checked.error != ""
+		return mir_semantic_failure("invalid generic declarations: " + checked.error)
+	let canonical = mir_serialize_semantic(parsed.tree, parsed.root, checked)
+	if canonical.error != "" or canonical.text != data
+		return mir_semantic_failure("generic declaration metadata mismatch")
+	return MirSemanticLoad(parsed.tree, parsed.root, declarations, "")

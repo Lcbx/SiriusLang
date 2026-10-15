@@ -105,7 +105,7 @@ allows native compilation of the *same linked concrete MIR*; mixed calls
 between native and interpreted function implementations are not yet supported.
 
 A first link-time generic specialization path is available using template-bearing
-`SIRIUS-MIR-LIB/4` artifacts (older version-3 artifacts remain readable). A generic provider may contain only templates:
+`SIRIUS-MIR-LIB/5` artifacts (versions 3 and 4 remain readable). A generic provider may contain only templates:
 
 ```sirius
 # generic.sirius
@@ -126,7 +126,7 @@ request different specializations; equal requests share one implementation.
 Concrete exports take precedence over templates. Linked output is still a
 concrete version-1 library and works in the interpreter or native C emitter.
 
-Version-4 libraries store a token/AST snapshot **without original provider source or comments**. They do not yet persist generic typed HIR or resolved module declarations.
+Version-5 libraries persist token/AST syntax **and resolved module declarations**, including canonical type tables and module constant values. They omit original provider source and comments. The loader validates declaration metadata against syntax once; the linker reuses one semantic context across specializations. Versions 3 (source) and 4 (syntax) remain readable. Parameterized typed function bodies are not yet persisted.
 Specialized functions can call typed external functions supplied by other
 libraries, including other generic templates. The linker expands transitive
 specialization requests, checks structural signatures and rejects missing or

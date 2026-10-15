@@ -101,20 +101,31 @@ def mir_link_concrete_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryL
 rec MirGenericExpansion(libraries: Array[MirLibraryLoad], error: string)
 	pub generated_names = Array[string]()
 
-def mir_specialize_library_template(library: MirLibraryLoad, name: string, request: MirProgram, function_id: i64) -> MirLibraryLoad
+# Cache the provider's verified declaration environment once per link, rather
+# than reconstructing it for every concrete template request.
+def mir_library_template_context(library: MirLibraryLoad) -> MirSemanticLoad
+	if library.snapshot.starts_with(MIR_SEMANTIC_MAGIC)
+		return mir_deserialize_semantic(library.snapshot)
 	var parsed = ParseResult(ParseState("", Array[Token]()), -1)
 	if library.snapshot == ""
 		parsed = parse_module(library.source)
 	else
 		let loaded = mir_deserialize_template(library.snapshot)
 		if loaded.error != ""
-			return mir_library_failure("generic template syntax error: " + loaded.error)
+			return mir_semantic_failure("generic template syntax error: " + loaded.error)
 		parsed = ParseResult(loaded.tree, loaded.root)
 	if parsed.state.error != ""
-		return mir_library_failure("generic template parse error: " + parsed.state.error)
-	var declarations = hir_module_declarations(parsed.state, parsed.node)
+		return mir_semantic_failure("generic template parse error: " + parsed.state.error)
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
 	if declarations.error != ""
-		return mir_library_failure("generic template declarations: " + declarations.error)
+		return mir_semantic_failure("generic template declarations: " + declarations.error)
+	return MirSemanticLoad(parsed.state, parsed.node, declarations, "")
+
+def mir_specialize_library_template(context: MirSemanticLoad, name: string, request: MirProgram, function_id: i64) -> MirLibraryLoad
+	if context.error != ""
+		return mir_library_failure(context.error)
+	let parsed = ParseResult(context.tree, context.root)
+	var declarations = context.declarations
 	var found = false
 	for function in declarations.functions
 		if function.name == name and not function.constructor and not function.external
@@ -150,6 +161,15 @@ def mir_specialize_library_template(library: MirLibraryLoad, name: string, reque
 
 def mir_expand_generic_libraries(libraries: Array[MirLibraryLoad]) -> MirGenericExpansion
 	var expanded = libraries
+	var contexts = Array[MirSemanticLoad]()
+	for library in libraries
+		if len(library.templates) > 0
+			let context = mir_library_template_context(library)
+			if context.error != ""
+				return MirGenericExpansion(expanded, context.error)
+			contexts = contexts.append(context)
+		else
+			contexts = contexts.append(mir_semantic_failure("no generic templates"))
 	var cached_keys = Array[string]()
 	var cached_names = Array[string]()
 	var generated = 0
@@ -200,7 +220,7 @@ def mir_expand_generic_libraries(libraries: Array[MirLibraryLoad]) -> MirGeneric
 					if conflicting
 						generated += 1
 						private_name = "__sirius_specialization_" + str(generated)
-				let specialized = mir_specialize_library_template(libraries[!provider_id], symbol.name, consumer.program, symbol.function_id)
+				let specialized = mir_specialize_library_template(contexts[!provider_id], symbol.name, consumer.program, symbol.function_id)
 				if specialized.error != ""
 					return MirGenericExpansion(expanded, specialized.error)
 				var concrete = specialized
