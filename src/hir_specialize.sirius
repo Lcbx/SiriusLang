@@ -8,6 +8,7 @@ rec HirSpecializedFunction(nodes: Array[HirNode], calls: Array[HirSpecializedCal
 rec HirSpecializedRoot(name: string, function_id: i64)
 rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: TypeTable, entry: i64, error: string)
 	pub roots = Array[HirSpecializedRoot]()
+	pub worklist_analyses = 0
 
 def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64], plans: Array[HirParametricBody]) -> HirConcreteBody
 	for plan in plans
@@ -45,6 +46,32 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 			result_type = declared.type_id
 	return HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
 
+# A concrete body is independent of its call site once its parameter TypeIds
+# are fixed. Cache the typed nodes and specialization requests so return-type
+# inference does not repeat full body analysis when the worklist visits a callee.
+rec HirConcreteCacheEntry(definition: i64, arguments: Array[i64], body: HirConcreteBody)
+rec HirConcreteCacheResult(body: HirConcreteBody, entries: Array[HirConcreteCacheEntry], analyzed: bool)
+
+def hir_cached_concrete_body(tree: ParseState, header: HirFunctionDecl, declarations: HirModuleDecl, types: TypeTable, arguments: Array[i64], cache: Array[HirConcreteCacheEntry]) -> HirConcreteCacheResult
+	for entry in cache
+		if entry.definition != header.body or len(entry.arguments) != len(arguments)
+			continue
+		var same = true
+		for i in 0..len(arguments)
+			if entry.arguments[!i] != arguments[!i]
+				same = false
+		if same
+			# TypeIds remain stable as the canonical table grows. Never replace
+			# the current table with the older one stored in a cached body.
+			var body = entry.body
+			body.types = types
+			return HirConcreteCacheResult(body, cache, false)
+	let typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, arguments, declarations.parametric)
+	var updated = cache
+	if typed.error == ""
+		updated = updated.append(HirConcreteCacheEntry(header.body, arguments, typed))
+	return HirConcreteCacheResult(typed, updated, true)
+
 def hir_definition(functions: Array[HirFunctionDecl], definition: i64) -> i64
 	for i in 0..len(functions)
 		if functions[!i].body == definition
@@ -59,6 +86,8 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 	var types = declarations.types
 	var entry = -1
 	var roots = Array[HirSpecializedRoot]()
+	var cache = Array[HirConcreteCacheEntry]()
+	var worklist_analyses = 0
 	for name in names
 		var found = false
 		for declaration in declarations.functions
@@ -80,7 +109,11 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 		let header = declarations.functions[!definition]
 		if header.constructor
 			return HirSpecializedProgram(registry, bodies, types, entry, "constructor specialization not supported yet")
-		let typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments, declarations.parametric)
+		let resolved = hir_cached_concrete_body(tree, header, declarations, types, spec.arguments, cache)
+		cache = resolved.entries
+		if resolved.analyzed
+			worklist_analyses += 1
+		let typed = resolved.body
 		types = typed.types
 		if typed.error != ""
 			return HirSpecializedProgram(registry, bodies, types, entry, typed.error)
@@ -99,7 +132,11 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 				types = declared.table
 				result_type = declared.type_id
 			else
-				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments, declarations.parametric)
+				let resolved = hir_cached_concrete_body(tree, callee, declarations, types, request.arguments, cache)
+				cache = resolved.entries
+				if resolved.analyzed
+					worklist_analyses += 1
+				let inferred = resolved.body
 				types = inferred.types
 				if inferred.error != ""
 					return HirSpecializedProgram(registry, bodies, types, entry, inferred.error)
@@ -119,6 +156,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 		cursor += 1
 	var result = HirSpecializedProgram(registry, bodies, types, entry, "")
 	result.roots = roots
+	result.worklist_analyses = worklist_analyses
 	return result
 
 # Preserve the existing single-entry API for typed specialization tests.

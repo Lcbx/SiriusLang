@@ -1,0 +1,18 @@
+# Repeated generic calls, nested inference and structural types must share
+# specializations without sharing mutable values.
+def twice(x)
+	return x + x
+
+def wrap(x)
+	return {value = twice(x)}
+
+def choose(x)
+	let result = wrap(x)
+	return result.value
+
+def main() -> i64
+	print(choose(3))
+	print(choose(4))
+	print(choose("go"))
+	print(choose("hi"))
+	return 0

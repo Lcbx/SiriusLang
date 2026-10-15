@@ -701,6 +701,9 @@ let HIR_UNWRAP = 13
 # Specialization requests are discovered while analyzing a concrete function.
 # source is the call AST node; definition is the callee's declaration body ID.
 rec HirSpecializationRequest(source: i64, definition: i64, arguments: Array[i64])
+# Memoized unannotated return inference within one HIR body analysis. The
+# active call chain is part of the key so recursion guards remain contextual.
+rec HirInferredCall(definition: i64, arguments: Array[i64], active: Array[string], result_type: i64)
 
 rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string], types: TypeTable)
 	pub symbols = Array[SymbolInfo]()
@@ -714,6 +717,7 @@ rec HirBodyState(tree: ParseState, names: Array[string], constants: Array[string
 	pub inferred_return = TYPE_TAG_INVALID
 	pub collect_calls = false
 	pub requests = Array[HirSpecializationRequest]()
+	pub inferred_calls = Array[HirInferredCall]()
 	pub module_constants = Array[HirModuleConstant]()
 
 rec HirBodyAnalysis(nodes: Array[HirNode], error: string, error_line: i64)
@@ -966,10 +970,24 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 	for active in state.active_functions
 		if active == name
 			return result
+	for cached in result.inferred_calls
+		if cached.definition != function.body or len(cached.arguments) != len(args) or len(cached.active) != len(state.active_functions)
+			continue
+		var same = true
+		for i in 0..len(args)
+			if cached.arguments[!i] != args[!i]
+				same = false
+		for i in 0..len(state.active_functions)
+			if cached.active[!i] != state.active_functions[!i]
+				same = false
+		if same
+			result.last_type = cached.result_type
+			return result
 	var nested = HirBodyState(state.tree, state.names, state.constants, result.types)
 	nested.functions = state.functions
 	nested.module_constants = state.module_constants
 	nested.active_functions = state.active_functions.append(name)
+	nested.inferred_calls = result.inferred_calls
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
 		nested = hir_body_binding(nested, parameter.source, parameter.name, args[!i], false)
@@ -980,6 +998,9 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 		return result
 	result.types = nested.types
 	result.last_type = nested.inferred_return
+	result.inferred_calls = nested.inferred_calls
+	if nested.inferred_return != TYPE_TAG_INVALID
+		result.inferred_calls = result.inferred_calls.append(HirInferredCall(function.body, args, state.active_functions, nested.inferred_return))
 	return result
 
 def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState

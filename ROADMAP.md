@@ -34,6 +34,12 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [ ] Expand interpreted/native parity for managed nested values, failures,
   numeric boundaries and CLI/file behavior. Specify overflow/conversion and
   IEEE-754 edge behavior before claiming complete equivalence.
+- [x] Cache concrete HIR bodies by declaration and canonical argument TypeIds,
+  reusing inferred typed bodies when the specialization worklist processes a
+  callee; memoize unannotated return inference within a body analysis with
+  recursion-sensitive keys. The MIR verifier still checks CFG and ownership.
+  Baseline self-compilation timing is essentially unchanged; keep profiling
+  before attempting broader HIR/MIR storage changes.
 - [ ] Address remaining HIR/legacy-type coupling and source span diagnostics.
   Use canonical `TypeId`s for new code; avoid expanding legacy emitter-local
   type arithmetic. Retain the legacy emitter only for differential checks.

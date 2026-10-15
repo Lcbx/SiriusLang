@@ -12,6 +12,9 @@ def main() -> i64
 		return 2
 	if len(result.bodies) != 2 or len(result.registry.entries) != 2
 		return 3
+	# The unannotated callee is inferred once, then reused by the worklist.
+	if result.worklist_analyses != 2
+		return 13
 	if len(result.bodies[!0].calls) != 2
 		return 4
 	if result.bodies[!0].calls[!0].specialization != 1 or result.bodies[!0].calls[!1].specialization != 1
@@ -30,6 +33,8 @@ def main() -> i64
 	let specialized = hir_specialize_program(multi.state, multi_declarations, "main", Array[i64]())
 	if specialized.error != "" or len(specialized.bodies) != 3 or len(specialized.registry.entries) != 3
 		return 9
+	if specialized.worklist_analyses != 3
+		return 14
 	if len(specialized.bodies[!0].calls) != 3
 		return 10
 	if specialized.bodies[!0].calls[!0].specialization != 1 or specialized.bodies[!0].calls[!1].specialization != 2 or specialized.bodies[!0].calls[!2].specialization != 1
@@ -42,5 +47,11 @@ def main() -> i64
 	let invalid = hir_specialize_program(bad.state, bad_declarations, "main", Array[i64]())
 	if invalid.error != "expected bool, found i64"
 		return 8
+	# A shared inferred callee must be reused across two distinct callers.
+	let diamond = parse_module("def leaf(x)\n\treturn x + x\ndef left(x)\n\treturn leaf(x)\ndef right(x)\n\treturn leaf(x)\ndef main() -> i64\n\treturn left(1) + right(2)\n")
+	let d = hir_module_declarations(diamond.state, diamond.node)
+	let ds = hir_specialize_program(diamond.state, d, "main", Array[i64]())
+	if ds.error != "" or len(ds.bodies) != 4 or ds.worklist_analyses != 4
+		return 15
 	print("PASS HIR worklist without backend")
 	return 0

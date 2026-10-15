@@ -34,6 +34,22 @@ registry captures semantic identity, not a stable cross-version native ABI.
 Some compatibility bridges to old C kind IDs remain in the separate legacy
 emitter and selected layout helpers; avoid expanding them.
 
+
+## Concrete HIR reuse
+
+Concrete HIR specialization, including return type inference and user-call
+resolution, is done before MIR lowering. The specialization worklist caches
+fully analyzed bodies under `(declaration, argument TypeIds)` and reuses the
+same typed annotations and discovered calls when emitting a previously inferred
+callee. Return inference within one body analysis is also memoized; its key
+includes the active call chain to retain the recursion guard.
+
+MIR lowering consumes this typed result and still traverses AST structure for
+CFG generation. MIR validation is independent: it checks instruction types,
+control flow, and ownership, not HIR-level generic inference. This does not yet
+make HIR a standalone typed syntax tree, so further HIR-to-MIR simplification
+remains possible.
+
 ## MIR instructions and ownership
 
 MIR uses typed registers, explicit function arguments, basic blocks and CFG
