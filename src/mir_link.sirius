@@ -94,7 +94,7 @@ def mir_link_concrete_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryL
 		return mir_link_failure("invalid linked MIR: " + verified)
 	return MirLibraryLink(program, exports, "")
 
-# Version-3 templates retain the provider module source. Specialize when an
+# Generic templates persist provider syntax (or v3 source). Specialize when an
 # unresolved concrete import requests the template, using the importer's
 # structural types as the initial type environment of the provider HIR pass.
 # Specialization can itself produce imports, which are resolved in later rounds.
@@ -102,7 +102,14 @@ rec MirGenericExpansion(libraries: Array[MirLibraryLoad], error: string)
 	pub generated_names = Array[string]()
 
 def mir_specialize_library_template(library: MirLibraryLoad, name: string, request: MirProgram, function_id: i64) -> MirLibraryLoad
-	let parsed = parse_module(library.source)
+	var parsed = ParseResult(ParseState("", Array[Token]()), -1)
+	if library.snapshot == ""
+		parsed = parse_module(library.source)
+	else
+		let loaded = mir_deserialize_template(library.snapshot)
+		if loaded.error != ""
+			return mir_library_failure("generic template syntax error: " + loaded.error)
+		parsed = ParseResult(loaded.tree, loaded.root)
 	if parsed.state.error != ""
 		return mir_library_failure("generic template parse error: " + parsed.state.error)
 	var declarations = hir_module_declarations(parsed.state, parsed.node)

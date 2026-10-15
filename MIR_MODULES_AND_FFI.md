@@ -51,10 +51,12 @@ Source consumers can use `extern def` (fully typed, no body) to declare imports
 automatically; `--import` retains compatibility with legacy placeholder sources.
 Provider specializations remain exposed through `--expose`. These are **internal
 versioned formats**, not stable ABIs. `SIRIUS-MIR-LIB/3` retains provider
-source plus named templates. At link time a missing concrete import can
+source plus named templates. Version 4 instead stores a syntax arena (tokens,
+AST nodes/edges and source locations), omitting the original text and
+reparsing during specialization; version-3 artifacts remain readable. At link time a missing concrete import can
 specialize a template against the importer's canonical structural types,
 reusing the HIR/MIR pipeline; equal requests share a specialization. This is a
-source-backed first slice: generated specializations may have concrete external
+syntax-backed intermediate step: generated specializations may have concrete external
 imports, including imports fulfilled by other templates, which are expanded
 transitively. Linked results contain only concrete specializations. `--emit-c-lib` emits
 standalone C from a resolved library,
@@ -76,15 +78,16 @@ longer-term transitive purity checking needed by parallel `map`.
 
 ## Generic specialization across libraries (partial)
 
-A signature alone cannot instantiate a generic body. Version-3 artifacts
-currently retain the entire provider source module, making generic functions
-available for specialization **without access to the original source file**.
+A signature alone cannot instantiate a generic body. Version-4 artifacts
+persist parsed syntax and token spellings instead of the provider text.
+This avoids reparsing and omits comments/irrelevant whitespace, but does not
+freeze resolved declarations or types. Version-3 source-backed artifacts remain readable.
 The linker remaps imported structural types into the provider's type table,
 builds concrete MIR, recursively expands imports from other libraries, and
 checks each concrete signature. External function declarations in template
-sources still need concrete types. The remaining target is persistent typed
-generic bodies and complete resolved semantic environments, not reparsed source
-text.
+sources still need concrete types. The remaining target is persistent typed or parametric generic IR and complete
+resolved semantic environments; HIR declaration analysis and concrete body
+typing currently still run on each specialization.
 
 At a call boundary:
 

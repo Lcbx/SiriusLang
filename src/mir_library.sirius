@@ -1,9 +1,10 @@
 # Concrete named-export MIR library. Symbols carry structural signatures whose
 # spelling does not depend on local TypeIds or the order of type interning.
-# Version 3 additionally retains named source-backed generic templates.
+# Version 3 retains generic source; version 4 stores a parsed syntax snapshot.
 let MIR_LIBRARY_MAGIC = "SIRIUS-MIR-LIB/1\n"
 let MIR_LIBRARY_IMPORT_MAGIC = "SIRIUS-MIR-LIB/2\n"
 let MIR_LIBRARY_GENERIC_MAGIC = "SIRIUS-MIR-LIB/3\n"
+let MIR_LIBRARY_SYNTAX_MAGIC = "SIRIUS-MIR-LIB/4\n"
 
 # An import occupies a normal, statically typed function slot. Its source
 # declaration has no body and is never executed before linking.
@@ -12,6 +13,7 @@ rec MirLibraryLoad(program: MirProgram, exports: Array[MirNamedExport], error: s
 	pub imports = Array[MirNamedImport]()
 	pub templates = Array[string]()
 	pub source = ""
+	pub snapshot = ""
 
 def mir_type_signature(types: TypeTable, id: i64) -> string
 	if id == TYPE_TAG_I64
@@ -87,8 +89,8 @@ def mir_library_imports_error(program: MirProgram, exports: Array[MirNamedExport
 				return "MIR function cannot be imported and exported"
 	return ""
 
-def mir_library_templates_error(templates: Array[string], source: string) -> string
-	if len(templates) > 4096 or (len(templates) > 0 and source == "")
+def mir_library_templates_error(templates: Array[string], snapshot: string) -> string
+	if len(templates) > 4096 or (len(templates) > 0 and snapshot == "")
 		return "invalid MIR generic templates"
 	var names = Dict[string,bool]()
 	for name in templates
@@ -97,8 +99,8 @@ def mir_library_templates_error(templates: Array[string], source: string) -> str
 		names = names.insert(name, true)
 	return ""
 
-def mir_serialize_library_generic(program: MirProgram, exports: Array[MirNamedExport], imports: Array[MirNamedImport], templates: Array[string], source: string) -> MirWireSave
-	let template_error = mir_library_templates_error(templates, source)
+def mir_serialize_library_generic(program: MirProgram, exports: Array[MirNamedExport], imports: Array[MirNamedImport], templates: Array[string], snapshot: string) -> MirWireSave
+	let template_error = mir_library_templates_error(templates, snapshot)
 	if template_error != ""
 		return MirWireSave("", template_error)
 	if len(exports) == 0 and len(templates) == 0
@@ -117,7 +119,7 @@ def mir_serialize_library_generic(program: MirProgram, exports: Array[MirNamedEx
 		return executable
 	var parts = [MIR_LIBRARY_MAGIC]
 	if len(templates) > 0
-		parts = [MIR_LIBRARY_GENERIC_MAGIC]
+		parts = [MIR_LIBRARY_SYNTAX_MAGIC]
 	elif len(imports) > 0
 		parts = [MIR_LIBRARY_IMPORT_MAGIC]
 	parts = mir_wire_num(parts, len(exports))
@@ -135,7 +137,7 @@ def mir_serialize_library_generic(program: MirProgram, exports: Array[MirNamedEx
 		parts = mir_wire_num(parts, len(templates))
 		for name in templates
 			parts = mir_wire_str(parts, name)
-		parts = mir_wire_str(parts, source)
+		parts = mir_wire_str(parts, snapshot)
 	parts = mir_wire_str(parts, executable.text)
 	let data = "".join(parts)
 	if len(data) > MIR_WIRE_MAX_SIZE
@@ -155,7 +157,9 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 	if len(data) > MIR_WIRE_MAX_SIZE
 		return mir_library_failure("unsupported MIR library format or size")
 	var version = 1
-	if data.starts_with(MIR_LIBRARY_GENERIC_MAGIC)
+	if data.starts_with(MIR_LIBRARY_SYNTAX_MAGIC)
+		version = 4
+	elif data.starts_with(MIR_LIBRARY_GENERIC_MAGIC)
 		version = 3
 	elif data.starts_with(MIR_LIBRARY_IMPORT_MAGIC)
 		version = 2
@@ -166,10 +170,12 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 		start = len(MIR_LIBRARY_IMPORT_MAGIC)
 	elif version == 3
 		start = len(MIR_LIBRARY_GENERIC_MAGIC)
+	elif version == 4
+		start = len(MIR_LIBRARY_SYNTAX_MAGIC)
 	var reader = MirWireReader(data, start, "")
 	let count = mir_wire_count(reader)
 	reader = count.reader
-	if reader.error != "" or (version != 3 and count.value == 0) or count.value > 4096
+	if reader.error != "" or (version < 3 and count.value == 0) or count.value > 4096
 		return mir_library_failure("invalid MIR export count")
 	var exports = Array[MirNamedExport]()
 	var signatures = Array[string]()
@@ -200,7 +206,8 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 			import_signatures = import_signatures.append(signature.value)
 	var templates = Array[string]()
 	var source = ""
-	if version == 3
+	var snapshot = ""
+	if version >= 3
 		let template_count = mir_wire_count(reader)
 		reader = template_count.reader
 		if reader.error != "" or template_count.value == 0 or template_count.value > 4096
@@ -213,8 +220,14 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 			templates = templates.append(name.value)
 		let stored_source = mir_wire_string(reader)
 		reader = stored_source.reader
-		source = stored_source.value
-		let template_error = mir_library_templates_error(templates, source)
+		if version == 3
+			source = stored_source.value
+		else
+			snapshot = stored_source.value
+			let validated = mir_deserialize_template(snapshot)
+			if validated.error != ""
+				return mir_library_failure(validated.error)
+		let template_error = mir_library_templates_error(templates, stored_source.value)
 		if template_error != ""
 			return mir_library_failure(template_error)
 	let payload = mir_wire_string(reader)
@@ -244,4 +257,5 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 	result.imports = imports
 	result.templates = templates
 	result.source = source
+	result.snapshot = snapshot
 	return result

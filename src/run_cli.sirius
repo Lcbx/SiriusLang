@@ -12,7 +12,7 @@ def run_positive_limit(value: string, maximum: i64) -> i64
 		return -1
 	return result
 
-# The linker merges concrete libraries and expands source-backed templates;
+# The linker merges concrete libraries and expands syntax-backed templates;
 # the source runner and interpreter remain independent of native emission.
 def run_link_libraries(args: Array[string]) -> i64
 	if len(args) < 5
@@ -263,7 +263,14 @@ def main() -> i64
 				if not found
 					eprint("unknown generic template: " + name)
 					return 2
-			let saved = mir_serialize_library_generic(program, exports, imports, template_names, source)
+			var snapshot = ""
+			if len(template_names) > 0
+				let stored = mir_serialize_template(parsed.state, parsed.node)
+				if stored.error != ""
+					eprint("cannot save generic syntax: " + stored.error)
+					return 2
+				snapshot = stored.text
+			let saved = mir_serialize_library_generic(program, exports, imports, template_names, snapshot)
 			if saved.error != ""
 				eprint("cannot serialize MIR library: " + saved.error)
 				return 2

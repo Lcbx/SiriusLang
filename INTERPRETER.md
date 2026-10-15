@@ -118,7 +118,7 @@ typed-placeholder sources, but is no longer needed for new code.
 python tools/test_mir_generic.py
 ```
 
-`SIRIUS-MIR-LIB/3` stores provider source and named templates, which need not
+`SIRIUS-MIR-LIB/4` stores a parsed syntax snapshot and named templates, which need not
 have concrete roots. Consumers use concrete `extern def` declarations; the
 linker instantiates missing imports against the provider module, remapping
 structural argument types and checking the full resulting signature. Equal
@@ -126,9 +126,9 @@ requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
 backends. A specialization can import other concrete functions or templates from separate
 artifacts; the linker resolves these transitive dependencies using concrete
-structural signatures. Missing or mismatched providers are rejected. Saved
-templates are still source-backed, and external declarations must be concrete;
-typed generic HIR is not persisted.
+structural signatures. Missing or mismatched providers are rejected. Version-4 templates no longer retain original source text or reparse it during linking.
+Version-3 source-backed libraries remain readable; external declarations must still be concrete.
+Typed generic HIR and resolved declaration environments are not yet persisted.
 
 ### Native execution of linked concrete libraries
 
@@ -143,7 +143,7 @@ emits a standalone C11 program instead of interpreting it. It requires a fully
 resolved artifact and a zero-argument `i64` entry; this is whole-program backend
 selection, **not** per-function mixed native/interpreted dispatch.
 
-Imports can resolve either to concrete exports or to source-backed templates.
+Imports can resolve either to concrete exports or to syntax-backed generic templates.
 True source modules, persisted typed generic artifacts, native registration,
 and mixed native/interpreted calls remain unimplemented. See
 [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).

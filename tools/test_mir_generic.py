@@ -20,6 +20,41 @@ def must_run(binary: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
 	return result
 
 
+def legacy_v3(data: bytes, source: str) -> bytes:
+	"""Rewrite a v4 syntax-snapshot provider as a historical v3 source provider."""
+	assert data.startswith(b'SIRIUS-MIR-LIB/4\n')
+	pos = len(b'SIRIUS-MIR-LIB/4\n')
+	def integer() -> int:
+		nonlocal pos
+		end = data.index(b'\n', pos)
+		value = int(data[pos:end])
+		pos = end + 1
+		return value
+	def field() -> bytes:
+		nonlocal pos
+		size = integer()
+		value = data[pos:pos + size]
+		pos += size
+		assert data[pos:pos + 1] == b'\n'
+		pos += 1
+		return value
+	for _ in range(integer()):
+		field()
+		integer()
+		field()
+	for _ in range(integer()):
+		field()
+		integer()
+		field()
+	for _ in range(integer()):
+		field()
+	snapshot_start = pos
+	assert field().startswith(b'SIRIUS-TEMPLATE-AST/1\n')
+	encoded = source.encode()
+	return (b'SIRIUS-MIR-LIB/3\n' + data[len(b'SIRIUS-MIR-LIB/4\n'):snapshot_start]
+		+ str(len(encoded)).encode() + b'\n' + encoded + b'\n' + data[pos:])
+
+
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path)
@@ -33,11 +68,21 @@ def main() -> None:
 			file.write_text(text)
 			return file
 
-		provider = source('provider', 'def identity(x)\n\treturn x\n'
+		provider_text = '# AST snapshot does not retain source comments: PRIVATE_SOURCE_COMMENT\n' + (
+			'def identity(x)\n\treturn x\n'
 			'def doubled(x)\n\treturn identity(x) + identity(x)\n')
+		provider = source('provider', provider_text)
 		lib = work / 'provider.smirl'
 		must_run(runner, '--emit-lib', lib, '--template', 'identity', '--template', 'doubled', provider)
-		assert lib.read_bytes().startswith(b'SIRIUS-MIR-LIB/3\n')
+		assert lib.read_bytes().startswith(b'SIRIUS-MIR-LIB/4\n')
+		assert b'SIRIUS-TEMPLATE-AST/1\n' in lib.read_bytes()
+		assert b'PRIVATE_SOURCE_COMMENT' not in lib.read_bytes()
+		again = work / 'provider_again.smirl'
+		must_run(runner, '--emit-lib', again, '--template', 'identity', '--template', 'doubled', provider)
+		assert again.read_bytes() == lib.read_bytes()
+		old_lib = work / 'old_provider.smirl'
+		old_lib.write_bytes(legacy_v3(lib.read_bytes(), provider_text))
+		assert run(runner, '--list-lib', old_lib).stdout == b'template identity\ntemplate doubled\n'
 		assert run(runner, '--list-lib', lib).stdout == b'template identity\ntemplate doubled\n'
 		provider.unlink()  # The saved library is independent of its source file.
 		assert run(runner, '--load-lib', lib).returncode == 2
@@ -60,7 +105,10 @@ def main() -> None:
 			output = work / f'{name}.smirl'
 			must_run(runner, '--emit-lib', output, '--export', f'test_{name}', file)
 			imports.append(output)
+		# Version-3 source-backed artifacts are still loadable and linkable.
 		combined = work / 'linked.smirl'
+		must_run(runner, '--link-lib', combined, imports[0], old_lib)
+		assert run(runner, '--entry', 'test_int', '--load-lib', combined).returncode == 42
 		must_run(runner, '--link-lib', combined, *imports, lib)
 		assert run(runner, '--list-lib', combined).stdout == b''.join(
 			f'test_{name} : ()->i64\n'.encode() for name, _, _ in consumers)
@@ -70,7 +118,7 @@ def main() -> None:
 		must_run(runner, '--link-lib', combined, lib, *imports)
 		for name, _, expected in consumers:
 			assert run(runner, '--entry', f'test_{name}', '--load-lib', combined).returncode == expected
-		print('PASS generic: template-only v3, i64/string/array/record, nested functions, reuse, link orders')
+		print('PASS generic: template-only v4, i64/string/array/record, nested functions, reuse, link orders')
 
 		# The resulting concrete library uses the unchanged native/interpreted MIR
 		# representation; both backends must execute the same specialization.
@@ -190,12 +238,19 @@ def main() -> None:
 		assert run(native).returncode == 8
 		print('PASS generic: structural records and interpreted/native parity across dependencies')
 
-		provider = source('provider', 'def identity(x)\n\treturn x\n'
+		provider_text = '# AST snapshot does not retain source comments: PRIVATE_SOURCE_COMMENT\n' + (
+			'def identity(x)\n\treturn x\n'
 			'def doubled(x)\n\treturn identity(x) + identity(x)\n')
+		provider = source('provider', provider_text)
 		for flags, expected in ((('--template', 'nonexistent'), b'unknown generic template'),
 			(('--template', 'identity', '--template', 'identity'), b'duplicate MIR generic template')):
 			result = run(runner, '--emit-lib', work / 'invalid.smirl', *flags, provider)
 			assert result.returncode != 0 and expected in result.stdout + result.stderr, result
+		invalid_snapshot = work / 'invalid_snapshot.smirl'
+		invalid_snapshot.write_bytes(lib.read_bytes().replace(b'SIRIUS-TEMPLATE-AST/1\n',
+			b'SIRIUS-TEMPLATE-AST/0\n', 1))
+		result = run(runner, '--list-lib', invalid_snapshot)
+		assert result.returncode != 0 and b'unsupported generic syntax snapshot' in result.stderr, result
 		truncated = work / 'truncated.smirl'
 		truncated.write_bytes(lib.read_bytes()[:-40])
 		result = run(runner, '--list-lib', truncated)
