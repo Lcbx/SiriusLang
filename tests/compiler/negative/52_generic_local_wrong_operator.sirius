@@ -1,0 +1,10 @@
+# A saved symbolic expression must still be checked at specialization time.
+def three_times(x)
+	let twice = x + x
+	let result = twice + x
+	return result
+
+def main() -> i64
+	if three_times(true)
+		return 1
+	return 0

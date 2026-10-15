@@ -59,6 +59,8 @@ ERRORS = {
 	'48_nested_wrong_value': 'expected i64, found string',
 	'49_nested_bad_index': 'expected i64, found string',
 	'51_nested_invalid_augmented_type': 'unsupported MIR augmented assignment',
+	'52_generic_local_wrong_operator': 'arithmetic requires numeric operands',
+	'53_generic_local_duplicate': "duplicate binding 'value'",
 
 }
 

@@ -1,0 +1,8 @@
+# Duplicate let bindings in the same block are not silently overwritten.
+def pick(x)
+	let value = x
+	let value = x
+	return value
+
+def main() -> i64
+	return pick(1)

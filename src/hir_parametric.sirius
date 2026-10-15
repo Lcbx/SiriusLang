@@ -1,27 +1,31 @@
-# Type-parameterized HIR for single-expression generic returns.
+# Type-parameterized HIR for immutable locals and a final return.
 # Negative type IDs below -1 represent argument type parameters. More
 # complex bodies continue through the ordinary concrete HIR analyzer.
 
 rec HirParametricExpression(nodes: Array[HirNode], type_id: i64, valid: bool)
 
-def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64) -> HirParametricExpression
+def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64, locals: Array[string], local_types: Array[i64]) -> HirParametricExpression
 	let node = tree.nodes[!id]
 	let literal = resolve_hir_literal(node.kind)
 	if literal != TYPE_TAG_INVALID
 		return HirParametricExpression([HirNode(id, HIR_LITERAL, literal, -1)], literal, true)
 	if node.kind == NODE_NAME
 		let name = hir_ast_text(tree, id)
+		for offset in 0..len(locals)
+			let i = len(locals) - 1 - offset
+			if locals[!i] == name
+				return HirParametricExpression([HirNode(id, HIR_NAME, local_types[!i], len(header.parameters) + i)], local_types[!i], true)
 		for offset in 0..len(header.parameters)
 			let i = len(header.parameters) - 1 - offset
 			if header.parameters[!i].name == name
 				let type_id = -2 - i
 				return HirParametricExpression([HirNode(id, HIR_NAME, type_id, i)], type_id, true)
 	if node.kind == NODE_BINARY and node.count == 2
-		let lhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0))
-		let rhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 1))
+		let lhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0), locals, local_types)
+		let rhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 1), locals, local_types)
 		if lhs.valid and rhs.valid
 			let operator = hir_ast_text(tree, id)
-			if operator != "+" and operator != "-" and operator != "*" and operator != "/" and operator != "%" and operator != "and" and operator != "==" and operator != "!=" and operator != "<" and operator != "<=" and operator != ">" and operator != ">="
+			if operator != "+" and operator != "-" and operator != "*" and operator != "/" and operator != "%" and operator != "and" and operator != "or" and operator != "==" and operator != "!=" and operator != "<" and operator != "<=" and operator != ">" and operator != ">="
 				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 			var result_type = lhs.type_id
 			if operator == "==" or operator == "!=" or operator == "<" or operator == "<=" or operator == ">" or operator == ">=" or operator == "and" or operator == "or"
@@ -31,7 +35,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 				nodes = nodes.append(typed)
 			return HirParametricExpression(nodes.append(HirNode(id, HIR_BINARY, result_type, -1)), result_type, true)
 	if node.kind == NODE_UNARY and node.count == 1
-		let value = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0))
+		let value = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0), locals, local_types)
 		if value.valid
 			let operator = hir_ast_text(tree, id)
 			if operator != "-" and operator != "+" and operator != "not"
@@ -43,22 +47,44 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 	return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 
 def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl) -> HirParametricBody
-	var empty = HirParametricBody(header.body, Array[HirNode](), TYPE_TAG_INVALID)
+	let empty = HirParametricBody(header.body, Array[HirNode](), TYPE_TAG_INVALID)
 	if header.external or header.constructor or header.result_type_node >= 0
 		return empty
 	for param in header.parameters
 		if param.type_node >= 0
 			return empty
 	let block = tree.nodes[!header.body]
-	if block.kind != NODE_BLOCK or block.count != 1
+	if block.kind != NODE_BLOCK or block.count == 0
 		return empty
-	let statement = hir_ast_child(tree, header.body, 0)
-	if tree.nodes[!statement].kind != NODE_RETURN or tree.nodes[!statement].count != 1
-		return empty
-	let result = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0))
-	if not result.valid
-		return empty
-	return HirParametricBody(header.body, result.nodes, result.type_id)
+	var nodes = Array[HirNode]()
+	var locals = Array[string]()
+	var local_types = Array[i64]()
+	for i in 0..block.count
+		let statement = hir_ast_child(tree, header.body, i)
+		let kind = tree.nodes[!statement].kind
+		if kind == NODE_LET and i + 1 < block.count and tree.nodes[!statement].count == 1
+			let name = hir_ast_text(tree, statement)
+			for previous in locals
+				if previous == name
+					return empty
+			let value = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0), locals, local_types)
+			if not value.valid
+				return empty
+			for typed in value.nodes
+				nodes = nodes.append(typed)
+			nodes = nodes.append(HirNode(statement, HIR_BINDING, value.type_id, len(header.parameters) + len(locals)))
+			locals = locals.append(name)
+			local_types = local_types.append(value.type_id)
+		elif kind == NODE_RETURN and i + 1 == block.count and tree.nodes[!statement].count == 1
+			let result = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0), locals, local_types)
+			if not result.valid
+				return empty
+			for typed in result.nodes
+				nodes = nodes.append(typed)
+			return HirParametricBody(header.body, nodes, result.type_id)
+		else
+			return empty
+	return empty
 
 def hir_parametric_type(symbolic: i64, arguments: Array[i64]) -> i64
 	if symbolic >= 0
@@ -80,7 +106,13 @@ def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, types:
 	var nodes = Array[HirNode]()
 	for node in plan.nodes
 		var type_id = hir_parametric_type(node.type_id, arguments)
-		if node.operation == HIR_BINARY
+		if node.operation == HIR_BINDING
+			type_id = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 0))
+		elif node.operation == HIR_NAME and node.field_index >= len(arguments)
+			for previous in nodes
+				if previous.operation == HIR_BINDING and previous.field_index == node.field_index
+					type_id = previous.type_id
+		elif node.operation == HIR_BINARY
 			let lhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 0))
 			let rhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 1))
 			let checked = resolve_hir_binary(types, lhs, rhs, hir_ast_text(tree, node.source))

@@ -116,6 +116,7 @@ typed-placeholder sources, but is no longer needed for new code.
 ./sirius-run --emit-lib consumer.smirl --export consumer consumer.sirius
 ./sirius-run --link-lib combined.smirl consumer.smirl generic.smirl
 python tools/test_mir_generic.py
+python tools/test_mir_generic_semantics.py
 ```
 
 `SIRIUS-MIR-LIB/6` stores a parsed syntax snapshot, validated resolved declarations, a limited parameterized HIR subset and named templates, which need not
@@ -126,7 +127,7 @@ requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
 backends. A specialization can import other concrete functions or templates from separate
 artifacts; the linker resolves these transitive dependencies using concrete
-structural signatures. Missing or mismatched providers are rejected. Version-6 templates contain module constants, canonical declaration types and symbolic-type HIR annotations for supported single-expression generic bodies, without retaining original source text. The loader checks metadata against syntax; concrete operator validity is still checked at specialization. More complex bodies fall back to the normal concrete analyzer. Versions 3–5 remain readable; external declarations must still be concrete.
+structural signatures. Missing or mismatched providers are rejected. Version-6 templates contain module constants, canonical declaration types and symbolic-type HIR annotations for immutable `let` bindings and a final return (including single-expression returns), without retaining original source text. The loader checks metadata against syntax; concrete local types and operators are revalidated at specialization. Control flow, mutation, calls and complex bodies still use the normal analyzer. Versions 3–5 remain readable; external declarations must still be concrete.
 
 ### Native execution of linked concrete libraries
 

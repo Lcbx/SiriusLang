@@ -1,0 +1,8 @@
+# DEFERRED: path-derived module imports and public generic exports.
+export def triple(x)
+	let twice = x + x
+	return twice + x
+
+export def copy(x)
+	let original = x
+	return original

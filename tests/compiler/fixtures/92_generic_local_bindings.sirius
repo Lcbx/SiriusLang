@@ -1,0 +1,33 @@
+# Normal language semantics: infer immutable local types separately for each
+# concrete specialization, with no value sharing between calls.
+def three_times(x)
+	let twice = x + x
+	let result = twice + x
+	return result
+
+def self_equal(x)
+	let equal = x == x
+	return equal
+
+def short_circuit(x)
+	let ok = x or true
+	return ok
+
+def with_branch(x)
+	let value = x + 1
+	if value > 5
+		return value
+	return x
+
+def shadow(x)
+	let x = x + 1
+	return x
+
+def main() -> i64
+	print(three_times(7))
+	print(three_times("go"))
+	print(self_equal("Sirius"))
+	print(short_circuit(false))
+	print(with_branch(7))
+	print(shadow(4))
+	return 0

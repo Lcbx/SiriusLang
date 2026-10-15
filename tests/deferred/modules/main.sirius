@@ -1,0 +1,12 @@
+# DEFERRED: import resolves a namespace at compile time, not a runtime object.
+import Math.Generic alias Generic
+
+def main() -> i64
+	let a = Generic.triple(6)
+	let b = Generic.triple("go")
+	var point = {x = a, y = 2}
+	let original = Generic.copy(point)
+	point.x = 99
+	if original.x != 18 or point.x != 99 or b != "gogogo"
+		return 1
+	return 0

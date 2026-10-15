@@ -17,8 +17,8 @@ or completeness guarantee.
    with both interpreter and native tests.
 3. **Language features:** add missing semantic constructs in vertical slices
    (HIR → MIR → native/interpreter → tests), while preserving self-hosting.
-4. **Modules/libraries:** build on persistent syntax and resolved declaration
-   environments with parametric IR; follow with mixed native/interpreted calls. Compile-time MIR execution is postponed.
+4. **Modules/libraries:** expand persistent parameterized HIR and exercise
+   final source/value semantics in regressions; follow with mixed native/interpreted calls. Compile-time MIR execution is postponed.
 
 **Completed foundation:** MIR is the default C backend; the compiler produces a
 byte-identical native self-hosting fixed point. The legacy Sirius C emitter is
@@ -57,10 +57,14 @@ imports are implemented. There is no Python compiler in the active workflow.
   in version-5 generic artifacts, validating them against syntax at load and
   reusing a provider context for all link-time specializations.
 - [x] Persist a first parameterized HIR subset in version-6 libraries: symbolic
-  argument types for single-expression returns (names, literals, scalar unary/
-  binary expressions), validated during loading and instantiated with concrete
-  operator checks. All other bodies fall back to concrete HIR analysis.
-- [ ] Generalize persisted parameterized HIR to bindings, control flow, calls,
+  argument types for expression returns and immutable `let` bindings (names,
+  literals, scalar unary/binary expressions), validated during loading and
+  instantiated with concrete operator/local-type checks. Unsupported bodies
+  fall back to concrete HIR analysis.
+- [x] Persist simple immutable `let` bindings followed by a return in parameterized
+  HIR; concretely validate inferred local types, operators and name resolution.
+  Keep ordinary body analysis for unsupported constructs.
+- [ ] Generalize persisted parameterized HIR to control flow, calls,
   record/collection expressions, semantic imports and constructors.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
