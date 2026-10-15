@@ -4,6 +4,7 @@
 # The backend owns only MIR output; HIR analyses remain local to lowering.
 rec MirProgramBuild(program: MirProgram, entry: i64, error: string)
 	pub exports = Array[MirNamedExport]()
+	pub symbols = Array[MirNamedExport]()
 
 def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names: Array[string], arguments: Array[i64]) -> MirProgramBuild
 	let analyzed = hir_specialize_program_roots(tree, declarations, names, arguments)
@@ -39,6 +40,10 @@ def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names
 	var result = MirProgramBuild(optimized.program, analyzed.entry, audited.error)
 	for root in analyzed.roots
 		result.exports = result.exports.append(MirNamedExport(root.name, root.function_id))
+	for i in 0..len(analyzed.registry.entries)
+		let spec = analyzed.registry.entries[!i]
+		let definition = hir_definition(declarations.functions, spec.definition)
+		result.symbols = result.symbols.append(MirNamedExport(declarations.functions[!definition].name, i))
 	return result
 
 def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild

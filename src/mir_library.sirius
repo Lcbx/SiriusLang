@@ -2,8 +2,13 @@
 # spelling does not depend on local TypeIds or the order of type interning.
 # These archives do not contain generic declarations or unresolved imports.
 let MIR_LIBRARY_MAGIC = "SIRIUS-MIR-LIB/1\n"
+let MIR_LIBRARY_IMPORT_MAGIC = "SIRIUS-MIR-LIB/2\n"
 
+# An import occupies a normal, statically typed function slot. Its source
+# implementation is a signature placeholder, never executed before linking.
+rec MirNamedImport(name: string, function_id: i64)
 rec MirLibraryLoad(program: MirProgram, exports: Array[MirNamedExport], error: string)
+	pub imports = Array[MirNamedImport]()
 
 def mir_type_signature(types: TypeTable, id: i64) -> string
 	if id == TYPE_TAG_I64
@@ -62,32 +67,71 @@ def mir_library_exports_error(program: MirProgram, exports: Array[MirNamedExport
 			return "invalid MIR exported function"
 	return ""
 
-def mir_serialize_library(program: MirProgram, exports: Array[MirNamedExport]) -> MirWireSave
+def mir_library_imports_error(program: MirProgram, exports: Array[MirNamedExport], imports: Array[MirNamedImport]) -> string
+	if len(imports) > 4096
+		return "invalid MIR import count"
+	var names = Dict[string,bool]()
+	for symbol in imports
+		if not mir_library_name_valid(symbol.name)
+			return "invalid MIR import name"
+		if names.get(symbol.name) or false
+			return "duplicate MIR import: " + symbol.name
+		names = names.insert(symbol.name, true)
+		if symbol.function_id < 0 or symbol.function_id >= len(program.functions)
+			return "invalid MIR imported function"
+		for exported in exports
+			if exported.function_id == symbol.function_id
+				return "MIR function cannot be imported and exported"
+	return ""
+
+def mir_serialize_library_imports(program: MirProgram, exports: Array[MirNamedExport], imports: Array[MirNamedImport]) -> MirWireSave
 	let error = mir_library_exports_error(program, exports)
 	if error != ""
 		return MirWireSave("", error)
+	let import_error = mir_library_imports_error(program, exports, imports)
+	if import_error != ""
+		return MirWireSave("", import_error)
 	let executable = mir_serialize_program(program, exports[!0].function_id)
 	if executable.error != ""
 		return executable
 	var parts = [MIR_LIBRARY_MAGIC]
+	if len(imports) > 0
+		parts = [MIR_LIBRARY_IMPORT_MAGIC]
 	parts = mir_wire_num(parts, len(exports))
 	for symbol in exports
 		parts = mir_wire_str(parts, symbol.name)
 		parts = mir_wire_num(parts, symbol.function_id)
 		parts = mir_wire_str(parts, mir_function_signature(program, symbol.function_id))
+	if len(imports) > 0
+		parts = mir_wire_num(parts, len(imports))
+		for symbol in imports
+			parts = mir_wire_str(parts, symbol.name)
+			parts = mir_wire_num(parts, symbol.function_id)
+			parts = mir_wire_str(parts, mir_function_signature(program, symbol.function_id))
 	parts = mir_wire_str(parts, executable.text)
 	let data = "".join(parts)
 	if len(data) > MIR_WIRE_MAX_SIZE
 		return MirWireSave("", "MIR library exceeds format size limit")
 	return MirWireSave(data, "")
 
+def mir_serialize_library(program: MirProgram, exports: Array[MirNamedExport]) -> MirWireSave
+	return mir_serialize_library_imports(program, exports, Array[MirNamedImport]())
+
 def mir_library_failure(error: string) -> MirLibraryLoad
 	return MirLibraryLoad(MirProgram(Array[MirFunction]()), Array[MirNamedExport](), error)
 
 def mir_deserialize_library(data: string) -> MirLibraryLoad
-	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_LIBRARY_MAGIC)
+	if len(data) > MIR_WIRE_MAX_SIZE
 		return mir_library_failure("unsupported MIR library format or size")
-	var reader = MirWireReader(data, len(MIR_LIBRARY_MAGIC), "")
+	var version = 1
+	if data.starts_with(MIR_LIBRARY_IMPORT_MAGIC)
+		version = 2
+	elif not data.starts_with(MIR_LIBRARY_MAGIC)
+		return mir_library_failure("unsupported MIR library format or size")
+	var start = len(MIR_LIBRARY_MAGIC)
+	if version == 2
+		start = len(MIR_LIBRARY_IMPORT_MAGIC)
+	var reader = MirWireReader(data, start, "")
 	let count = mir_wire_count(reader)
 	reader = count.reader
 	if reader.error != "" or count.value == 0 or count.value > 4096
@@ -103,6 +147,22 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 			return mir_library_failure(reader.error)
 		exports = exports.append(MirNamedExport(name.value, id.value))
 		signatures = signatures.append(signature.value)
+	var imports = Array[MirNamedImport]()
+	var import_signatures = Array[string]()
+	if version == 2
+		let import_count = mir_wire_count(reader)
+		reader = import_count.reader
+		if reader.error != "" or import_count.value == 0 or import_count.value > 4096
+			return mir_library_failure("invalid MIR import count")
+		for i in 0..import_count.value
+			let name = mir_wire_string(reader)
+			let id = mir_wire_number(name.reader)
+			let signature = mir_wire_string(id.reader)
+			reader = signature.reader
+			if reader.error != ""
+				return mir_library_failure(reader.error)
+			imports = imports.append(MirNamedImport(name.value, id.value))
+			import_signatures = import_signatures.append(signature.value)
 	let payload = mir_wire_string(reader)
 	reader = payload.reader
 	if reader.error != "" or reader.at != len(data)
@@ -118,4 +178,12 @@ def mir_deserialize_library(data: string) -> MirLibraryLoad
 	for i in 0..len(exports)
 		if mir_function_signature(loaded.program, exports[!i].function_id) != signatures[!i]
 			return mir_library_failure("MIR exported signature mismatch")
-	return MirLibraryLoad(loaded.program, exports, "")
+	let import_error = mir_library_imports_error(loaded.program, exports, imports)
+	if import_error != ""
+		return mir_library_failure(import_error)
+	for i in 0..len(imports)
+		if mir_function_signature(loaded.program, imports[!i].function_id) != import_signatures[!i]
+			return mir_library_failure("MIR imported signature mismatch")
+	var result = MirLibraryLoad(loaded.program, exports, "")
+	result.imports = imports
+	return result

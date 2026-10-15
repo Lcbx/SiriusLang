@@ -42,8 +42,11 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    Versioned executable MIR serialization is available through
    `sirius-run --emit-mir`/`--load-mir`. Concrete multi-entry libraries now
    support `--emit-lib`, `--list-lib` and `--load-lib`, with named exports,
-   type signatures and validation. Source imports, generic library specialization
-   and native linking remain future work.
+   type signatures and validation. `--link-lib` merges independently serialized
+   concrete libraries with canonical type remapping, local call relocation
+   and named concrete import resolution (`SIRIUS-MIR-LIB/2`). Source-level
+   imports/external declarations, generic library specialization and native
+   linking remain future work; the current CLI uses typed placeholder bodies.
    Keep further slices isolated and protect MIR self-hosting and snapshots.
 
 **Decisions:** maintain both backends; retain the self-hosted C bootstrap;

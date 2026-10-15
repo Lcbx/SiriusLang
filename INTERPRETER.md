@@ -75,9 +75,46 @@ requires return type `i64`. The loader verifies unique export names, function
 indices and the stored signatures against reconstructed MIR types before any
 execution. `SIRIUS-MIR-EXEC/1` remains unchanged and compatible.
 
-Library imports, external unresolved calls, generic exported bodies, linking of
-two artifacts, C registration and native/interpreter interop are **not** yet
-implemented. `--entry` must precede `--load-lib` in the CLI invocation.
+Independent **concrete** libraries can now be combined into a single library
+without their original source files:
+
+```sh
+./sirius-run --link-lib combined.smirl a.smirl b.smirl
+./sirius-run --list-lib combined.smirl
+./sirius-run --entry foo --load-lib combined.smirl
+python tools/test_mir_link.py
+```
+
+`src/mir_link.sirius` interns all composite types into a merged `TypeTable`,
+rewrites register and return types, relocates `MIR_CALL`/`MIR_CALL_MOVE`
+function indices and exports, and verifies the linked program. Duplicate
+exports are rejected; linking the same ordered inputs is deterministic.
+Existing `SIRIUS-MIR-LIB/1` files are unchanged.
+
+Concrete cross-library calls are now supported using `SIRIUS-MIR-LIB/2`
+import metadata. When compiling a consumer, `--import NAME` identifies exactly
+one already-specialized function by source name and records its structural
+signature and local function slot. The source function body is a temporary
+typed placeholder, because Sirius does not yet have external declarations.
+`--expose NAME` exports a single non-root specialization reachable from an
+explicit zero-argument `--export` root. Version-1 input libraries remain valid.
+
+```sh
+./sirius-run --emit-lib consumer.smirl --export consumer --import helper consumer.sirius
+./sirius-run --emit-lib provider.smirl --export provider --expose helper provider.sirius
+./sirius-run --link-lib combined.smirl consumer.smirl provider.smirl
+./sirius-run --entry consumer --load-lib combined.smirl
+python tools/test_mir_import.py
+```
+
+The linker resolves imported calls by name and canonical function signature,
+including `MIR_CALL_MOVE` managed arguments. It rejects missing providers,
+mismatches and forged imported signatures. An unlinked library with imports can
+be inspected but not executed; successful linking emits the ordinary version-1
+library format. Multiple concrete specializations for one import/export name,
+source-level imports, generic bodies, C registration and native/interpreter
+interop remain unimplemented. `--entry` must precede `--load-lib`.
+
 
 ## Run isolated tests
 
@@ -152,9 +189,11 @@ Compile-time diagnostics still use the compiler's existing stdout format.
    ownership cleanup for implicit aborts still need work.
 3. **Done in part:** 91 positive fixtures, 18 differential examples and three
    runtime-failure cases; add more corner cases and CLI execution budgets.
-4. **Done:** versioned serialization and loading of concrete MIR executables,
-   with validation and round-trip tests. Next: exported symbol metadata and
-   interpreted/compiled library boundaries. General comptime remains deferred.
+4. **Done:** versioned concrete MIR executables and multi-entry libraries,
+   plus merging of independently serialized libraries with type and call-ID
+   remapping, plus named concrete imports resolved by structural signatures.
+   Next: real source-level external declarations/imports and generic library
+   specialization, then native dispatch. General comptime remains deferred.
 
 ### Dictionary limitations
 

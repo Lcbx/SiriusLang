@@ -149,6 +149,9 @@ Named concrete libraries (no source-level `export` declaration required yet):
 ./sirius-run --list-lib utils.smirl
 ./sirius-run --entry second --load-lib utils.smirl
 python tools/test_mir_library.py
+# Merge independently compiled concrete libraries:
+./sirius-run --link-lib combined.smirl utils.smirl other.smirl
+python tools/test_mir_link.py
 ```
 
 A library includes all concrete specializations reachable from its zero-argument
@@ -156,8 +159,44 @@ export roots, with named function indices and structural signatures independent
 of local `TypeId` ordering. The loader validates export uniqueness, signatures,
 serialized MIR and ownership before execution. Direct selection requires a
 `()->i64` entry; other concrete return types can be exported and inspected.
-This is not yet cross-library linking: there are no imports, unresolved symbols,
-exported generic bodies or native registration hooks.
+The linker merges canonical type descriptors, relocates internal and imported
+calls and preserves named exports. It rejects duplicate names, unresolved
+imports and incompatible structural signatures, then verifies ownership of the
+merged MIR. For the first concrete-import implementation, `--import NAME`
+marks a *typed source function body* as a temporary import placeholder, and
+`--expose NAME` exports an already-specialized non-root function. For example:
+
+```sirius
+# consumer.sirius
+# A typed placeholder, replaced at link time; never called before linking.
+def twice(x: i64) -> i64
+	return 0
+def consumer() -> i64
+	return twice(5)
+```
+
+```sirius
+# provider.sirius
+def twice(x: i64) -> i64
+	return x * 2
+def provider() -> i64
+	return twice(3)
+```
+
+```sh
+./sirius-run --emit-lib consumer.smirl --export consumer --import twice consumer.sirius
+./sirius-run --emit-lib provider.smirl --export provider --expose twice provider.sirius
+./sirius-run --link-lib combined.smirl consumer.smirl provider.smirl
+./sirius-run --entry consumer --load-lib combined.smirl # exit status 10
+python tools/test_mir_import.py
+```
+
+Importing libraries use `SIRIUS-MIR-LIB/2` and cannot execute until all imports
+are linked; independent libraries remain `SIRIUS-MIR-LIB/1`. Each imported or
+exposed name must identify exactly one specialized function in the source's
+reachable graph. Source-level external declarations/import syntax, generic
+specialization across library boundaries and native registration are still
+future work.
 
 For phase-level performance profiling of the native MIR compiler, see
 [MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`.

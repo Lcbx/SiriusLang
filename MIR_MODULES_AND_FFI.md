@@ -1,6 +1,6 @@
 # Sirius — MIR, Modules, Libraries, and FFI
 
-> **Status:** Library/module/FFI design target. Concrete executable MIR serialization and named concrete libraries are implemented; generic libraries and cross-artifact linking are not. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
+> **Status:** Library/module/FFI design target. Concrete executable MIR serialization, named exports, cross-artifact merging and signature-checked concrete imports are implemented. Source-level module imports and generic library linking are not. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
 
 ## 1. Module resolution and visibility
 
@@ -49,7 +49,10 @@ the format, types and ownership before execution. Version compatibility is
 currently exact. The separate `SIRIUS-MIR-LIB/1` format supports multiple
 named concrete zero-argument roots and canonical structural signatures. It
 validates names, indices and signatures on loading, and carries the entire
-concrete transitive call graph, but does not support dependencies or imports. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
+concrete transitive call graph, and supports dependency calls through `SIRIUS-MIR-LIB/2` import slots,
+resolved by name and structural concrete signature at link time. The current
+source-level bridge uses placeholder function bodies; no external declarations
+or partial generic linking exist yet. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
 
 The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 

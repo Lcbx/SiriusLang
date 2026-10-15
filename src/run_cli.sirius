@@ -12,8 +12,40 @@ def run_positive_limit(value: string, maximum: i64) -> i64
 		return -1
 	return result
 
+# The linker operates on complete concrete libraries; the source compiler
+# and interpreter paths remain independent of linking.
+def run_link_libraries(args: Array[string]) -> i64
+	if len(args) < 5
+		eprint("usage: sirius-run --link-lib output.smirl input1.smirl input2.smirl ...")
+		return 2
+	var inputs = Array[MirLibraryLoad]()
+	for i in 3..len(args)
+		let contents = read_text(args[!i]) or ""
+		if contents == ""
+			eprint("cannot read MIR library: " + args[!i])
+			return 2
+		let library = mir_deserialize_library(contents)
+		if library.error != ""
+			eprint("invalid MIR library: " + library.error)
+			return 2
+		inputs = inputs.append(library)
+	let linked = mir_link_libraries(inputs)
+	if linked.error != ""
+		eprint("cannot link MIR libraries: " + linked.error)
+		return 2
+	let saved = mir_serialize_library(linked.program, linked.exports)
+	if saved.error != ""
+		eprint("cannot serialize linked MIR library: " + saved.error)
+		return 2
+	if not write_text(args[!2], saved.text)
+		eprint("cannot write linked MIR library")
+		return 2
+	return 0
+
 def main() -> i64
 	let args = arguments()
+	if len(args) > 1 and args[!1] == "--link-lib"
+		return run_link_libraries(args)
 	var index = 1
 	var max_steps = 10000000
 	var max_depth = 256
@@ -23,6 +55,8 @@ def main() -> i64
 	var load_lib_path = ""
 	var list_lib = false
 	var export_names = Array[string]()
+	var expose_names = Array[string]()
+	var import_names = Array[string]()
 	var entry_name = ""
 	while index < len(args)
 		let option = args[!index]
@@ -49,12 +83,16 @@ def main() -> i64
 			if load_path != "" or load_lib_path != ""
 				break
 			continue
-		if option == "--export" or option == "--entry"
+		if option == "--export" or option == "--expose" or option == "--import" or option == "--entry"
 			if index + 1 >= len(args)
 				eprint("missing value for " + option)
 				return 2
 			if option == "--export"
 				export_names = export_names.append(args[!index + 1])
+			elif option == "--expose"
+				expose_names = expose_names.append(args[!index + 1])
+			elif option == "--import"
+				import_names = import_names.append(args[!index + 1])
 			else
 				entry_name = args[!index + 1]
 			index += 2
@@ -78,11 +116,11 @@ def main() -> i64
 			max_depth = limit
 		index += 2
 	if load_path == "" and load_lib_path == "" and index >= len(args)
-		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export NAME ...] input.sirius [args...]")
+		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export ROOT [--expose NAME] [--import NAME]] input.sirius [args...]")
 		eprint("       sirius-run [--load-mir file | --entry NAME --load-lib file | --list-lib file] [args...]")
 		return 2
-	if (emit_lib_path == "" and len(export_names) != 0) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
-		eprint("--export requires --emit-lib; --entry requires --load-lib")
+	if (emit_lib_path == "" and (len(export_names) != 0 or len(expose_names) != 0 or len(import_names) != 0)) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
+		eprint("--export, --expose and --import require --emit-lib; --entry requires --load-lib")
 		return 2
 	var program = MirProgram(Array[MirFunction]())
 	var entry_id = -1
@@ -99,7 +137,12 @@ def main() -> i64
 		if list_lib
 			for symbol in library.exports
 				print(symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
+			for symbol in library.imports
+				print("import " + symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
 			return 0
+		if len(library.imports) != 0
+			eprint("cannot execute MIR library with unresolved imports")
+			return 2
 		program = library.program
 		for symbol in library.exports
 			if (entry_name == "" and entry_id < 0) or symbol.name == entry_name
@@ -144,7 +187,27 @@ def main() -> i64
 		program = lowered.program
 		entry_id = lowered.entry
 		if emit_lib_path != ""
-			let saved = mir_serialize_library(program, lowered.exports)
+			var exports = lowered.exports
+			var imports = Array[MirNamedImport]()
+			for name in expose_names
+				var count = 0
+				for symbol in lowered.symbols
+					if symbol.name == name
+						exports = exports.append(symbol)
+						count += 1
+				if count != 1
+					eprint("--expose requires exactly one concrete specialization: " + name)
+					return 2
+			for name in import_names
+				var count = 0
+				for symbol in lowered.symbols
+					if symbol.name == name
+						imports = imports.append(MirNamedImport(name, symbol.function_id))
+						count += 1
+				if count != 1
+					eprint("--import requires exactly one concrete specialization: " + name)
+					return 2
+			let saved = mir_serialize_library_imports(program, exports, imports)
 			if saved.error != ""
 				eprint("cannot serialize MIR library: " + saved.error)
 				return 2

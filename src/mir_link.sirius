@@ -1,0 +1,94 @@
+# Link independently serialized concrete MIR libraries. TypeIds and function
+# indices are local to each input; calls within a library remain internal.
+# Imported calls are resolved by name and canonical concrete signature.
+rec MirLibraryLink(program: MirProgram, exports: Array[MirNamedExport], error: string)
+
+def mir_link_failure(message: string) -> MirLibraryLink
+	return MirLibraryLink(MirProgram(Array[MirFunction]()), Array[MirNamedExport](), message)
+
+def mir_link_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryLink
+	if len(libraries) == 0
+		return mir_link_failure("no MIR libraries to link")
+	var types = new_type_table()
+	var functions = Array[MirFunction]()
+	var exports = Array[MirNamedExport]()
+	var names = Dict[string,bool]()
+	var imports = Array[MirNamedImport]()
+	for library in libraries
+		if library.error != ""
+			return mir_link_failure(library.error)
+		let export_error = mir_library_exports_error(library.program, library.exports)
+		if export_error != ""
+			return mir_link_failure(export_error)
+		let checked = mir_check_balance(library.program)
+		if checked != ""
+			return mir_link_failure("invalid input MIR: " + checked)
+		# Primitives retain their reserved TypeIds. Composite descriptors only
+		# refer to earlier entries in their original canonical type table.
+		var type_map = [0, 1, 2, 3, 4, 5]
+		for i in 6..len(library.program.types.entries)
+			let desc = library.program.types.entries[!i]
+			var fields = Array[RecordField]()
+			for field in desc.fields
+				fields = fields.append(RecordField(field.name, type_map[!field.kind]))
+			let mapped = intern_type(types, desc.tag, type_map[!desc.first], type_map[!desc.second], fields)
+			types = mapped.table
+			type_map = type_map.append(mapped.id)
+		let offset = len(functions)
+		for function in library.program.functions
+			var registers = Array[i64]()
+			for kind in function.register_types
+				registers = registers.append(type_map[!kind])
+			var blocks = Array[MirBlock]()
+			for block in function.blocks
+				var instructions = Array[MirInstruction]()
+				for ins in block.instructions
+					var immediate = ins.immediate
+					if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE
+						immediate += offset
+					instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
+				blocks = blocks.append(MirBlock(instructions, block.terminator))
+			functions = functions.append(MirFunction(function.argument_count, type_map[!function.return_type], registers, blocks, function.entry))
+		for symbol in library.imports
+			imports = imports.append(MirNamedImport(symbol.name, symbol.function_id + offset))
+		for symbol in library.exports
+			if names.get(symbol.name) or false
+				return mir_link_failure("duplicate MIR export: " + symbol.name)
+			names = names.insert(symbol.name, true)
+			exports = exports.append(MirNamedExport(symbol.name, symbol.function_id + offset))
+	# Resolve every imported function slot against a single named export.
+	# Matching structural signatures are independent of remapped TypeIds.
+	var relocations = Array[i64]()
+	for i in 0..len(functions)
+		relocations = relocations.append(i)
+	let unlinked = mir_program_with_types(functions, types)
+	for symbol in imports
+		var target = -1
+		for exported in exports
+			if exported.name == symbol.name
+				target = exported.function_id
+		if target < 0
+			return mir_link_failure("unresolved MIR import: " + symbol.name)
+		if mir_function_signature(unlinked, symbol.function_id) != mir_function_signature(unlinked, target)
+			return mir_link_failure("MIR import signature mismatch: " + symbol.name)
+		relocations[!symbol.function_id] = target
+	# Relocate calls *after* all libraries have been merged. The function
+	# referenced by an imported slot is never executed in the linked program.
+	var resolved = Array[MirFunction]()
+	for function in functions
+		var blocks = Array[MirBlock]()
+		for block in function.blocks
+			var instructions = Array[MirInstruction]()
+			for ins in block.instructions
+				var immediate = ins.immediate
+				if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE
+					immediate = relocations[!immediate]
+				instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
+			blocks = blocks.append(MirBlock(instructions, block.terminator))
+		resolved = resolved.append(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry))
+	functions = resolved
+	let program = mir_program_with_types(functions, types)
+	let verified = mir_check_balance(program)
+	if verified != ""
+		return mir_link_failure("invalid linked MIR: " + verified)
+	return MirLibraryLink(program, exports, "")
