@@ -42,8 +42,43 @@ def run_link_libraries(args: Array[string]) -> i64
 		return 2
 	return 0
 
+# Emit native C from the same linked concrete MIR artifact accepted by the
+# interpreter. This selects a whole-program backend, not mixed call dispatch.
+def run_emit_library_c(args: Array[string]) -> i64
+	if len(args) != 6 or args[!3] != "--entry"
+		eprint("usage: sirius-run --emit-c-lib output.c --entry NAME input.smirl")
+		return 2
+	let contents = read_text(args[!5]) or ""
+	if contents == ""
+		eprint("cannot read MIR library")
+		return 2
+	let library = mir_deserialize_library(contents)
+	if library.error != ""
+		eprint("invalid MIR library: " + library.error)
+		return 2
+	if len(library.imports) != 0
+		eprint("cannot compile MIR library with unresolved imports")
+		return 2
+	var entry = -1
+	for symbol in library.exports
+		if symbol.name == args[!4]
+			entry = symbol.function_id
+	if entry < 0
+		eprint("unknown MIR library export: " + args[!4])
+		return 2
+	let emitted = mir_emit_c_verified(library.program, entry)
+	if emitted.error != ""
+		eprint("cannot emit native MIR: " + emitted.error)
+		return 2
+	if not write_text(args[!2], emitted.code)
+		eprint("cannot write native C")
+		return 2
+	return 0
+
 def main() -> i64
 	let args = arguments()
+	if len(args) > 1 and args[!1] == "--emit-c-lib"
+		return run_emit_library_c(args)
 	if len(args) > 1 and args[!1] == "--link-lib"
 		return run_link_libraries(args)
 	var index = 1
@@ -186,9 +221,14 @@ def main() -> i64
 			return 1
 		program = lowered.program
 		entry_id = lowered.entry
+		if emit_lib_path == "" and len(lowered.imports) > 0
+			eprint("unresolved external declarations require library linking")
+			return 2
 		if emit_lib_path != ""
 			var exports = lowered.exports
 			var imports = Array[MirNamedImport]()
+			for symbol in lowered.imports
+				imports = imports.append(MirNamedImport(symbol.name, symbol.function_id))
 			for name in expose_names
 				var count = 0
 				for symbol in lowered.symbols

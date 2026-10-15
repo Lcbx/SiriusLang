@@ -81,22 +81,51 @@ missing or incompatible symbols are errors. An unresolved library can be
 inspected but not executed. Linking successfully produces a resolved version-1
 library, and older version-1 libraries remain valid inputs.
 
-Until Sirius has source-level external declarations, `--import NAME` selects a
-typed function *placeholder* in the consumer source (never executed before
-linking). `--expose NAME` exposes a non-root concrete specialization from the
-provider's reachable call graph. For example:
+Consumer source can now declare a typed external function without a body:
+
+```sirius
+# consumer.sirius
+extern def helper(x: i64) -> i64
+def consumer() -> i64
+	return helper(5)
+```
+
+The compiler checks argument and return annotations and automatically emits
+`SIRIUS-MIR-LIB/2` import metadata for reachable external calls. No `--import`
+option or dummy implementation is needed:
 
 ```sh
-./sirius-run --emit-lib consumer.smirl --export consumer --import helper consumer.sirius
+./sirius-run --emit-lib consumer.smirl --export consumer consumer.sirius
 ./sirius-run --emit-lib provider.smirl --export provider --expose helper provider.sirius
 ./sirius-run --link-lib combined.smirl consumer.smirl provider.smirl
 ./sirius-run --entry consumer --load-lib combined.smirl
+python tools/test_mir_extern.py
 ```
 
-Import/export names must currently identify a unique concrete specialization.
-Source-level imports, generic bodies, native registration and mixed native/
-interpreted calls are not implemented. See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
-for the planned model.
+The provider's `helper` must already be reachable from a concrete root; `--expose`
+selects that specialization. `extern def` requires explicit parameter and return
+types. It cannot have a body and is never an executable root. Direct source
+execution or native source compilation rejects unresolved reachable externals.
+The old `--import NAME` flag remains available for compatibility with prior
+typed-placeholder sources, but is no longer needed for new code.
+
+### Native execution of linked concrete libraries
+
+```sh
+./sirius-run --emit-c-lib combined.c --entry consumer combined.smirl
+cc -std=c11 -I runtime combined.c runtime/sirius_runtime.c -lm -o combined
+./combined
+```
+
+The `--emit-c-lib` path uses the same verified, linked MIR as `--load-lib`, but
+emits a standalone C11 program instead of interpreting it. It requires a fully
+resolved artifact and a zero-argument `i64` entry; this is whole-program backend
+selection, **not** per-function mixed native/interpreted dispatch.
+
+Library imports currently resolve only to concrete specializations. True source
+modules, cross-library generic bodies/specialization, native registration, and
+mixed native/interpreted calls remain unimplemented. See
+[MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## Execution semantics and checks
 

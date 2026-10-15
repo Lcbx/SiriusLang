@@ -360,6 +360,7 @@ def hir_constructor_publish(fields: Array[RecordField], name: string, type_id: i
 rec HirParameterDecl(name: string, source: i64, type_node: i64)
 
 rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl])
+	pub external = false
 
 # Constants are stored in a flat arena. Record fields reference other entries
 # by index, so nested values need no recursive runtime representation.
@@ -608,9 +609,9 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		let id = hir_ast_child(tree, root, i)
 		let entry = tree.nodes[!id]
 		let name = hir_ast_text(tree, id)
-		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET
+		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET and entry.kind != NODE_EXTERN
 			return hir_declaration_error(functions, constants, "unsupported module statement", hir_ast_line(tree, id))
-		if (name == "print" or name == "eprint") and (entry.kind == NODE_DEF or entry.kind == NODE_REC)
+		if (name == "print" or name == "eprint") and (entry.kind == NODE_DEF or entry.kind == NODE_REC or entry.kind == NODE_EXTERN)
 			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
 		for seen in names
 			if seen == name
@@ -655,6 +656,12 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			elif info.kind == NODE_TYPE
 				return_type = part
 		let body_id = hir_ast_child(tree, id, entry.count - 1)
+		if entry.kind == NODE_EXTERN
+			if return_type < 0
+				return hir_declaration_error(functions, constants, "extern def requires an explicit return type", hir_ast_line(tree, id))
+			for parameter in parameters
+				if parameter.type_node < 0
+					return hir_declaration_error(functions, constants, "extern def requires typed parameters", hir_ast_line(tree, id))
 		if entry.kind == NODE_REC
 			var published = Array[string]()
 			let body = tree.nodes[!body_id]
@@ -675,7 +682,9 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			for j in 0..body.count
 				if tree.nodes[!hir_ast_child(tree, body_id, j)].kind == NODE_PUB
 					return hir_declaration_error(functions, constants, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
-		functions = functions.append(HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters))
+		var function = HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters)
+		function.external = entry.kind == NODE_EXTERN
+		functions = functions.append(function)
 	return HirModuleDecl(functions, constants, types, values, "", 0)
 
 # Independent, pre-emission body analysis. Unresolved types are explicitly

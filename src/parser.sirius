@@ -48,6 +48,7 @@ let NODE_REC = 42
 let NODE_GUARD = 43
 let NODE_UNWRAP = 44
 let NODE_DESTRUCTURE = 45
+let NODE_EXTERN = 46
 
 def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -78,6 +79,8 @@ def node_kind_name(kind: i64) -> string
 		return "continue"
 	if kind == NODE_DEF
 		return "def"
+	if kind == NODE_EXTERN
+		return "extern"
 	if kind == NODE_DELETE
 		return "delete"
 	if kind == NODE_DESTRUCTURE
@@ -514,8 +517,14 @@ def parse_statement(p: ParseState) -> ParseResult
 	let token = p.index
 	let op = word(p)
 	var next = p
-	if op == "def" or op == "rec"
-		next.index += 1
+	var external = false
+	if op == "extern"
+		external = true
+		next = expect(next, "extern")
+		next = expect(next, "def")
+	if op == "def" or op == "rec" or external
+		if not external
+			next.index += 1
 		let name = next.index
 		next = expect_kind(next, TOKEN_NAME, "function name")
 		next = expect(next, "(")
@@ -530,18 +539,27 @@ def parse_statement(p: ParseState) -> ParseResult
 				break
 			next = expect(next, ",")
 		next = expect(next, ")")
-		if op == "def" and next.error == "" and is_token(next, "->")
+		if (op == "def" or external) and next.error == "" and is_token(next, "->")
 			next = expect(next, "->")
 			let typ = parse_type(next)
 			next = typ.state
 			args = args.append(typ.node)
 		var body = ParseResult(next, -1)
-		if op == "rec"
+		if external
+			if next.error == "" and not kind_is(next, TOKEN_NEWLINE)
+				next = fail(next, "external declaration cannot have a body")
+			next = expect_kind(next, TOKEN_NEWLINE, "newline")
+			if next.error == "" and kind_is(next, TOKEN_INDENT)
+				next = fail(next, "external declaration cannot have a body")
+			body = append_node(next, NODE_BLOCK, token, Array[i64]())
+		elif op == "rec"
 			body = rec_body(next, args)
 		else
 			body = parse_block(next)
 		next = body.state
 		args = args.append(body.node)
+		if external
+			return append_node(next, NODE_EXTERN, name, args)
 		if op == "rec"
 			return append_node(next, NODE_REC, name, args)
 		return append_node(next, NODE_DEF, name, args)

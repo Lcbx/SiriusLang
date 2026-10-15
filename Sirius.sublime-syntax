@@ -21,12 +21,13 @@ contexts:
 
   main:
     # Declaration rules must precede the generic keyword/identifier rules.
-    - match: '^[ \t]*(?:(pub|export)[ \t]+)?(def)[ \t]+({{identifier}})\b'
+    - match: '^[ \t]*(?:(pub|export)[ \t]+)?(?:(extern)[ \t]+)?(def)[ \t]+({{identifier}})\b'
       scope: meta.function.sirius
       captures:
         1: storage.modifier.visibility.sirius
-        2: keyword.declaration.function.sirius
-        3: entity.name.function.sirius
+        2: storage.modifier.external.sirius
+        3: keyword.declaration.function.sirius
+        4: entity.name.function.sirius
       push: function-signature
 
     - match: '^[ \t]*(?:(pub|export)[ \t]+)?(rec)[ \t]+({{identifier}})\b'

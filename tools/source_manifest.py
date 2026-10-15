@@ -30,7 +30,7 @@ MIR_ONLY_COMPILER_SOURCES = COMPILER_SOURCES  # compatibility with MIR test tool
 LEGACY_COMPILER_SOURCES = FRONTEND_SOURCES + ('src/emit_c.sirius',) + MIR_SOURCES + (
 	'src/legacy_cli.sirius',)
 MIR_DRIVER_SOURCES = COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
-MIR_RUNNER_SOURCES = FRONTEND_SOURCES + MIR_SOURCES[:-1] + (
+MIR_RUNNER_SOURCES = FRONTEND_SOURCES + MIR_SOURCES + (
 	'src/mir_interpreter.sirius', 'src/mir_wire.sirius', 'src/mir_library.sirius', 'src/mir_link.sirius', 'src/run_cli.sirius',)
 
 

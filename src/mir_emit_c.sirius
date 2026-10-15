@@ -777,5 +777,7 @@ def compile_c_mir(source: string) -> CompileResult
 	let lowered = mir_build_program(parsed.state, declarations, "main", Array[i64]())
 	if lowered.error != ""
 		return CompileResult("", lowered.error, 1)
+	if len(lowered.imports) > 0
+		return CompileResult("", "unresolved external declarations require library linking", 1)
 	let emitted = mir_emit_c_verified(lowered.program, lowered.entry)
 	return CompileResult(emitted.code, emitted.error, 1)

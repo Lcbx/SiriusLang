@@ -30,7 +30,7 @@ def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Arra
 		if state.error != ""
 			break
 		state = hir_body_binding(state, parameter.source, parameter.name, arguments[!i], false)
-	if state.error == ""
+	if state.error == "" and not header.external
 		state = hir_body_block(state, header.body)
 	var result_type = state.inferred_return
 	if state.error == "" and header.result_type_node >= 0
@@ -59,7 +59,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 	for name in names
 		var found = false
 		for declaration in declarations.functions
-			if declaration.name == name and not declaration.constructor
+			if declaration.name == name and not declaration.constructor and not declaration.external
 				let started = hir_begin_specialization(registry, declaration.body, arguments, TYPE_TAG_INVALID)
 				registry = started.registry
 				roots = roots.append(HirSpecializedRoot(name, started.index))

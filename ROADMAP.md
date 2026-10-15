@@ -41,12 +41,19 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [ ] Investigate high-cost parser arena CoW and dense CFG register-state
   copies with `tools/profile_ir_storage.py`; consider packed states or a
   mutable builder only if a measured end-to-end improvement survives tests.
-- [ ] Introduce separate-source, path-derived modules and actual external
-  function declarations; replace CLI-selected typed import placeholders.
-  Retain deterministic structural record layouts and specialization identity.
+- [x] Support typed source-level `extern def` declarations with automatic
+  concrete MIR import metadata, keeping `--import` for compatibility.
+- [ ] Introduce separate-source, path-derived module resolution and namespace
+  imports. Retain deterministic structural record layouts and specialization
+  identity.
 - [ ] Support exported **generic** libraries and specialization across artifacts;
   preserve generic bodies and their resolved semantic environments. Concrete
   name/signature import resolution alone is insufficient.
+- [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
+  enabling native/interpreter differential execution of the same linked MIR.
+- [ ] Specify native registration, ownership and error ABIs for actual mixed
+  native/interpreted function-call dispatch; emitting whole-program C is not
+  sufficient.
 - [ ] Execute appropriate MIR through the interpreter at compile time.
   Initially allow effects without mandatory purity restrictions, as specified
   in the design; decide syntax, staging and environment explicitly.

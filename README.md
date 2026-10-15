@@ -72,16 +72,12 @@ can be linked with canonical type remapping and call relocation. Direct CLI
 execution requires a selected `()->i64` entry; other concrete functions can
 be exposed and inspected.
 
-Cross-library concrete calls use `SIRIUS-MIR-LIB/2` import metadata. As a
-**temporary bridge** without external declarations, `--import NAME` marks an
-already-specialized, typed source function as a placeholder and `--expose NAME`
-exports a matching provider specialization. Linking rejects unresolved or
-signature-incompatible imports and emits a resolved version-1 library:
+Cross-library concrete calls use `SIRIUS-MIR-LIB/2` import metadata. A consumer
+can declare a function from another library without a dummy implementation:
 
 ```sirius
-# consumer.sirius — typed placeholder, never called before linking
-def twice(x: i64) -> i64
-	return 0
+# consumer.sirius
+extern def twice(x: i64) -> i64
 def consumer() -> i64
 	return twice(5)
 ```
@@ -95,16 +91,22 @@ def provider() -> i64
 ```
 
 ```sh
-./sirius-run --emit-lib consumer.smirl --export consumer --import twice consumer.sirius
+./sirius-run --emit-lib consumer.smirl --export consumer consumer.sirius
 ./sirius-run --emit-lib provider.smirl --export provider --expose twice provider.sirius
 ./sirius-run --link-lib combined.smirl consumer.smirl provider.smirl
 ./sirius-run --entry consumer --load-lib combined.smirl  # exits with 10
+./sirius-run --emit-c-lib combined.c --entry consumer combined.smirl
 ```
 
-Source-level imports, cross-library generic specializations and native
-registration are **not** implemented. See [INTERPRETER.md](INTERPRETER.md)
-for the CLI contract and [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
-for the planned architecture.
+Imports are inferred from reachable `extern def` declarations, and linking
+rejects missing or incompatible structural signatures. The earlier
+`--import NAME` placeholder option remains for compatibility. `--emit-c-lib`
+allows native compilation of the *same linked concrete MIR*; mixed calls
+between native and interpreted function implementations are not yet supported.
+
+Source-level modules, cross-library **generic** specialization, and runtime
+native registration are not implemented. See [INTERPRETER.md](INTERPRETER.md)
+and [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## Implemented language subset
 

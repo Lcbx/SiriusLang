@@ -2,7 +2,8 @@
 
 **Status:** Source modules, generic specialization and native/FFI registration
 are proposed. Versioned concrete MIR executables, named multi-entry libraries,
-cross-artifact merging and signature-checked concrete imports are implemented.
+cross-artifact merging, source `extern def` declarations and signature-checked
+concrete imports are implemented. Resolved libraries can also emit native C.
 Current commands are in [INTERPRETER.md](INTERPRETER.md); core semantics in
 [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md). Names and ABIs below are provisional.
 
@@ -45,11 +46,13 @@ The interpreter runs concrete MIR from source or a saved artifact.
 graph; `SIRIUS-MIR-LIB/1` contains named concrete roots and reachable functions.
 `SIRIUS-MIR-LIB/2` adds unresolved concrete imports with canonical structural
 signatures. The linker remaps types/functions, resolves imports against named
-exports and verifies the result, emitting a resolved version-1 library. Current
-source imports rely on typed placeholder bodies selected by `--import`, with
-provider specializations exposed through `--expose`. These remain **internal
+exports and verifies the result, emitting a resolved version-1 library.
+Source consumers can use `extern def` (fully typed, no body) to declare imports
+automatically; `--import` retains compatibility with legacy placeholder sources.
+Provider specializations remain exposed through `--expose`. These are **internal
 versioned formats**, not stable ABIs; generic specialization across artifacts
-is not implemented.
+is not implemented. `--emit-c-lib` emits standalone C from a resolved library,
+but does not implement cross-backend function-call dispatch.
 
 ### Compile-time MIR execution (planned)
 

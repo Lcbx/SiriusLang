@@ -5,6 +5,7 @@
 rec MirProgramBuild(program: MirProgram, entry: i64, error: string)
 	pub exports = Array[MirNamedExport]()
 	pub symbols = Array[MirNamedExport]()
+	pub imports = Array[MirNamedExport]()
 
 def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names: Array[string], arguments: Array[i64]) -> MirProgramBuild
 	let analyzed = hir_specialize_program_roots(tree, declarations, names, arguments)
@@ -18,10 +19,17 @@ def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names
 		let header = declarations.functions[!definition]
 		if not mir_type_supported(analyzed.types, body.return_type)
 			return MirProgramBuild(MirProgram(functions), analyzed.entry, "MIR specialization requires a scalar return type")
-		let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
-		if lowered.error != ""
-			return MirProgramBuild(MirProgram(functions), analyzed.entry, lowered.error)
-		functions = functions.append(lowered.function)
+		if header.external
+			# An unresolved external is an ordinary typed function slot. The linker
+			# rewrites every call to its provider before it can be executed.
+			var block = Array[MirBlock]()
+			block = block.append(MirBlock(Array[MirInstruction](), mir_panic("unresolved external: " + header.name)))
+			functions = functions.append(MirFunction(len(spec.arguments), body.return_type, spec.arguments, block, 0))
+		else
+			let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
+			if lowered.error != ""
+				return MirProgramBuild(MirProgram(functions), analyzed.entry, lowered.error)
+			functions = functions.append(lowered.function)
 	let program = mir_program_with_types(functions, analyzed.types)
 	# Only the public individual passes check MIR at every boundary. The
 	# combined compiler pipeline validates before transformations and after
@@ -43,7 +51,10 @@ def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names
 	for i in 0..len(analyzed.registry.entries)
 		let spec = analyzed.registry.entries[!i]
 		let definition = hir_definition(declarations.functions, spec.definition)
-		result.symbols = result.symbols.append(MirNamedExport(declarations.functions[!definition].name, i))
+		let name = declarations.functions[!definition].name
+		result.symbols = result.symbols.append(MirNamedExport(name, i))
+		if declarations.functions[!definition].external
+			result.imports = result.imports.append(MirNamedExport(name, i))
 	return result
 
 def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild
