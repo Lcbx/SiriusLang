@@ -127,7 +127,10 @@ requests share one specialization, and matching concrete exports take priority.
 The output is an ordinary resolved concrete library and supports both execution
 backends. A specialization can import other concrete functions or templates from separate
 artifacts; the linker resolves these transitive dependencies using concrete
-structural signatures. Missing or mismatched providers are rejected. Version-6 templates contain module constants, canonical declaration types and symbolic-type HIR annotations for immutable `let` bindings and a final return (including record/array literals, field access and selected builtin calls), without retaining original source text. The loader checks metadata against syntax; concrete local types and operators are revalidated at specialization. Control flow, mutation, user calls and other complex bodies still use the normal analyzer. Versions 3–5 remain readable; external declarations must still be concrete.
+structural signatures. Missing or mismatched providers are rejected. Version-6 templates contain module constants, canonical declaration types and symbolic-type HIR annotations for immutable `let` bindings and a final return (including records/arrays,
+field access, builtin and named user-function calls, and a single early-return
+`if`), without retaining original source text. The loader checks metadata against syntax; concrete local types and operators are revalidated at specialization. Multi-arm control flow, mutation and other complex bodies still use the
+normal analyzer. Historical version-6 empty fallback plans remain accepted. Versions 3–5 remain readable; external declarations must still be concrete.
 
 ### Native execution of linked concrete libraries
 

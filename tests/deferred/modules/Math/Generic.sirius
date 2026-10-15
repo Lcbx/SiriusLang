@@ -23,3 +23,18 @@ export def count_pair(x)
 
 export def append_integer(x)
 	return [x, 42]
+
+export def doubled(x)
+	let alias = x
+	return alias + alias
+
+export def routed(x)
+	let twice = doubled(x)
+	if twice == x
+		return x
+	return twice
+
+export def condition(x)
+	if x
+		return 1
+	return 0

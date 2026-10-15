@@ -180,6 +180,79 @@ def records_main() -> i64
 			result = run(runner, '--link-lib', linked, broken, structures)
 			assert result.returncode == 2 and fragment in result.stderr, result
 
+		# Persisted generic calls and an early-return branch use final Sirius
+		# source semantics, including nested specialization and return-type checks.
+		functions = library('functions', '''def doubled(x)
+	let alias = x
+	return alias + alias
+
+def routed(x)
+	let twice = doubled(x)
+	if twice == x
+		return x
+	return twice
+
+def guarded(x)
+	if x
+		return 1
+	return 0
+
+def inconsistent(x)
+	if true
+		return x
+	return false
+''', '--template', 'doubled', '--template', 'routed',
+			'--template', 'guarded', '--template', 'inconsistent')
+		functions_consumer = library('functions_consumer', '''extern def routed(x: i64) -> i64
+extern def guarded(x: bool) -> i64
+
+def main() -> i64
+	if routed(6) != 12 or guarded(true) != 1 or guarded(false) != 0
+		return 1
+	return 0
+''', '--export', 'main')
+		functions_string = library('functions_string', '''extern def routed(x: string) -> string
+
+def text_main() -> i64
+	if routed("go") == "gogo"
+		return 0
+	return 1
+''', '--export', 'text_main')
+		for order in ((functions, functions_consumer, functions_string),
+			(functions_string, functions_consumer, functions)):
+			must_run(runner, '--link-lib', linked, *order)
+			for entry in ('main', 'text_main'):
+				result = run(runner, '--entry', entry, '--load-lib', linked)
+				assert (result.returncode, result.stdout, result.stderr) == (0, b'', b''), result
+		must_run(runner, '--emit-c-lib', c_file, '--entry', 'main', linked)
+		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'runtime'),
+			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
+			capture_output=True, timeout=90)
+		assert result.returncode == 0, result.stderr
+		assert run(native).returncode == 0
+		for name, declaration, expression, error in (
+			('guarded', 'extern def guarded(x: i64) -> i64', 'guarded(4)', b'expected bool in if condition'),
+			('inconsistent', 'extern def inconsistent(x: i64) -> i64', 'inconsistent(1)', b'inconsistent return types'),
+		):
+			invalid = library('invalid_' + name, declaration +
+				'\ndef entry() -> i64\n\treturn ' + expression + '\n', '--export', 'entry')
+			result = run(runner, '--link-lib', linked, invalid, functions)
+			assert result.returncode == 2 and error in result.stderr, result
+		# Historical v6 snapshots can contain no parameterized HIR for these
+		# functions: they must still load and use the concrete-analysis fallback.
+		legacy = ROOT / 'tests/mir/artifacts/legacy_v6_fallback.smirl'
+		assert run(runner, '--list-lib', legacy).returncode == 0
+		legacy_consumer = library('legacy_consumer', '''extern def wrapper(x: i64) -> i64
+
+def main() -> i64
+	if wrapper(6) == 12
+		return 0
+	return 1
+''', '--export', 'main')
+		must_run(runner, '--link-lib', linked, legacy_consumer, legacy)
+		assert run(runner, '--entry', 'main', '--load-lib', linked).returncode == 0
+		print('PASS generic semantics: user calls, early-return branches, string/i64, native parity, invalid specialization, historical v6')
+
 		# Invalid concrete specializations must fail before execution.
 		bad = library('bad', '''extern def triple(x: bool) -> bool
 

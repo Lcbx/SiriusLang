@@ -61,6 +61,8 @@ ERRORS = {
 	'51_nested_invalid_augmented_type': 'unsupported MIR augmented assignment',
 	'52_generic_local_wrong_operator': 'arithmetic requires numeric operands',
 	'53_generic_local_duplicate': "duplicate binding 'value'",
+	'54_generic_if_condition': 'branch condition must be bool',
+	'55_generic_branch_return': 'inconsistent return types',
 
 }
 

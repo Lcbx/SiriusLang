@@ -67,8 +67,12 @@ imports are implemented. There is no Python compiler in the active workflow.
 - [x] Support parameterized record/array literals, record field selection and
   value-returning builtins (`len`, `str`, `sqrt`) with concrete type interning,
   operator checks and source-level native/interpreted tests.
-- [ ] Generalize persisted parameterized HIR to user function calls, control
-  flow, collection operations, semantic imports and constructors.
+- [x] Handle named user-function calls and a single early-return `if` arm
+  followed by a final return in persistent parameterized HIR. Reuse semantic
+  signature validation and specialization requests, check branch/return types
+  after concrete substitution, and accept historical v6 empty fallback plans.
+- [ ] Generalize persisted parameterized HIR to multi-arm control flow,
+  mutation, collection operations, semantic imports and constructors.
 - [x] Allow a resolved concrete library to emit native C (`--emit-c-lib`),
   enabling native/interpreter differential execution of the same linked MIR.
 - [ ] Specify native registration, ownership and error ABIs for actual mixed

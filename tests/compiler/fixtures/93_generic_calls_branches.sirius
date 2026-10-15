@@ -1,0 +1,23 @@
+# Final source semantics: nested generic calls, immutable bindings and early
+# returns must specialize consistently for numbers, strings and booleans.
+def doubled(x)
+	let copy = x
+	return copy + copy
+
+def routed(x)
+	let twice = doubled(x)
+	if twice == x
+		return x
+	return twice
+
+def guarded(flag)
+	if flag
+		return 11
+	return 22
+
+def main() -> i64
+	print(routed(6))
+	print(routed("go"))
+	print(guarded(true))
+	print(guarded(false))
+	return 0

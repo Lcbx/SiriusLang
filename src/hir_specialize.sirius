@@ -12,7 +12,7 @@ rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[Hir
 def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64], plans: Array[HirParametricBody]) -> HirConcreteBody
 	for plan in plans
 		if plan.definition == header.body and len(plan.nodes) > 0 and len(arguments) == len(header.parameters)
-			return hir_instantiate_parametric(tree, plan, types, arguments)
+			return hir_instantiate_parametric(tree, plan, functions, constants, types, arguments)
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)

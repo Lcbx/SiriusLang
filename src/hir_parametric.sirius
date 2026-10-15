@@ -1,10 +1,10 @@
-# Type-parameterized HIR for immutable locals and a final return.
+# Type-parameterized HIR for immutable locals, simple calls and returns.
 # Negative type IDs below -1 represent argument type parameters. More
 # complex bodies continue through the ordinary concrete HIR analyzer.
 
 rec HirParametricExpression(nodes: Array[HirNode], type_id: i64, valid: bool)
 
-def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64, locals: Array[string], local_types: Array[i64]) -> HirParametricExpression
+def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], id: i64, locals: Array[string], local_types: Array[i64]) -> HirParametricExpression
 	let node = tree.nodes[!id]
 	let literal = resolve_hir_literal(node.kind)
 	if literal != TYPE_TAG_INVALID
@@ -21,7 +21,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 				let type_id = -2 - i
 				return HirParametricExpression([HirNode(id, HIR_NAME, type_id, i)], type_id, true)
 	if node.kind == NODE_ATTR and node.count == 1
-		let owner = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0), locals, local_types)
+		let owner = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, 0), locals, local_types)
 		if owner.valid
 			return HirParametricExpression(owner.nodes.append(HirNode(id, HIR_FIELD, TYPE_TAG_INVALID, -1)), TYPE_TAG_INVALID, true)
 	if node.kind == NODE_RECORD and node.count > 0
@@ -30,7 +30,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 			let field_id = hir_ast_child(tree, id, i)
 			if tree.nodes[!field_id].kind != NODE_FIELD
 				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
-			let value = hir_parametric_expression(tree, header, hir_ast_child(tree, field_id, 0), locals, local_types)
+			let value = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, field_id, 0), locals, local_types)
 			if not value.valid
 				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 			for typed in value.nodes
@@ -39,7 +39,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 	if node.kind == NODE_ARRAY
 		var nodes = Array[HirNode]()
 		for i in 0..node.count
-			let value = hir_parametric_expression(tree, header, hir_ast_child(tree, id, i), locals, local_types)
+			let value = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, i), locals, local_types)
 			if not value.valid
 				return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 			for typed in value.nodes
@@ -49,18 +49,29 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 		let callee = hir_ast_child(tree, id, 0)
 		if tree.nodes[!callee].kind == NODE_NAME
 			let name = hir_ast_text(tree, callee)
-			if name == "len" or name == "str" or name == "sqrt"
+			var supported = name == "len" or name == "str" or name == "sqrt"
+			if not supported
+				for function in functions
+					if function.name == name and not function.constructor
+						supported = true
+				for local in locals
+					if local == name
+						supported = false
+				for parameter in header.parameters
+					if parameter.name == name
+						supported = false
+			if supported
 				var nodes = Array[HirNode]()
 				for i in 1..node.count
-					let argument = hir_parametric_expression(tree, header, hir_ast_child(tree, id, i), locals, local_types)
+					let argument = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, i), locals, local_types)
 					if not argument.valid
 						return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 					for typed in argument.nodes
 						nodes = nodes.append(typed)
 				return HirParametricExpression(nodes.append(HirNode(id, HIR_CALL, TYPE_TAG_INVALID, -1)), TYPE_TAG_INVALID, true)
 	if node.kind == NODE_BINARY and node.count == 2
-		let lhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0), locals, local_types)
-		let rhs = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 1), locals, local_types)
+		let lhs = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, 0), locals, local_types)
+		let rhs = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, 1), locals, local_types)
 		if lhs.valid and rhs.valid
 			let operator = hir_ast_text(tree, id)
 			if operator != "+" and operator != "-" and operator != "*" and operator != "/" and operator != "%" and operator != "and" and operator != "or" and operator != "==" and operator != "!=" and operator != "<" and operator != "<=" and operator != ">" and operator != ">="
@@ -73,7 +84,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 				nodes = nodes.append(typed)
 			return HirParametricExpression(nodes.append(HirNode(id, HIR_BINARY, result_type, -1)), result_type, true)
 	if node.kind == NODE_UNARY and node.count == 1
-		let value = hir_parametric_expression(tree, header, hir_ast_child(tree, id, 0), locals, local_types)
+		let value = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, id, 0), locals, local_types)
 		if value.valid
 			let operator = hir_ast_text(tree, id)
 			if operator != "-" and operator != "+" and operator != "not"
@@ -84,7 +95,7 @@ def hir_parametric_expression(tree: ParseState, header: HirFunctionDecl, id: i64
 			return HirParametricExpression(value.nodes.append(HirNode(id, HIR_UNARY, result_type, -1)), result_type, true)
 	return HirParametricExpression(Array[HirNode](), TYPE_TAG_INVALID, false)
 
-def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl) -> HirParametricBody
+def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl]) -> HirParametricBody
 	let empty = HirParametricBody(header.body, Array[HirNode](), TYPE_TAG_INVALID)
 	if header.external or header.constructor or header.result_type_node >= 0
 		return empty
@@ -105,7 +116,7 @@ def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl) -> HirParamet
 			for previous in locals
 				if previous == name
 					return empty
-			let value = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0), locals, local_types)
+			let value = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, statement, 0), locals, local_types)
 			if not value.valid
 				return empty
 			for typed in value.nodes
@@ -113,8 +124,29 @@ def hir_parametric_plan(tree: ParseState, header: HirFunctionDecl) -> HirParamet
 			nodes = nodes.append(HirNode(statement, HIR_BINDING, value.type_id, len(header.parameters) + len(locals)))
 			locals = locals.append(name)
 			local_types = local_types.append(value.type_id)
+		elif kind == NODE_IF and i + 1 < block.count and tree.nodes[!statement].count == 1
+			# A single early-return arm has no branch-local bindings to escape.
+			let arm_id = hir_ast_child(tree, statement, 0)
+			let arm = tree.nodes[!arm_id]
+			if arm.kind != NODE_ARM or arm.count != 2
+				return empty
+			let branch_id = hir_ast_child(tree, arm_id, 1)
+			let branch = tree.nodes[!branch_id]
+			if branch.kind != NODE_BLOCK or branch.count != 1
+				return empty
+			let returned_id = hir_ast_child(tree, branch_id, 0)
+			if tree.nodes[!returned_id].kind != NODE_RETURN or tree.nodes[!returned_id].count != 1
+				return empty
+			let condition = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, arm_id, 0), locals, local_types)
+			let returned = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, returned_id, 0), locals, local_types)
+			if not condition.valid or not returned.valid
+				return empty
+			for typed in condition.nodes
+				nodes = nodes.append(typed)
+			for typed in returned.nodes
+				nodes = nodes.append(typed)
 		elif kind == NODE_RETURN and i + 1 == block.count and tree.nodes[!statement].count == 1
-			let result = hir_parametric_expression(tree, header, hir_ast_child(tree, statement, 0), locals, local_types)
+			let result = hir_parametric_expression(tree, header, functions, hir_ast_child(tree, statement, 0), locals, local_types)
 			if not result.valid
 				return empty
 			for typed in result.nodes
@@ -140,9 +172,10 @@ def hir_parametric_node_type(nodes: Array[HirNode], source: i64) -> i64
 
 # Instantiate and check every operator against actual canonical types. Never
 # infer arithmetic legality merely from symbolic agreement between operands.
-def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
+def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
 	var nodes = Array[HirNode]()
 	var current_types = types
+	var requests = Array[HirSpecializationRequest]()
 	for node in plan.nodes
 		var type_id = hir_parametric_type(node.type_id, arguments)
 		var field_index = node.field_index
@@ -194,11 +227,31 @@ def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, types:
 			for i in 1..call.count
 				args = args.append(hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, i)))
 			let callee = hir_ast_child(tree, node.source, 0)
-			let checked = resolve_hir_builtin_call(current_types, hir_ast_text(tree, callee), args)
-			if checked.error != ""
-				return HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), current_types, TYPE_TAG_INVALID, checked.error, hir_ast_line(tree, node.source))
-			current_types = checked.table
-			type_id = checked.type_id
+			let name = hir_ast_text(tree, callee)
+			if hir_is_builtin(name)
+				let checked = resolve_hir_builtin_call(current_types, name, args)
+				if checked.error != ""
+					return HirConcreteBody(Array[HirNode](), requests, current_types, TYPE_TAG_INVALID, checked.error, hir_ast_line(tree, node.source))
+				current_types = checked.table
+				type_id = checked.type_id
+			else
+				var names = Array[string]()
+				for function in functions
+					names = names.append(function.name)
+				var state = HirBodyState(tree, names, Array[string](), current_types)
+				state.functions = functions
+				state.module_constants = constants
+				state.collect_calls = true
+				state = hir_body_user_call(state, node.source, name, args)
+				if state.error != ""
+					return HirConcreteBody(Array[HirNode](), requests, state.types, TYPE_TAG_INVALID, state.error, state.error_line)
+				current_types = state.types
+				type_id = state.last_type
+				for request in state.requests
+					requests = requests.append(request)
+				for j in 0..len(functions)
+					if functions[!j].name == name
+						field_index = j
 		elif node.operation == HIR_BINARY
 			let lhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 0))
 			let rhs = hir_parametric_node_type(nodes, hir_ast_child(tree, node.source, 1))
@@ -215,4 +268,19 @@ def hir_instantiate_parametric(tree: ParseState, plan: HirParametricBody, types:
 		if type_id == TYPE_TAG_INVALID
 			return HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), current_types, TYPE_TAG_INVALID, "invalid parameterized HIR type", 0)
 		nodes = nodes.append(HirNode(node.source, node.operation, type_id, field_index))
-	return HirConcreteBody(nodes, Array[HirSpecializationRequest](), current_types, nodes[!len(nodes) - 1].type_id, "", 0)
+	# Enforce condition types and return agreement across early-exit paths.
+	let block = tree.nodes[!plan.definition]
+	var final_type = nodes[!len(nodes) - 1].type_id
+	for i in 0..block.count
+		let statement = hir_ast_child(tree, plan.definition, i)
+		if tree.nodes[!statement].kind == NODE_IF
+			let arm = hir_ast_child(tree, statement, 0)
+			let condition = hir_ast_child(tree, arm, 0)
+			if hir_parametric_node_type(nodes, condition) != TYPE_TAG_BOOL
+				return HirConcreteBody(Array[HirNode](), requests, current_types, TYPE_TAG_INVALID, "expected bool in if condition", hir_ast_line(tree, condition))
+			let branch = hir_ast_child(tree, arm, 1)
+			let returned = hir_ast_child(tree, branch, 0)
+			let value = hir_ast_child(tree, returned, 0)
+			if hir_parametric_node_type(nodes, value) != final_type
+				return HirConcreteBody(Array[HirNode](), requests, current_types, TYPE_TAG_INVALID, "inconsistent return types", hir_ast_line(tree, returned))
+	return HirConcreteBody(nodes, requests, current_types, final_type, "", 0)

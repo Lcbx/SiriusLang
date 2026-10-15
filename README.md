@@ -129,13 +129,15 @@ concrete version-1 library and works in the interpreter or native C emitter.
 Version-6 libraries persist the syntax arena, resolved module declarations,
 canonical types, constants, and a **limited parameterized HIR** representation
 for generic bodies with immutable `let` bindings and a final return,
-including scalar expressions, record/array literals, record field access and
-`len`/`str`/`sqrt` calls. Type parameters are bound at link
+including scalar expressions, record/array literals, record field access,
+`len`/`str`/`sqrt` calls, named user-function calls, and simple early-return
+`if` statements. Type parameters are bound at link
 time and operators checked for the concrete types; other bodies use the existing
 concrete analyzer. The loader validates stored HIR against syntax. Version-3
 (source), version-4 (syntax), and version-5 (declarations) remain readable.
-Full parameterized HIR for control flow, user function calls, collection
-operations, and constructors remains to be implemented.
+Multi-arm control flow, mutation, advanced collection operations and
+constructors still use concrete HIR analysis. Old version-6 artifacts with
+empty fallback plans remain valid.
 Specialized functions can call typed external functions supplied by other
 libraries, including other generic templates. The linker expands transitive
 specialization requests, checks structural signatures and rejects missing or

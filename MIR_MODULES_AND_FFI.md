@@ -78,11 +78,15 @@ longer-term transitive purity checking needed by parallel `map`.
 
 ## Generic specialization across libraries (partial)
 
-A signature alone cannot instantiate a generic body. Version-6 artifacts persist syntax, token spellings, verified module declarations (function headers, module constant values and canonical types), and symbolic-type HIR bodies for simple expressions, immutable local bindings, record/array literals, field access and selected builtin calls instead of provider text. This avoids reparsing and repeated module declaration analysis per specialization. Versions 3–5 remain readable. Version 6 validates saved parametric HIR plans against syntax and substitutes canonical concrete argument types when linking. Operators are checked again after substitution; complex bodies still use ordinary HIR analysis.
+A signature alone cannot instantiate a generic body. Version-6 artifacts persist syntax, token spellings, verified module declarations (function headers, module constant values and canonical types), and symbolic-type HIR bodies for simple expressions, immutable local bindings, records/arrays, field access,
+selected builtins, named user calls and single early-return `if` branches
+instead of provider text. This avoids reparsing and repeated module declaration analysis per specialization. Versions 3–5 remain readable. Version 6 validates saved parametric HIR plans against syntax and substitutes canonical concrete argument types when linking. Operators are checked again after substitution; complex bodies still use ordinary HIR analysis.
 The linker remaps imported structural types into the provider's type table,
 builds concrete MIR, recursively expands imports from other libraries, and
 checks each concrete signature. External function declarations in template
-sources still need concrete types. The remaining target is general parameterized HIR for control flow, user calls, advanced collection operations and importable constructors.
+sources still need concrete types. The remaining target is general parameterized HIR for multi-arm control flow,
+mutable bindings, advanced collection operations and importable constructors.
+Previous version-6 snapshots with empty fallback bodies remain loadable.
 
 At a call boundary:
 

@@ -1,0 +1,8 @@
+# Early and final returns must have the same concrete type.
+def inconsistent(x)
+	if true
+		return x
+	return false
+
+def main() -> i64
+	return inconsistent(3)

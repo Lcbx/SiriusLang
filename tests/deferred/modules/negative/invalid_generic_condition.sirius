@@ -1,0 +1,5 @@
+# DEFERRED: concrete specialization rejects non-Boolean branch conditions.
+import Math.Generic alias Generic
+
+def main() -> i64
+	return Generic.condition(3)
