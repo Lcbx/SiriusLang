@@ -19,7 +19,10 @@ Imports name compile-time namespaces; they do not instantiate runtime module obj
 export import Math.Stats alias Stats
 ```
 
-Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings evaluate during compilation and may have effects; importing a module does not execute initialization code in the final program. The current compiler only supports limited `i64` module constants.
+Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
+expressions; importing a module does not execute runtime initialization code.
+`export let` exposes typed constants (including strings, records and arrays) to
+importers without a runtime getter. Arbitrary effectful initializers remain proposed.
 
 **Implemented source-module subset:** `src/module_scan.sirius` uses the
 Sirius parser/HIR to traverse explicit dotted imports relative to a source root,
@@ -30,8 +33,9 @@ without reparsing text, and orchestrates independent concrete MIR compilation
 and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. The compiler preserves source
 imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
 structured external function declarations. Length-prefixed module names prevent export collisions.
-Only concrete function imports are supported; imported types/constants and generic
-specialization are pending. `src/module.sirius` is the first actual compiler
+Concrete function imports, structural record signatures and exported constant
+values are supported. Imported constructor/type names, generic specialization,
+and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
 `tools/test_module_builder.py`, and `tools/test_source_modules.py`.
@@ -68,7 +72,7 @@ concrete transitive call graph. `src/mir_link.sirius` can combine multiple
 independent concrete libraries and deduplicate structural type descriptors,
 relocating local call indices. Typed `extern def` declarations produce import placeholders and signature
 metadata. The linker resolves them against concrete exports with matching
-structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`/`export def`, discovery and export signatures; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Generic specialization across artifacts and native linking remain future work. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
+structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`, `export def` and `export let`, discovery and typed export interfaces; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Generic specialization across artifacts and native linking remain future work. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
 
 The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 

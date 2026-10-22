@@ -3,6 +3,7 @@
 # identifiers or normalized type expressions, never arbitrary source text.
 rec ModuleScanExport(name: string, parameters: Array[HirParameterDecl], argument_types: Array[i64], result_type: i64)
 rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: HirModuleDecl, types: TypeTable, exports: Array[ModuleScanExport], has_main: bool)
+	pub exported_constants = Array[HirModuleConstant]()
 rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
 rec ModuleScanType(text: string, valid: bool)
 
@@ -37,7 +38,7 @@ def module_scan_type(tree: ParseState, id: i64) -> ModuleScanType
 	let name = hir_ast_text(tree, id)
 	let count = tree.nodes[!id].count
 	if count == 0
-		return ModuleScanType(name, name == "i64" or name == "f64" or name == "bool" or name == "string" or name == "void")
+		return ModuleScanType(name, true) # Checked against the module TypeTable below.
 	if (name != "Array" and name != "Optional" and name != "Dict") or (name == "Dict" and count != 2) or (name != "Dict" and count != 1)
 		return ModuleScanType("", false)
 	var result = name + "["
@@ -49,12 +50,6 @@ def module_scan_type(tree: ParseState, id: i64) -> ModuleScanType
 			result += ", "
 		result += child.text
 	return ModuleScanType(result + "]", true)
-
-def module_scan_signature_valid(tree: ParseState, fn_decl: HirFunctionDecl) -> bool
-	for parameter in fn_decl.parameters
-		if not module_scan_type(tree, parameter.type_node).valid
-			return false
-	return module_scan_type(tree, fn_decl.result_type_node).valid
 
 def module_scan_export(tree: ParseState, fn_decl: HirFunctionDecl) -> string
 	var params = ""
@@ -102,13 +97,12 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 		if state.error != ""
 			return state
 	var signatures = Array[ModuleScanExport]()
+	var exported_constants = Array[HirModuleConstant]()
 	var types = decl.types
 	for exported in decl.exports
 		var found = false
 		for fn_decl in decl.functions
 			if fn_decl.name == exported
-				if not module_scan_signature_valid(parsed.state, fn_decl)
-					return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
 				var arguments = Array[i64]()
 				for parameter in fn_decl.parameters
 					let resolved = hir_module_type_reference_with_constants(types, parsed.state, parameter.type_node, decl.functions, decl.constants)
@@ -123,12 +117,18 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 				signatures = signatures.append(ModuleScanExport(exported, fn_decl.parameters, arguments, returned.type_id))
 				found = true
 		if not found
-			return ModuleScanResult(state.visited, name + ": missing exported function: " + exported, state.units)
+			for constant in decl.constants
+				if constant.name == exported
+					exported_constants = exported_constants.append(constant)
+					found = true
+		if not found
+			return ModuleScanResult(state.visited, name + ": missing exported declaration: " + exported, state.units)
 	var has_main = false
 	for fn_decl in decl.functions
 		if fn_decl.name == "main" and parsed.state.nodes[!fn_decl.source].kind == NODE_DEF
 			has_main = true
-	let unit = ModuleScanUnit(name, path, parsed.state, decl, types, signatures, has_main)
+	var unit = ModuleScanUnit(name, path, parsed.state, decl, types, signatures, has_main)
+	unit.exported_constants = exported_constants
 	return ModuleScanResult(state.visited.append(name), "", state.units.append(unit))
 
 
@@ -144,6 +144,8 @@ def module_scan_manifest(units: Array[ModuleScanUnit]) -> string
 			for function in unit.declarations.functions
 				if function.name == exported.name
 					manifest += "E\t" + module_scan_export(unit.tree, function)
+		for constant in unit.exported_constants
+			manifest += "C\t" + constant.name + "\t" + hir_type_name(unit.types, constant.type_id) + "\n"
 		if unit.has_main
 			manifest += "F\tmain\n"
 	return manifest

@@ -15,9 +15,9 @@ proposes path-derived modules, portable MIR libraries, compile-time execution,
 and native/FFI interoperability. The dynamic MIR interpreter can load versioned
 executables and **concrete multi-entry MIR libraries** with named exports and
 canonical structural signatures. A first path-based source-module workflow is available via `sirius-run --build-modules` (also exposed by `tools/build_modules.py`):
-static namespaced function imports, explicit concrete exports, separate compilation
-and existing MIR linking. The parser now recognizes `import` and `export def`; the frontend resolves
-qualified function calls to typed external declarations. A Sirius-native scanner now discovers the source dependency graph and
+static namespaced function/constant imports, structural record signatures, separate compilation
+and existing MIR linking. The parser recognizes `import`, `export def` and `export let`; the frontend resolves
+qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
 and in-memory MIR linking; Python provides an optional launcher. Generic cross-module specialization is not implemented. Generic MIR libraries, compile-time execution and native
 linking remain unimplemented. Typed `extern def` declarations are still supported.
@@ -236,12 +236,16 @@ To run the discovery step alone, use `./sirius-module-scan source-root App`;
 The separate scanner can be built with `tools/build_module_scanner.py`. Explicit imports map directly to paths; a directory walk is not
 needed for dependency resolution.
 
-Current restrictions: exported functions must have explicitly annotated
-parameters and return types, using primitives and their `Array`, `Dict`, and
-`Optional` combinations. The first source-module workflow supports only
-static qualified function calls, not imported types, constants, generic functions,
-operator overloads, re-exports, or runtime module objects. Import and `export def`
-declarations are parsed by the Sirius frontend. Imports require the module
+Current restrictions: exported functions require explicitly annotated
+parameters and return types. Structural record types defined by local `rec`
+constructors can appear in imported signatures, including nested collections;
+their canonical field descriptors are re-interned in each consumer. `export let`
+shares compile-time values (`i64`, `bool`, strings, records and arrays) through
+qualified names such as `Settings.CONFIG.size`; the consuming HIR receives a
+copy of their typed value arena, without a runtime getter. Constant-only modules
+are supported. Imported constructor names/type aliases, generic functions,
+operator overloads, re-exports, and runtime module objects are not yet supported.
+`import`, `export def` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);
 standalone native compilation cannot resolve module dependencies yet.
 
@@ -332,8 +336,10 @@ now exports the symbol mangler and module-name-to-filepath conversion as typed
 Sirius functions. `tools/test_compiler_source_modules.py` compiles that *same*
 source as an independent module and invokes it via `import module alias Names`.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
-HIR/MIR still use flat cross-file references, including shared record types and
-module constants that the concrete module interface cannot export yet.
+HIR/MIR still use flat cross-file references. Concrete record signatures and
+constant values now cross module boundaries; imported constructor/type names,
+generic specialization, and mutual source dependencies still prevent a general
+compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture
 executables and successive compiler generations use temporary directories.

@@ -33,6 +33,7 @@ class Module:
 	path: Path
 	imports: dict[str, str]
 	exports: dict[str, Export]
+	constants: dict[str, str]
 	has_main: bool
 
 
@@ -73,7 +74,7 @@ def discover(root: Path, entry: str, scanner: Path | None = None) -> list[Module
 			path = root.joinpath(*name.split('.')).with_suffix('.sirius')
 			if not path.is_file() or not path.resolve().is_relative_to(root):
 				raise ModuleError(f'module {name} not found under source root: {path}')
-			current = Module(name, path, {}, {}, False)
+			current = Module(name, path, {}, {}, {}, False)
 			ordered.append(current)
 			seen.add(name)
 		elif current is not None and len(parts) == 3 and parts[0] == 'I':
@@ -86,6 +87,11 @@ def discover(root: Path, entry: str, scanner: Path | None = None) -> list[Module
 			if not name or name in current.exports or not returns:
 				raise ModuleError(f'duplicate/invalid exported function: {name}')
 			current.exports[name] = Export(name, parameters, returns)
+		elif current is not None and len(parts) == 3 and parts[0] == 'C':
+			_, name, type_name = parts
+			if not name or name in current.exports or name in current.constants or not type_name:
+				raise ModuleError(f'duplicate/invalid exported constant: {name}')
+			current.constants[name] = type_name
 		elif current is not None and parts == ['F', 'main']:
 			if current.has_main:
 				raise ModuleError('duplicate main marker in module manifest')

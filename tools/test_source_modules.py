@@ -132,6 +132,69 @@ def main() -> None:
 			raise AssertionError('incorrect imported function arity accepted')
 		print('PASS source modules: typed nested collections, incompatible signatures rejected')
 
+		# Structural record types are re-interned in the importing module. The
+		# caller constructs a shape independently of the exporter's constructor.
+		write(root, 'Geometry',
+			'rec Point(x: i64, y: i64)\n'
+			'export let ORIGIN = {x = 0, y = 0}\n'
+			'export def make() -> Point\n'
+			'\treturn Point(7, 5)\n'
+			'export def score(value: Point) -> i64\n'
+			'\treturn value.x * 10 + value.y\n'
+			'export def many(points: Array[Point]) -> i64\n'
+			'\treturn len(points)\n')
+		write(root, 'GeometryApp',
+			'import Geometry alias G\n'
+			'def main() -> i64\n'
+			'\tlet point = G.make()\n'
+			'\treturn G.score(point) + G.many([point]) + G.score(G.ORIGIN)\n')
+		entry = build(root, 'GeometryApp', output, runner)
+		result = run(str(runner), '--entry', entry, '--load-lib', str(output))
+		assert (result.returncode, result.stdout, result.stderr) == (76, b'', b''), result
+		write(root, 'GeometryWrong',
+			'import Geometry alias G\n'
+			'def main() -> i64\n'
+			'\treturn G.score({x=7, z=5})\n')
+		try:
+			build(root, 'GeometryWrong', root / 'wrong.smirl', runner)
+		except ModuleError as exc:
+			assert 'expected' in str(exc), exc
+		else:
+			raise AssertionError('incorrect imported record shape accepted')
+		print('PASS source modules: imported structural records and nested collection signatures')
+
+		# Constants cross module boundaries as typed HIR values; no runtime
+		# constant getter or synthetic source declaration is necessary.
+		write(root, 'Settings',
+			'export let WIDTH: i64 = 12\n'
+			'export let ENABLED = true\n'
+			'export let NAME = "hi"\n'
+			'export let CONFIG = {size = WIDTH, title = NAME, levels = [3, 4]}\n'
+			'let PRIVATE = 90\n')
+		write(root, 'SettingsApp',
+			'import Settings alias S\n'
+			'def main() -> i64\n'
+			'\tif not S.ENABLED\n'
+			'\t\treturn 2\n'
+			'\tif S.NAME != "hi"\n'
+			'\t\treturn 1\n'
+			'\treturn S.CONFIG.size + S.CONFIG.levels[!1] + S.WIDTH\n')
+		assert discover(root, 'SettingsApp')[0].constants['WIDTH'] == 'i64'
+		entry = build(root, 'SettingsApp', output, runner)
+		result = run(str(runner), '--entry', entry, '--load-lib', str(output))
+		assert (result.returncode, result.stdout, result.stderr) == (28, b'', b''), result
+		write(root, 'SettingsPrivate',
+			'import Settings alias S\n'
+			'def main() -> i64\n'
+			'\treturn S.PRIVATE\n')
+		try:
+			build(root, 'SettingsPrivate', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'not exported' in str(exc), exc
+		else:
+			raise AssertionError('private module constant incorrectly accessible')
+		print('PASS source modules: exported scalar/record/array constants, privacy')
+
 		# The runner exposes namespaced exports without requiring source rewriting.
 		unnamed = root / 'unnamed.sirius'
 		unnamed.write_text('def value() -> i64\n\treturn 9\n')

@@ -25,7 +25,43 @@ def module_build_type(table: TypeTable, foreign: TypeTable, id: i64) -> ModuleBu
 			return second
 		let result = intern_dict_type(second.table, first.id, second.id)
 		return ModuleBuildType(result.table, result.id)
+	if descriptor.tag == TYPE_TAG_RECORD
+		var current = table
+		var fields = Array[RecordField]()
+		for field in descriptor.fields
+			let imported = module_build_type(current, foreign, field.kind)
+			if imported.id == TYPE_TAG_INVALID
+				return imported
+			current = imported.table
+			fields = fields.append(RecordField(field.name, imported.id))
+		let result = intern_record_type(current, fields)
+		return ModuleBuildType(result.table, result.id)
 	return ModuleBuildType(table, TYPE_TAG_INVALID)
+
+# Copy a compile-time constant arena recursively, replacing module-local TypeIds.
+# Each imported constant owns a new immutable value graph in the importing HIR.
+rec ModuleBuildConstant(table: TypeTable, values: Array[HirConstantValue], index: i64)
+
+def module_build_constant(table: TypeTable, values: Array[HirConstantValue], foreign_types: TypeTable, foreign_values: Array[HirConstantValue], index: i64) -> ModuleBuildConstant
+	if index < 0 or index >= len(foreign_values)
+		return ModuleBuildConstant(table, values, -1)
+	let foreign = foreign_values[!index]
+	let mapped = module_build_type(table, foreign_types, foreign.type_id)
+	if mapped.id == TYPE_TAG_INVALID
+		return ModuleBuildConstant(table, values, -1)
+	var current = mapped.table
+	var copied = values
+	var fields = Array[i64]()
+	for child in foreign.fields
+		let result = module_build_constant(current, copied, foreign_types, foreign_values, child)
+		if result.index < 0
+			return result
+		current = result.table
+		copied = result.values
+		fields = fields.append(result.index)
+	let at = len(copied)
+	copied = copied.append(HirConstantValue(mapped.id, foreign.bits, fields, foreign.text))
+	return ModuleBuildConstant(current, copied, at)
 
 def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
 	let scanned = module_scan_visit(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit]())
@@ -60,13 +96,23 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 					function.argument_types = arguments
 					function.result_type = result_type.id
 					declarations.functions = declarations.functions.append(function)
+				for constant in dependency.exported_constants
+					let copied = module_build_constant(types, declarations.values, dependency.types, dependency.declarations.values, constant.value)
+					if copied.index < 0
+						return ModuleBuildResult("", "unsupported imported constant: " + dependency.name + "." + constant.name)
+					types = copied.table
+					declarations.values = copied.values
+					let type_id = declarations.values[!copied.index].type_id
+					declarations.constants = declarations.constants.append(HirModuleConstant(hir_module_symbol(dependency.name, constant.name), copied.index, type_id))
 			if not found
 				return ModuleBuildResult("", "missing dependency: " + imported.path)
 		declarations.types = types
 		let resolved = hir_resolve_module_calls(module.tree, declarations)
 		if resolved.error != ""
 			return ModuleBuildResult("", module.name + ":" + str(resolved.line) + ": " + resolved.error)
-		var roots = declarations.exports
+		var roots = Array[string]()
+		for function in module.exports
+			roots = roots.append(function.name)
 		if module.name == entry
 			if not module.has_main
 				return ModuleBuildResult("", "entry module has no main() function: " + entry)
@@ -77,7 +123,9 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 			if not main_exported
 				roots = roots.append("main")
 		if len(roots) == 0
-			return ModuleBuildResult("", "module has no exported functions: " + module.name)
+			if len(module.exported_constants) > 0
+				continue # Imported constants are materialized in the consumer HIR.
+			return ModuleBuildResult("", "module has no exported declarations: " + module.name)
 		let lowered = mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
 		if lowered.error != ""
 			return ModuleBuildResult("", module.name + ": " + lowered.error)

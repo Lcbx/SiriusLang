@@ -553,8 +553,8 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_IMPORT, token, path)
 	if op == "export"
 		next.index += 1
-		if not is_token(next, "def")
-			return ParseResult(fail(next, "export requires a function declaration"), -1)
+		if not is_token(next, "def") and not is_token(next, "let")
+			return ParseResult(fail(next, "export requires def or let"), -1)
 		let definition = parse_statement(next)
 		return unary_node(definition.state, NODE_EXPORT, token, definition.node)
 	if op == "def" or op == "rec" or op == "extern"

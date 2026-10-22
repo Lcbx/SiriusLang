@@ -2,6 +2,15 @@
 # Module namespaces are compile-time only; MIR sees ordinary named calls.
 rec HirModuleResolution(tree: ParseState, error: string, line: i64)
 
+def hir_module_replace_name(tree: ParseState, node: i64, target: string, line: i64) -> ParseState
+	var next = tree
+	let start = len(next.source)
+	next.source += target
+	let token_id = len(next.tokens)
+	next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), line, 0))
+	next.nodes[!node] = Node(NODE_NAME, token_id, 0, 0)
+	return next
+
 def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> HirModuleResolution
 	var next = tree
 	for i in 0..len(tree.nodes)
@@ -26,10 +35,30 @@ def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> H
 						found = true
 				if not found
 					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", hir_ast_line(tree, callee_id))
-				let start = len(next.source)
-				next.source += target
-				let token_id = len(next.tokens)
-				next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), hir_ast_line(tree, callee_id), 0))
-				next.nodes[!callee_id] = Node(NODE_NAME, token_id, 0, 0)
+				next = hir_module_replace_name(next, callee_id, target, hir_ast_line(tree, callee_id))
 				break
+	# Imported constants are namespace-qualified at the source level but use
+	# ordinary HIR module constants after resolution. This also handles nested
+	# projections (for example, Settings.CONFIG.width).
+	for i in 0..len(tree.nodes)
+		let attribute = next.nodes[!i]
+		if attribute.kind != NODE_ATTR or attribute.count != 1
+			continue
+		let receiver_id = hir_ast_child(next, i, 0)
+		if next.nodes[!receiver_id].kind != NODE_NAME
+			continue
+		let receiver = hir_ast_text(next, receiver_id)
+		for imported in declarations.imports
+			if imported.alias != receiver
+				continue
+			let name = hir_ast_text(next, i)
+			let target = hir_module_symbol(imported.path, name)
+			var found = false
+			for constant in declarations.constants
+				if constant.name == target
+					found = true
+			if not found
+				return HirModuleResolution(tree, "constant " + receiver + "." + name + " is not exported", hir_ast_line(next, i))
+			next = hir_module_replace_name(next, i, target, hir_ast_line(next, i))
+			break
 	return HirModuleResolution(next, "", 0)

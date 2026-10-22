@@ -46,9 +46,9 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		if entry.kind == NODE_EXPORT
 			id = hir_ast_child(tree, id, 0)
 			entry = tree.nodes[!id]
-			if entry.kind != NODE_DEF
-				return hir_declaration_error(functions, constants, "export requires def", hir_ast_line(tree, id))
-			if entry.count < 2
+			if entry.kind != NODE_DEF and entry.kind != NODE_LET
+				return hir_declaration_error(functions, constants, "export requires def or let", hir_ast_line(tree, id))
+			if entry.kind == NODE_DEF and entry.count < 2
 				return hir_declaration_error(functions, constants, "export requires an explicit return type", hir_ast_line(tree, id))
 			for j in 0..entry.count - 1
 				let member = hir_ast_child(tree, id, j)
@@ -58,7 +58,7 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			for j in 0..entry.count - 1
 				if tree.nodes[!hir_ast_child(tree, id, j)].kind == NODE_TYPE
 					has_return = true
-			if not has_return
+			if entry.kind == NODE_DEF and not has_return
 				return hir_declaration_error(functions, constants, "exported function requires a return type", hir_ast_line(tree, id))
 			exports = exports.append(hir_ast_text(tree, id))
 		let name = hir_ast_text(tree, id)

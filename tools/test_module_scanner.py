@@ -48,6 +48,17 @@ def main() -> None:
 		assert 'let label' not in first
 		print('PASS scanner: transitive dependencies, type signatures, deterministic metadata')
 
+		write(root, 'Shapes',
+			'rec Pair(first: i64, second: i64)\n'
+			'export let SIZE = 3\n'
+			'export let COLORS = {red = 7, blue = 2}\n'
+			'export def make() -> Pair\n\treturn Pair(1, 2)\n')
+		shapes = discover(root, 'Shapes', SCANNER)[0]
+		assert shapes.constants['SIZE'] == 'i64'
+		assert 'COLORS' in shapes.constants
+		assert shapes.exports['make'].returns == 'Pair'
+		print('PASS scanner: structural record signatures and exported constants')
+
 		write(root, 'BadMissing', 'import Missing.Sub\ndef main() -> i64\n\treturn 0\n')
 		reject(root, 'BadMissing', 'not found under source root')
 		write(root, 'CycleA', 'import CycleB\nexport def one() -> i64\n\treturn 1\n')
