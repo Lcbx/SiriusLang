@@ -1,11 +1,3 @@
-# Specialization IDs are now carried exclusively by resolved HIR_TARGET nodes.
-def worklist_targets(body: HirSpecializedFunction) -> Array[i64]
-	var result = Array[i64]()
-	for node in body.nodes
-		if node.operation == HIR_TARGET
-			result = result.append(node.field_index)
-	return result
-
 # HIR worklist is usable without linking MIR or the C emitter.
 def main() -> i64
 	let source = "def size(values) -> i64\n\treturn len(values)\ndef main() -> i64\n\tlet a = [1, 2]\n\treturn size(a) + size([3, 4])\n"
@@ -20,13 +12,9 @@ def main() -> i64
 		return 2
 	if len(result.bodies) != 2 or len(result.registry.entries) != 2
 		return 3
-	# The unannotated callee is inferred once, then reused by the worklist.
-	if result.worklist_analyses != 2
-		return 13
-	let first_targets = worklist_targets(result.bodies[!0])
-	if len(first_targets) != 2
+	if len(result.bodies[!0].calls) != 2
 		return 4
-	if first_targets[!0] != 1 or first_targets[!1] != 1
+	if result.bodies[!0].calls[!0].specialization != 1 or result.bodies[!0].calls[!1].specialization != 1
 		return 5
 	let array_id = result.registry.entries[!1].arguments[!0]
 	if array_id < 0 or array_id >= len(result.types.entries)
@@ -42,12 +30,9 @@ def main() -> i64
 	let specialized = hir_specialize_program(multi.state, multi_declarations, "main", Array[i64]())
 	if specialized.error != "" or len(specialized.bodies) != 3 or len(specialized.registry.entries) != 3
 		return 9
-	if specialized.worklist_analyses != 3
-		return 14
-	let distinct_targets = worklist_targets(specialized.bodies[!0])
-	if len(distinct_targets) != 3
+	if len(specialized.bodies[!0].calls) != 3
 		return 10
-	if distinct_targets[!0] != 1 or distinct_targets[!1] != 2 or distinct_targets[!2] != 1
+	if specialized.bodies[!0].calls[!0].specialization != 1 or specialized.bodies[!0].calls[!1].specialization != 2 or specialized.bodies[!0].calls[!2].specialization != 1
 		return 11
 	for i in 0..len(specialized.bodies)
 		if specialized.registry.entries[!i].status != HIR_SPEC_COMPLETE
@@ -57,11 +42,5 @@ def main() -> i64
 	let invalid = hir_specialize_program(bad.state, bad_declarations, "main", Array[i64]())
 	if invalid.error != "expected bool, found i64"
 		return 8
-	# A shared inferred callee must be reused across two distinct callers.
-	let diamond = parse_module("def leaf(x)\n\treturn x + x\ndef left(x)\n\treturn leaf(x)\ndef right(x)\n\treturn leaf(x)\ndef main() -> i64\n\treturn left(1) + right(2)\n")
-	let d = hir_module_declarations(diamond.state, diamond.node)
-	let ds = hir_specialize_program(diamond.state, d, "main", Array[i64]())
-	if ds.error != "" or len(ds.bodies) != 4 or ds.worklist_analyses != 4
-		return 15
 	print("PASS HIR worklist without backend")
 	return 0

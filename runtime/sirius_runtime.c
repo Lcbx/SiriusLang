@@ -1,8 +1,26 @@
+#if !defined(_WIN32)
+#define _POSIX_C_SOURCE 200809L
+#endif
 #include "sirius_runtime.h"
 #include <inttypes.h>
+#include <limits.h>
+#include <wchar.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
+#if defined(_WIN32)
+#include <windows.h>
+#else
+#include <dirent.h>
+#include <sys/stat.h>
+#endif
 
 _Noreturn void s_panic(const char *reason) {
     fprintf(stderr, "Sirius panic: %s\n", reason);
@@ -581,6 +599,102 @@ static void s_copy_arg(void *dst,const void *src) {
     *(S_String **)dst=s_string_retain(*(S_String * const *)src);
 }
 static void s_drop_arg(void *item) { s_string_release(*(S_String **)item); }
+/* Filesystem discovery is intentionally non-recursive: walk policies belong
+   in Sirius. Directory enumeration is deterministic across backends. */
+static void s_fs_copy_name(void *dst, const void *src) {
+    *(S_String **)dst = s_string_retain(*(S_String *const *)src);
+}
+static void s_fs_drop_name(void *value) { s_string_release(*(S_String **)value); }
+static int s_fs_compare_name(const void *a, const void *b) {
+    return s_string_compare(*(S_String *const *)a, *(S_String *const *)b);
+}
+static S_Array *s_fs_add_name(S_Array *names, const char *bytes, size_t length) {
+    if ((length == 1 && bytes[0] == '.') ||
+        (length == 2 && bytes[0] == '.' && bytes[1] == '.')) return names;
+    S_String *name = s_string_from_bytes(bytes, length);
+    names = s_array_append(names, &name);
+    s_string_release(name);
+    return names;
+}
+#ifdef _WIN32
+static wchar_t *s_fs_wide(const S_String *path) {
+    if (memchr(path->data, 0, path->length) || path->length > INT_MAX) return NULL;
+    int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->data,
+                                    (int)path->length, NULL, 0);
+    if (!count) return NULL;
+    wchar_t *wide = calloc((size_t)count + 1, sizeof(wchar_t));
+    if (!wide) s_panic("out of memory");
+    if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->data,
+                              (int)path->length, wide, count)) { free(wide); return NULL; }
+    return wide;
+}
+bool s_is_dir(const S_String *path) {
+    wchar_t *wide = s_fs_wide(path);
+    if (!wide) return false;
+    DWORD attr = GetFileAttributesW(wide);
+    free(wide);
+    return attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY) &&
+           !(attr & FILE_ATTRIBUTE_REPARSE_POINT);
+}
+S_Array *s_list_dir(const S_String *path) {
+    wchar_t *wide = s_fs_wide(path);
+    if (!wide) return NULL;
+    size_t n = wcslen(wide);
+    wchar_t *pattern = realloc(wide, (n + 3) * sizeof(wchar_t));
+    if (!pattern) { free(wide); s_panic("out of memory"); }
+    pattern[n++] = L'\\'; pattern[n++] = L'*'; pattern[n] = 0;
+    WIN32_FIND_DATAW item;
+    HANDLE handle = FindFirstFileW(pattern, &item);
+    free(pattern);
+    if (handle == INVALID_HANDLE_VALUE) {
+        if (GetLastError() == ERROR_FILE_NOT_FOUND && s_is_dir(path))
+            return s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
+        return NULL;
+    }
+    S_Array *names = s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
+    do {
+        const wchar_t *name = item.cFileName;
+        int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, name, -1, NULL, 0, NULL, NULL);
+        if (bytes <= 0) { s_array_release(names); FindClose(handle); return NULL; }
+        char *utf8 = malloc((size_t)bytes);
+        if (!utf8) s_panic("out of memory");
+        if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, name, -1, utf8, bytes, NULL, NULL)) {
+            free(utf8); s_array_release(names); FindClose(handle); return NULL;
+        }
+        names = s_fs_add_name(names, utf8, (size_t)bytes - 1);
+        free(utf8);
+    } while (FindNextFileW(handle, &item));
+    DWORD status = GetLastError();
+    FindClose(handle);
+    if (status != ERROR_NO_MORE_FILES) { s_array_release(names); return NULL; }
+    qsort(names->data, names->length, sizeof(S_String *), s_fs_compare_name);
+    return names;
+}
+#else
+bool s_is_dir(const S_String *path) {
+    if (memchr(path->data, 0, path->length)) return false;
+    struct stat info;
+    return lstat(path->data, &info) == 0 && S_ISDIR(info.st_mode);
+}
+S_Array *s_list_dir(const S_String *path) {
+    if (memchr(path->data, 0, path->length)) return NULL;
+    DIR *dir = opendir(path->data);
+    if (!dir) return NULL;
+    S_Array *names = s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
+    struct dirent *item;
+    errno = 0;
+    while ((item = readdir(dir)) != NULL) {
+        names = s_fs_add_name(names, item->d_name, strlen(item->d_name));
+        errno = 0;
+    }
+    int failed = errno != 0;
+    int status = closedir(dir);
+    if (status || failed) { s_array_release(names); return NULL; }
+    qsort(names->data, names->length, sizeof(S_String *), s_fs_compare_name);
+    return names;
+}
+#endif
+
 void s_set_arguments(int argc,char **argv) {
     if (!s_cli_cleanup_registered) {
         if (atexit(s_cli_cleanup)) s_panic("cannot register argument cleanup");

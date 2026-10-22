@@ -1,26 +1,28 @@
-# Merge concrete MIR bodies (including link-time template specializations).
-# TypeIds and function
-# indices are local to each input; calls within a library remain internal.
-# Imported calls are resolved by name and canonical concrete signature.
+# Link independently serialized concrete MIR libraries. TypeIds and function
+# indices are local to each input; imports are bound to matching exported symbols.
+# This does not yet implement generic specialization.
 rec MirLibraryLink(program: MirProgram, exports: Array[MirNamedExport], error: string)
 
 def mir_link_failure(message: string) -> MirLibraryLink
 	return MirLibraryLink(MirProgram(Array[MirFunction]()), Array[MirNamedExport](), message)
 
-def mir_link_concrete_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryLink
+def mir_link_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryLink
 	if len(libraries) == 0
 		return mir_link_failure("no MIR libraries to link")
 	var types = new_type_table()
 	var functions = Array[MirFunction]()
 	var exports = Array[MirNamedExport]()
 	var names = Dict[string,bool]()
-	var imports = Array[MirNamedImport]()
+	var pending = Array[MirNamedImport]()
 	for library in libraries
 		if library.error != ""
 			return mir_link_failure(library.error)
 		let export_error = mir_library_exports_error(library.program, library.exports)
 		if export_error != ""
 			return mir_link_failure(export_error)
+		let import_error = mir_library_imports_error(library.program, library.exports, library.imports)
+		if import_error != ""
+			return mir_link_failure(import_error)
 		let checked = mir_check_balance(library.program)
 		if checked != ""
 			return mir_link_failure("invalid input MIR: " + checked)
@@ -50,210 +52,44 @@ def mir_link_concrete_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryL
 					instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 				blocks = blocks.append(MirBlock(instructions, block.terminator))
 			functions = functions.append(MirFunction(function.argument_count, type_map[!function.return_type], registers, blocks, function.entry))
-		for symbol in library.imports
-			imports = imports.append(MirNamedImport(symbol.name, symbol.function_id + offset))
 		for symbol in library.exports
 			if names.get(symbol.name) or false
 				return mir_link_failure("duplicate MIR export: " + symbol.name)
 			names = names.insert(symbol.name, true)
 			exports = exports.append(MirNamedExport(symbol.name, symbol.function_id + offset))
-	# Resolve every imported function slot against a single named export.
-	# Matching structural signatures are independent of remapped TypeIds.
-	var relocations = Array[i64]()
+		for symbol in library.imports
+			pending = pending.append(MirNamedImport(symbol.name, symbol.function_id + offset))
+	# Resolve all imports before rewriting calls; each instruction is visited once.
+	var redirects = Array[i64]()
 	for i in 0..len(functions)
-		relocations = relocations.append(i)
-	let unlinked = mir_program_with_types(functions, types)
-	for symbol in imports
+		redirects = redirects.append(i)
+	let combined = mir_program_with_types(functions, types)
+	for symbol in pending
 		var target = -1
 		for exported in exports
 			if exported.name == symbol.name
 				target = exported.function_id
 		if target < 0
 			return mir_link_failure("unresolved MIR import: " + symbol.name)
-		if mir_function_signature(unlinked, symbol.function_id) != mir_function_signature(unlinked, target)
-			return mir_link_failure("MIR import signature mismatch: " + symbol.name)
-		relocations[!symbol.function_id] = target
-	# Relocate calls *after* all libraries have been merged. The function
-	# referenced by an imported slot is never executed in the linked program.
-	var resolved = Array[MirFunction]()
-	for function in functions
+		let expected = mir_function_signature(combined, symbol.function_id)
+		let actual = mir_function_signature(combined, target)
+		if expected != actual
+			return mir_link_failure("MIR import signature mismatch: " + symbol.name + " (expected " + expected + ", found " + actual + ")")
+		redirects[!symbol.function_id] = target
+	for i in 0..len(functions)
+		let function = functions[!i]
 		var blocks = Array[MirBlock]()
 		for block in function.blocks
 			var instructions = Array[MirInstruction]()
 			for ins in block.instructions
 				var immediate = ins.immediate
 				if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE
-					immediate = relocations[!immediate]
+					immediate = redirects[!immediate]
 				instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 			blocks = blocks.append(MirBlock(instructions, block.terminator))
-		resolved = resolved.append(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry))
-	functions = resolved
+		functions[!i] = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
 	let program = mir_program_with_types(functions, types)
 	let verified = mir_check_balance(program)
 	if verified != ""
 		return mir_link_failure("invalid linked MIR: " + verified)
 	return MirLibraryLink(program, exports, "")
-
-# Generic templates persist provider syntax (or v3 source). Specialize when an
-# unresolved concrete import requests the template, using the importer's
-# structural types as the initial type environment of the provider HIR pass.
-# Specialization can itself produce imports, which are resolved in later rounds.
-rec MirGenericExpansion(libraries: Array[MirLibraryLoad], error: string)
-	pub generated_names = Array[string]()
-
-# Cache the provider's verified declaration environment once per link, rather
-# than reconstructing it for every concrete template request.
-def mir_library_template_context(library: MirLibraryLoad) -> MirSemanticLoad
-	if library.snapshot.starts_with(MIR_PARAMETRIC_MAGIC)
-		return mir_deserialize_parametric(library.snapshot)
-	if library.snapshot.starts_with(MIR_SEMANTIC_MAGIC)
-		return mir_deserialize_semantic(library.snapshot)
-	var parsed = ParseResult(ParseState("", Array[Token]()), -1)
-	if library.snapshot == ""
-		parsed = parse_module(library.source)
-	else
-		let loaded = mir_deserialize_template(library.snapshot)
-		if loaded.error != ""
-			return mir_semantic_failure("generic template syntax error: " + loaded.error)
-		parsed = ParseResult(loaded.tree, loaded.root)
-	if parsed.state.error != ""
-		return mir_semantic_failure("generic template parse error: " + parsed.state.error)
-	let declarations = hir_module_declarations(parsed.state, parsed.node)
-	if declarations.error != ""
-		return mir_semantic_failure("generic template declarations: " + declarations.error)
-	return MirSemanticLoad(parsed.state, parsed.node, declarations, "")
-
-def mir_specialize_library_template(context: MirSemanticLoad, name: string, request: MirProgram, function_id: i64) -> MirLibraryLoad
-	if context.error != ""
-		return mir_library_failure(context.error)
-	let parsed = ParseResult(context.tree, context.root)
-	var declarations = context.declarations
-	var found = false
-	for function in declarations.functions
-		if function.name == name and not function.constructor and not function.external
-			found = true
-	if not found
-		return mir_library_failure("missing generic template definition: " + name)
-	# TypeIds are local to a library. Remap descriptors, including records,
-	# through the provider's canonical type interner before specialization.
-	var types = declarations.types
-	var type_map = [0, 1, 2, 3, 4, 5]
-	for i in 6..len(request.types.entries)
-		let desc = request.types.entries[!i]
-		var fields = Array[RecordField]()
-		for field in desc.fields
-			fields = fields.append(RecordField(field.name, type_map[!field.kind]))
-		let mapped = intern_type(types, desc.tag, type_map[!desc.first], type_map[!desc.second], fields)
-		types = mapped.table
-		type_map = type_map.append(mapped.id)
-	declarations.types = types
-	let signature = request.functions[!function_id]
-	var arguments = Array[i64]()
-	for i in 0..signature.argument_count
-		arguments = arguments.append(type_map[!signature.register_types[!i]])
-	let specialized = mir_build_program_roots(parsed.state, declarations, [name], arguments)
-	if specialized.error != ""
-		return mir_library_failure("generic specialization " + name + ": " + specialized.error)
-	if mir_function_signature(specialized.program, specialized.entry) != mir_function_signature(request, function_id)
-		return mir_library_failure("generic specialization signature mismatch: " + name)
-	var result = MirLibraryLoad(specialized.program, specialized.exports, "")
-	for symbol in specialized.imports
-		result.imports = result.imports.append(MirNamedImport(symbol.name, symbol.function_id))
-	return result
-
-def mir_expand_generic_libraries(libraries: Array[MirLibraryLoad]) -> MirGenericExpansion
-	var expanded = libraries
-	var contexts = Array[MirSemanticLoad]()
-	for library in libraries
-		if len(library.templates) > 0
-			let context = mir_library_template_context(library)
-			if context.error != ""
-				return MirGenericExpansion(expanded, context.error)
-			contexts = contexts.append(context)
-		else
-			contexts = contexts.append(mir_semantic_failure("no generic templates"))
-	var cached_keys = Array[string]()
-	var cached_names = Array[string]()
-	var generated = 0
-	var i = 0
-	while i < len(expanded)
-		let consumer = expanded[!i]
-		var next = consumer
-		var imports = Array[MirNamedImport]()
-		for symbol in consumer.imports
-			let signature = mir_function_signature(consumer.program, symbol.function_id)
-			var has_concrete = false
-			for library in libraries
-				for exported in library.exports
-					if exported.name == symbol.name and mir_function_signature(library.program, exported.function_id) == signature
-						has_concrete = true
-			if has_concrete
-				imports = imports.append(symbol)
-				continue
-			var provider_id = -1
-			for j in 0..len(libraries)
-				for template in libraries[!j].templates
-					if template == symbol.name
-						if provider_id >= 0
-							return MirGenericExpansion(expanded, "ambiguous MIR generic template: " + symbol.name)
-						provider_id = j
-			if provider_id < 0
-				imports = imports.append(symbol)
-				continue
-			let key = str(provider_id) + ":" + symbol.name + ":" + signature
-			var private_name = ""
-			for j in 0..len(cached_keys)
-				if cached_keys[!j] == key
-					private_name = cached_names[!j]
-			if private_name == ""
-				private_name = "__sirius_specialization_" + str(generated)
-				# Keep synthetic names distinct from every public symbol, even if
-				# a user deliberately chooses our prefix.
-				var conflicting = true
-				while conflicting
-					conflicting = false
-					for library in libraries
-						for exported in library.exports
-							if exported.name == private_name
-								conflicting = true
-						for imported in library.imports
-							if imported.name == private_name
-								conflicting = true
-					if conflicting
-						generated += 1
-						private_name = "__sirius_specialization_" + str(generated)
-				let specialized = mir_specialize_library_template(contexts[!provider_id], symbol.name, consumer.program, symbol.function_id)
-				if specialized.error != ""
-					return MirGenericExpansion(expanded, specialized.error)
-				var concrete = specialized
-				concrete.exports = [MirNamedExport(private_name, specialized.exports[!0].function_id)]
-				expanded = expanded.append(concrete)
-				cached_keys = cached_keys.append(key)
-				cached_names = cached_names.append(private_name)
-				generated += 1
-			imports = imports.append(MirNamedImport(private_name, symbol.function_id))
-		next.imports = imports
-		expanded[!i] = next
-		i += 1
-	var result = MirGenericExpansion(expanded, "")
-	result.generated_names = cached_names
-	return result
-
-def mir_link_libraries(libraries: Array[MirLibraryLoad]) -> MirLibraryLink
-	let expanded = mir_expand_generic_libraries(libraries)
-	if expanded.error != ""
-		return mir_link_failure(expanded.error)
-	let linked = mir_link_concrete_libraries(expanded.libraries)
-	if linked.error != ""
-		return linked
-	# Synthetic exports exist only for relocation, not as part of the
-	# public interface of the resulting concrete library.
-	var exports = Array[MirNamedExport]()
-	for symbol in linked.exports
-		var internal = false
-		for name in expanded.generated_names
-			if symbol.name == name
-				internal = true
-		if not internal
-			exports = exports.append(symbol)
-	return MirLibraryLink(linked.program, exports, "")

@@ -1,0 +1,82 @@
+# Precompute CFG incoming edges once for forward and backward data flow.
+def mir_cfg_predecessors(function: MirFunction) -> Array[Array[i64]]
+	var predecessors = Array[Array[i64]]()
+	for block in function.blocks
+		predecessors = predecessors.append(Array[i64]())
+	for i in 0..len(function.blocks)
+		let term = function.blocks[!i].terminator
+		if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+			var incoming = predecessors[!term.target]
+			incoming = incoming.append(i)
+			predecessors[!term.target] = incoming
+		if term.kind == MIR_BRANCH and term.alternative != term.target
+			var incoming = predecessors[!term.alternative]
+			incoming = incoming.append(i)
+			predecessors[!term.alternative] = incoming
+	return predecessors
+
+# CFG topology belongs to MIR, not to ownership. Reuse these facts across
+# liveness and ownership analyses while the CFG is unchanged.
+rec MirCfgFacts(reached: Array[i64], predecessors: Array[Array[i64]])
+
+def mir_cfg_reachable(function: MirFunction) -> Array[i64]
+	var reached = Array[i64]()
+	for block in function.blocks
+		reached = reached.append(0)
+	var queue = Array[i64]().append(function.entry)
+	reached[!function.entry] = 1
+	var head = 0
+	while head < len(queue)
+		let i = queue[!head]
+		head += 1
+		let term = function.blocks[!i].terminator
+		if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+			if reached[!term.target] == 0
+				reached[!term.target] = 1
+				queue = queue.append(term.target)
+		if term.kind == MIR_BRANCH and reached[!term.alternative] == 0
+			reached[!term.alternative] = 1
+			queue = queue.append(term.alternative)
+	return reached
+
+# Compatibility entry point for standalone ownership tests and callers.
+def mir_ownership_reachable(function: MirFunction) -> Array[i64]
+	return mir_cfg_reachable(function)
+
+def mir_cfg_facts(function: MirFunction) -> MirCfgFacts
+	return MirCfgFacts(mir_cfg_reachable(function), mir_cfg_predecessors(function))
+
+# Consuming instructions invalidate their source register. Shared by
+# forward ownership and backward lifetime analyses.
+def mir_consumes_source(ins: MirInstruction) -> bool
+	return ins.op == MIR_MOVE or ins.op == MIR_RECORD_SET or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_INSERT or ins.op == MIR_ARRAY_APPEND or ins.op == MIR_RECORD_ARRAY_APPEND or ins.op == MIR_CALL_MOVE or ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
+
+# Register operands read by an instruction. Literal immediates are excluded.
+# Shared by backward liveness and forward definite-initialization analyses.
+def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
+	if register < 0
+		return reads
+	for existing in reads
+		if existing == register
+			return reads
+	return reads.append(register)
+
+def mir_instruction_reads(ins: MirInstruction) -> Array[i64]
+	var reads = Array[i64]()
+	if ins.op == MIR_CONST_I64 or ins.op == MIR_CONST_BOOL or ins.op == MIR_CONST_STRING or ins.op == MIR_CONST_F64 or ins.op == MIR_DICT_NEW or ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_ARGUMENTS or ins.op == MIR_RELEASE_IF_INIT
+		return reads
+	if ins.op == MIR_WRITE_TEXT
+		return [ins.first, ins.second]
+	if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE or ins.op == MIR_RECORD_NEW or ins.op == MIR_ARRAY_NEW
+		return ins.inputs
+	reads = reads.append(ins.first)
+	if ins.op == MIR_DICT_INSERT
+		for register in ins.inputs
+			reads = mir_read_add(reads, register)
+		return reads
+	if ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_STRING_SLICE
+		reads = mir_read_add(reads, ins.immediate)
+	if (ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64) or (ins.op >= MIR_BIT_AND_I64 and ins.op <= MIR_SHR_I64) or ins.op == MIR_EQ_BOOL or ins.op == MIR_STRING_CONCAT or ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_SET or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_GET_OPTIONAL or ins.op == MIR_DIV_NO_OVERFLOW_I64 or ins.op == MIR_ARRAY_INDEX_VALID or ins.op == MIR_ARRAY_APPEND or ins.op == MIR_RECORD_SET or ins.op == MIR_RECORD_ARRAY_APPEND or (ins.op >= MIR_STRING_SLICE and ins.op <= MIR_LE_STRING) or (ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64)
+		reads = mir_read_add(reads, ins.second)
+	return reads
+

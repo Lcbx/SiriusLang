@@ -1,0 +1,25 @@
+def main() -> i64
+	let array = intern_array_type(new_type_table(), TYPE_TAG_STRING)
+	let optional = intern_optional_type(array.table, array.id)
+	let regtypes = [TYPE_TAG_STRING, optional.id]
+	let path = arguments()[!1]
+	let first = MirInstruction(MIR_CONST_STRING, 0, -1, -1, 0, Array[i64](), path)
+	let second = mir_op(MIR_LIST_DIR, 1, 0, -1, 0)
+	let block = MirBlock([first, second], MirTerminator(MIR_RETURN, 1, -1, -1, ""))
+	let func = MirFunction(0, optional.id, regtypes, [block], 0)
+	let program = mir_program_with_types([func], optional.table)
+	let verified = mir_verify(program)
+	if verified != ""
+		print(verified)
+		return 10
+	let outcome = mir_execute(program, 0, Array[MirValue](), 10000, 10)
+	if outcome.error != ""
+		print(outcome.error)
+		return 11
+	let wrapped = outcome.heap[!outcome.value.bits]
+	if len(wrapped.fields) != 1
+		return 12
+	let values = outcome.heap[!wrapped.fields[!0].bits]
+	for item in values.fields
+		print(item.text)
+	return len(values.fields)

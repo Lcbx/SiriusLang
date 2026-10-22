@@ -9,7 +9,7 @@ import sys
 import bootstrap_support
 import generate_bootstrap
 import test_bootstrap
-from source_manifest import COMPILER_SOURCES, LEGACY_COMPILER_SOURCES
+from source_manifest import COMPILER_SOURCES
 
 
 class FakeCache:
@@ -25,10 +25,7 @@ class FakeCache:
 def main() -> None:
 	assert 'src/emit_c.sirius' not in COMPILER_SOURCES
 	assert COMPILER_SOURCES[-1] == 'src/cli.sirius'
-	assert 'src/emit_c.sirius' in LEGACY_COMPILER_SOURCES
-	assert LEGACY_COMPILER_SOURCES[-1] == 'src/legacy_cli.sirius'
 	assert len(COMPILER_SOURCES) == len(set(COMPILER_SOURCES))
-	assert len(LEGACY_COMPILER_SOURCES) == len(set(LEGACY_COMPILER_SOURCES))
 	with TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		calls = []

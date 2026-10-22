@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Cross-library imports: named structural signatures and call relocation."""
+"""Cross-library imports, structural signature checks and hostile metadata."""
 import argparse
 from pathlib import Path
 import shutil
@@ -14,71 +14,94 @@ def run(runner: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
 	return subprocess.run([str(runner), *args], capture_output=True, timeout=30)
 
 
+def emit(runner: Path, directory: Path, name: str, body: str, exports: tuple[str, ...]) -> Path:
+	source = directory / f'{name}.sirius'
+	artifact = directory / f'{name}.smirl'
+	source.write_text(body)
+	result = run(runner, '--emit-lib', str(artifact), *(value for symbol in exports for value in ('--export', symbol)), str(source))
+	assert result.returncode == 0, (name, result)
+	return artifact
+
+
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path)
 	args = parser.parse_args()
 	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
-	with tempfile.TemporaryDirectory() as temp:
-		work = Path(temp)
-		provider = work / 'provider.sirius'
-		provider.write_text('def process(xs: Array[i64]) -> i64\n\treturn xs[!0] + len(xs)\n'
-			'def provider() -> i64\n\treturn process([3, 4])\n')
-		consumer = work / 'consumer.sirius'
-		consumer.write_text('def process(xs: Array[i64]) -> i64\n\treturn -1\n'
-			'def consumer() -> i64\n\treturn process([7, 8]) + 1\n')
-		p = work / 'provider.smirl'
-		c = work / 'consumer.smirl'
+	with tempfile.TemporaryDirectory() as tmp:
+		work = Path(tmp)
+		consumer = emit(runner, work, 'consumer',
+			'extern def length_and_print(values: Array[string]) -> i64\n'
+			'extern def step(x: i64) -> i64\n'
+			'def main() -> i64\n'
+			'\tlet a = ["hello", "world"]\n'
+			'\treturn step(length_and_print(a))\n', ('main',))
+		provider = emit(runner, work, 'provider',
+			'def length_and_print(values: Array[string]) -> i64\n'
+			'\tprint(values[!0])\n'
+			'\treturn len(values) + 38\n'
+			'def step(x: i64) -> i64\n\treturn x + 2\n', ('length_and_print', 'step'))
+		listing = run(runner, '--list-lib', str(consumer))
+		assert listing.returncode == 0, listing
+		assert listing.stdout == (b'main : ()->i64\n'
+			b'import length_and_print : (Array[string])->i64\n'
+			b'import step : (i64)->i64\n'), listing
+		assert b'unresolved imports' in run(runner, '--load-lib', str(consumer)).stderr
+		assert b'unresolved imports' in run(runner, str(work / 'consumer.sirius')).stderr
 		linked = work / 'linked.smirl'
-		assert run(runner, '--emit-lib', str(p), '--export', 'provider', '--expose', 'process', str(provider)).returncode == 0
-		assert run(runner, '--emit-lib', str(c), '--export', 'consumer', '--import', 'process', str(consumer)).returncode == 0
-		assert p.read_bytes().startswith(b'SIRIUS-MIR-LIB/1\n')
-		assert c.read_bytes().startswith(b'SIRIUS-MIR-LIB/2\n')
-		assert run(runner, '--list-lib', str(c)).stdout == b'consumer : ()->i64\nimport process : (Array[i64])->i64\n'
-		unlinked = run(runner, '--entry', 'consumer', '--load-lib', str(c))
-		assert unlinked.returncode == 2 and b'unresolved imports' in unlinked.stderr, unlinked
-		assert run(runner, '--link-lib', str(linked), str(c), str(p)).returncode == 0
-		assert linked.read_bytes().startswith(b'SIRIUS-MIR-LIB/1\n')
-		assert run(runner, '--entry', 'consumer', '--load-lib', str(linked)).returncode == 10
-		assert run(runner, '--entry', 'provider', '--load-lib', str(linked)).returncode == 5
-		assert run(runner, '--entry', 'process', '--load-lib', str(linked)).returncode == 2  # takes an argument
-		print('PASS MIR imports: v2 consumer, v1 provider, managed call relocation and execution')
+		for index, inputs in enumerate(((consumer, provider), (provider, consumer))):
+			result = run(runner, '--link-lib', str(linked), *(str(path) for path in inputs))
+			assert result.returncode == 0, (index, result)
+			result = run(runner, '--entry', 'main', '--load-lib', str(linked))
+			assert (result.returncode, result.stdout, result.stderr) == (42, b'hello\n', b''), result
+		print('PASS MIR imports: annotated declarations, managed calls, relocation in either link order')
+		# Independently defined record constructors must resolve by structural shape,
+		# even when their parameter ordering and TypeIds differ.
+		struct_consumer = emit(runner, work, 'struct_consumer',
+			'rec Shape(x: i64, y: string)\n\tpub x\n\tpub y\n'
+			'extern def value(p: Shape) -> i64\n'
+			'def main() -> i64\n\treturn value(Shape(42, "struct"))\n', ('main',))
+		struct_provider = emit(runner, work, 'struct_provider',
+			'rec Shape(y: string, x: i64)\n\tpub y\n\tpub x\n'
+			'def value(p: Shape) -> i64\n\tprint(p.y)\n\treturn p.x\n', ('value',))
+		assert run(runner, '--link-lib', str(linked), str(struct_provider), str(struct_consumer)).returncode == 0
+		result = run(runner, '--entry', 'main', '--load-lib', str(linked))
+		assert (result.returncode, result.stdout, result.stderr) == (42, b'struct\n', b''), result
+		print('PASS MIR imports: independently interned structural record types')
 
-		# Order changes remapped local function and composite TypeIds.
-		other = work / 'other.smirl'
-		assert run(runner, '--link-lib', str(other), str(p), str(c)).returncode == 0
-		assert run(runner, '--entry', 'consumer', '--load-lib', str(other)).returncode == 10
-		assert run(runner, '--link-lib', str(other), str(c), str(p)).returncode == 0
-		assert linked.read_bytes() == other.read_bytes()
-		print('PASS MIR imports: both link orders and deterministic byte representation')
 
-		unrelated_source = work / 'unrelated.sirius'
-		unrelated_source.write_text('def unrelated() -> i64\n\treturn 4\n')
-		unrelated = work / 'unrelated.smirl'
-		assert run(runner, '--emit-lib', str(unrelated), '--export', 'unrelated', str(unrelated_source)).returncode == 0
-		missing = run(runner, '--link-lib', str(other), str(c), str(unrelated))
-		assert missing.returncode == 2 and b'unresolved MIR import: process' in missing.stderr, missing
-		mismatch = work / 'mismatch.sirius'
-		mismatch.write_text('def process(xs: Array[bool]) -> i64\n\treturn len(xs)\n'
-			'def different() -> i64\n\treturn process([true, false])\n')
-		bad = work / 'bad.smirl'
-		assert run(runner, '--emit-lib', str(bad), '--export', 'different', '--expose', 'process', str(mismatch)).returncode == 0
-		rejected = run(runner, '--link-lib', str(other), str(c), str(bad))
-		assert rejected.returncode == 2 and b'MIR import signature mismatch: process' in rejected.stderr, rejected
-		print('PASS MIR imports: missing and structurally incompatible provider rejected')
+		# Full linking is currently required; unresolved libraries cannot be executed.
+		result = run(runner, '--link-lib', str(linked), str(consumer))
+		assert result.returncode == 2 and b'unresolved MIR import: length_and_print' in result.stderr, result
+		wrong = emit(runner, work, 'wrong',
+			'def length_and_print(values: Array[i64]) -> i64\n\treturn len(values)\n'
+			'def step(x: i64) -> i64\n\treturn x + 2\n', ('length_and_print', 'step'))
+		result = run(runner, '--link-lib', str(linked), str(consumer), str(wrong))
+		assert result.returncode == 2 and b'MIR import signature mismatch: length_and_print' in result.stderr, result
+		print('PASS MIR imports: missing symbol and structural type mismatch rejected')
 
-		# A forged import signature must not bypass type matching at link time.
-		forged = work / 'forged.smirl'
-		forged.write_bytes(c.read_bytes().replace(b'(Array[i64])->i64', b'(Array[f64])->i64', 1))
-		result = run(runner, '--list-lib', str(forged))
+		# Library metadata is untrusted. A forged signature or placeholder is invalid.
+		data = consumer.read_bytes()
+		assert b'(Array[string])->i64' in data
+		corrupt = work / 'corrupt.smirl'
+		corrupt.write_bytes(data.replace(b'(Array[string])->i64', b'(Array[boolxx])->i64', 1))
+		result = run(runner, '--list-lib', str(corrupt))
 		assert result.returncode == 2 and b'MIR imported signature mismatch' in result.stderr, result
-		print('PASS MIR imports: forged import metadata rejected')
+		corrupt.write_bytes(data.replace(b'unresolved MIR import: length_and_print', b'unresolved MIR import: length_and_ABCDE', 1))
+		result = run(runner, '--list-lib', str(corrupt))
+		assert result.returncode == 2, result
+		print('PASS MIR imports: forged signatures and invalid placeholders rejected')
 
-		assert run(runner, '--emit-lib', str(other), '--export', 'consumer', '--import', 'unknown', str(consumer)).returncode == 2
-		assert run(runner, '--emit-lib', str(other), '--export', 'consumer', '--import', 'consumer', str(consumer)).returncode == 2
-		assert run(runner, '--emit-lib', str(other), '--export', 'consumer', '--expose', 'consumer', str(consumer)).returncode == 2
-		assert run(runner, '--emit-lib', str(other), '--export', 'consumer', '--import', 'process', '--import', 'process', str(consumer)).returncode == 2
-		print('PASS MIR imports: invalid imports and conflicting source declarations rejected')
+		for name, source in (
+			('no_return', 'extern def step(x: i64)\ndef main() -> i64\n\treturn step(1)\n'),
+			('no_type', 'extern def step(x) -> i64\ndef main() -> i64\n\treturn step(1)\n'),
+			('bad_call', 'extern def step(x: string) -> i64\ndef main() -> i64\n\treturn step(1)\n'),
+		):
+			path = work / f'{name}.sirius'
+			path.write_text(source)
+			result = run(runner, '--emit-lib', str(linked), '--export', 'main', str(path))
+			assert result.returncode == 1, (name, result)
+		print('PASS MIR imports: declaration and call type errors diagnosed')
 
 
 if __name__ == '__main__':

@@ -12,10 +12,10 @@ def run_positive_limit(value: string, maximum: i64) -> i64
 		return -1
 	return result
 
-# The linker merges concrete libraries and expands syntax-backed templates;
-# the source runner and interpreter remain independent of native emission.
+# The linker operates on complete concrete libraries; the source compiler
+# and interpreter paths remain independent of linking.
 def run_link_libraries(args: Array[string]) -> i64
-	if len(args) < 5
+	if len(args) < 4
 		eprint("usage: sirius-run --link-lib output.smirl input1.smirl input2.smirl ...")
 		return 2
 	var inputs = Array[MirLibraryLoad]()
@@ -33,7 +33,7 @@ def run_link_libraries(args: Array[string]) -> i64
 	if linked.error != ""
 		eprint("cannot link MIR libraries: " + linked.error)
 		return 2
-	let saved = mir_serialize_library(linked.program, linked.exports)
+	let saved = mir_serialize_library(linked.program, linked.exports, Array[MirNamedImport]())
 	if saved.error != ""
 		eprint("cannot serialize linked MIR library: " + saved.error)
 		return 2
@@ -42,43 +42,18 @@ def run_link_libraries(args: Array[string]) -> i64
 		return 2
 	return 0
 
-# Emit native C from the same linked concrete MIR artifact accepted by the
-# interpreter. This selects a whole-program backend, not mixed call dispatch.
-def run_emit_library_c(args: Array[string]) -> i64
-	if len(args) != 6 or args[!3] != "--entry"
-		eprint("usage: sirius-run --emit-c-lib output.c --entry NAME input.smirl")
-		return 2
-	let contents = read_text(args[!5]) or ""
-	if contents == ""
-		eprint("cannot read MIR library")
-		return 2
-	let library = mir_deserialize_library(contents)
-	if library.error != ""
-		eprint("invalid MIR library: " + library.error)
-		return 2
-	if len(library.imports) != 0
-		eprint("cannot compile MIR library with unresolved imports")
-		return 2
-	var entry = -1
-	for symbol in library.exports
-		if symbol.name == args[!4]
-			entry = symbol.function_id
-	if entry < 0
-		eprint("unknown MIR library export: " + args[!4])
-		return 2
-	let emitted = mir_emit_c_verified(library.program, entry)
-	if emitted.error != ""
-		eprint("cannot emit native MIR: " + emitted.error)
-		return 2
-	if not write_text(args[!2], emitted.code)
-		eprint("cannot write native C")
-		return 2
-	return 0
-
 def main() -> i64
 	let args = arguments()
-	if len(args) > 1 and args[!1] == "--emit-c-lib"
-		return run_emit_library_c(args)
+	if len(args) > 1 and args[!1] == "--build-modules"
+		if len(args) != 5
+			eprint("usage: sirius-run --build-modules source-root entry.module output.smirl")
+			return 2
+		let built = module_build(args[!2], args[!3], args[!4])
+		if built.error != ""
+			eprint("module error: " + built.error)
+			return 2
+		print("Linked " + args[!4] + " (entry: " + built.entry + ")")
+		return 0
 	if len(args) > 1 and args[!1] == "--link-lib"
 		return run_link_libraries(args)
 	var index = 1
@@ -87,12 +62,11 @@ def main() -> i64
 	var emit_path = ""
 	var load_path = ""
 	var emit_lib_path = ""
+	var module_interface = ""
 	var load_lib_path = ""
 	var list_lib = false
 	var export_names = Array[string]()
-	var expose_names = Array[string]()
-	var import_names = Array[string]()
-	var template_names = Array[string]()
+	var export_symbols = Array[string]()
 	var entry_name = ""
 	while index < len(args)
 		let option = args[!index]
@@ -119,18 +93,28 @@ def main() -> i64
 			if load_path != "" or load_lib_path != ""
 				break
 			continue
-		if option == "--export" or option == "--expose" or option == "--import" or option == "--template" or option == "--entry"
+		if option == "--module-interface"
+			if index + 1 >= len(args)
+				eprint("--module-interface requires a file path")
+				return 2
+			module_interface = args[!index + 1]
+			index += 2
+			continue
+		if option == "--export-as"
+			if index + 2 >= len(args)
+				eprint("--export-as requires a local function and symbol name")
+				return 2
+			export_names = export_names.append(args[!index + 1])
+			export_symbols = export_symbols.append(args[!index + 2])
+			index += 3
+			continue
+		if option == "--export" or option == "--entry"
 			if index + 1 >= len(args)
 				eprint("missing value for " + option)
 				return 2
 			if option == "--export"
 				export_names = export_names.append(args[!index + 1])
-			elif option == "--expose"
-				expose_names = expose_names.append(args[!index + 1])
-			elif option == "--import"
-				import_names = import_names.append(args[!index + 1])
-			elif option == "--template"
-				template_names = template_names.append(args[!index + 1])
+				export_symbols = export_symbols.append(args[!index + 1])
 			else
 				entry_name = args[!index + 1]
 			index += 2
@@ -154,11 +138,11 @@ def main() -> i64
 			max_depth = limit
 		index += 2
 	if load_path == "" and load_lib_path == "" and index >= len(args)
-		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export ROOT [--expose NAME] [--import NAME]] input.sirius [args...]")
+		eprint("usage: sirius-run [--emit-mir file | --emit-lib file --export NAME ...] input.sirius [args...]")
 		eprint("       sirius-run [--load-mir file | --entry NAME --load-lib file | --list-lib file] [args...]")
 		return 2
-	if (emit_lib_path == "" and (len(export_names) != 0 or len(expose_names) != 0 or len(import_names) != 0 or len(template_names) != 0)) or (emit_lib_path != "" and len(export_names) == 0 and len(template_names) == 0) or (load_lib_path == "" and entry_name != "")
-		eprint("--export, --expose, --import and --template require --emit-lib; --entry requires --load-lib")
+	if (emit_lib_path == "" and len(export_names) != 0) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
+		eprint("--export requires --emit-lib; --entry requires --load-lib")
 		return 2
 	var program = MirProgram(Array[MirFunction]())
 	var entry_id = -1
@@ -177,11 +161,9 @@ def main() -> i64
 				print(symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
 			for symbol in library.imports
 				print("import " + symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
-			for name in library.templates
-				print("template " + name)
 			return 0
 		if len(library.imports) != 0
-			eprint("cannot execute MIR library with unresolved imports")
+			eprint("cannot execute MIR library with unresolved imports; link it first")
 			return 2
 		program = library.program
 		for symbol in library.exports
@@ -208,7 +190,10 @@ def main() -> i64
 		for i in index..len(args)
 			runtime_args = runtime_args.append(args[!i])
 	else
-		let source = read_text(args[!index]) or ""
+		var source = read_text(args[!index]) or ""
+		if module_interface != ""
+			let interface = read_text(module_interface) or ""
+			source += "\n" + interface
 		let parsed = parse_module(source)
 		if parsed.state.error != ""
 			print("ERROR " + str(parsed.state.error_line) + ": " + parsed.state.error)
@@ -217,60 +202,30 @@ def main() -> i64
 		if declarations.error != ""
 			print("ERROR " + str(declarations.error_line) + ": " + declarations.error)
 			return 1
+		if len(declarations.imports) != 0 and module_interface == ""
+			eprint("source imports require --module-interface and library linking")
+			return 2
+		let resolved = hir_resolve_module_calls(parsed.state, declarations)
+		if resolved.error != ""
+			print("ERROR " + str(resolved.line) + ": " + resolved.error)
+			return 1
 		var roots = ["main"]
 		if emit_lib_path != ""
 			roots = export_names
-		let lowered = mir_build_program_roots(parsed.state, declarations, roots, Array[i64]())
+		let lowered = mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
 		if lowered.error != ""
 			print("ERROR 1: " + lowered.error)
 			return 1
 		program = lowered.program
 		entry_id = lowered.entry
-		if emit_lib_path != "" and len(export_names) == 0
-			let dummy = MirFunction(0, TYPE_TAG_I64, [TYPE_TAG_I64], [MirBlock([mir_op(MIR_CONST_I64, 0, -1, -1, 0)], mir_return(0))], 0)
-			program = mir_program_with_types([dummy], declarations.types)
-		if emit_lib_path == "" and len(lowered.imports) > 0
-			eprint("unresolved external declarations require library linking")
+		if emit_lib_path == "" and len(lowered.imports) != 0
+			eprint("unresolved imports require --emit-lib and linking")
 			return 2
 		if emit_lib_path != ""
-			var exports = lowered.exports
-			var imports = Array[MirNamedImport]()
-			for symbol in lowered.imports
-				imports = imports.append(MirNamedImport(symbol.name, symbol.function_id))
-			for name in expose_names
-				var count = 0
-				for symbol in lowered.symbols
-					if symbol.name == name
-						exports = exports.append(symbol)
-						count += 1
-				if count != 1
-					eprint("--expose requires exactly one concrete specialization: " + name)
-					return 2
-			for name in import_names
-				var count = 0
-				for symbol in lowered.symbols
-					if symbol.name == name
-						imports = imports.append(MirNamedImport(name, symbol.function_id))
-						count += 1
-				if count != 1
-					eprint("--import requires exactly one concrete specialization: " + name)
-					return 2
-			for name in template_names
-				var found = false
-				for declaration in declarations.functions
-					if declaration.name == name and not declaration.external and not declaration.constructor
-						found = true
-				if not found
-					eprint("unknown generic template: " + name)
-					return 2
-			var snapshot = ""
-			if len(template_names) > 0
-				let stored = mir_serialize_parametric(parsed.state, parsed.node, declarations)
-				if stored.error != ""
-					eprint("cannot save generic syntax: " + stored.error)
-					return 2
-				snapshot = stored.text
-			let saved = mir_serialize_library_generic(program, exports, imports, template_names, snapshot)
+			var public_exports = Array[MirNamedExport]()
+			for i in 0..len(lowered.exports)
+				public_exports = public_exports.append(MirNamedExport(export_symbols[!i], lowered.exports[!i].function_id))
+			let saved = mir_serialize_library(program, public_exports, lowered.imports)
 			if saved.error != ""
 				eprint("cannot serialize MIR library: " + saved.error)
 				return 2

@@ -38,7 +38,7 @@ def main() -> None:
 		linked = work / 'linked.smirl'
 		result = run(runner, '--link-lib', str(linked), *(str(path) for path in libraries))
 		assert result.returncode == 0, result
-		assert linked.read_bytes().startswith(b'SIRIUS-MIR-LIB/1\n')
+		assert linked.read_bytes().startswith(b'SIRIUS-MIR-LIB/2\n')
 		assert run(runner, '--list-lib', str(linked)).stdout == (
 			b'alpha : ()->i64\nalpha_copy : ()->i64\nbeta : ()->i64\ngamma : ()->i64\n')
 		for entry, output, code in (('alpha', b'A\n', 6), ('alpha_copy', b'A\n', 7),
@@ -68,7 +68,8 @@ def main() -> None:
 		result = run(runner, '--link-lib', str(another), str(libraries[0]), str(libraries[0]))
 		assert result.returncode == 2 and b'duplicate MIR export' in result.stderr, result
 		result = run(runner, '--link-lib', str(another), str(libraries[0]))
-		assert result.returncode == 2, result
+		assert result.returncode == 0, result
+		assert run(runner, '--entry', 'alpha', '--load-lib', str(another)).returncode == 6
 		corrupt = work / 'corrupt.smirl'
 		corrupt.write_bytes(libraries[1].read_bytes()[:-5])
 		result = run(runner, '--link-lib', str(another), str(libraries[0]), str(corrupt))

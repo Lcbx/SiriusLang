@@ -2,7 +2,10 @@
 
 > **Status:** Language target, not an inventory of implemented compiler features. The current self-hosted Sirius compiler implements a subset; see [README.md](README.md) for implementation status.
 >
-> **Conventions:** Dictionaries are `Dict`; structural record fields have lexicographically sorted layouts. Negative indexing is deferred. For planned imports, libraries, compile-time MIR execution and FFI, see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
+> **Implementation note:** `i64` bitwise `&`, `|`, `<<`, and `>>` are now
+supported. This is distinct from `|` in type-union expressions.
+
+> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is deferred. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## 1. Core Philosophy
 
@@ -417,36 +420,39 @@ export def process(data)
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler evaluates selected scalar, string, array and record module constants, but has no source imports or general compile-time function execution; see [README.md](README.md) for status.
+See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports only a limited subset of module constants; see [README.md](README.md) for status.
 
-## 12. Compiler and execution modes
+## 12. Compiler
 
-The compiler is self-hosted in Sirius, targets C11, and is maintained using a
-committed generated C bootstrap. Python is used for build/test orchestration,
-not language compilation. Source lowering uses typed HIR and an ownership-aware
-CFG MIR; that same MIR may be compiled to C or interpreted dynamically. Zig's
-C toolchain remains an optional distribution choice, not a requirement.
+Self-hosted compiler targeting C11, initially bootstrapped using **Python** and now maintained from committed generated C. Zig's C toolchain is optional.
 
-**Implemented subset:** Self-hosting uses scalar and managed values, structural
-records, rank-1 arrays, dictionaries, optionals, generic specialization,
-recursion, sequential control flow, and CLI/file operations. This does not
-imply that the full numerical, module or reflection design is implemented.
+### Bootstrap strategy
 
-### Planned MIR execution extensions
+1. Define a minimal language subset sufficient to implement a compiler.
+2. Implement a small Python compiler for this subset.
+3. Implement a Sirius compiler in that subset; compile it using Python and establish self-hosting.
+4. Commit generated C bootstrap sources and the minimal native runtime.
+5. Extend the self-hosted compiler iteratively, regenerating bootstrap C as needed.
 
-Reuse the existing MIR interpreter for general compile-time execution as well
-as runtime interpretation. Initially permit effects, including host-provided
-I/O and FFI, without mandatory purity inference, sandboxing or execution
-budgets; the resulting builds need not be reproducible. Syntax, staging and
-type-level evaluation remain unresolved. This **does not** relax the purity
-requirement for unordered functional transformations such as parallel `map`.
+The Python bootstrap is then frozen; subsequent development uses Sirius.
 
-Future library artifacts must preserve generic implementations and exported
-structural type/signature identities for downstream specialization. Native
-implementations may register callable specializations through a versioned
-hook, with explicit call/ownership adapters between interpreted and compiled
-code. Matching Sirius value layouts does not imply foreign C ABI
-compatibility. See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
+### Initial language subset
+
+* Types: Scalars, strings, records, tagged unions, `Optional`, basic generics.
+* Control flow: `let`, `var`, conditionals, loops, recursion, returns, basic pattern matching.
+* Functions: Named functions, explicit signatures, non-capturing function values.
+* Collections: Dynamic 1D arrays, indexed access, hash maps (`Dict`).
+* Memory: Reference counting, immutable values, basic CoW.
+* Runtime: File I/O, diagnostics, minimal standard library.
+* Typing: Explicit annotations where needed; basic structural compatibility.
+
+**Implementation note:** The compiler-authoring subset needs generic 1D arrays and dictionaries, practical string/byte APIs, and command-line/file I/O before Sirius can conveniently host its own lexer, parser, and symbol tables. These are bootstrap subset improvements, not requirements to implement the full language first.
+
+### MIR execution modes (design target)
+
+Typed MIR is intended to share Sirius value semantics across native C11 output, unrestricted compile-time interpretation, saved-MIR runtime interpretation, and eventual mixed native/interpreted calls. Compile-time effects (including I/O and FFI when available on the host) are permitted; no mandatory purity sandbox or execution budget is planned. The syntax and staging of explicit compile-time execution remain unresolved.
+
+Portable library metadata must expose exported type/signature identities and generic MIR for downstream specialization; compiled specializations may be registered through a native hook. Sirius native/interpreter ABI compatibility does **not** imply C FFI layout compatibility. See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for artifacts, call adapters, host/target distinctions, and proposed implementation stages.
 
 ## 13. Open Semantic Decisions
 
@@ -457,7 +463,7 @@ These remain **unresolved**, not implied guarantees:
 * Whether future nominal variant identity should distinguish union alternatives with identical structural record shapes (currently indistinguishable).
 * Imported-operator overload visibility and explicit compile-time evaluation syntax/staging.
 
-Portable generic-library formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md). Concrete executable/library MIR formats already exist but are internal and version-specific.
+Portable MIR formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
 
 ## 14. Future Improvements
 

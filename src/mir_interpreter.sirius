@@ -43,6 +43,14 @@ def mir_read_text_fields(path: string) -> Array[MirValue]
 	let content = read_text(path) else return Array[MirValue]()
 	return [MirValue(TYPE_TAG_STRING, 0, content)]
 
+rec MirDirectoryValues(present: bool, values: Array[MirValue])
+def mir_list_dir_values(path: string) -> MirDirectoryValues
+	let names = list_dir(path) else return MirDirectoryValues(false, Array[MirValue]())
+	var values = Array[MirValue]()
+	for name in names
+		values = values.append(MirValue(TYPE_TAG_STRING, 0, name))
+	return MirDirectoryValues(true, values)
+
 # The interpreter stores floating values separately from i64 handles/integers.
 def mir_real_value(value: f64) -> MirValue
 	var result = MirValue(TYPE_TAG_F64, 0, "")
@@ -205,6 +213,29 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == MIR_LIST_DIR
+				let path = registers[!ins.first]
+				if path.type_id != TYPE_TAG_STRING
+					return mir_failure("list_dir expects a string", steps)
+				let entries = mir_list_dir_values(path.text)
+				var fields = Array[MirValue]()
+				if entries.present
+					let array_type = program.types.entries[!function.register_types[!ins.dst]].first
+					fields = fields.append(MirValue(array_type, len(heap), ""))
+					heap = heap.append(MirHeapRecord(array_type, entries.values, 1))
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == MIR_IS_DIR
+				let path = registers[!ins.first]
+				if path.type_id != TYPE_TAG_STRING
+					return mir_failure("is_dir expects a string", steps)
+				var value = 0
+				if is_dir(path.text)
+					value = 1
+				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, value, "")
 				continue
 			if ins.op == MIR_WRITE_TEXT
 				let path = registers[!ins.first]
@@ -687,6 +718,17 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					answer = left.bits / right.bits
 				else
 					answer = left.bits % right.bits
+			elif ins.op == MIR_BIT_AND_I64
+				answer = left.bits & right.bits
+			elif ins.op == MIR_BIT_OR_I64
+				answer = left.bits | right.bits
+			elif ins.op == MIR_SHL_I64 or ins.op == MIR_SHR_I64
+				if right.bits < 0 or right.bits >= 64
+					return mir_failure("shift count out of range", steps)
+				if ins.op == MIR_SHL_I64
+					answer = left.bits << right.bits
+				else
+					answer = left.bits >> right.bits
 			elif ins.op == MIR_EQ_I64 or ins.op == MIR_EQ_BOOL
 				if left.bits == right.bits
 					answer = 1

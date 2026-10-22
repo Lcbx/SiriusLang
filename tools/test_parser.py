@@ -6,7 +6,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 
-from source_manifest import ROOT, PARSER_SOURCES, normalize_newlines
+from source_manifest import ROOT, PARSER_SOURCES, COMPILER_SOURCES, normalize_newlines
 from build_support import BuildCache, options, require_cc, validate_jobs
 
 
@@ -20,7 +20,7 @@ def main() -> None:
 	if not cases:
 		raise SystemExit('No parser test fixtures found')
 	programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
-	programs += [ROOT / 'src/tokenizer.sirius', ROOT / 'src/parser.sirius', ROOT / 'src/emit_c.sirius']
+	programs += [ROOT / name for name in COMPILER_SOURCES]
 
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)

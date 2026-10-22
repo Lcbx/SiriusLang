@@ -28,7 +28,7 @@ def main() -> None:
 		library = work / 'multi.smirl'
 		assert run(runner, '--emit-lib', str(library), '--export', 'first', '--export', 'second', str(source)).returncode == 0
 		data = library.read_bytes()
-		assert data.startswith(b'SIRIUS-MIR-LIB/1\n')
+		assert data.startswith(b'SIRIUS-MIR-LIB/2\n')
 		assert run(runner, '--list-lib', str(library)).stdout == b'first : ()->i64\nsecond : ()->i64\n'
 		for name, output, code in [('first', b'first\n', 1), ('second', b'second\nfirst\n', 2)]:
 			result = run(runner, '--entry', name, '--load-lib', str(library))
@@ -57,7 +57,7 @@ def main() -> None:
 
 		# Metadata is validated against the actual deserialized MIR, not trusted.
 		bad = work / 'bad.smirl'
-		for malformed in (b'', data[:-1], data + b'extra', data.replace(b'SIRIUS-MIR-LIB/1', b'SIRIUS-MIR-LIB/2', 1),
+		for malformed in (b'', data[:-1], data + b'extra', data.replace(b'SIRIUS-MIR-LIB/2', b'SIRIUS-MIR-LIB/3', 1),
 			data.replace(b'()->i64', b'()->f64', 1)):
 			bad.write_bytes(malformed)
 			result = run(runner, '--list-lib', str(bad))

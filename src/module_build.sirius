@@ -1,0 +1,98 @@
+# Compile scanned source modules once, importing structured HIR signatures.
+# TypeIds are local to each module, so dependencies are re-interned by shape.
+rec ModuleBuildResult(entry: string, error: string)
+
+rec ModuleBuildType(table: TypeTable, id: i64)
+
+def module_build_type(table: TypeTable, foreign: TypeTable, id: i64) -> ModuleBuildType
+	if id < 0 or id >= len(foreign.entries)
+		return ModuleBuildType(table, TYPE_TAG_INVALID)
+	let descriptor = foreign.entries[!id]
+	if descriptor.tag <= TYPE_TAG_VOID
+		return ModuleBuildType(table, descriptor.tag)
+	if descriptor.tag == TYPE_TAG_ARRAY or descriptor.tag == TYPE_TAG_OPTIONAL or descriptor.tag == TYPE_TAG_DICT
+		let first = module_build_type(table, foreign, descriptor.first)
+		if first.id == TYPE_TAG_INVALID
+			return first
+		if descriptor.tag == TYPE_TAG_ARRAY
+			let result = intern_array_type(first.table, first.id)
+			return ModuleBuildType(result.table, result.id)
+		if descriptor.tag == TYPE_TAG_OPTIONAL
+			let result = intern_optional_type(first.table, first.id)
+			return ModuleBuildType(result.table, result.id)
+		let second = module_build_type(first.table, foreign, descriptor.second)
+		if second.id == TYPE_TAG_INVALID
+			return second
+		let result = intern_dict_type(second.table, first.id, second.id)
+		return ModuleBuildType(result.table, result.id)
+	return ModuleBuildType(table, TYPE_TAG_INVALID)
+
+def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
+	let scanned = module_scan_visit(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit]())
+	if scanned.error != ""
+		return ModuleBuildResult("", scanned.error)
+	var libraries = Array[MirLibraryLoad]()
+	for module in scanned.units
+		var declarations = module.declarations
+		var types = declarations.types
+		for imported in declarations.imports
+			var found = false
+			for dependency in scanned.units
+				if dependency.name != imported.path
+					continue
+				found = true
+				for exported in dependency.exports
+					var parameters = Array[HirParameterDecl]()
+					var arguments = Array[i64]()
+					for i in 0..len(exported.parameters)
+						let imported_type = module_build_type(types, dependency.types, exported.argument_types[!i])
+						types = imported_type.table
+						if imported_type.id == TYPE_TAG_INVALID
+							return ModuleBuildResult("", "unsupported imported parameter type: " + dependency.name + "." + exported.name)
+						arguments = arguments.append(imported_type.id)
+						parameters = parameters.append(HirParameterDecl(exported.parameters[!i].name, -1, -1))
+					let result_type = module_build_type(types, dependency.types, exported.result_type)
+					types = result_type.table
+					if result_type.id == TYPE_TAG_INVALID
+						return ModuleBuildResult("", "unsupported imported return type: " + dependency.name + "." + exported.name)
+					var function = HirFunctionDecl(hir_module_symbol(dependency.name, exported.name), -1, -1 - len(declarations.functions), false, -1, parameters)
+					function.external = true
+					function.argument_types = arguments
+					function.result_type = result_type.id
+					declarations.functions = declarations.functions.append(function)
+			if not found
+				return ModuleBuildResult("", "missing dependency: " + imported.path)
+		declarations.types = types
+		let resolved = hir_resolve_module_calls(module.tree, declarations)
+		if resolved.error != ""
+			return ModuleBuildResult("", module.name + ":" + str(resolved.line) + ": " + resolved.error)
+		var roots = declarations.exports
+		if module.name == entry
+			if not module.has_main
+				return ModuleBuildResult("", "entry module has no main() function: " + entry)
+			var main_exported = false
+			for name in roots
+				if name == "main"
+					main_exported = true
+			if not main_exported
+				roots = roots.append("main")
+		if len(roots) == 0
+			return ModuleBuildResult("", "module has no exported functions: " + module.name)
+		let lowered = mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
+		if lowered.error != ""
+			return ModuleBuildResult("", module.name + ": " + lowered.error)
+		var exports = Array[MirNamedExport]()
+		for i in 0..len(lowered.exports)
+			exports = exports.append(MirNamedExport(hir_module_symbol(module.name, lowered.exports[!i].name), lowered.exports[!i].function_id))
+		var library = MirLibraryLoad(lowered.program, exports, "")
+		library.imports = lowered.imports
+		libraries = libraries.append(library)
+	let linked = mir_link_libraries(libraries)
+	if linked.error != ""
+		return ModuleBuildResult("", linked.error)
+	let saved = mir_serialize_library(linked.program, linked.exports, Array[MirNamedImport]())
+	if saved.error != ""
+		return ModuleBuildResult("", saved.error)
+	if not write_text(output, saved.text)
+		return ModuleBuildResult("", "cannot write MIR library: " + output)
+	return ModuleBuildResult(hir_module_symbol(entry, "main"), "")

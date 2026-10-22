@@ -1,151 +1,151 @@
-# Sirius modules, MIR libraries and FFI
+# Sirius — MIR, Modules, Libraries, and FFI
 
-**Status:** Source modules, persistent typed generic artifacts and native/FFI registration
-are proposed. Versioned concrete MIR executables, named multi-entry libraries,
-cross-artifact merging, source `extern def` declarations and signature-checked
-concrete imports are implemented. Resolved libraries can also emit native C.
-Current commands are in [INTERPRETER.md](INTERPRETER.md); core semantics in
-[LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md). Names and ABIs below are provisional.
+> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based concrete source-module builder is available; full compiler-integrated modules, generic libraries, and native dispatch are not. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
 
-## Modules and visibility (planned)
+## 1. Module resolution and visibility
 
-A file `Math/Stats.sirius`, relative to a source root, defines `Math.Stats`.
-Imports are compile-time namespaces, not runtime-initialized objects:
+Given a source root, `Math/Stats.sirius` defines module `Math.Stats`:
 
-```sirius
+```python
 import Math.Stats alias Stats
+
 export def describe(xs)
 	return Stats.mean(xs)
 ```
 
-Private declarations are the default. `export` exposes a definition;
-`export import Math.Stats alias Stats` explicitly re-exports a namespace.
-Imports should be statically resolved, case-sensitive and initially acyclic.
-Optional `namespace` declarations and multiple files per namespace are
-**deferred**, rather than required for module resolution. Imported overload
-visibility needs a more precise rule.
+Imports name compile-time namespaces; they do not instantiate runtime module objects. An ordinary import does not make the imported namespace public. An explicit re-export does:
 
-Module `let` values are evaluated at **compile time** and do not cause runtime
-module initialization. A restricted compiler-side constant evaluator already
-supports scalar, string, array and record expressions; general evaluation of
-user functions through MIR remains future work. Compile-time effects may be
-allowed, including I/O when available on the host.
-
-## Shared execution model
-
-```text
-source -> syntax / types / concrete HIR specialization -> optimized CFG MIR
-                                                         |-> C11 native code
-                                                         |-> runtime interpreter
-                                                         |-> versioned saved MIR
-                                                         `-> comptime interpreter (planned)
+```python
+export import Math.Stats alias Stats
 ```
 
-The interpreter runs concrete MIR from source or a saved artifact.
-`SIRIUS-MIR-EXEC/1` contains a concrete executable entry and its closed call
-graph; `SIRIUS-MIR-LIB/1` contains named concrete roots and reachable functions.
-`SIRIUS-MIR-LIB/2` adds unresolved concrete imports with canonical structural
-signatures. The linker remaps types/functions, resolves imports against named
-exports and verifies the result, emitting a resolved version-1 library.
-Source consumers can use `extern def` (fully typed, no body) to declare imports
-automatically; `--import` retains compatibility with legacy placeholder sources.
-Provider specializations remain exposed through `--expose`. These are **internal
-versioned formats**, not stable ABIs. `SIRIUS-MIR-LIB/3` retains provider
-source plus named templates. Version 4 instead stores a syntax arena (tokens,
-AST nodes/edges and source locations), omitting the original text and
-reparsing during specialization; version-3 artifacts remain readable. At link time a missing concrete import can
-specialize a template against the importer's canonical structural types,
-reusing the HIR/MIR pipeline; equal requests share a specialization. This is a
-syntax-backed intermediate step: generated specializations may have concrete external
-imports, including imports fulfilled by other templates, which are expanded
-transitively. Linked results contain only concrete specializations. `--emit-c-lib` emits
-standalone C from a resolved library,
-but does not implement cross-backend function-call dispatch.
+Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings evaluate during compilation and may have effects; importing a module does not execute initialization code in the final program. The current compiler only supports limited `i64` module constants.
 
-### Compile-time MIR execution (planned)
+**Implemented source-module subset:** `src/module_scan.sirius` uses the
+Sirius parser/HIR to traverse explicit dotted imports relative to a source root,
+detect cycles, and retain ASTs, HIR declarations, and canonical typed exports.
+Only the standalone scanner CLI formats the `SIRIUS-MODULES/1` manifest.
+`src/module_build.sirius` re-interns imported types, adds HIR extern declarations
+without reparsing text, and orchestrates independent concrete MIR compilation
+and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. The compiler preserves source
+imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
+structured external function declarations. Length-prefixed module names prevent export collisions.
+Only concrete function imports are supported; imported types/constants and generic
+specialization are pending. `src/module.sirius` is the first actual compiler
+source tested as an independent imported module; the compiler bootstrap still
+assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
+`tools/test_module_builder.py`, and `tools/test_source_modules.py`.
 
-Reuse the same MIR interpreter rather than maintaining a separate restricted
-language evaluator. Initially do **not** require inferred purity, a sandbox,
-or a mandatory execution budget. Such guardrails may be added later without
-altering the basic interpreter. Compiler-host effects can make builds
-non-reproducible; this is an accepted initial tradeoff.
+## 2. Shared MIR execution
 
-The unsolved part is staging: how to type-check, specialize and execute MIR
-when the computation generates types or definitions needed by later analysis.
-Define `comptime` syntax, order of declaration evaluation, error propagation
-and dependency handling before implementing it. This is distinct from the
-longer-term transitive purity checking needed by parallel `map`.
+```text
+Sirius source
+    -> parse / analyze / specialize / lower
+    -> typed MIR
+         |-> C emitter -> native code
+         |-> interpreter at compile time (deferred)
+         |-> serialized executable MIR -> interpreter at runtime (implemented)
+         `-> combinations of native and interpreted functions
+```
 
-## Generic specialization across libraries (partial)
+### Compile-time evaluation
 
-A signature alone cannot instantiate a generic body. Version-6 artifacts persist syntax, token spellings, verified module declarations (function headers, module constant values and canonical types), and symbolic-type HIR bodies for simple expressions, immutable local bindings, records/arrays, field access,
-selected builtins, named user calls and single early-return `if` branches
-instead of provider text. This avoids reparsing and repeated module declaration analysis per specialization. Versions 3–5 remain readable. Version 6 validates saved parametric HIR plans against syntax and substitutes canonical concrete argument types when linking. Operators are checked again after substitution; complex bodies still use ordinary HIR analysis.
-The linker remaps imported structural types into the provider's type table,
-builds concrete MIR, recursively expands imports from other libraries, and
-checks each concrete signature. External function declarations in template
-sources still need concrete types. The remaining target is general parameterized HIR for multi-arm control flow,
-mutable bindings, advanced collection operations and importable constructors.
-Previous version-6 snapshots with empty fallback bodies remain loadable.
+The compiler would use the general MIR interpreter to evaluate requested computations and module constants. No separate restricted interpreter, mandatory purity requirement, sandbox or execution budget is planned. I/O, native calls and other side effects would be allowed when the host provides them; builds need not be reproducible.
 
-At a call boundary:
+Explicit compile-time syntax, the ordering of compilation and evaluation, and compile-time operations that generate types or declarations remain to be designed. In particular, evaluating MIR while type-checking its own dependencies requires staged compilation.
 
-1. Resolve the declaration's persistent identity and visible overloads.
-2. Construct a specialization key from that identity and canonical argument
-   types (plus any other specialization-relevant parameters).
-3. Reuse a compatible compiled specialization, or specialize the generic
-   body and compile or interpret the concrete MIR.
-4. Ensure cache invalidation when the implementation or ABI changes.
+### Serialized MIR
 
-A fully native program may specialize at build/link time; a mixed program may
-interpret an absent specialization at runtime without a JIT. The registry,
-artifact packaging and recursive/cyclic specialization policy are not yet
-settled. Structural `TypeId` indices allocated within one compiler process
-must never serve as persistent cross-library identities.
+An **executable** artifact contains concrete callable functions and their transitive dependencies.
+This is implemented as `SIRIUS-MIR-EXEC/1` in `src/mir_wire.sirius` with
+`--emit-mir` and `--load-mir` runner options. It stores canonical type descriptors,
+concrete MIR functions, entry index and CFG instructions. The loader verifies
+the format, types and ownership before execution. Version compatibility is
+currently exact. The separate `SIRIUS-MIR-LIB/2` format supports multiple
+named concrete zero-argument roots and canonical structural signatures. It
+validates names, indices and signatures on loading, and carries the entire
+concrete transitive call graph. `src/mir_link.sirius` can combine multiple
+independent concrete libraries and deduplicate structural type descriptors,
+relocating local call indices. Typed `extern def` declarations produce import placeholders and signature
+metadata. The linker resolves them against concrete exports with matching
+structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`/`export def`, discovery and export signatures; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Generic specialization across artifacts and native linking remain future work. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
 
-## Native artifact registration (planned)
+The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 
-A library interface needs exported names, canonical types/signatures, layout
-and ownership metadata, dependencies and compatibility information. Generic
-MIR is necessary for new specializations; an optional native binary provides
-already-compiled ones. A versioned C-callable registration hook could expose
-symbols to the interpreter/compiler, for example:
+## 3. Specializing across library boundaries
+
+For an exported generic function:
+
+```python
+export def double(x)
+	return x + x
+```
+
+The exported signature and record descriptors are sufficient to *type-check* a prospective call, but **not** to produce a specialization: the generic implementation and the overloads it depends on must also remain available.
+
+For a call with concrete argument types:
+
+1. Resolve the originating module/declaration and overloads.
+2. Construct a specialization key from that identity and canonical concrete types (and any other specialization-relevant parameters).
+3. Reuse an existing compatible native specialization when available.
+4. Otherwise specialize the generic MIR, then either compile it ahead of time or execute its specialized MIR in the interpreter.
+
+A purely native application performs required monomorphization at build/link time. A mixed application may specialize on first use and interpret a missing specialization; no native JIT compiler is required. Cached implementations must be invalidated when their defining implementation or ABI changes.
+
+A single common specialization registry is a useful implementation goal, but its exact ownership and persistence are not settled.
+
+## 4. Library artifacts and registration
+
+Conceptually, a Sirius library provides:
+
+| Part | Purpose |
+| --- | --- |
+| Portable interface metadata | Exported names, signatures, type descriptors/layouts, identity, dependencies, compatibility information |
+| Generic MIR | Bodies and supporting definitions needed to create new concrete specializations |
+| Native binary (optional) | Already compiled specializations and runtime support |
+| C-callable registration hook (native binary) | Register native symbol addresses, descriptors, and implementations in a running host |
+
+A possible **illustrative**, not finalized, entry point is:
 
 ```c
-/* Illustration only; no such API is implemented. */
 void sirius_register_v1(SiriusRegistry *registry);
 ```
 
-The host must be able to inspect interface metadata **without executing**
-foreign target code. Native/interpreted dispatch still requires a calling
-convention, ownership transfers and error adapters; matching record or array
-layouts do not establish a function-call ABI or valid function pointers across
-loaded binaries.
+A compiler/interpreter can call the hook when it can load and execute the library for its **host** platform. The interface metadata must also be readable without executing target code, allowing cross-compilation or inspection of an incompatible native binary. The native hook does not replace the generic MIR required for new specializations.
 
-## External C interoperability (planned)
+Details still to specify: artifact packaging, discovery/loading, registry lifetime, hook ABI, symbol/version identity, compatible target triples, and native/interpreted call adapters. Function pointers and type descriptors cannot be assumed to have the same process-local addresses in independently loaded libraries.
 
-Sirius records have canonical **name-sorted** layouts. C structs may differ in
-field order, alignment, padding, bitfields, unions, pointers, allocator and
-lifetime rules. Structurally equal Sirius records are **not automatically C
-ABI compatible**.
+## 5. ABI and C interoperability
 
-Begin with explicit wrappers around C scalar values and opaque handles, with
-conversion and documented ownership at the boundary. Foreign-layout records,
-callbacks, buffer sharing, imported headers and richer C pointer APIs can be
-added deliberately; do not let the internal Sirius layout silently change to
-fit an unrelated C ABI.
+### Sirius native/interpreter boundary
 
-## Proposed sequence / unresolved contracts
+Sirius values should use matching layouts and runtime operations when a native library and the interpreter target the same ABI. This includes canonical record ordering, primitive and array representations, reference counts, and CoW ownership. Matching data layout **does not by itself define** a function-call ABI; interpreted calls still require adapters, and native-to-interpreted calls eventually require dispatch/trampolines.
 
-1. Implement separate-source module resolution and explicit exported metadata.
-2. Preserve generic bodies and persistent semantic type/declaration IDs across
-   modules; implement cross-artifact call resolution and specialization.
-3. Integrate MIR execution into compile-time evaluation once staging is clear.
-4. Specify stable registry/call/ownership/error ABIs; register native symbols,
-   then support interpreted→native and native→interpreted dispatch.
-5. Add explicit foreign C wrappers before exposing richer foreign layouts.
+Canonical descriptor identity must be based on semantic type information and compatibility rules, not merely pointer equality.
 
-Version negotiation, target compatibility, dependency cycles, generic overload
-visibility, compile-time staging and native resource ownership remain open
-architectural decisions. Existing concrete serialization is a useful base,
-not evidence that these contracts are already solved.
+### Third-party C boundary
+
+C APIs may use declaration-order structures, padding, platform-dependent alignment, unions, bitfields, flexible arrays, borrowed pointers, allocator-specific buffers, and custom ownership conventions. A structurally equivalent Sirius record is **not automatically C ABI-compatible**.
+
+Initial interop should use explicit wrappers with C primitives and opaque handles, converting to ordinary Sirius values at the boundary. Explicit C-layout records, imported C declarations, callbacks, and owned/buffer-sharing conversions can be added later. Their syntax and safety rules are undecided.
+
+## 6. Suggested implementation order (proposal)
+
+1. Define portable exported-symbol and type-descriptor metadata in a module interface.
+2. Make generic MIR available to cross-module specialization and add canonical specialization keys.
+3. **Done for concrete executables and named concrete libraries:** serialize/load specialized MIR, validate exported symbols and signatures, and compare dynamic execution. Extend to imported modules and generic interfaces later.
+4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
+5. Register already compiled native specializations through a versioned C hook.
+6. Implement interpreted-to-native dispatch; later native-to-interpreted callbacks/trampolines.
+7. Add explicit C wrappers and then richer foreign-layout facilities if justified.
+
+These steps are architectural suggestions, not commitments or claims that all prerequisites are already satisfied.
+
+## 7. Open questions
+
+* Exact staging and syntax for `comptime` and compile-time type-level operations.
+* Canonical type-identity encoding and native ABI compatibility across compiler versions.
+* Generic overload visibility, recursive/cyclic specialization, and exported interface evolution.
+* MIR versioning, dependency closure, and whether packages contain one artifact or several.
+* The registration hook ABI, ownership of the registry, and how native/interpreted calls exchange errors and values.
+* C foreign record declarations, callbacks, ownership, and pointer-lifetime rules.

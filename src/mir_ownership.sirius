@@ -7,31 +7,62 @@ rec MirOwnershipBlock(incoming: Array[i64], outgoing: Array[i64])
 rec MirOwnershipAnalysis(must: Array[MirOwnershipBlock], maybe: Array[MirOwnershipBlock])
 rec MirOwnershipEffects(registers: Array[i64], values: Array[i64])
 
+# One bit per register; 63 bits per i64 avoids shifting into the sign bit.
+# Bit masks use positive signed integers in both the C and MIR execution paths.
+def mir_ownership_bit(register: i64) -> i64
+	return 1 << (register % 63)
+
+def mir_ownership_get(words: Array[i64], register: i64) -> i64
+	if words[!(register / 63)] & mir_ownership_bit(register) != 0
+		return 1
+	return 0
+
+def mir_ownership_set(words: Array[i64], register: i64, value: i64) -> Array[i64]
+	var result = words
+	let index = register / 63
+	let bit = mir_ownership_bit(register)
+	let previous = result[!index]
+	if value != 0
+		if previous & bit == 0
+			result[!index] = previous | bit
+	elif previous & bit != 0
+		result[!index] = previous & (9223372036854775807 - bit)
+	return result
+
 def mir_ownership_top(count: i64) -> Array[i64]
-	var values = Array[i64]()
+	var words = Array[i64]()
+	var word = 0
 	for i in 0..count
-		values = values.append(1)
-	return values
+		word = word | mir_ownership_bit(i)
+		if i % 63 == 62
+			words = words.append(word)
+			word = 0
+	if count % 63 != 0
+		words = words.append(word)
+	return words
 
 def mir_ownership_entry(function: MirFunction) -> Array[i64]
-	var values = Array[i64]()
-	for i in 0..len(function.register_types)
-		var initialized = 0
-		if i < function.argument_count
-			initialized = 1
-		values = values.append(initialized)
-	return values
+	var words = mir_ownership_empty(len(function.register_types))
+	for i in 0..function.argument_count
+		words = mir_ownership_set(words, i, 1)
+	return words
 
-# Join directly into one CoW-owned state instead of allocating a fresh mask
-# for every predecessor. The initial state and predecessor states stay intact.
+def mir_ownership_empty(count: i64) -> Array[i64]
+	var words = Array[i64]()
+	for i in 0..((count + 62) / 63)
+		words = words.append(0)
+	return words
+
 def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Array[i64]
 	var joined = left
 	for i in 0..len(joined)
+		var word = 0
 		if maybe
-			if right[!i] != 0 and joined[!i] == 0
-				joined[!i] = 1
-		elif right[!i] == 0 and joined[!i] != 0
-			joined[!i] = 0
+			word = joined[!i] | right[!i]
+		else
+			word = joined[!i] & right[!i]
+		if word != joined[!i]
+			joined[!i] = word
 	return joined
 
 # Transfer effects depend only on instruction writes, not the incoming state.
@@ -56,10 +87,7 @@ def mir_ownership_effects(block: MirBlock) -> MirOwnershipEffects
 def mir_ownership_apply_effects(before: Array[i64], effects: MirOwnershipEffects) -> Array[i64]
 	var after = before
 	for i in 0..len(effects.registers)
-		let register = effects.registers[!i]
-		let value = effects.values[!i]
-		if after[!register] != value
-			after[!register] = value
+		after = mir_ownership_set(after, effects.registers[!i], effects.values[!i])
 	return after
 
 def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
@@ -72,23 +100,21 @@ def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
 
 def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
 	var after = before
-	if mir_consumes_source(ins) and after[!ins.first] != 0
-		after[!ins.first] = 0
+	if mir_consumes_source(ins)
+		after = mir_ownership_set(after, ins.first, 0)
 	if ins.op == MIR_CALL_MOVE
 		for i in 0..len(ins.inputs)
-			if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i) and after[!ins.inputs[!i]] != 0
-				after[!ins.inputs[!i]] = 0
-	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT and after[!ins.dst] == 0
-		after[!ins.dst] = 1
+			if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i)
+				after = mir_ownership_set(after, ins.inputs[!i], 0)
+	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
+		after = mir_ownership_set(after, ins.dst, 1)
 	return after
 
 # One forward worklist can propagate both must- and may-initialization.
 # Single-mode callers avoid calculating the state they do not need.
 def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> MirOwnershipAnalysis
 	let top = mir_ownership_top(len(function.register_types))
-	var bottom = top
-	for i in 0..len(bottom)
-		bottom[!i] = 0
+	let bottom = mir_ownership_empty(len(function.register_types))
 	let entry = mir_ownership_entry(function)
 	var must = Array[MirOwnershipBlock]()
 	var maybe = Array[MirOwnershipBlock]()
@@ -124,10 +150,12 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			for j in predecessors[!i]
 				if reached[!j] != 0
 					incoming = mir_ownership_join(incoming, must[!j].outgoing, false)
-			let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
-			if not mir_ownership_equal(incoming, must[!i].incoming) or not mir_ownership_equal(outgoing, must[!i].outgoing)
+			# Effects are fixed for a block: unchanged input implies unchanged output.
+			if first_visit or not mir_ownership_equal(incoming, must[!i].incoming)
+				let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
+				if not mir_ownership_equal(outgoing, must[!i].outgoing)
+					changed = true
 				must[!i] = MirOwnershipBlock(incoming, outgoing)
-				changed = true
 		if check_maybe
 			var incoming = bottom
 			if i == function.entry
@@ -135,10 +163,11 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			for j in predecessors[!i]
 				if reached[!j] != 0
 					incoming = mir_ownership_join(incoming, maybe[!j].outgoing, true)
-			let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
-			if not mir_ownership_equal(incoming, maybe[!i].incoming) or not mir_ownership_equal(outgoing, maybe[!i].outgoing)
+			if first_visit or not mir_ownership_equal(incoming, maybe[!i].incoming)
+				let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
+				if not mir_ownership_equal(outgoing, maybe[!i].outgoing)
+					changed = true
 				maybe[!i] = MirOwnershipBlock(incoming, outgoing)
-				changed = true
 		if changed or first_visit
 			let term = function.blocks[!i].terminator
 			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
@@ -192,7 +221,7 @@ def mir_check_balance(program: MirProgram) -> string
 				let term = function.blocks[!block_id].terminator
 				if term.kind == MIR_RETURN or term.kind == MIR_PANIC
 					for register in managed
-						if maybe[!block_id].outgoing[!register] != 0
+						if mir_ownership_get(maybe[!block_id].outgoing, register) != 0
 							if term.kind != MIR_RETURN or register != term.operand
 								return "MIR function " + str(function_id) + ": managed register " + str(register) + " may remain owned at exit block " + str(block_id)
 	return ""
@@ -206,12 +235,12 @@ def mir_ownership_function_states(function: MirFunction, reached: Array[i64], st
 			var available = states[!i].incoming
 			for ins in block.instructions
 				for register in mir_instruction_reads(ins)
-					if register < 0 or register >= len(available) or available[!register] == 0
+					if register < 0 or register >= len(function.register_types) or mir_ownership_get(available, register) == 0
 						return "MIR read of uninitialized or moved register " + str(register) + " in block " + str(i)
 				available = mir_ownership_after(ins, available)
 			let term = block.terminator
 			if term.kind == MIR_BRANCH or term.kind == MIR_RETURN
-				if available[!term.operand] == 0
+				if mir_ownership_get(available, term.operand) == 0
 					return "MIR terminator reads uninitialized or moved register " + str(term.operand) + " in block " + str(i)
 	return ""
 

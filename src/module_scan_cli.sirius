@@ -1,0 +1,11 @@
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		eprint("usage: sirius-module-scan source-root entry.module")
+		return 2
+	let result = module_scan_visit(args[!1], args[!2], Array[string](), Array[string](), Array[ModuleScanUnit]())
+	if result.error != ""
+		eprint(result.error)
+		return 2
+	print(module_scan_manifest(result.units))
+	return 0

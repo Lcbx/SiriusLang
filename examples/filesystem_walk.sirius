@@ -1,0 +1,26 @@
+# This example can also import Std.Filesystem when building modules.
+# Self-contained here for standalone compilation.
+def walk_files(root: string) -> Array[string]
+	var files = Array[string]()
+	var pending = [root]
+	var head = 0
+	while head < len(pending)
+		let directory = pending[!head]
+		head += 1
+		let entries = list_dir(directory) or Array[string]()
+		for name in entries
+			let path = directory + "/" + name
+			if is_dir(path)
+				pending = pending.append(path)
+			else
+				files = files.append(path)
+	return files
+
+def main() -> i64
+	let root = arguments()[!1]
+	let entries = list_dir(root) else return 2
+	for name in entries
+		print(name)
+	for path in walk_files(root)
+		print("file: " + path)
+	return 0

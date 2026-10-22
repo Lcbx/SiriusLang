@@ -1,0 +1,23 @@
+# Shared, length-prefixed naming for imported and exported symbols.
+export def hir_module_symbol(path: string, name: string) -> string
+	var result = "M"
+	var start = 0
+	for i in 0..len(path)
+		if (path.byte_at(i) or -1) == 46 # '.'
+			let part = path.slice(start, i)
+			result += "_" + str(len(part)) + "_" + part
+			start = i + 1
+	let final = path.slice(start, len(path))
+	return result + "_" + str(len(final)) + "_" + final + "_" + str(len(name)) + "_" + name
+
+
+# Translate a dotted module name to its source-root-relative file path.
+export def module_scan_filename(root: string, name: string) -> string
+	var result = root + "/"
+	for i in 0..len(name)
+		let c = name.byte_at(i) or 0
+		if c == 46
+			result += "/"
+		else
+			result += name.slice(i, i + 1)
+	return result + ".sirius"

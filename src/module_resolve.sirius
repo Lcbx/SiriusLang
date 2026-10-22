@@ -1,0 +1,35 @@
+# Resolve module-qualified calls against typed external declarations.
+# Module namespaces are compile-time only; MIR sees ordinary named calls.
+rec HirModuleResolution(tree: ParseState, error: string, line: i64)
+
+def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> HirModuleResolution
+	var next = tree
+	for i in 0..len(tree.nodes)
+		let call = tree.nodes[!i]
+		if call.kind != NODE_CALL or call.count == 0
+			continue
+		let callee_id = hir_ast_child(tree, i, 0)
+		let callee = tree.nodes[!callee_id]
+		if callee.kind != NODE_ATTR or callee.count != 1
+			continue
+		let receiver_id = hir_ast_child(tree, callee_id, 0)
+		if tree.nodes[!receiver_id].kind != NODE_NAME
+			continue
+		let receiver = hir_ast_text(tree, receiver_id)
+		for imported in declarations.imports
+			if imported.alias == receiver
+				let name = hir_ast_text(tree, callee_id)
+				let target = hir_module_symbol(imported.path, name)
+				var found = false
+				for declaration in declarations.functions
+					if declaration.name == target and hir_function_external(tree, declaration)
+						found = true
+				if not found
+					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", hir_ast_line(tree, callee_id))
+				let start = len(next.source)
+				next.source += target
+				let token_id = len(next.tokens)
+				next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), hir_ast_line(tree, callee_id), 0))
+				next.nodes[!callee_id] = Node(NODE_NAME, token_id, 0, 0)
+				break
+	return HirModuleResolution(next, "", 0)

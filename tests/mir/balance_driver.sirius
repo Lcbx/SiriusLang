@@ -66,7 +66,7 @@ def main() -> i64
 		if i < 2
 			let must = mir_ownership_states(program.functions[!0])
 			let maybe = mir_ownership_maybe_states(program.functions[!0])
-			if must[!2].outgoing[!1] != 0 or maybe[!2].outgoing[!1] == 0
+			if mir_ownership_get(must[!2].outgoing, 1) != 0 or mir_ownership_get(maybe[!2].outgoing, 1) == 0
 				return 5
 		let again = mir_insert_exit_cleanup(cleaned.program)
 		if again.error != "" or again.releases != 0

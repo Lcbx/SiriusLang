@@ -1,0 +1,446 @@
+# Verification is structural and type-directed. Definite register initialization
+# is checked dynamically for now (CFG data-flow analysis comes with lowering).
+def mir_register_valid(types: Array[i64], register: i64, expected: i64) -> bool
+	return register >= 0 and register < len(types) and types[!register] == expected
+
+def mir_supported_type(type_id: i64) -> bool
+	return type_id == TYPE_TAG_I64 or type_id == TYPE_TAG_BOOL or type_id == TYPE_TAG_STRING or type_id == TYPE_TAG_F64
+
+def mir_type_supported(types: TypeTable, type_id: i64) -> bool
+	if type_id < 0 or type_id >= len(types.entries)
+		return false
+	let tag = types.entries[!type_id].tag
+	return mir_supported_type(tag) or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
+
+def mir_managed_type(types: TypeTable, type_id: i64) -> bool
+	if type_id < 0 or type_id >= len(types.entries)
+		return false
+	let tag = types.entries[!type_id].tag
+	return tag == TYPE_TAG_STRING or tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
+
+def mir_verify_instruction(program: MirProgram, function: MirFunction, ins: MirInstruction) -> string
+	let types = function.register_types
+	if ins.op == MIR_PRINT or ins.op == MIR_EPRINT
+		if ins.first < 0 or ins.first >= len(types) or not mir_supported_type(types[!ins.first])
+			return "invalid print operand"
+		return ""
+	if ins.dst < 0 or ins.dst >= len(types)
+		return "invalid destination register"
+	let dst_type = types[!ins.dst]
+	if ins.op == MIR_ARGUMENTS
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_ARRAY or desc.first != TYPE_TAG_STRING
+			return "arguments requires Array[string] destination"
+		return ""
+	if ins.op == MIR_STR_I64
+		if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "str requires i64 and string result"
+		return ""
+	if ins.op == MIR_READ_TEXT
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_OPTIONAL or desc.first != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "read_text requires string path and Optional[string] result"
+		return ""
+	if ins.op == MIR_LIST_DIR
+		let optional = program.types.entries[!dst_type]
+		if optional.tag != TYPE_TAG_OPTIONAL or optional.first < 0 or optional.first >= len(program.types.entries)
+			return "list_dir requires Optional[Array[string]] result"
+		let array = program.types.entries[!optional.first]
+		if array.tag != TYPE_TAG_ARRAY or array.first != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "list_dir requires string path and Optional[Array[string]] result"
+		return ""
+	if ins.op == MIR_IS_DIR
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "is_dir requires string path and bool result"
+		return ""
+	if ins.op == MIR_WRITE_TEXT
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "write_text requires two strings and bool result"
+		return ""
+	if ins.op == MIR_CONST_I64
+		if dst_type != TYPE_TAG_I64
+			return "integer constant destination must be i64"
+		return ""
+	if ins.op == MIR_CONST_BOOL
+		if dst_type != TYPE_TAG_BOOL or (ins.immediate != 0 and ins.immediate != 1)
+			return "invalid boolean constant"
+		return ""
+	if ins.op == MIR_CONST_STRING
+		if dst_type != TYPE_TAG_STRING
+			return "string constant destination must be string"
+		return ""
+	if ins.op == MIR_CONST_F64
+		if dst_type != TYPE_TAG_F64 or ins.text == ""
+			return "floating constant destination must be f64"
+		return ""
+	if ins.op == MIR_NONZERO_I64
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "nonzero guard type mismatch"
+		return ""
+	if ins.op == MIR_DIV_NO_OVERFLOW_I64
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_I64) or not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "division overflow guard type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_INDEX_VALID
+		if dst_type != TYPE_TAG_BOOL or ins.first < 0 or ins.first >= len(types) or program.types.entries[!types[!ins.first]].tag != TYPE_TAG_ARRAY or not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "array index guard type mismatch"
+		return ""
+	if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_OPTIONAL
+			return "optional constructor requires Optional destination"
+		if ins.op == MIR_OPTIONAL_SOME and not mir_register_valid(types, ins.first, desc.first)
+			return "optional payload type mismatch"
+		return ""
+	if ins.op == MIR_OPTIONAL_HAS or ins.op == MIR_OPTIONAL_UNWRAP
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid optional source"
+		let desc = program.types.entries[!types[!ins.first]]
+		if desc.tag != TYPE_TAG_OPTIONAL
+			return "optional operation requires Optional"
+		if ins.op == MIR_OPTIONAL_HAS and dst_type != TYPE_TAG_BOOL
+			return "optional presence destination must be bool"
+		if ins.op == MIR_OPTIONAL_UNWRAP and dst_type != desc.first
+			return "optional unwrap type mismatch"
+		return ""
+	if ins.op == MIR_DICT_NEW
+		if program.types.entries[!dst_type].tag != TYPE_TAG_DICT
+			return "dictionary construction requires Dict destination"
+		return ""
+	if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH or ins.op == MIR_DICT_GET_OPTIONAL
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid dictionary source"
+		let owner = types[!ins.first]
+		let desc = program.types.entries[!owner]
+		if desc.tag != TYPE_TAG_DICT
+			return "dictionary operation requires Dict"
+		if ins.op == MIR_DICT_LENGTH
+			if dst_type != TYPE_TAG_I64
+				return "dictionary length destination must be i64"
+			return ""
+		if ins.op == MIR_DICT_INSERT
+			if len(ins.inputs) != 2 or dst_type != owner
+				return "dictionary insert signature mismatch"
+			if not mir_register_valid(types, ins.inputs[!0], desc.first) or not mir_register_valid(types, ins.inputs[!1], desc.second)
+				return "dictionary insert key/value type mismatch"
+			return ""
+		if ins.op == MIR_DICT_GET_OPTIONAL
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != desc.second or not mir_register_valid(types, ins.second, desc.first)
+				return "dictionary optional lookup signature mismatch"
+			return ""
+		if not mir_register_valid(types, ins.second, desc.first) or not mir_register_valid(types, ins.immediate, desc.second) or dst_type != desc.second
+			return "dictionary get-or signature mismatch"
+		return ""
+	if ins.op == MIR_RECORD_NEW
+		if program.types.entries[!dst_type].tag != TYPE_TAG_RECORD
+			return "record construction requires record destination"
+		let fields = program.types.entries[!dst_type].fields
+		if len(ins.inputs) != len(fields)
+			return "record constructor field count mismatch"
+		for i in 0..len(fields)
+			if not mir_register_valid(types, ins.inputs[!i], fields[!i].kind)
+				return "record constructor field type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_NEW
+		let desc = program.types.entries[!dst_type]
+		if desc.tag != TYPE_TAG_ARRAY
+			return "array constructor requires array destination"
+		for input in ins.inputs
+			if not mir_register_valid(types, input, desc.first)
+				return "array constructor element type mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_APPEND
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid append owner"
+		let owner = types[!ins.first]
+		let desc = program.types.entries[!owner]
+		if desc.tag != TYPE_TAG_ARRAY or dst_type != owner or not mir_register_valid(types, ins.second, desc.first)
+			return "array append signature mismatch"
+		return ""
+	if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid array source"
+		let source_type = types[!ins.first]
+		let desc = program.types.entries[!source_type]
+		if desc.tag != TYPE_TAG_ARRAY
+			return "array operand requires array"
+		if ins.op == MIR_ARRAY_LENGTH
+			if dst_type != TYPE_TAG_I64
+				return "array length destination must be i64"
+			return ""
+		if not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+			return "array index must be i64"
+		if ins.op == MIR_ARRAY_GET_OPTIONAL
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != desc.first
+				return "array optional index type mismatch"
+		elif ins.op == MIR_ARRAY_GET
+			if dst_type != desc.first
+				return "array element destination type mismatch"
+		elif dst_type != source_type or not mir_register_valid(types, ins.immediate, desc.first)
+			return "array update type mismatch"
+		return ""
+	if ins.op == MIR_RECORD_ARRAY_APPEND
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid record update source"
+		let owner = types[!ins.first]
+		if program.types.entries[!owner].tag != TYPE_TAG_RECORD or dst_type != owner
+			return "record array append requires matching record destination"
+		let fields = program.types.entries[!owner].fields
+		if ins.immediate < 0 or ins.immediate >= len(fields)
+			return "invalid record update field"
+		let field_type = fields[!ins.immediate].kind
+		if program.types.entries[!field_type].tag != TYPE_TAG_ARRAY or not mir_register_valid(types, ins.second, program.types.entries[!field_type].first)
+			return "record array append type mismatch"
+		return ""
+	if ins.op == MIR_RECORD_SET
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid record update source"
+		let owner = types[!ins.first]
+		if program.types.entries[!owner].tag != TYPE_TAG_RECORD or dst_type != owner
+			return "record update requires matching record destination"
+		let fields = program.types.entries[!owner].fields
+		if ins.immediate < 0 or ins.immediate >= len(fields)
+			return "invalid record update field"
+		if not mir_register_valid(types, ins.second, fields[!ins.immediate].kind)
+			return "record update field type mismatch"
+		return ""
+	if ins.op == MIR_RECORD_GET
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid record source"
+		let owner = types[!ins.first]
+		if program.types.entries[!owner].tag != TYPE_TAG_RECORD
+			return "record field access requires record"
+		let fields = program.types.entries[!owner].fields
+		if ins.immediate < 0 or ins.immediate >= len(fields)
+			return "invalid record field"
+		if dst_type != fields[!ins.immediate].kind
+			return "record field type mismatch"
+		return ""
+	if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE
+		if not mir_register_valid(types, ins.first, dst_type)
+			return "copy/move register type mismatch"
+		if ins.op == MIR_RETAIN and not mir_managed_type(program.types, dst_type)
+			return "retain requires a managed register"
+		if ins.op == MIR_MOVE and (ins.dst == ins.first or not mir_managed_type(program.types, dst_type))
+			return "move requires distinct managed registers"
+		return ""
+	if ins.op == MIR_RELEASE or ins.op == MIR_RELEASE_IF_INIT
+		if not mir_managed_type(program.types, dst_type) or ins.first != ins.dst
+			return "release requires a managed register"
+		return ""
+	if ins.op == MIR_STRING_LENGTH
+		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "string length operand type mismatch"
+		return ""
+	if ins.op == MIR_STRING_CONCAT
+		if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string concat operand type mismatch"
+		return ""
+	if ins.op >= MIR_EQ_STRING and ins.op <= MIR_LE_STRING
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string comparison signature mismatch"
+		return ""
+	if ins.op >= MIR_STRING_SLICE and ins.op <= MIR_STRING_JOIN
+		if not mir_register_valid(types, ins.first, TYPE_TAG_STRING)
+			return "string operation requires a string receiver"
+		if ins.op == MIR_STRING_SLICE
+			if dst_type != TYPE_TAG_STRING or not mir_register_valid(types, ins.second, TYPE_TAG_I64) or not mir_register_valid(types, ins.immediate, TYPE_TAG_I64)
+				return "string slice signature mismatch"
+		elif ins.op == MIR_STRING_BYTE_AT
+			if not mir_register_valid(types, ins.second, TYPE_TAG_I64)
+				return "string byte_at argument mismatch"
+		elif ins.op == MIR_STRING_JOIN
+			if ins.second < 0 or ins.second >= len(types)
+				return "invalid string join argument"
+			let array = program.types.entries[!types[!ins.second]]
+			if array.tag != TYPE_TAG_ARRAY or array.first != TYPE_TAG_STRING or dst_type != TYPE_TAG_STRING
+				return "string join signature mismatch"
+		elif not mir_register_valid(types, ins.second, TYPE_TAG_STRING)
+			return "string operation argument type mismatch"
+		if ins.op == MIR_STRING_BYTE_AT or ins.op == MIR_STRING_FIND
+			let optional = program.types.entries[!dst_type]
+			if optional.tag != TYPE_TAG_OPTIONAL or optional.first != TYPE_TAG_I64
+				return "string optional result mismatch"
+		elif (ins.op == MIR_STRING_STARTS_WITH or ins.op == MIR_STRING_ENDS_WITH) and dst_type != TYPE_TAG_BOOL
+			return "string predicate result mismatch"
+		return ""
+	if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE
+		if ins.immediate < 0 or ins.immediate >= len(program.functions)
+			return "invalid callee"
+		let callee = program.functions[!ins.immediate]
+		if len(ins.inputs) != callee.argument_count or dst_type != callee.return_type
+			return "call signature mismatch"
+		for i in 0..len(ins.inputs)
+			if not mir_register_valid(types, ins.inputs[!i], callee.register_types[!i])
+				return "call argument type mismatch"
+		if ins.op == MIR_CALL_MOVE
+			if ins.dst == ins.first or ins.first < 0 or ins.first >= len(types) or not mir_managed_type(program.types, types[!ins.first])
+				return "call move requires a distinct managed register"
+			if ins.second < 0
+				return "call move requires a nonnegative argument mask"
+			var count = 0
+			var mask = ins.second
+			for i in 0..len(ins.inputs)
+				let arg = ins.inputs[!i]
+				if arg == ins.first
+					count += 1
+				if i < 62
+					if mask % 2 == 1
+						if arg == ins.first or arg == ins.dst or not mir_managed_type(program.types, types[!arg])
+							return "call move requires distinct managed arguments"
+						for j in 0..i
+							if ins.inputs[!j] == arg
+								return "call move cannot transfer duplicate arguments"
+					mask = mask / 2
+				elif mask != 0
+					return "call move argument mask exceeds supported width"
+			if count != 1 or mask != 0
+				return "call move requires one matching argument and a valid mask"
+			for i in 0..len(ins.inputs)
+				if ins.inputs[!i] == ins.first
+					continue
+				for j in 0..len(ins.inputs)
+					if i != j and ins.inputs[!j] == ins.inputs[!i] and mir_call_move_at(ins, j)
+						return "call move cannot transfer duplicate arguments"
+		return ""
+	if ins.op == MIR_NOT_BOOL
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_BOOL)
+			return "boolean operand type mismatch"
+		return ""
+	if ins.op == MIR_NEG_I64
+		if dst_type != TYPE_TAG_I64 or not mir_register_valid(types, ins.first, TYPE_TAG_I64)
+			return "integer operand type mismatch"
+		return ""
+	if ins.op == MIR_NEG_F64 or ins.op == MIR_SQRT_F64
+		if dst_type != TYPE_TAG_F64 or not mir_register_valid(types, ins.first, TYPE_TAG_F64)
+			return "floating unary operand type mismatch"
+		return ""
+	if ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64
+		let comparison = ins.op == MIR_EQ_F64 or ins.op == MIR_LT_F64 or ins.op == MIR_LE_F64
+		if comparison and dst_type != TYPE_TAG_BOOL
+			return "floating comparison destination must be bool"
+		if not comparison and dst_type != TYPE_TAG_F64
+			return "floating arithmetic destination must be f64"
+		if not mir_register_valid(types, ins.first, TYPE_TAG_F64) or not mir_register_valid(types, ins.second, TYPE_TAG_F64)
+			return "floating operand type mismatch"
+		return ""
+	if ins.op == MIR_EQ_BOOL
+		if dst_type != TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, TYPE_TAG_BOOL) or not mir_register_valid(types, ins.second, TYPE_TAG_BOOL)
+			return "boolean operand type mismatch"
+		return ""
+	if ins.op >= MIR_ADD_I64 and ins.op <= MIR_LE_I64 or ins.op >= MIR_BIT_AND_I64 and ins.op <= MIR_SHR_I64
+		let comparison = ins.op == MIR_EQ_I64 or ins.op == MIR_LT_I64 or ins.op == MIR_LE_I64
+		let required = TYPE_TAG_I64
+		if comparison
+			if dst_type != TYPE_TAG_BOOL
+				return "integer comparison destination must be bool"
+		elif dst_type != required
+			return "integer arithmetic destination must be i64"
+		if not mir_register_valid(types, ins.first, required) or not mir_register_valid(types, ins.second, required)
+			return "integer operand type mismatch"
+		return ""
+	return "unsupported MIR opcode"
+
+# Audit only compiler-produced MIR (after guard insertion). Handwritten MIR
+# may deliberately omit guards and rely on the interpreter/C defensive checks.
+# This verifies annotation completeness, not CFG dominance of the checks.
+# The pipeline can reuse a preceding MIR verification; the public audit below
+# still checks arbitrary programs on its own.
+def mir_audit_failures_unchecked(program: MirProgram) -> MirFailureAudit
+	var guarded = 0
+	var aborts = 0
+	for function in program.functions
+		for block in function.blocks
+			for ins in block.instructions
+				let failure = mir_failure_info(ins.op)
+				if failure.guarded
+					if ins.text != "__mir_guarded"
+						return MirFailureAudit("unguarded MIR runtime failure", guarded, aborts)
+					guarded += 1
+				elif ins.text == "__mir_guarded" and ins.op != MIR_CONST_STRING
+					# A string literal may contain the marker text; it is not metadata.
+					return MirFailureAudit("guard marker on non-fallible MIR instruction", guarded, aborts)
+				if failure.abort
+					aborts += 1
+	return MirFailureAudit("", guarded, aborts)
+
+def mir_audit_failures(program: MirProgram) -> MirFailureAudit
+	let error = mir_verify(program)
+	if error != ""
+		return MirFailureAudit(error, 0, 0)
+	return mir_audit_failures_unchecked(program)
+
+# Dictionary keys may be scalars, strings, or acyclic records consisting
+# exclusively of hashable fields. Canonical field order defines key identity.
+def mir_dict_hashable_key(types: TypeTable, kind: i64) -> bool
+	if kind == TYPE_TAG_I64 or kind == TYPE_TAG_BOOL or kind == TYPE_TAG_STRING or kind == TYPE_TAG_F64
+		return true
+	if kind < TYPE_TAG_RECORD or kind >= len(types.entries)
+		return false
+	let desc = types.entries[!kind]
+	if desc.tag != TYPE_TAG_RECORD
+		return false
+	for field in desc.fields
+		if not mir_dict_hashable_key(types, field.kind)
+			return false
+	return true
+
+def mir_verify(program: MirProgram) -> string
+	# Reject malformed/noncanonical type descriptors before accessing field tables.
+	for i in 0..len(program.types.entries)
+		let entry = program.types.entries[!i]
+		if entry.tag == TYPE_TAG_OPTIONAL
+			if entry.first < 0 or entry.first >= i or not mir_type_supported(program.types, entry.first)
+				return "invalid or cyclic optional type"
+		if entry.tag == TYPE_TAG_DICT
+			if entry.first < 0 or entry.first >= i or entry.second < 0 or entry.second >= i
+				return "invalid or cyclic dictionary type"
+			if not mir_dict_hashable_key(program.types, entry.first)
+				return "unsupported dictionary key type"
+			if not mir_type_supported(program.types, entry.second)
+				return "unsupported dictionary value type"
+		if entry.tag == TYPE_TAG_ARRAY
+			if entry.first < 0 or entry.first >= i or not mir_type_supported(program.types, entry.first)
+				return "invalid or cyclic array element type"
+		if entry.tag == TYPE_TAG_RECORD
+			for j in 0..len(entry.fields)
+				let field = entry.fields[!j]
+				if not mir_type_supported(program.types, field.kind)
+					return "unsupported record field type"
+				if j > 0 and entry.fields[!j - 1].name >= field.name
+					return "record field order is not canonical"
+				if (program.types.entries[!field.kind].tag == TYPE_TAG_RECORD or program.types.entries[!field.kind].tag == TYPE_TAG_ARRAY or program.types.entries[!field.kind].tag == TYPE_TAG_DICT or program.types.entries[!field.kind].tag == TYPE_TAG_OPTIONAL) and field.kind >= i
+					return "cyclic record type descriptor"
+	# Validate signatures first: call validation may inspect any callee.
+	for function in program.functions
+		let count = len(function.register_types)
+		if function.argument_count < 0 or function.argument_count > count or not mir_type_supported(program.types, function.return_type)
+			return "invalid function signature"
+		for type_id in function.register_types
+			if not mir_type_supported(program.types, type_id)
+				return "unsupported register type"
+	for function in program.functions
+		if function.entry < 0 or function.entry >= len(function.blocks)
+			return "invalid entry block"
+		for block in function.blocks
+			for ins in block.instructions
+				let error = mir_verify_instruction(program, function, ins)
+				if error != ""
+					return error
+			let term = block.terminator
+			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+				if term.target < 0 or term.target >= len(function.blocks)
+					return "invalid jump target"
+			if term.kind == MIR_BRANCH
+				if term.alternative < 0 or term.alternative >= len(function.blocks)
+					return "invalid branch target"
+				if not mir_register_valid(function.register_types, term.operand, TYPE_TAG_BOOL)
+					return "branch condition must be bool"
+			elif term.kind == MIR_RETURN
+				if not mir_register_valid(function.register_types, term.operand, function.return_type)
+					return "return type mismatch"
+			elif term.kind != MIR_JUMP and term.kind != MIR_PANIC
+				return "invalid block terminator"
+	return ""

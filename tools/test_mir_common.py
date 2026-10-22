@@ -11,7 +11,7 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	output = check_sirius_driver(cache, 'mir-common', (
-		'src/types.sirius', 'src/compile_common.sirius', 'src/mir.sirius', 'src/mir_common.sirius',
+		'src/types.sirius', 'src/compile_common.sirius', 'src/mir.sirius', 'src/mir_cfg.sirius', 'src/mir_verify.sirius', 'src/mir_common.sirius',
 		'tests/mir/common_driver.sirius',
 	), 'PASS MIR backend common semantics\n')
 	print(output, end='')

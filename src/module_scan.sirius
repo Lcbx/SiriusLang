@@ -1,0 +1,149 @@
+# Compiler-owned source-module discovery and export interface extraction.
+# The manifest is a deterministic tab-separated protocol; its fields are
+# identifiers or normalized type expressions, never arbitrary source text.
+rec ModuleScanExport(name: string, parameters: Array[HirParameterDecl], argument_types: Array[i64], result_type: i64)
+rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: HirModuleDecl, types: TypeTable, exports: Array[ModuleScanExport], has_main: bool)
+rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
+rec ModuleScanType(text: string, valid: bool)
+
+# Prevent module path components from escaping the source root.
+def module_scan_path_valid(path: string) -> bool
+	if len(path) == 0
+		return false
+	var segment_start = true
+	for i in 0..len(path)
+		let c = path.byte_at(i) or 0
+		if c == 46 # '.'
+			if segment_start
+				return false
+			segment_start = true
+		elif segment_start
+			if not is_alpha(c)
+				return false
+			segment_start = false
+		elif not is_ident(c)
+			return false
+	return not segment_start
+
+def module_scan_reserved(name: string) -> bool
+	for word in ["let", "var", "def", "rec", "extern", "pub", "export", "if", "elif", "else", "while", "for", "return", "and", "or", "not", "true", "false", "in", "import", "alias", "break", "continue"]
+		if word == name
+			return true
+	return false
+
+def module_scan_type(tree: ParseState, id: i64) -> ModuleScanType
+	if id < 0 or tree.nodes[!id].kind != NODE_TYPE
+		return ModuleScanType("", false)
+	let name = hir_ast_text(tree, id)
+	let count = tree.nodes[!id].count
+	if count == 0
+		return ModuleScanType(name, name == "i64" or name == "f64" or name == "bool" or name == "string" or name == "void")
+	if (name != "Array" and name != "Optional" and name != "Dict") or (name == "Dict" and count != 2) or (name != "Dict" and count != 1)
+		return ModuleScanType("", false)
+	var result = name + "["
+	for i in 0..count
+		let child = module_scan_type(tree, hir_ast_child(tree, id, i))
+		if not child.valid
+			return ModuleScanType("", false)
+		if i > 0
+			result += ", "
+		result += child.text
+	return ModuleScanType(result + "]", true)
+
+def module_scan_signature_valid(tree: ParseState, fn_decl: HirFunctionDecl) -> bool
+	for parameter in fn_decl.parameters
+		if not module_scan_type(tree, parameter.type_node).valid
+			return false
+	return module_scan_type(tree, fn_decl.result_type_node).valid
+
+def module_scan_export(tree: ParseState, fn_decl: HirFunctionDecl) -> string
+	var params = ""
+	for i in 0..len(fn_decl.parameters)
+		let param = fn_decl.parameters[!i]
+		let typ = module_scan_type(tree, param.type_node)
+		if not typ.valid
+			return ""
+		if i > 0
+			params += ", "
+		params += param.name + ": " + typ.text
+	let result = module_scan_type(tree, fn_decl.result_type_node)
+	if not result.valid
+		return ""
+	return fn_decl.name + "\t" + params + "\t" + result.text + "\n"
+
+def module_scan_visit(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit]) -> ModuleScanResult
+	if not module_scan_path_valid(name)
+		return ModuleScanResult(done, "invalid module path: " + name, units)
+	for current in visiting
+		if current == name
+			var chain = ""
+			for part in visiting
+				if chain != ""
+					chain += " -> "
+				chain += part
+			return ModuleScanResult(done, "cyclic source imports: " + chain + " -> " + name, units)
+	for current in done
+		if current == name
+			return ModuleScanResult(done, "", units)
+	let path = module_scan_filename(root, name)
+	let source = read_text(path) else return ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		return ModuleScanResult(done, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, units)
+	let decl = hir_module_declarations(parsed.state, parsed.node)
+	if decl.error != ""
+		return ModuleScanResult(done, name + ":" + str(decl.error_line) + ": " + decl.error, units)
+	var state = ModuleScanResult(done, "", units)
+	let stack = visiting.append(name)
+	for imported in decl.imports
+		if module_scan_reserved(imported.alias)
+			return ModuleScanResult(state.visited, name + ": invalid import alias: " + imported.alias, state.units)
+		state = module_scan_visit(root, imported.path, stack, state.visited, state.units)
+		if state.error != ""
+			return state
+	var signatures = Array[ModuleScanExport]()
+	var types = decl.types
+	for exported in decl.exports
+		var found = false
+		for fn_decl in decl.functions
+			if fn_decl.name == exported
+				if not module_scan_signature_valid(parsed.state, fn_decl)
+					return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
+				var arguments = Array[i64]()
+				for parameter in fn_decl.parameters
+					let resolved = hir_module_type_reference_with_constants(types, parsed.state, parameter.type_node, decl.functions, decl.constants)
+					types = resolved.table
+					if resolved.type_id == TYPE_TAG_INVALID
+						return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
+					arguments = arguments.append(resolved.type_id)
+				let returned = hir_module_type_reference_with_constants(types, parsed.state, fn_decl.result_type_node, decl.functions, decl.constants)
+				types = returned.table
+				if returned.type_id == TYPE_TAG_INVALID
+					return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
+				signatures = signatures.append(ModuleScanExport(exported, fn_decl.parameters, arguments, returned.type_id))
+				found = true
+		if not found
+			return ModuleScanResult(state.visited, name + ": missing exported function: " + exported, state.units)
+	var has_main = false
+	for fn_decl in decl.functions
+		if fn_decl.name == "main" and parsed.state.nodes[!fn_decl.source].kind == NODE_DEF
+			has_main = true
+	let unit = ModuleScanUnit(name, path, parsed.state, decl, types, signatures, has_main)
+	return ModuleScanResult(state.visited.append(name), "", state.units.append(unit))
+
+
+# Text manifest is only a scanner CLI interchange format. Native module builds
+# consume ModuleScanUnit and never serialize or parse this representation.
+def module_scan_manifest(units: Array[ModuleScanUnit]) -> string
+	var manifest = "SIRIUS-MODULES/1\n"
+	for unit in units
+		manifest += "M\t" + unit.name + "\n"
+		for imported in unit.declarations.imports
+			manifest += "I\t" + imported.alias + "\t" + imported.path + "\n"
+		for exported in unit.exports
+			for function in unit.declarations.functions
+				if function.name == exported.name
+					manifest += "E\t" + module_scan_export(unit.tree, function)
+		if unit.has_main
+			manifest += "F\tmain\n"
+	return manifest

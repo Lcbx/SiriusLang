@@ -1,0 +1,24 @@
+# Compile after FRONTEND_SOURCES + MIR_SOURCES to verify namespace-to-MIR lowering.
+def main() -> i64
+	let source = "import Lib.Math alias Math\nexport def main() -> i64\n\treturn Math.inc(41)\nextern def M_3_Lib_4_Math_3_inc(x: i64) -> i64\n"
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		eprint(parsed.state.error)
+		return 1
+	let decls = hir_module_declarations(parsed.state, parsed.node)
+	if decls.error != ""
+		eprint(decls.error)
+		return 2
+	let resolved = hir_resolve_module_calls(parsed.state, decls)
+	if resolved.error != ""
+		eprint(resolved.error)
+		return 3
+	let built = mir_build_program_roots(resolved.tree, decls, ["main"], Array[i64]())
+	if built.error != ""
+		eprint(built.error)
+		return 4
+	if len(built.exports) != 1 or len(built.imports) != 1
+		return 5
+	if built.imports[!0].name != "M_3_Lib_4_Math_3_inc"
+		return 6
+	return 0

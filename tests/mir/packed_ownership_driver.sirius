@@ -1,0 +1,27 @@
+# Verify packed ownership around 63-register word boundaries.
+def main() -> i64
+	let count = 130
+	let empty = mir_ownership_empty(count)
+	let top = mir_ownership_top(count)
+	if len(empty) != 3 or len(top) != 3
+		return 1
+	for i in 0..count
+		if mir_ownership_get(empty, i) != 0 or mir_ownership_get(top, i) != 1
+			return 2
+	var partial = empty
+	for i in [0, 62, 63, 64, 125, 126, 129]
+		partial = mir_ownership_set(partial, i, 1)
+	for i in [0, 62, 63, 64, 125, 126, 129]
+		if mir_ownership_get(partial, i) != 1
+			return 3
+	let removed = mir_ownership_set(partial, 63, 0)
+	if mir_ownership_get(removed, 63) != 0 or mir_ownership_get(partial, 63) != 1
+		return 4
+	let intersection = mir_ownership_join(partial, removed, false)
+	let union = mir_ownership_join(partial, removed, true)
+	if mir_ownership_get(intersection, 63) != 0 or mir_ownership_get(union, 63) != 1
+		return 5
+	if (13 & 11) != 9 or (13 | 2) != 15 or (3 << 4) != 48 or (48 >> 4) != 3
+		return 6
+	print("PASS packed MIR ownership")
+	return 0

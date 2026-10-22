@@ -42,6 +42,11 @@ void s_dict_i64_i64_release(S_Dict_i64_i64 *dict);
 S_Dict_i64_i64 *s_dict_i64_i64_insert(S_Dict_i64_i64 *dict, int64_t key, int64_t value);
 S_Optional_i64 s_dict_i64_i64_get(const S_Dict_i64_i64 *dict, int64_t key);
 
+/* list_dir returns NULL when the directory cannot be enumerated.
+   Entries are immediate, sorted UTF-8 names, excluding . and ... */
+typedef struct S_Array S_Array;
+S_Array *s_list_dir(const S_String *path);
+bool s_is_dir(const S_String *path);
 S_Optional_string s_read_text(const S_String *path);
 bool s_write_text(const S_String *path, const S_String *text);
 
@@ -71,7 +76,6 @@ typedef void (*S_CopyElem)(void *, const void *);
 typedef void (*S_DropElem)(void *);
 typedef uint64_t (*S_HashKey)(const void *);
 typedef bool (*S_EqualKey)(const void *, const void *);
-typedef struct S_Array S_Array;
 typedef struct S_Dict S_Dict;
 S_Array *s_array_new(size_t size, S_CopyElem copy, S_DropElem drop);
 S_Array *s_array_make(size_t n, const void *data, size_t size, S_CopyElem copy, S_DropElem drop);

@@ -12,7 +12,7 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	output = check_sirius_driver(cache, 'mir', (
 		'src/types.sirius',
-		'src/mir.sirius', 'src/mir_common.sirius',
+		'src/mir.sirius', 'src/mir_cfg.sirius', 'src/mir_verify.sirius', 'src/mir_common.sirius',
 		'src/mir_interpreter.sirius',
 		'tests/mir/driver.sirius',
 	), '42\nPASS Sirius MIR interpreter\n')

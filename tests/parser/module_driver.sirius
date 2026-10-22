@@ -1,0 +1,39 @@
+# Compile as an additional main() after FRONTEND_SOURCES.
+def main() -> i64
+	let source = "import Lib.Math alias Math\nexport def test(x: i64) -> i64\n\treturn Math.inc(x)\nextern def M_3_Lib_4_Math_3_inc(x: i64) -> i64\n"
+	let parsed = parse_module(source)
+	if parsed.state.error != ""
+		eprint(parsed.state.error)
+		return 1
+	let decls = hir_module_declarations(parsed.state, parsed.node)
+	if decls.error != "" or len(decls.imports) != 1 or len(decls.exports) != 1
+		eprint(decls.error)
+		return 2
+	if decls.imports[!0].path != "Lib.Math" or decls.imports[!0].alias != "Math" or decls.exports[!0] != "test"
+		return 3
+	let resolved = hir_resolve_module_calls(parsed.state, decls)
+	if resolved.error != ""
+		eprint(resolved.error)
+		return 4
+	var updated = false
+	for node in resolved.tree.nodes
+		if node.kind == NODE_NAME and node.token >= len(parsed.state.tokens)
+			if token_text(resolved.tree.source, resolved.tree.tokens[!node.token]) == "M_3_Lib_4_Math_3_inc"
+				updated = true
+	if not updated
+		return 5
+	let bad = parse_module("import Lib.Math alias Math\ndef main() -> i64\n\treturn Math.private()\n")
+	let bad_decl = hir_module_declarations(bad.state, bad.node)
+	let bad_result = hir_resolve_module_calls(bad.state, bad_decl)
+	if bad_result.error != "function Math.private is not exported"
+		return 6
+	let duplicate = parse_module("import Lib.Math alias X\nimport Lib.Other alias X\n")
+	if hir_module_declarations(duplicate.state, duplicate.node).error == ""
+		return 7
+	let invalid = parse_module("export def bad(x) -> i64\n\treturn 1\n")
+	if hir_module_declarations(invalid.state, invalid.node).error == ""
+		return 8
+	let illegal = parse_module("export let x = 1\n")
+	if illegal.state.error == ""
+		return 9
+	return 0

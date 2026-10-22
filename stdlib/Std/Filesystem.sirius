@@ -1,0 +1,18 @@
+# Directory traversal built from the platform filesystem intrinsics.
+# Directory symlinks are not traversed by is_dir; unreadable subdirectories
+# are skipped. Paths use '/' as separator, accepted by the supported hosts.
+export def walk_files(root: string) -> Array[string]
+	var files = Array[string]()
+	var pending = [root]
+	var head = 0
+	while head < len(pending)
+		let directory = pending[!head]
+		head += 1
+		let entries = list_dir(directory) or Array[string]()
+		for name in entries
+			let path = directory + "/" + name
+			if is_dir(path)
+				pending = pending.append(path)
+			else
+				files = files.append(path)
+	return files

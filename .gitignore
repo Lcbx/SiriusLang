@@ -2,8 +2,7 @@
 *.pyc
 *.patch
 .build/
+/*.exe
 /sirius
-/sirius.exe
 /output
-/output.exe
 /output.c
