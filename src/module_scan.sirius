@@ -8,6 +8,52 @@ rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: H
 rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
 rec ModuleScanType(text: string, valid: bool)
 
+# Import dependency interfaces into a private HIR declaration context. This
+# path is shared by export-signature resolution and actual module compilation.
+rec ModuleScanImports(declarations: HirModuleDecl, error: string)
+
+def module_scan_import_declarations(decl: HirModuleDecl, units: Array[ModuleScanUnit]) -> ModuleScanImports
+	var declarations = decl
+	var types = declarations.types
+	for imported in declarations.imports
+		var found = false
+		for dependency in units
+			if dependency.name != imported.path
+				continue
+			found = true
+			for exported in dependency.exports
+				var parameters = Array[HirParameterDecl]()
+				var arguments = Array[i64]()
+				for i in 0..len(exported.parameters)
+					let imported_type = module_import_type(types, dependency.types, exported.argument_types[!i])
+					types = imported_type.table
+					if imported_type.id == TYPE_TAG_INVALID
+						return ModuleScanImports(declarations, "unsupported imported parameter type: " + dependency.name + "." + exported.name)
+					arguments = arguments.append(imported_type.id)
+					parameters = parameters.append(HirParameterDecl(exported.parameters[!i].name, -1, -1))
+				let result_type = module_import_type(types, dependency.types, exported.result_type)
+				types = result_type.table
+				if result_type.id == TYPE_TAG_INVALID
+					return ModuleScanImports(declarations, "unsupported imported return type: " + dependency.name + "." + exported.name)
+				var function = HirFunctionDecl(hir_module_symbol(dependency.name, exported.name), -1, -1 - len(declarations.functions), false, -1, parameters)
+				function.external = true
+				function.constructor = exported.constructor
+				function.argument_types = arguments
+				function.result_type = result_type.id
+				declarations.functions = declarations.functions.append(function)
+			for constant in dependency.exported_constants
+				let copied = module_import_constant(types, declarations.values, dependency.types, dependency.declarations.values, constant.value)
+				if copied.index < 0
+					return ModuleScanImports(declarations, "unsupported imported constant: " + dependency.name + "." + constant.name)
+				types = copied.table
+				declarations.values = copied.values
+				let type_id = declarations.values[!copied.index].type_id
+				declarations.constants = declarations.constants.append(HirModuleConstant(hir_module_symbol(dependency.name, constant.name), copied.index, type_id))
+		if not found
+			return ModuleScanImports(declarations, "missing dependency: " + imported.path)
+	declarations.types = types
+	return ModuleScanImports(declarations, "")
+
 # Prevent module path components from escaping the source root.
 def module_scan_path_valid(path: string) -> bool
 	if len(path) == 0
@@ -97,16 +143,22 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 		state = module_scan_visit(root, imported.path, stack, state.visited, state.units)
 		if state.error != ""
 			return state
+	let imported = module_scan_import_declarations(decl, state.units)
+	if imported.error != ""
+		return ModuleScanResult(state.visited, name + ": " + imported.error, state.units)
+	let resolved = hir_resolve_module_calls(parsed.state, imported.declarations)
+	if resolved.error != ""
+		return ModuleScanResult(state.visited, name + ":" + str(resolved.line) + ": " + resolved.error, state.units)
 	var signatures = Array[ModuleScanExport]()
 	var exported_constants = Array[HirModuleConstant]()
-	var types = decl.types
+	var types = imported.declarations.types
 	for exported in decl.exports
 		var found = false
-		for fn_decl in decl.functions
+		for fn_decl in imported.declarations.functions
 			if fn_decl.name == exported
 				var arguments = Array[i64]()
 				for parameter in fn_decl.parameters
-					let resolved = hir_module_type_reference_with_constants(types, parsed.state, parameter.type_node, decl.functions, decl.constants)
+					let resolved = hir_module_type_reference_with_constants(types, resolved.tree, parameter.type_node, imported.declarations.functions, imported.declarations.constants)
 					types = resolved.table
 					if resolved.type_id == TYPE_TAG_INVALID
 						return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
@@ -115,30 +167,30 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 				if fn_decl.constructor
 					# Export only constructors that expose direct parameter fields.
 					# Computed pub expressions require exporting executable code instead.
-					let body = parsed.state.nodes[!fn_decl.body]
+					let body = resolved.tree.nodes[!fn_decl.body]
 					if body.count == 0
 						return ModuleScanResult(state.visited, name + ": exported constructor requires public fields: " + exported, state.units)
 					for i in 0..body.count
-						let pub_id = hir_ast_child(parsed.state, fn_decl.body, i)
-						let pub = parsed.state.nodes[!pub_id]
+						let pub_id = hir_ast_child(resolved.tree, fn_decl.body, i)
+						let pub = resolved.tree.nodes[!pub_id]
 						if pub.kind != NODE_PUB or pub.count != 0
 							return ModuleScanResult(state.visited, name + ": exported constructor requires direct pub fields: " + exported, state.units)
 						var matches = false
 						for parameter in fn_decl.parameters
-							if parameter.name == hir_ast_text(parsed.state, pub_id)
+							if parameter.name == hir_ast_text(resolved.tree, pub_id)
 								matches = true
 						if not matches
 							return ModuleScanResult(state.visited, name + ": exported constructor field is not a parameter: " + exported, state.units)
 					# Resolve its published shape with the same HIR implementation
 					# used by named local annotations.
-					var reference_tree = parsed.state
+					var reference_tree = resolved.tree
 					let reference = len(reference_tree.nodes)
-					reference_tree.nodes = reference_tree.nodes.append(Node(NODE_TYPE, parsed.state.nodes[!fn_decl.source].token, 0, 0))
-					let resolved = hir_module_type_reference_with_constants(types, reference_tree, reference, decl.functions, decl.constants)
+					reference_tree.nodes = reference_tree.nodes.append(Node(NODE_TYPE, resolved.tree.nodes[!fn_decl.source].token, 0, 0))
+					let resolved = hir_module_type_reference_with_constants(types, reference_tree, reference, imported.declarations.functions, imported.declarations.constants)
 					types = resolved.table
 					return_type = resolved.type_id
 				else
-					let returned = hir_module_type_reference_with_constants(types, parsed.state, fn_decl.result_type_node, decl.functions, decl.constants)
+					let returned = hir_module_type_reference_with_constants(types, resolved.tree, fn_decl.result_type_node, imported.declarations.functions, imported.declarations.constants)
 					types = returned.table
 					return_type = returned.type_id
 				if return_type == TYPE_TAG_INVALID
@@ -148,7 +200,7 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 				signatures = signatures.append(signature)
 				found = true
 		if not found
-			for constant in decl.constants
+			for constant in imported.declarations.constants
 				if constant.name == exported
 					exported_constants = exported_constants.append(constant)
 					found = true

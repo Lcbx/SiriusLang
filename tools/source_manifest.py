@@ -12,7 +12,8 @@ FRONTEND_SOURCES = PARSER_SOURCES + (
 	'src/module.sirius',
 	'src/module_resolve.sirius',
 )
-MODULE_SCANNER_SOURCES = FRONTEND_SOURCES + ('src/module_scan.sirius', 'src/module_scan_cli.sirius')
+MODULE_FRONTEND_SOURCES = FRONTEND_SOURCES + ('src/module_interface.sirius',)
+MODULE_SCANNER_SOURCES = MODULE_FRONTEND_SOURCES + ('src/module_scan.sirius', 'src/module_scan_cli.sirius')
 MIR_SOURCES = (
 	'src/hir_specialize.sirius',
 	'src/mir.sirius',
@@ -32,7 +33,7 @@ MIR_SOURCES = (
 COMPILER_SOURCES = FRONTEND_SOURCES + MIR_SOURCES + ('src/cli.sirius',)
 MIR_ONLY_COMPILER_SOURCES = COMPILER_SOURCES  # compatibility with MIR test tools
 MIR_DRIVER_SOURCES = COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
-MIR_RUNNER_SOURCES = FRONTEND_SOURCES + MIR_SOURCES[:-1] + (
+MIR_RUNNER_SOURCES = MODULE_FRONTEND_SOURCES + MIR_SOURCES[:-1] + (
 	'src/mir_interpreter.sirius', 'src/mir_wire.sirius', 'src/mir_library.sirius', 'src/mir_link.sirius',
 	'src/module_scan.sirius', 'src/module_build.sirius', 'src/run_cli.sirius',)
 

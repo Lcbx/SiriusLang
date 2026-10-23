@@ -222,8 +222,10 @@ python tools/test_compiler_source_modules.py
 
 `src/module_scan.sirius` parses each source module once, checks dependency cycles,
 and retains the AST, HIR declarations, and canonical typed export signatures.
-`src/module_build.sirius` re-interns imported types into the importing module,
-adds structured HIR external declarations, compiles the original parsed modules,
+`src/module_interface.sirius` re-interns imported types and compile-time values.
+The scanner and `src/module_build.sirius` share HIR interface injection, including
+export signatures that reference imported public record types. The builder
+compiles the original parsed modules,
 and links the MIR libraries in memory via `mir_link_libraries`. It does not
 serialize interfaces or reparse synthetic `extern def` source. The standalone
 scanner CLI still emits `SIRIUS-MODULES/1` for inspection, and the runner still
@@ -248,8 +250,11 @@ types remain structural; their field descriptors are re-interned in each consume
 shares compile-time values (`i64`, `bool`, strings, records and arrays) through
 qualified names such as `Settings.CONFIG.size`; the consuming HIR receives a
 copy of their typed value arena, without a runtime getter. Constant-only modules
-are supported. Cross-module type aliases, exported signatures referencing imported types,
-generic functions, operator overloads, re-exports, and runtime module objects are not yet supported.
+are supported. Exported functions and direct-publication constructors may use
+imported public record types (including nested `Array`, `Optional` and `Dict`
+annotations); their resolved structural descriptors are passed to consumers.
+Cross-module type aliases, generic functions, operator overloads, re-exports,
+and runtime module objects are not yet supported.
 `import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);
 standalone native compilation cannot resolve module dependencies yet.
@@ -342,8 +347,9 @@ Sirius functions. `tools/test_compiler_source_modules.py` compiles that *same*
 source as an independent module and invokes it via `import module alias Names`.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
 HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
-now cross module boundaries. Generic specialization, exported signatures depending
-on imported types, and mutual source dependencies still prevent a general
+now cross module boundaries. Exported function and constructor signatures may
+also reference imported public record types. Generic specialization, named
+re-exports, and mutual source dependencies still prevent a general
 compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture

@@ -214,6 +214,56 @@ def main() -> None:
 			raise AssertionError('incorrect constructor arity accepted')
 		print('PASS source modules: public constructors, qualified type annotations, nested types, privacy and errors')
 
+		# An exporting module may reference a public constructor imported from
+		# another module. Its interface must carry canonicalized type shapes.
+		write(root, 'Shape.Types',
+			'export rec Point(x: i64, y: i64)\n')
+		write(root, 'Shape.Gateway',
+			'import Shape.Types alias T\n'
+			'export def roundtrip(value: T.Point) -> T.Point\n'
+			'\treturn value\n'
+			'export def make() -> T.Point\n'
+			'\treturn T.Point(5, 7)\n'
+			'export rec Wrapper(value: T.Point)\n'
+			'export def length(values: Array[Dict[string, T.Point]]) -> i64\n'
+			'\treturn len(values)\n')
+		write(root, 'ShapeApp',
+			'import Shape.Gateway alias G\n'
+			'rec LocalPoint(x: i64, y: i64)\n'
+			'def main() -> i64\n'
+			'\tlet point = G.roundtrip(G.make())\n'
+			'\tlet points = Dict[string, LocalPoint]().insert("one", point)\n'
+			'\tlet wrapped = G.Wrapper(point)\n'
+			'\treturn point.x * 10 + point.y + G.length([points]) + wrapped.value.y\n')
+		signature = discover(root, 'Shape.Gateway')[-1]
+		assert signature.exports['roundtrip'].parameters == 'value: T.Point'
+		assert signature.exports['make'].returns == 'T.Point'
+		assert 'Wrapper' in signature.types
+		entry = build(root, 'ShapeApp', output, runner)
+		result = run(str(runner), '--entry', entry, '--load-lib', str(output))
+		assert (result.returncode, result.stdout, result.stderr) == (65, b'', b''), result
+		write(root, 'ShapeBadArg',
+			'import Shape.Gateway alias G\n'
+			'def main() -> i64\n'
+			'\treturn G.roundtrip({x=1, z=2}).x\n')
+		try:
+			build(root, 'ShapeBadArg', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'expected' in str(exc), exc
+		else:
+			raise AssertionError('invalid transitive record shape accepted')
+		write(root, 'Shape.Private', 'rec Hidden(value: i64)\n')
+		write(root, 'ShapeBadExport',
+			'import Shape.Private alias P\n'
+			'export def reveal(value: P.Hidden) -> i64\n'
+			'\treturn value.value\n')
+		check_failure(root, 'ShapeBadExport', 'not exported')
+		write(root, 'ShapeBadAlias',
+			'export def reveal(value: Unknown.Point) -> i64\n'
+			'\treturn value.x\n')
+		check_failure(root, 'ShapeBadAlias', 'unknown module alias')
+		print('PASS source modules: exported imported-type signatures, nested shapes, privacy and unknown aliases')
+
 		# Constants cross module boundaries as typed HIR values; no runtime
 		# constant getter or synthetic source declaration is necessary.
 		write(root, 'Settings',

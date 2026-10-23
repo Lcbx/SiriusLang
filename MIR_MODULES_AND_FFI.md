@@ -28,16 +28,19 @@ importers without a runtime getter. Arbitrary effectful initializers remain prop
 Sirius parser/HIR to traverse explicit dotted imports relative to a source root,
 detect cycles, and retain ASTs, HIR declarations, and canonical typed exports.
 Only the standalone scanner CLI formats the `SIRIUS-MODULES/1` manifest.
-`src/module_build.sirius` re-interns imported types, adds HIR extern declarations
-without reparsing text, and orchestrates independent concrete MIR compilation
+`src/module_interface.sirius` re-interns types and constants shared by the
+scanner and builder. `src/module_build.sirius` imports typed HIR declarations
+without reparsing text and orchestrates independent concrete MIR compilation
 and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. The compiler preserves source
 imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
 structured external function declarations. Length-prefixed module names prevent export collisions.
 Concrete function imports, structural record signatures, exported constant
 values, and direct-publication `export rec` constructors with qualified type names
 are supported. Imported constructors are lowered inline; no runtime import is
-needed for them. Computed constructor publications, signatures referencing imported
-types, generic specialization, and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
+needed for them. Exported concrete signatures and direct-publication constructors
+can reference imported public record types, including nested collection types.
+Computed constructor publications, generic specialization, named re-exports,
+and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
 `tools/test_module_builder.py`, and `tools/test_source_modules.py`.
