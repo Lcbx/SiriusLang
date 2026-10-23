@@ -56,69 +56,74 @@ def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibrar
 
 # Resolve package imports in dependency order. Source files take precedence;
 # each package pins the public interfaces of its direct dependencies.
-rec ModuleBuildPackages(packages: Array[ModuleScanUnit], error: string)
+rec ModuleBuildPackages(packages: Array[ModuleScanUnit], error: string, cache: ModuleScanCache)
 
-def module_build_prepare_package(root: string, name: string, visiting: Array[string], packages: Array[ModuleScanUnit]) -> ModuleBuildPackages
+def module_build_prepare_package(root: string, name: string, visiting: Array[string], packages: Array[ModuleScanUnit], cache: ModuleScanCache) -> ModuleBuildPackages
 	for previous in visiting
 		if previous == name
-			return ModuleBuildPackages(packages, "cyclic package imports: " + name)
+			return ModuleBuildPackages(packages, "cyclic package imports: " + name, cache)
 	for package in packages
 		if package.name == name
-			return ModuleBuildPackages(packages, "")
+			return ModuleBuildPackages(packages, "", cache)
 	let source_path = module_scan_filename(root, name)
 	let package_path = source_path.slice(0, len(source_path) - 7) + ".smirg"
 	let contents = read_text(package_path) or ""
 	if contents == ""
-		return ModuleBuildPackages(packages, "module " + name + " not found under source root: " + source_path)
+		return ModuleBuildPackages(packages, "module " + name + " not found under source root: " + source_path, cache)
 	let loaded = mir_deserialize_generic(contents)
 	if loaded.error != ""
-		return ModuleBuildPackages(packages, "invalid generic package " + name + ": " + loaded.error)
+		return ModuleBuildPackages(packages, "invalid generic package " + name + ": " + loaded.error, cache)
 	if loaded.module != name
-		return ModuleBuildPackages(packages, "generic package module mismatch: " + name)
+		return ModuleBuildPackages(packages, "generic package module mismatch: " + name, cache)
 	var available = packages
 	var imports = Array[ModuleScanUnit]()
 	var visited = Array[string]()
+	var memo = cache
 	for imported in loaded.declarations.imports
 		if module_scan_reserved(imported.alias)
-			return ModuleBuildPackages(available, "invalid package import alias: " + imported.alias)
-		var scanned = module_scan_visit_with_packages(root, imported.path, Array[string](), visited, imports, available)
-		while scanned.missing != ""
-			let prepared = module_build_prepare_package(root, scanned.missing, visiting.append(name), available)
+			return ModuleBuildPackages(available, "invalid package import alias: " + imported.alias, memo)
+		var scanned = module_scan_visit_cached(root, imported.path, Array[string](), ModuleScanCached(ModuleScanResult(visited, "", imports), memo), available)
+		memo = scanned.cache
+		while scanned.result.missing != ""
+			let prepared = module_build_prepare_package(root, scanned.result.missing, visiting.append(name), available, memo)
 			if prepared.error != ""
 				return prepared
 			available = prepared.packages
-			scanned = module_scan_visit_with_packages(root, imported.path, Array[string](), visited, imports, available)
-		if scanned.error != ""
-			return ModuleBuildPackages(available, scanned.error)
-		imports = scanned.units
-		visited = scanned.visited
+			memo = prepared.cache
+			scanned = module_scan_visit_cached(root, imported.path, Array[string](), ModuleScanCached(ModuleScanResult(visited, "", imports), memo), available)
+			memo = scanned.cache
+		if scanned.result.error != ""
+			return ModuleBuildPackages(available, scanned.result.error, memo)
+		imports = scanned.result.units
+		visited = scanned.result.visited
 	for requirement in loaded.dependencies
 		var verified = false
 		for unit in imports
 			if unit.name == requirement.name
 				if mir_generic_interface(unit) != requirement.signature
-					return ModuleBuildPackages(available, "generic package dependency interface mismatch: " + name + " -> " + requirement.name)
+					return ModuleBuildPackages(available, "generic package dependency interface mismatch: " + name + " -> " + requirement.name, memo)
 				verified = true
 		if not verified
-			return ModuleBuildPackages(available, "missing generic package dependency: " + requirement.name)
+			return ModuleBuildPackages(available, "missing generic package dependency: " + requirement.name, memo)
 	var declarations = loaded.declarations
 	declarations.exports = loaded.exports
 	let extracted = module_scan_complete(name, package_path, loaded.tree, declarations, visited, imports)
 	if extracted.error != "" or len(extracted.units) == 0
-		return ModuleBuildPackages(available, name + ": " + extracted.error)
-	return ModuleBuildPackages(available.append(extracted.units[!len(extracted.units) - 1]), "")
+		return ModuleBuildPackages(available, name + ": " + extracted.error, memo)
+	return ModuleBuildPackages(available.append(extracted.units[!len(extracted.units) - 1]), "", memo)
 
 # Source-first discovery, with generic artifacts filling only missing modules.
+# Retain the parsing and interface cache across retries, but never across builds.
 def module_build_scan(root: string, entry: string) -> ModuleScanResult
 	var packages = Array[ModuleScanUnit]()
-	var scanned = module_scan_visit_with_packages(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit](), packages)
-	while scanned.missing != "" and len(packages) < 256
-		let prepared = module_build_prepare_package(root, scanned.missing, Array[string](), packages)
+	var scanned = module_scan_visit_cached(root, entry, Array[string](), ModuleScanCached(ModuleScanResult(Array[string](), "", Array[ModuleScanUnit]()), module_scan_empty_cache()), packages)
+	while scanned.result.missing != "" and len(packages) < 256
+		let prepared = module_build_prepare_package(root, scanned.result.missing, Array[string](), packages, scanned.cache)
 		if prepared.error != ""
-			return ModuleScanResult(scanned.visited, prepared.error, scanned.units)
+			return ModuleScanResult(scanned.result.visited, prepared.error, scanned.result.units)
 		packages = prepared.packages
-		scanned = module_scan_visit_with_packages(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit](), packages)
-	return scanned
+		scanned = module_scan_visit_cached(root, entry, Array[string](), ModuleScanCached(ModuleScanResult(Array[string](), "", Array[ModuleScanUnit]()), prepared.cache), packages)
+	return scanned.result
 
 def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
 	let scanned = module_build_scan(root, entry)

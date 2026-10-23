@@ -118,11 +118,23 @@ def module_scan_export(tree: ParseState, fn_decl: HirFunctionDecl) -> string
 		return ""
 	return fn_decl.name + "\t" + params + "\t" + result.text + "\n"
 
-# The standalone scanner has no MIR library dependency. The native builder may
-# supply already verified generic packages as leaf units instead.
-def module_scan_visit_with_packages(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit], packages: Array[ModuleScanUnit]) -> ModuleScanResult
+# A build-local memo retains parsed sources and resolved typed interfaces across
+# discovery retries. It is never shared across builds: source or package changes
+# are therefore observed on the next invocation.
+rec ModuleScanSource(name: string, path: string, tree: ParseState, declarations: HirModuleDecl)
+rec ModuleScanCache(sources: Array[ModuleScanSource], completed: Array[ModuleScanUnit])
+rec ModuleScanCached(result: ModuleScanResult, cache: ModuleScanCache)
+
+def module_scan_empty_cache() -> ModuleScanCache
+	return ModuleScanCache(Array[ModuleScanSource](), Array[ModuleScanUnit]())
+
+# The standalone scanner uses an empty cache; the native builder carries it
+# across retries while resolving missing packages.
+def module_scan_visit_cached(root: string, name: string, visiting: Array[string], state: ModuleScanCached, packages: Array[ModuleScanUnit]) -> ModuleScanCached
+	let done = state.result.visited
+	let units = state.result.units
 	if not module_scan_path_valid(name)
-		return ModuleScanResult(done, "invalid module path: " + name, units)
+		return ModuleScanCached(ModuleScanResult(done, "invalid module path: " + name, units), state.cache)
 	for current in visiting
 		if current == name
 			var chain = ""
@@ -130,39 +142,61 @@ def module_scan_visit_with_packages(root: string, name: string, visiting: Array[
 				if chain != ""
 					chain += " -> "
 				chain += part
-			return ModuleScanResult(done, "cyclic source imports: " + chain + " -> " + name, units)
+			return ModuleScanCached(ModuleScanResult(done, "cyclic source imports: " + chain + " -> " + name, units), state.cache)
 	for current in done
 		if current == name
-			return ModuleScanResult(done, "", units)
+			return state
 	for package in packages
 		if package.name == name
-			var state = ModuleScanResult(done, "", units)
+			var current = state
 			for imported in package.declarations.imports
-				state = module_scan_visit_with_packages(root, imported.path, visiting.append(name), state.visited, state.units, packages)
-				if state.error != ""
-					return state
-			return ModuleScanResult(state.visited.append(name), "", state.units.append(package))
+				current = module_scan_visit_cached(root, imported.path, visiting.append(name), current, packages)
+				if current.result.error != ""
+					return current
+			let result = current.result
+			return ModuleScanCached(ModuleScanResult(result.visited.append(name), "", result.units.append(package)), current.cache)
 	let path = module_scan_filename(root, name)
-	let source = read_text(path) or ""
-	if source == ""
-		var missing = ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
-		missing.missing = name
-		return missing
-	let parsed = parse_module(source)
-	if parsed.state.error != ""
-		return ModuleScanResult(done, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, units)
-	let decl = hir_module_declarations(parsed.state, parsed.node)
-	if decl.error != ""
-		return ModuleScanResult(done, name + ":" + str(decl.error_line) + ": " + decl.error, units)
-	var state = ModuleScanResult(done, "", units)
+	var current = state
+	var source_index = -1
+	for i in 0..len(current.cache.sources)
+		if current.cache.sources[!i].name == name
+			source_index = i
+	if source_index < 0
+		let text = read_text(path) or ""
+		if text == ""
+			var missing = ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
+			missing.missing = name
+			return ModuleScanCached(missing, current.cache)
+		let parsed = parse_module(text)
+		if parsed.state.error != ""
+			return ModuleScanCached(ModuleScanResult(done, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, units), current.cache)
+		let declarations = hir_module_declarations(parsed.state, parsed.node)
+		if declarations.error != ""
+			return ModuleScanCached(ModuleScanResult(done, name + ":" + str(declarations.error_line) + ": " + declarations.error, units), current.cache)
+		source_index = len(current.cache.sources)
+		current.cache.sources = current.cache.sources.append(ModuleScanSource(name, path, parsed.state, declarations))
+	let source = current.cache.sources[!source_index]
+	let tree = source.tree
+	let decl = source.declarations
 	let stack = visiting.append(name)
 	for imported in decl.imports
 		if module_scan_reserved(imported.alias)
-			return ModuleScanResult(state.visited, name + ": invalid import alias: " + imported.alias, state.units)
-		state = module_scan_visit_with_packages(root, imported.path, stack, state.visited, state.units, packages)
-		if state.error != ""
-			return state
-	return module_scan_complete(name, path, parsed.state, decl, state.visited, state.units)
+			return ModuleScanCached(ModuleScanResult(current.result.visited, name + ": invalid import alias: " + imported.alias, current.result.units), current.cache)
+		current = module_scan_visit_cached(root, imported.path, stack, current, packages)
+		if current.result.error != ""
+			return current
+	for unit in current.cache.completed
+		if unit.name == name
+			let result = current.result
+			return ModuleScanCached(ModuleScanResult(result.visited.append(name), "", result.units.append(unit)), current.cache)
+	let result = module_scan_complete(name, path, tree, decl, current.result.visited, current.result.units)
+	if result.error == "" and len(result.units) > 0
+		current.cache.completed = current.cache.completed.append(result.units[!len(result.units) - 1])
+	return ModuleScanCached(result, current.cache)
+
+def module_scan_visit_with_packages(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit], packages: Array[ModuleScanUnit]) -> ModuleScanResult
+	let initial = ModuleScanCached(ModuleScanResult(done, "", units), module_scan_empty_cache())
+	return module_scan_visit_cached(root, name, visiting, initial, packages).result
 
 def module_scan_visit(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit]) -> ModuleScanResult
 	return module_scan_visit_with_packages(root, name, visiting, done, units, Array[ModuleScanUnit]())

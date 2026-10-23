@@ -31,7 +31,7 @@ Only the standalone scanner CLI formats the `SIRIUS-MODULES/1` manifest.
 `src/module_interface.sirius` re-interns types and constants shared by the
 scanner and builder. `src/module_build.sirius` imports typed HIR declarations
 without reparsing text and orchestrates independent concrete MIR compilation
-and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. The compiler preserves source
+and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. During one build, scanner and builder share a memo of parsed sources and completed typed interfaces across package-discovery retries; it is discarded between builds. Graph traversal may still repeat. The compiler preserves source
 imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
 structured external function declarations. Length-prefixed module names prevent export collisions.
 Concrete function imports, structural record signatures, exported constant
@@ -161,7 +161,7 @@ Initial interop should use explicit wrappers with C primitives and opaque handle
 ## 6. Suggested implementation order (proposal)
 
 1. Define portable exported-symbol and type-descriptor metadata in a module interface.
-2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots produce concrete MIR without the provider source. Automatic package discovery and recursively validated dependency interfaces are implemented; next reduce repeated graph scans and migrate more compiler components.
+2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots produce concrete MIR without the provider source. Automatic package discovery and recursively validated dependency interfaces are implemented; build-local parsing/interface caching is implemented; next avoid repeated graph traversal and migrate more compiler components.
 3. **Done for concrete executables and named concrete libraries:** serialize/load specialized MIR, validate exported symbols and signatures, and compare dynamic execution. Extend to imported modules and generic interfaces later.
 4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
 5. Register already compiled native specializations through a versioned C hook.

@@ -68,9 +68,10 @@ def main() -> i64
 ./sirius-run --entry M_3_App_4_main --load-lib app.smirl
 ```
 
-The builder prefers `.sirius` when both exist. Package fallback may rescan
-the source dependency graph for each newly discovered package; caching that
-work remains an optimization opportunity. It validates package identity,
+The builder prefers `.sirius` when both exist. During package discovery, a
+build-local cache reuses parsed source modules and completed typed interfaces
+across dependency-graph retries. It does not persist between builds and does
+not yet eliminate repeated graph traversal. The builder validates package identity,
 recovers the exported typed interface, and specializes requested signatures in
 memory before linking. Version 1 packages remain supported; version 2
 packages contain pinned interfaces for direct imports, recursively checked
@@ -78,7 +79,8 @@ against their available transitive dependencies. Dependencies are referenced,
 not bundled into one file. The standalone source scanner
 (`sirius-module-scan`) still only scans `.sirius` files. Test with
 `python tools/test_mir_generic_packages.py`, `python tools/test_module_packages.py`
-and `python tools/test_module_package_dependencies.py`.
+and `python tools/test_module_package_dependencies.py`, and
+`python tools/test_module_discovery_cache.py`.
 
 ## Current development priorities
 
@@ -407,9 +409,9 @@ source as an independent module and invokes it via `import module alias Names`.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
 HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
 now cross module boundaries. Exported function and constructor signatures may
-also reference imported public record types. Generic specialization, named
-re-exports, and mutual source dependencies still prevent a general
-compiler-module migration.
+also reference imported public record types. Generic specialization works through source modules and `.smirg` packages,
+but named re-exports, mutual source dependencies and some cross-module compiler
+interfaces still prevent a general compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture
 executables and successive compiler generations use temporary directories.
