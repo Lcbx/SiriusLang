@@ -1,5 +1,6 @@
-# Concatenate after src/tokenizer.sirius and src/parser.sirius.
-import Frontend alias F
+# Parser is linked separately and imports tokenizer itself.
+import parser alias F
+import tokenizer alias Lex
 
 def main() -> i64
 	let args = arguments()
@@ -12,7 +13,7 @@ def main() -> i64
 		let entry = result.state.nodes[!i]
 		var info = str(i) + " " + F.node_kind_name(entry.kind)
 		if entry.kind == F.NODE_NAME or entry.kind == F.NODE_BOOL or entry.kind == F.NODE_DELETE or entry.kind == F.NODE_INTEGER or entry.kind == F.NODE_FLOAT or entry.kind == F.NODE_STRING or entry.kind == F.NODE_BINARY or entry.kind == F.NODE_UNARY or entry.kind == F.NODE_ATTR or entry.kind == F.NODE_TYPE or entry.kind == F.NODE_PARAM or entry.kind == F.NODE_DEF or entry.kind == F.NODE_FIELD or entry.kind == F.NODE_CASE or entry.kind == F.NODE_LET or entry.kind == F.NODE_VAR or entry.kind == F.NODE_PUB or entry.kind == F.NODE_ASSIGN
-			info = info + " " + F.token_text(result.state.source, result.state.tokens[!entry.token])
+			info = info + " " + Lex.token_text(result.state.source, result.state.tokens[!entry.token])
 		info = info + " ->"
 		for j in entry.first..(entry.first + entry.count)
 			info = info + " " + str(result.state.edges[!j])

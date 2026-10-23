@@ -45,5 +45,14 @@ def normalize_newlines(data: bytes) -> bytes:
 
 
 def combined_sources(sources: tuple[str, ...], separator: bytes = b'\n') -> bytes:
-	"""Join sources with LF bytes; bootstrap concatenation uses no separator."""
-	return separator.join(normalize_newlines((ROOT / name).read_bytes()) for name in sources)
+	"""Join flat bootstrap sources, adapting native parser imports until migration completes."""
+	chunks = []
+	for name in sources:
+		data = normalize_newlines((ROOT / name).read_bytes())
+		if name == 'src/parser.sirius' and 'src/tokenizer.sirius' in sources:
+			# The self-hosted compiler is still a single compilation unit. Remove
+			# its explicit tokenizer dependency and refer to the same local names.
+			data = data.replace(b'import tokenizer alias Lex\n', b'')
+			data = data.replace(b'Lex.', b'')
+		chunks.append(data)
+	return separator.join(chunks)

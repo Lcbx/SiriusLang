@@ -413,14 +413,16 @@ The bootstrap compiler sources are still concatenated in dependency order using
 `tools/source_manifest.py`. The compiler naming utilities (`src/module.sirius`),
 byte-oriented tokenizer (`src/tokenizer.sirius`), and canonical type interning
 (`src/types.sirius`) now expose typed interfaces usable through Sirius imports.
-The tokenizer and parser can also be combined into a standalone **frontend** module
-for native linkage without duplicating their implementations.
+The parser now imports the tokenizer as an **independent Sirius module**.
+For the remaining flat self-hosting path, `combined_sources()` removes that import
+and its `Lex.` qualification while concatenating the existing sources.
 `tools/test_compiler_source_modules.py` exercises the naming utilities;
 `tools/test_compiler_core_modules.py` links the real lexer and type interner
 as independent modules and checks all 19 tokenizer golden fixtures, structural
 type interning, visibility and deterministic output.
-`tools/test_compiler_frontend_module.py` imports the combined real tokenizer/parser
-frontend and checks 11 parser golden fixtures through native MIR linking.
+`tools/test_compiler_frontend_module.py` compiles the original `tokenizer.sirius`
+and `parser.sirius` separately and checks 11 parser golden fixtures through
+native MIR linking.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
 HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
 now cross module boundaries. Exported function and constructor signatures may
@@ -443,7 +445,7 @@ Run individual suites as needed:
 | `python tools/test_mir_compiler.py` | Default MIR backend: 91 native executions, 46 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
 | `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures through the flat bootstrap path |
 | `python tools/test_compiler_core_modules.py` | Real tokenizer/type interner through native imports; 19 golden fixtures and canonical types |
-| `python tools/test_compiler_frontend_module.py` | Real tokenizer/parser in one natively linked frontend; 11 parser golden fixtures |
+| `python tools/test_compiler_frontend_module.py` | Separate tokenizer → parser native imports; 11 parser golden fixtures |
 | `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
 | `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
 | `python tools/test_mir_call_move.py` | Last-use managed call argument transfers, duplicate-argument safety, use-after-move rejection and native/interpreter parity; optional `--compiler PATH` |

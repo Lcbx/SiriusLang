@@ -1,6 +1,7 @@
-# Sirius stage-1 syntax parser. Concatenate after tokenizer.sirius until imports exist.
+# Sirius stage-1 syntax parser, importing the tokenizer as a separate module.
 # The AST is an arena: children are node IDs, never recursively allocated records.
 # Node.token indexes the original token array; identifiers/literals retain source spans.
+import tokenizer alias Lex
 
 # Named integer AST kinds; every Node stores a compact i64 kind.
 export let NODE_ARM = 1
@@ -156,7 +157,7 @@ export def node_kind_name(kind: i64) -> string
 
 rec Node(kind: i64, token: i64, first: i64, count: i64)
 
-rec ParseState(source: string, tokens: Array[Token])
+rec ParseState(source: string, tokens: Array[Lex.Token])
 	pub nodes = Array[Node]()
 	pub edges = Array[i64]()
 	pub index = 0
@@ -165,17 +166,17 @@ rec ParseState(source: string, tokens: Array[Token])
 
 rec ParseResult(state: ParseState, node: i64)
 
-def current(p: ParseState) -> Token
+def current(p: ParseState) -> Lex.Token
 	return p.tokens[!p.index]
 
 def word(p: ParseState) -> string
-	return token_text(p.source, current(p))
+	return Lex.token_text(p.source, current(p))
 
 def is_token(p: ParseState, value: string) -> bool
 	let token = current(p)
 	if token.end - token.start != len(value)
 		return false
-	return token_text(p.source, token) == value
+	return Lex.token_text(p.source, token) == value
 
 def kind_is(p: ParseState, kind: i64) -> bool
 	return current(p).kind == kind
@@ -204,7 +205,7 @@ def expect_kind(p: ParseState, kind: i64, description: string) -> ParseState
 	return next
 
 def is_name(p: ParseState) -> bool
-	return kind_is(p, TOKEN_NAME)
+	return kind_is(p, Lex.TOKEN_NAME)
 
 def append_node(p: ParseState, kind: i64, token: i64, children: Array[i64]) -> ParseResult
 	if p.error != ""
@@ -254,7 +255,7 @@ def precedence(op: string) -> i64
 
 def parse_type(p: ParseState) -> ParseResult
 	var token = p.index
-	var next = expect_kind(p, TOKEN_NAME, "type name")
+	var next = expect_kind(p, Lex.TOKEN_NAME, "type name")
 	if next.error != ""
 		return ParseResult(next, -1)
 	var name = word(p)
@@ -262,19 +263,19 @@ def parse_type(p: ParseState) -> ParseResult
 	while next.error == "" and is_token(next, ".")
 		next = expect(next, ".")
 		name += "." + word(next)
-		next = expect_kind(next, TOKEN_NAME, "qualified type name")
+		next = expect_kind(next, Lex.TOKEN_NAME, "qualified type name")
 		qualified = true
 	if qualified and next.error == ""
 		let start = len(next.source)
 		next.source += name
 		token = len(next.tokens)
-		next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), p.tokens[!p.index].line, 0))
+		next.tokens = next.tokens.append(Lex.Token(Lex.TOKEN_NAME, start, len(next.source), p.tokens[!p.index].line, 0))
 	var args = Array[i64]()
 	if is_token(next, "[")
 		next = expect(next, "[")
 		while next.error == "" and not is_token(next, "]")
 			var item = ParseResult(next, -1)
-			if kind_is(next, TOKEN_INT)
+			if kind_is(next, Lex.TOKEN_INT)
 				let index = next.index
 				next.index += 1
 				item = leaf(next, NODE_INTEGER, index)
@@ -292,7 +293,7 @@ def parse_type(p: ParseState) -> ParseResult
 
 def parse_param(p: ParseState) -> ParseResult
 	let token = p.index
-	var next = expect_kind(p, TOKEN_NAME, "parameter name")
+	var next = expect_kind(p, Lex.TOKEN_NAME, "parameter name")
 	var children = Array[i64]()
 	if next.error == "" and is_token(next, ":")
 		next = expect(next, ":")
@@ -348,10 +349,10 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 			if is_token(next, "del")
 				next = expect(next, "del")
 				let deleted = next.index
-				next = expect_kind(next, TOKEN_NAME, "deleted field")
+				next = expect_kind(next, Lex.TOKEN_NAME, "deleted field")
 				item = leaf(next, NODE_DELETE, deleted)
 			else
-				next = expect_kind(next, TOKEN_NAME, "field name")
+				next = expect_kind(next, Lex.TOKEN_NAME, "field name")
 				if is_token(next, ".")
 					next = expect(next, ".")
 					next = expect(next, "*")
@@ -393,19 +394,19 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 		let node = leaf(next, NODE_BOOL, token)
 		next = node.state
 		lhs = node.node
-	elif t.kind == TOKEN_NAME
+	elif t.kind == Lex.TOKEN_NAME
 		let node = leaf(next, NODE_NAME, token)
 		next = node.state
 		lhs = node.node
-	elif t.kind == TOKEN_INT
+	elif t.kind == Lex.TOKEN_INT
 		let node = leaf(next, NODE_INTEGER, token)
 		next = node.state
 		lhs = node.node
-	elif t.kind == TOKEN_FLOAT
+	elif t.kind == Lex.TOKEN_FLOAT
 		let node = leaf(next, NODE_FLOAT, token)
 		next = node.state
 		lhs = node.node
-	elif t.kind == TOKEN_STRING
+	elif t.kind == Lex.TOKEN_STRING
 		let node = leaf(next, NODE_STRING, token)
 		next = node.state
 		lhs = node.node
@@ -436,7 +437,7 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 		if op == "." and min_bp <= 10
 			next = expect(next, ".")
 			let name = next.index
-			next = expect_kind(next, TOKEN_NAME, "member name")
+			next = expect_kind(next, Lex.TOKEN_NAME, "member name")
 			let node = unary_node(next, NODE_ATTR, name, lhs)
 			next = node.state
 			lhs = node.node
@@ -487,30 +488,30 @@ def parse_expr(p: ParseState, min_bp: i64) -> ParseResult
 
 def parse_block(p: ParseState) -> ParseResult
 	let token = p.index
-	var next = expect_kind(p, TOKEN_NEWLINE, "newline")
+	var next = expect_kind(p, Lex.TOKEN_NEWLINE, "newline")
 	if next.error != ""
 		return ParseResult(next, -1)
-	next = expect_kind(next, TOKEN_INDENT, "indented block")
+	next = expect_kind(next, Lex.TOKEN_INDENT, "indented block")
 	var items = Array[i64]()
-	while next.error == "" and not kind_is(next, TOKEN_DEDENT) and not kind_is(next, TOKEN_EOF)
+	while next.error == "" and not kind_is(next, Lex.TOKEN_DEDENT) and not kind_is(next, Lex.TOKEN_EOF)
 		let item = parse_statement(next)
 		next = item.state
 		if next.error != ""
 			break
 		items = items.append(item.node)
-	if next.error == "" and kind_is(next, TOKEN_EOF)
+	if next.error == "" and kind_is(next, Lex.TOKEN_EOF)
 		next = fail(next, "unterminated block")
 	if next.error == ""
-		next = expect_kind(next, TOKEN_DEDENT, "dedent")
+		next = expect_kind(next, Lex.TOKEN_DEDENT, "dedent")
 	return append_node(next, NODE_BLOCK, token, items)
 
 # A rec implicitly publishes its parameters. Explicit pub declarations replace
 # the corresponding implicit field; other pub declarations add new fields.
 def rec_body(p: ParseState, params: Array[i64]) -> ParseResult
 	var body = ParseResult(p, -1)
-	if kind_is(p, TOKEN_NEWLINE)
-		var next = expect_kind(p, TOKEN_NEWLINE, "newline")
-		if kind_is(next, TOKEN_INDENT)
+	if kind_is(p, Lex.TOKEN_NEWLINE)
+		var next = expect_kind(p, Lex.TOKEN_NEWLINE, "newline")
+		if kind_is(next, Lex.TOKEN_INDENT)
 			body = parse_block(p)
 		else
 			body = append_node(next, NODE_BLOCK, p.index, Array[i64]())
@@ -523,12 +524,12 @@ def rec_body(p: ParseState, params: Array[i64]) -> ParseResult
 	let block = next.nodes[!body.node]
 	for param in params
 		let entry = next.nodes[!param]
-		let name = token_text(next.source, next.tokens[!entry.token])
+		let name = Lex.token_text(next.source, next.tokens[!entry.token])
 		var explicit = false
 		for i in 0..block.count
 			let child = next.edges[!block.first + i]
 			let published = next.nodes[!child]
-			if published.kind == NODE_PUB and token_text(next.source, next.tokens[!published.token]) == name
+			if published.kind == NODE_PUB and Lex.token_text(next.source, next.tokens[!published.token]) == name
 				explicit = true
 		if not explicit
 			let node = leaf(next, NODE_PUB, entry.token)
@@ -546,34 +547,34 @@ def parse_statement(p: ParseState) -> ParseResult
 		next.index += 1
 		var path = Array[i64]()
 		let first = next.index
-		next = expect_kind(next, TOKEN_NAME, "module path")
+		next = expect_kind(next, Lex.TOKEN_NAME, "module path")
 		var node = leaf(next, NODE_NAME, first)
 		next = node.state
 		path = path.append(node.node)
 		while next.error == "" and is_token(next, ".")
 			next = expect(next, ".")
 			let segment = next.index
-			next = expect_kind(next, TOKEN_NAME, "module path segment")
+			next = expect_kind(next, Lex.TOKEN_NAME, "module path segment")
 			node = leaf(next, NODE_NAME, segment)
 			next = node.state
 			path = path.append(node.node)
 		if next.error == "" and is_token(next, "alias")
 			next = expect(next, "alias")
 			let alias = next.index
-			next = expect_kind(next, TOKEN_NAME, "import alias")
+			next = expect_kind(next, Lex.TOKEN_NAME, "import alias")
 			node = leaf(next, NODE_BINDING, alias)
 			next = node.state
 			path = path.append(node.node)
-		next = expect_kind(next, TOKEN_NEWLINE, "newline")
+		next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 		return append_node(next, NODE_IMPORT, token, path)
 	if op == "export"
 		next.index += 1
 		if is_name(next) and not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
 			let owner = next.index
-			next = expect_kind(next, TOKEN_NAME, "import alias")
+			next = expect_kind(next, Lex.TOKEN_NAME, "import alias")
 			next = expect(next, ".")
 			let member = next.index
-			next = expect_kind(next, TOKEN_NAME, "exported member")
+			next = expect_kind(next, Lex.TOKEN_NAME, "exported member")
 			let receiver = leaf(next, NODE_NAME, owner)
 			let attribute = append_node(receiver.state, NODE_REEXPORT, member, [receiver.node])
 			next = attribute.state
@@ -581,11 +582,11 @@ def parse_statement(p: ParseState) -> ParseResult
 			if is_token(next, "alias")
 				next = expect(next, "alias")
 				let public_name = next.index
-				next = expect_kind(next, TOKEN_NAME, "re-export name")
+				next = expect_kind(next, Lex.TOKEN_NAME, "re-export name")
 				let renamed = leaf(next, NODE_BINDING, public_name)
 				next = renamed.state
 				children = children.append(renamed.node)
-			next = expect_kind(next, TOKEN_NEWLINE, "newline")
+			next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 			return append_node(next, NODE_EXPORT, token, children)
 		if not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
 			return ParseResult(fail(next, "export requires def, rec, let or imported member"), -1)
@@ -596,7 +597,7 @@ def parse_statement(p: ParseState) -> ParseResult
 		if op == "extern"
 			next = expect(next, "def")
 		let name = next.index
-		next = expect_kind(next, TOKEN_NAME, "function name")
+		next = expect_kind(next, Lex.TOKEN_NAME, "function name")
 		next = expect(next, "(")
 		var args = Array[i64]()
 		while next.error == "" and not is_token(next, ")")
@@ -618,7 +619,7 @@ def parse_statement(p: ParseState) -> ParseResult
 		if op == "rec"
 			body = rec_body(next, args)
 		elif op == "extern"
-			next = expect_kind(next, TOKEN_NEWLINE, "newline after extern declaration")
+			next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline after extern declaration")
 			body = append_node(next, NODE_BLOCK, name, Array[i64]())
 		else
 			body = parse_block(next)
@@ -657,7 +658,7 @@ def parse_statement(p: ParseState) -> ParseResult
 	if op == "for"
 		next = expect(next, "for")
 		let name = next.index
-		next = expect_kind(next, TOKEN_NAME, "loop variable")
+		next = expect_kind(next, Lex.TOKEN_NAME, "loop variable")
 		var kids = Array[i64]()
 		if next.error == "" and is_token(next, ":")
 			next = expect(next, ":")
@@ -673,18 +674,18 @@ def parse_statement(p: ParseState) -> ParseResult
 	if op == "match"
 		next = expect(next, "match")
 		let value = parse_expr(next, 0)
-		next = expect_kind(value.state, TOKEN_NEWLINE, "newline")
-		next = expect_kind(next, TOKEN_INDENT, "indented match arms")
+		next = expect_kind(value.state, Lex.TOKEN_NEWLINE, "newline")
+		next = expect_kind(next, Lex.TOKEN_INDENT, "indented match arms")
 		var arms = Array[i64]()
 		arms = arms.append(value.node)
-		while next.error == "" and not kind_is(next, TOKEN_DEDENT) and not kind_is(next, TOKEN_EOF)
+		while next.error == "" and not kind_is(next, Lex.TOKEN_DEDENT) and not kind_is(next, Lex.TOKEN_EOF)
 			let position = next.index
-			next = expect_kind(next, TOKEN_NAME, "variant name")
+			next = expect_kind(next, Lex.TOKEN_NAME, "variant name")
 			next = expect(next, "(")
 			var names = Array[i64]()
 			while next.error == "" and not is_token(next, ")")
 				let name = next.index
-				next = expect_kind(next, TOKEN_NAME, "bound name")
+				next = expect_kind(next, Lex.TOKEN_NAME, "bound name")
 				let leaf_result = leaf(next, NODE_BINDING, name)
 				next = leaf_result.state
 				names = names.append(leaf_result.node)
@@ -698,7 +699,7 @@ def parse_statement(p: ParseState) -> ParseResult
 			let arm = append_node(next, NODE_CASE, position, names)
 			next = arm.state
 			arms = arms.append(arm.node)
-		next = expect_kind(next, TOKEN_DEDENT, "dedent")
+		next = expect_kind(next, Lex.TOKEN_DEDENT, "dedent")
 		return append_node(next, NODE_MATCH, token, arms)
 	if op == "let" or op == "var" or op == "pub"
 		next.index += 1
@@ -709,11 +710,11 @@ def parse_statement(p: ParseState) -> ParseResult
 			var fields = Array[i64]()
 			while next.error == "" and not is_token(next, "}")
 				let name = next.index
-				next = expect_kind(next, TOKEN_NAME, "destructured binding")
+				next = expect_kind(next, Lex.TOKEN_NAME, "destructured binding")
 				next = expect(next, "=")
 				next = expect(next, ".")
 				let selector = next.index
-				next = expect_kind(next, TOKEN_NAME, "record field")
+				next = expect_kind(next, Lex.TOKEN_NAME, "record field")
 				let field_name = leaf(next, NODE_NAME, selector)
 				let part = unary_node(field_name.state, NODE_FIELD, name, field_name.node)
 				next = part.state
@@ -726,19 +727,19 @@ def parse_statement(p: ParseState) -> ParseResult
 			next = expect(next, "}")
 			next = expect(next, "=")
 			let value = parse_expr(next, 0)
-			next = expect_kind(value.state, TOKEN_NEWLINE, "newline")
+			next = expect_kind(value.state, Lex.TOKEN_NEWLINE, "newline")
 			var items = Array[i64]()
 			items = items.append(value.node)
 			for field in fields
 				items = items.append(field)
 			return append_node(next, NODE_DESTRUCTURE, token, items)
 		let name = next.index
-		next = expect_kind(next, TOKEN_NAME, "binding name")
+		next = expect_kind(next, Lex.TOKEN_NAME, "binding name")
 		var kids = Array[i64]()
 		if op == "pub" and next.error == "" and is_token(next, ".")
 			next = expect(next, ".")
 			let field = next.index
-			next = expect_kind(next, TOKEN_NAME, "published field name")
+			next = expect_kind(next, Lex.TOKEN_NAME, "published field name")
 			let reference = leaf(next, NODE_NAME, name)
 			let attr = unary_node(reference.state, NODE_ATTR, field, reference.node)
 			next = attr.state
@@ -762,7 +763,7 @@ def parse_statement(p: ParseState) -> ParseResult
 					let node = unary_node(next, NODE_ELSE_RETURN, token, fallback.node)
 					next = node.state
 					kids = kids.append(node.node)
-		next = expect_kind(next, TOKEN_NEWLINE, "newline")
+		next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 		if op == "let"
 			return append_node(next, NODE_LET, name, kids)
 		if op == "var"
@@ -770,19 +771,19 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_PUB, name, kids)
 	if op == "return" or op == "recur"
 		next.index += 1
-		if kind_is(next, TOKEN_NEWLINE)
-			next = expect_kind(next, TOKEN_NEWLINE, "newline")
+		if kind_is(next, Lex.TOKEN_NEWLINE)
+			next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 			if op == "return"
 				return leaf(next, NODE_RETURN, token)
 			return leaf(next, NODE_RECUR, token)
 		let value = parse_expr(next, 0)
-		next = expect_kind(value.state, TOKEN_NEWLINE, "newline")
+		next = expect_kind(value.state, Lex.TOKEN_NEWLINE, "newline")
 		if op == "return"
 			return unary_node(next, NODE_RETURN, token, value.node)
 		return unary_node(next, NODE_RECUR, token, value.node)
 	if op == "break" or op == "continue"
 		next.index += 1
-		next = expect_kind(next, TOKEN_NEWLINE, "newline")
+		next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 		if op == "break"
 			return leaf(next, NODE_BREAK, token)
 		return leaf(next, NODE_CONTINUE, token)
@@ -795,7 +796,7 @@ def parse_statement(p: ParseState) -> ParseResult
 		let position = next.index
 		next.index += 1
 		let rhs = parse_expr(next, 0)
-		next = expect_kind(rhs.state, TOKEN_NEWLINE, "newline")
+		next = expect_kind(rhs.state, Lex.TOKEN_NEWLINE, "newline")
 		return binary_node(next, NODE_ASSIGN, position, lhs.node, rhs.node)
 	if next.error == "" and is_token(next, "else")
 		next = expect(next, "else")
@@ -803,7 +804,7 @@ def parse_statement(p: ParseState) -> ParseResult
 		var exit_node = ParseResult(next, -1)
 		if is_token(next, "return")
 			next = expect(next, "return")
-			if kind_is(next, TOKEN_NEWLINE)
+			if kind_is(next, Lex.TOKEN_NEWLINE)
 				exit_node = leaf(next, NODE_RETURN, exit_token)
 			else
 				let value = parse_expr(next, 0)
@@ -817,21 +818,21 @@ def parse_statement(p: ParseState) -> ParseResult
 				exit_node = leaf(next, NODE_CONTINUE, exit_token)
 		else
 			return ParseResult(fail(next, "guard else requires return, break, or continue"), -1)
-		next = expect_kind(exit_node.state, TOKEN_NEWLINE, "newline")
+		next = expect_kind(exit_node.state, Lex.TOKEN_NEWLINE, "newline")
 		return binary_node(next, NODE_GUARD, token, lhs.node, exit_node.node)
-	next = expect_kind(next, TOKEN_NEWLINE, "newline")
+	next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 	return unary_node(next, NODE_EXPR, token, lhs.node)
 
 export def parse_module(source: string) -> ParseResult
-	let tokens = tokenize(source)
+	let tokens = Lex.tokenize(source)
 	var p = ParseState(source, tokens)
 	for token in tokens
 		if token.kind < 0
-			p.error = token_kind_name(token.kind)
+			p.error = Lex.token_kind_name(token.kind)
 			p.error_line = token.line
 			return ParseResult(p, -1)
 	var children = Array[i64]()
-	while p.error == "" and not kind_is(p, TOKEN_EOF)
+	while p.error == "" and not kind_is(p, Lex.TOKEN_EOF)
 		let item = parse_statement(p)
 		p = item.state
 		if p.error != ""
