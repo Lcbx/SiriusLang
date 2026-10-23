@@ -57,6 +57,12 @@ def main() -> None:
 		assert shapes.constants['SIZE'] == 'i64'
 		assert 'COLORS' in shapes.constants
 		assert shapes.exports['make'].returns == 'Pair'
+		write(root, 'PublicShape',
+			'export rec Point(x: i64, y: i64)\n'
+			'export def origin() -> Point\n\treturn Point(0, 0)\n')
+		public = discover(root, 'PublicShape', SCANNER)[0]
+		assert 'Point' in public.types and 'Point' not in public.exports
+		assert public.exports['origin'].returns == 'Point'
 		print('PASS scanner: structural record signatures and exported constants')
 
 		write(root, 'BadMissing', 'import Missing.Sub\ndef main() -> i64\n\treturn 0\n')

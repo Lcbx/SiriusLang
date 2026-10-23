@@ -2,6 +2,7 @@
 # The manifest is a deterministic tab-separated protocol; its fields are
 # identifiers or normalized type expressions, never arbitrary source text.
 rec ModuleScanExport(name: string, parameters: Array[HirParameterDecl], argument_types: Array[i64], result_type: i64)
+	pub constructor = false
 rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: HirModuleDecl, types: TypeTable, exports: Array[ModuleScanExport], has_main: bool)
 	pub exported_constants = Array[HirModuleConstant]()
 rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
@@ -110,11 +111,41 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 					if resolved.type_id == TYPE_TAG_INVALID
 						return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
 					arguments = arguments.append(resolved.type_id)
-				let returned = hir_module_type_reference_with_constants(types, parsed.state, fn_decl.result_type_node, decl.functions, decl.constants)
-				types = returned.table
-				if returned.type_id == TYPE_TAG_INVALID
+				var return_type = TYPE_TAG_INVALID
+				if fn_decl.constructor
+					# Export only constructors that expose direct parameter fields.
+					# Computed pub expressions require exporting executable code instead.
+					let body = parsed.state.nodes[!fn_decl.body]
+					if body.count == 0
+						return ModuleScanResult(state.visited, name + ": exported constructor requires public fields: " + exported, state.units)
+					for i in 0..body.count
+						let pub_id = hir_ast_child(parsed.state, fn_decl.body, i)
+						let pub = parsed.state.nodes[!pub_id]
+						if pub.kind != NODE_PUB or pub.count != 0
+							return ModuleScanResult(state.visited, name + ": exported constructor requires direct pub fields: " + exported, state.units)
+						var matches = false
+						for parameter in fn_decl.parameters
+							if parameter.name == hir_ast_text(parsed.state, pub_id)
+								matches = true
+						if not matches
+							return ModuleScanResult(state.visited, name + ": exported constructor field is not a parameter: " + exported, state.units)
+					# Resolve its published shape with the same HIR implementation
+					# used by named local annotations.
+					var reference_tree = parsed.state
+					let reference = len(reference_tree.nodes)
+					reference_tree.nodes = reference_tree.nodes.append(Node(NODE_TYPE, parsed.state.nodes[!fn_decl.source].token, 0, 0))
+					let resolved = hir_module_type_reference_with_constants(types, reference_tree, reference, decl.functions, decl.constants)
+					types = resolved.table
+					return_type = resolved.type_id
+				else
+					let returned = hir_module_type_reference_with_constants(types, parsed.state, fn_decl.result_type_node, decl.functions, decl.constants)
+					types = returned.table
+					return_type = returned.type_id
+				if return_type == TYPE_TAG_INVALID
 					return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
-				signatures = signatures.append(ModuleScanExport(exported, fn_decl.parameters, arguments, returned.type_id))
+				var signature = ModuleScanExport(exported, fn_decl.parameters, arguments, return_type)
+				signature.constructor = fn_decl.constructor
+				signatures = signatures.append(signature)
 				found = true
 		if not found
 			for constant in decl.constants
@@ -141,9 +172,12 @@ def module_scan_manifest(units: Array[ModuleScanUnit]) -> string
 		for imported in unit.declarations.imports
 			manifest += "I\t" + imported.alias + "\t" + imported.path + "\n"
 		for exported in unit.exports
-			for function in unit.declarations.functions
-				if function.name == exported.name
-					manifest += "E\t" + module_scan_export(unit.tree, function)
+			if exported.constructor
+				manifest += "T\t" + exported.name + "\t" + hir_type_name(unit.types, exported.result_type) + "\n"
+			else
+				for function in unit.declarations.functions
+					if function.name == exported.name
+						manifest += "E\t" + module_scan_export(unit.tree, function)
 		for constant in unit.exported_constants
 			manifest += "C\t" + constant.name + "\t" + hir_type_name(unit.types, constant.type_id) + "\n"
 		if unit.has_main

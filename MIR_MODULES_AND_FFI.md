@@ -33,9 +33,11 @@ without reparsing text, and orchestrates independent concrete MIR compilation
 and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. The compiler preserves source
 imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
 structured external function declarations. Length-prefixed module names prevent export collisions.
-Concrete function imports, structural record signatures and exported constant
-values are supported. Imported constructor/type names, generic specialization,
-and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
+Concrete function imports, structural record signatures, exported constant
+values, and direct-publication `export rec` constructors with qualified type names
+are supported. Imported constructors are lowered inline; no runtime import is
+needed for them. Computed constructor publications, signatures referencing imported
+types, generic specialization, and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
 `tools/test_module_builder.py`, and `tools/test_source_modules.py`.

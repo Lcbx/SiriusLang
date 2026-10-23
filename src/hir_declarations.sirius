@@ -46,8 +46,8 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		if entry.kind == NODE_EXPORT
 			id = hir_ast_child(tree, id, 0)
 			entry = tree.nodes[!id]
-			if entry.kind != NODE_DEF and entry.kind != NODE_LET
-				return hir_declaration_error(functions, constants, "export requires def or let", hir_ast_line(tree, id))
+			if entry.kind != NODE_DEF and entry.kind != NODE_LET and entry.kind != NODE_REC
+				return hir_declaration_error(functions, constants, "export requires def, rec or let", hir_ast_line(tree, id))
 			if entry.kind == NODE_DEF and entry.count < 2
 				return hir_declaration_error(functions, constants, "export requires an explicit return type", hir_ast_line(tree, id))
 			for j in 0..entry.count - 1

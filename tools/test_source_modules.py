@@ -163,6 +163,57 @@ def main() -> None:
 			raise AssertionError('incorrect imported record shape accepted')
 		print('PASS source modules: imported structural records and nested collection signatures')
 
+		# Public constructors are compiled locally from canonical typed metadata.
+		# No source rewriting or runtime symbol is needed for construction.
+		write(root, 'Shapes',
+			'export rec Point(x: i64, y: i64)\n'
+			'rec Hidden(secret: i64)\n'
+			'export def score(point: Point) -> i64\n'
+			'\treturn point.x * 10 + point.y\n')
+		write(root, 'ShapeApp',
+			'import Shapes alias S\n'
+			'def main() -> i64\n'
+			'\tlet point: S.Point = S.Point(3, 4)\n'
+			'\tlet points: Array[S.Point] = [point]\n'
+			'\treturn S.score(points[!0])\n')
+		entry = build(root, 'ShapeApp', output, runner)
+		result = run(str(runner), '--entry', entry, '--load-lib', str(output))
+		assert (result.returncode, result.stdout, result.stderr) == (34, b'', b''), result
+		listing = run(str(runner), '--list-lib', str(output))
+		assert symbol('Shapes', 'Point').encode() not in listing.stdout, 'constructors must not become MIR imports'
+		write(root, 'ShapeWrong',
+			'import Shapes alias S\n'
+			'def main() -> i64\n'
+			'\treturn S.Point(1, "bad").x\n')
+		try:
+			build(root, 'ShapeWrong', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'expected i64, found string' in str(exc), exc
+		else:
+			raise AssertionError('incorrect imported constructor type accepted')
+		write(root, 'ShapePrivate',
+			'import Shapes alias S\n'
+			'def main() -> i64\n'
+			'\tlet item: S.Hidden = S.Point(1, 2)\n'
+			'\treturn item.secret\n')
+		try:
+			build(root, 'ShapePrivate', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'not exported' in str(exc), exc
+		else:
+			raise AssertionError('private constructor type accepted')
+		write(root, 'ShapeArity',
+			'import Shapes alias S\n'
+			'def main() -> i64\n'
+			'\treturn S.Point(1).x\n')
+		try:
+			build(root, 'ShapeArity', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'argument count mismatch' in str(exc), exc
+		else:
+			raise AssertionError('incorrect constructor arity accepted')
+		print('PASS source modules: public constructors, qualified type annotations, nested types, privacy and errors')
+
 		# Constants cross module boundaries as typed HIR values; no runtime
 		# constant getter or synthetic source declaration is necessary.
 		write(root, 'Settings',

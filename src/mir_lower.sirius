@@ -415,27 +415,31 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					for j in 0..len(function.parameters)
 						next.bindings = next.bindings.append(MirSourceBinding(function.parameters[!j].name, argument_slots[!j], next.depth + 1))
 					var evaluated = Array[MirLowerField]()
-					let body = context.tree.nodes[!function.body]
-					for j in 0..body.count
-						let published = hir_ast_child(context.tree, function.body, j)
-						let pub = context.tree.nodes[!published]
-						if pub.kind != NODE_PUB
-							return MirLowerExpr(mir_lower_error(next, "constructor requires direct pub statements"), -1)
-						var field_name = hir_ast_text(context.tree, published)
-						var slot = -1
-						if pub.count == 0
-							slot = mir_lower_binding(next, field_name)
-						else
-							let expression_id = hir_ast_child(context.tree, published, 0)
-							if context.tree.nodes[!expression_id].kind == NODE_ATTR
-								field_name = hir_ast_text(context.tree, expression_id)
-							let expression = mir_lower_expression(next, context, expression_id)
-							next = expression.state
-							next.error == "" else return MirLowerExpr(next, -1)
-							slot = expression.slot
-						if slot < 0
-							return MirLowerExpr(mir_lower_error(next, "unknown published constructor field"), -1)
-						evaluated = evaluated.append(MirLowerField(field_name, slot))
+					if function.external
+						for j in 0..len(function.parameters)
+							evaluated = evaluated.append(MirLowerField(function.parameters[!j].name, argument_slots[!j]))
+					else
+						let body = context.tree.nodes[!function.body]
+						for j in 0..body.count
+							let published = hir_ast_child(context.tree, function.body, j)
+							let pub = context.tree.nodes[!published]
+							if pub.kind != NODE_PUB
+								return MirLowerExpr(mir_lower_error(next, "constructor requires direct pub statements"), -1)
+							var field_name = hir_ast_text(context.tree, published)
+							var slot = -1
+							if pub.count == 0
+								slot = mir_lower_binding(next, field_name)
+							else
+								let expression_id = hir_ast_child(context.tree, published, 0)
+								if context.tree.nodes[!expression_id].kind == NODE_ATTR
+									field_name = hir_ast_text(context.tree, expression_id)
+								let expression = mir_lower_expression(next, context, expression_id)
+								next = expression.state
+								next.error == "" else return MirLowerExpr(next, -1)
+								slot = expression.slot
+							if slot < 0
+								return MirLowerExpr(mir_lower_error(next, "unknown published constructor field"), -1)
+							evaluated = evaluated.append(MirLowerField(field_name, slot))
 					next.bindings = previous
 					var inputs = Array[i64]()
 					for field in context.types.entries[!type_id].fields

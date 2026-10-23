@@ -15,8 +15,8 @@ proposes path-derived modules, portable MIR libraries, compile-time execution,
 and native/FFI interoperability. The dynamic MIR interpreter can load versioned
 executables and **concrete multi-entry MIR libraries** with named exports and
 canonical structural signatures. A first path-based source-module workflow is available via `sirius-run --build-modules` (also exposed by `tools/build_modules.py`):
-static namespaced function/constant imports, structural record signatures, separate compilation
-and existing MIR linking. The parser recognizes `import`, `export def` and `export let`; the frontend resolves
+static namespaced function/constant imports, exported record constructors and qualified type names, separate compilation
+and existing MIR linking. The parser recognizes `import`, `export def`, `export rec` and `export let`; the frontend resolves
 qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
 and in-memory MIR linking; Python provides an optional launcher. Generic cross-module specialization is not implemented. Generic MIR libraries, compile-time execution and native
@@ -237,15 +237,20 @@ The separate scanner can be built with `tools/build_module_scanner.py`. Explicit
 needed for dependency resolution.
 
 Current restrictions: exported functions require explicitly annotated
-parameters and return types. Structural record types defined by local `rec`
-constructors can appear in imported signatures, including nested collections;
-their canonical field descriptors are re-interned in each consumer. `export let`
+parameters and return types. `export rec Point(x: i64, y: i64)` makes both
+`Alias.Point(...)` construction and the `Alias.Point` type annotation available
+to importers, including inside `Array[Alias.Point]`. Public constructors must
+have annotated parameters and direct `pub` fields (implicit parameter publication
+is supported); computed `pub` expressions cannot yet be exported. Construction
+is inlined in the importing MIR, without a library function symbol. All record
+types remain structural; their field descriptors are re-interned in each consumer.
+`export let`
 shares compile-time values (`i64`, `bool`, strings, records and arrays) through
 qualified names such as `Settings.CONFIG.size`; the consuming HIR receives a
 copy of their typed value arena, without a runtime getter. Constant-only modules
-are supported. Imported constructor names/type aliases, generic functions,
-operator overloads, re-exports, and runtime module objects are not yet supported.
-`import`, `export def` and `export let` are parsed by the Sirius frontend. Imports require the module
+are supported. Cross-module type aliases, exported signatures referencing imported types,
+generic functions, operator overloads, re-exports, and runtime module objects are not yet supported.
+`import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);
 standalone native compilation cannot resolve module dependencies yet.
 
@@ -336,9 +341,9 @@ now exports the symbol mangler and module-name-to-filepath conversion as typed
 Sirius functions. `tools/test_compiler_source_modules.py` compiles that *same*
 source as an independent module and invokes it via `import module alias Names`.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
-HIR/MIR still use flat cross-file references. Concrete record signatures and
-constant values now cross module boundaries; imported constructor/type names,
-generic specialization, and mutual source dependencies still prevent a general
+HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
+now cross module boundaries. Generic specialization, exported signatures depending
+on imported types, and mutual source dependencies still prevent a general
 compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture

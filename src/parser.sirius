@@ -250,10 +250,22 @@ def precedence(op: string) -> i64
 	return -1
 
 def parse_type(p: ParseState) -> ParseResult
-	let token = p.index
+	var token = p.index
 	var next = expect_kind(p, TOKEN_NAME, "type name")
 	if next.error != ""
 		return ParseResult(next, -1)
+	var name = word(p)
+	var qualified = false
+	while next.error == "" and is_token(next, ".")
+		next = expect(next, ".")
+		name += "." + word(next)
+		next = expect_kind(next, TOKEN_NAME, "qualified type name")
+		qualified = true
+	if qualified and next.error == ""
+		let start = len(next.source)
+		next.source += name
+		token = len(next.tokens)
+		next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), p.tokens[!p.index].line, 0))
 	var args = Array[i64]()
 	if is_token(next, "[")
 		next = expect(next, "[")
@@ -553,8 +565,8 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_IMPORT, token, path)
 	if op == "export"
 		next.index += 1
-		if not is_token(next, "def") and not is_token(next, "let")
-			return ParseResult(fail(next, "export requires def or let"), -1)
+		if not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
+			return ParseResult(fail(next, "export requires def, rec or let"), -1)
 		let definition = parse_statement(next)
 		return unary_node(definition.state, NODE_EXPORT, token, definition.node)
 	if op == "def" or op == "rec" or op == "extern"

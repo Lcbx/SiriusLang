@@ -136,6 +136,8 @@ def hir_module_type_reference_with_constants(types: TypeTable, tree: ParseState,
 		let name = hir_ast_text(tree, id)
 		for function in functions
 			if function.name == name and function.constructor
+				if function.external
+					return HirCallCheck(types, function.result_type, "")
 				var current = types
 				var arguments = Array[i64]()
 				for parameter in function.parameters

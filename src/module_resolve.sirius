@@ -13,6 +13,36 @@ def hir_module_replace_name(tree: ParseState, node: i64, target: string, line: i
 
 def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> HirModuleResolution
 	var next = tree
+	# Qualified type nodes retain the module alias until imports are resolved.
+	for i in 0..len(tree.nodes)
+		let node = next.nodes[!i]
+		if node.kind != NODE_TYPE
+			continue
+		let name = hir_ast_text(next, i)
+		var matched = false
+		for imported in declarations.imports
+			let prefix = imported.alias + "."
+			if not name.starts_with(prefix)
+				continue
+			matched = true
+			let member = name.slice(len(prefix), len(name))
+			let target = hir_module_symbol(imported.path, member)
+			var found = false
+			for function in declarations.functions
+				if function.name == target and function.constructor and function.external
+					found = true
+			if not found
+				return HirModuleResolution(tree, "type " + name + " is not exported", hir_ast_line(next, i))
+			let position = len(next.source)
+			next.source += target
+			let token = len(next.tokens)
+			next.tokens = next.tokens.append(Token(TOKEN_NAME, position, len(next.source), hir_ast_line(next, i), 0))
+			next.nodes[!i] = Node(NODE_TYPE, token, node.first, node.count)
+			break
+		if not matched
+			for j in 0..len(name)
+				if (name.byte_at(j) or 0) == 46
+					return HirModuleResolution(tree, "unknown module alias in type " + name, hir_ast_line(next, i))
 	for i in 0..len(tree.nodes)
 		let call = tree.nodes[!i]
 		if call.kind != NODE_CALL or call.count == 0
