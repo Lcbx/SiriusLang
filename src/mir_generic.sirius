@@ -1,0 +1,209 @@
+# Portable generic declarations. A package stores verified source-independent
+# syntax/HIR data; concrete MIR is generated only when argument types are known.
+# Dependency-free packages are supported first. Cross-package symbol dependencies
+# must be represented explicitly before packages can contain imports.
+let MIR_GENERIC_MAGIC = "SIRIUS-MIR-GENERIC/1\n"
+
+rec MirGenericLoad(module: string, tree: ParseState, declarations: HirModuleDecl, exports: Array[string], error: string)
+
+def mir_generic_failure(message: string) -> MirGenericLoad
+	return MirGenericLoad("", ParseState("", Array[Token]()), hir_declaration_error(Array[HirFunctionDecl](), Array[HirModuleConstant](), message, 0), Array[string](), message)
+
+def mir_generic_export_valid(declarations: HirModuleDecl, name: string) -> bool
+	var published = false
+	for exported in declarations.exports
+		if exported == name
+			published = true
+	if not published
+		return false
+	for function in declarations.functions
+		if function.name == name and not function.constructor and not function.external and function.result_type_node >= 0
+			for parameter in function.parameters
+				if parameter.type_node < 0
+					return true
+	return false
+
+def mir_serialize_generic(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl) -> MirWireSave
+	if not module_scan_path_valid(module)
+		return MirWireSave("", "invalid generic module name")
+	if len(declarations.imports) != 0
+		return MirWireSave("", "generic packages with imports are not supported yet")
+	var exports = Array[string]()
+	for name in declarations.exports
+		if mir_generic_export_valid(declarations, name)
+			exports = exports.append(name)
+	if len(exports) == 0
+		return MirWireSave("", "module has no exported generic functions")
+	let snapshot = mir_serialize_semantic(tree, root, declarations)
+	if snapshot.error != ""
+		return snapshot
+	var parts = [MIR_GENERIC_MAGIC]
+	parts = mir_wire_str(parts, module)
+	parts = mir_wire_num(parts, len(exports))
+	for name in exports
+		parts = mir_wire_str(parts, name)
+	parts = mir_wire_str(parts, snapshot.text)
+	let result = "".join(parts)
+	if len(result) > MIR_WIRE_MAX_SIZE
+		return MirWireSave("", "generic package exceeds format size limit")
+	return MirWireSave(result, "")
+
+def mir_deserialize_generic(data: string) -> MirGenericLoad
+	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_GENERIC_MAGIC)
+		return mir_generic_failure("unsupported generic package format or size")
+	var reader = MirWireReader(data, len(MIR_GENERIC_MAGIC), "")
+	let module = mir_wire_string(reader)
+	reader = module.reader
+	if reader.error != "" or not module_scan_path_valid(module.value)
+		return mir_generic_failure("invalid generic module name")
+	let count = mir_wire_count(reader)
+	reader = count.reader
+	if reader.error != "" or count.value == 0 or count.value > 4096
+		return mir_generic_failure("invalid generic export count")
+	var exports = Array[string]()
+	for i in 0..count.value
+		let name = mir_wire_string(reader)
+		reader = name.reader
+		if reader.error != "" or not mir_library_name_valid(name.value)
+			return mir_generic_failure("invalid generic export name")
+		for existing in exports
+			if existing == name.value
+				return mir_generic_failure("duplicate generic export")
+		exports = exports.append(name.value)
+	let snapshot = mir_wire_string(reader)
+	reader = snapshot.reader
+	if reader.error != "" or reader.at != len(data)
+		return mir_generic_failure("invalid generic package payload")
+	let restored = mir_deserialize_semantic(snapshot.value)
+	if restored.error != ""
+		return mir_generic_failure(restored.error)
+	if len(restored.declarations.imports) != 0
+		return mir_generic_failure("generic packages with imports are not supported yet")
+	for name in exports
+		if not mir_generic_export_valid(restored.declarations, name)
+			return mir_generic_failure("invalid generic export: " + name)
+	let canonical = mir_serialize_generic(module.value, restored.tree, restored.root, restored.declarations)
+	if canonical.error != "" or canonical.text != data
+		return mir_generic_failure("generic package metadata mismatch")
+	return MirGenericLoad(module.value, restored.tree, restored.declarations, exports, "")
+
+rec MirGenericType(table: TypeTable, type_id: i64)
+rec MirGenericParsedType(table: TypeTable, type_id: i64, at: i64)
+
+# Decode the same canonical type grammar used by concrete MIR library imports.
+# Full round-trip checking rejects alternate spellings and ambiguous field order.
+def mir_generic_parse_type(table: TypeTable, name: string, start: i64, depth: i64) -> MirGenericParsedType
+	let invalid = MirGenericParsedType(table, TYPE_TAG_INVALID, start)
+	if depth > 32 or start >= len(name)
+		return invalid
+	for primitive in ["i64", "f64", "bool", "string"]
+		if name.slice(start, start + len(primitive)) == primitive
+			var kind = TYPE_TAG_STRING
+			if primitive == "i64"
+				kind = TYPE_TAG_I64
+			elif primitive == "f64"
+				kind = TYPE_TAG_F64
+			elif primitive == "bool"
+				kind = TYPE_TAG_BOOL
+			return MirGenericParsedType(table, kind, start + len(primitive))
+	for container in ["Array[", "Optional[", "Dict["]
+		if name.slice(start, start + len(container)) != container
+			continue
+		let first = mir_generic_parse_type(table, name, start + len(container), depth + 1)
+		if first.type_id == TYPE_TAG_INVALID
+			return invalid
+		if container == "Dict["
+			if first.at >= len(name) or name.slice(first.at, first.at + 1) != ","
+				return invalid
+			let second = mir_generic_parse_type(first.table, name, first.at + 1, depth + 1)
+			if second.type_id == TYPE_TAG_INVALID or second.at >= len(name) or name.slice(second.at, second.at + 1) != "]"
+				return invalid
+			let result = intern_dict_type(second.table, first.type_id, second.type_id)
+			return MirGenericParsedType(result.table, result.id, second.at + 1)
+		if first.at >= len(name) or name.slice(first.at, first.at + 1) != "]"
+			return invalid
+		if container == "Array["
+			let result = intern_array_type(first.table, first.type_id)
+			return MirGenericParsedType(result.table, result.id, first.at + 1)
+		let result = intern_optional_type(first.table, first.type_id)
+		return MirGenericParsedType(result.table, result.id, first.at + 1)
+	if name.slice(start, start + 7) != "Record{"
+		return invalid
+	var fields = Array[RecordField]()
+	var current = table
+	var at = start + 7
+	while at < len(name) and name.slice(at, at + 1) != "}"
+		var size = 0
+		var digits = 0
+		while at < len(name)
+			let digit = (name.byte_at(at) or -1) - 48
+			if digit < 0 or digit > 9
+				break
+			if digits > 8
+				return invalid
+			size = size * 10 + digit
+			digits += 1
+			at += 1
+		if digits == 0 or at >= len(name) or name.slice(at, at + 1) != ":" or size == 0 or size > 256
+			return invalid
+		at += 1
+		if size > len(name) - at
+			return invalid
+		let field_name = name.slice(at, at + size)
+		at += size
+		if at >= len(name) or name.slice(at, at + 1) != "="
+			return invalid
+		let value = mir_generic_parse_type(current, name, at + 1, depth + 1)
+		if value.type_id == TYPE_TAG_INVALID or value.at >= len(name) or name.slice(value.at, value.at + 1) != ";"
+			return invalid
+		for existing in fields
+			if existing.name == field_name
+				return invalid
+		current = value.table
+		fields = fields.append(RecordField(field_name, value.type_id))
+		at = value.at + 1
+	if at >= len(name) or len(fields) == 0
+		return invalid
+	let result = intern_record_type(current, fields)
+	return MirGenericParsedType(result.table, result.id, at + 1)
+
+def mir_generic_type(table: TypeTable, name: string) -> MirGenericType
+	let parsed = mir_generic_parse_type(table, name, 0, 0)
+	if parsed.type_id == TYPE_TAG_INVALID or parsed.at != len(name)
+		return MirGenericType(table, TYPE_TAG_INVALID)
+	if mir_type_signature(parsed.table, parsed.type_id) != name
+		return MirGenericType(table, TYPE_TAG_INVALID)
+	return MirGenericType(parsed.table, parsed.type_id)
+
+def mir_generic_specialize(generic: MirGenericLoad, name: string, type_names: Array[string]) -> ModuleBuildCompiled
+	if generic.error != ""
+		return ModuleBuildCompiled(mir_library_failure(generic.error), generic.error)
+	var found = false
+	var arity = -1
+	for exported in generic.exports
+		if exported == name
+			found = true
+	for function in generic.declarations.functions
+		if function.name == name
+			arity = len(function.parameters)
+	if not found
+		return ModuleBuildCompiled(mir_library_failure("unknown generic export"), "unknown generic export: " + name)
+	if arity != len(type_names)
+		return ModuleBuildCompiled(mir_library_failure("wrong generic arity"), "wrong generic arity: " + name)
+	var declarations = generic.declarations
+	var types = declarations.types
+	var arguments = Array[i64]()
+	for type_name in type_names
+		let converted = mir_generic_type(types, type_name)
+		if converted.type_id == TYPE_TAG_INVALID
+			return ModuleBuildCompiled(mir_library_failure("unsupported specialization type"), "unsupported specialization type: " + type_name)
+		types = converted.table
+		arguments = arguments.append(converted.type_id)
+	declarations.types = types
+	let built = mir_build_program_roots(generic.tree, declarations, [name], arguments)
+	if built.error != ""
+		return ModuleBuildCompiled(mir_library_failure(built.error), built.error)
+	let symbol = mir_generic_symbol(hir_module_symbol(generic.module, name), built.program.types, arguments)
+	var library = MirLibraryLoad(built.program, [MirNamedExport(symbol, built.entry)], "")
+	library.imports = built.imports
+	return ModuleBuildCompiled(library, "")

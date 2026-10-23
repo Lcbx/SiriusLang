@@ -42,8 +42,65 @@ def run_link_libraries(args: Array[string]) -> i64
 		return 2
 	return 0
 
+# Produce or instantiate a source-independent generic declaration package.
+# Import-dependent templates are deliberately rejected until their dependency
+# interfaces can be persisted and validated in the artifact.
+def run_generic_package(args: Array[string]) -> i64
+	if args[!1] == "--emit-generic"
+		if len(args) != 5
+			eprint("usage: sirius-run --emit-generic module.name output.smirg source.sirius")
+			return 2
+		let source = read_text(args[!4]) or ""
+		if source == ""
+			eprint("cannot read generic source")
+			return 2
+		let parsed = parse_module(source)
+		if parsed.state.error != ""
+			eprint("generic syntax: " + parsed.state.error)
+			return 2
+		let declarations = hir_module_declarations(parsed.state, parsed.node)
+		if declarations.error != ""
+			eprint("generic declarations: " + declarations.error)
+			return 2
+		let saved = mir_serialize_generic(args[!2], parsed.state, parsed.node, declarations)
+		if saved.error != ""
+			eprint("cannot create generic package: " + saved.error)
+			return 2
+		if not write_text(args[!3], saved.text)
+			eprint("cannot write generic package")
+			return 2
+		return 0
+	if len(args) < 5
+		eprint("usage: sirius-run --specialize-generic input.smirg export output.smirl [argument-types ...]")
+		return 2
+	let contents = read_text(args[!2]) or ""
+	if contents == ""
+		eprint("cannot read generic package")
+		return 2
+	let generic = mir_deserialize_generic(contents)
+	if generic.error != ""
+		eprint("invalid generic package: " + generic.error)
+		return 2
+	var types = Array[string]()
+	for i in 5..len(args)
+		types = types.append(args[!i])
+	let compiled = mir_generic_specialize(generic, args[!3], types)
+	if compiled.error != ""
+		eprint("cannot specialize generic: " + compiled.error)
+		return 2
+	let saved = mir_serialize_library(compiled.library.program, compiled.library.exports, compiled.library.imports)
+	if saved.error != ""
+		eprint("cannot serialize specialization: " + saved.error)
+		return 2
+	if not write_text(args[!4], saved.text)
+		eprint("cannot write specialization")
+		return 2
+	return 0
+
 def main() -> i64
 	let args = arguments()
+	if len(args) > 1 and (args[!1] == "--emit-generic" or args[!1] == "--specialize-generic")
+		return run_generic_package(args)
 	if len(args) > 1 and args[!1] == "--build-modules"
 		if len(args) != 5
 			eprint("usage: sirius-run --build-modules source-root entry.module output.smirl")

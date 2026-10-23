@@ -19,7 +19,28 @@ static namespaced function/constant imports, exported record constructors and qu
 and existing MIR linking. The parser recognizes `import`, `export def`, `export rec` and `export let`; the frontend resolves
 qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
-and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Portable generic MIR libraries, compile-time execution and native linking remain unimplemented. Typed `extern def` declarations are still supported.
+and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Source-independent generic declaration packages (`.smirg`) can now be specialized explicitly into concrete `.smirl` libraries; automatic package discovery/specialization by the native module linker remains unimplemented. Compile-time execution and native linking are also future work. Typed `extern def` declarations are still supported.
+
+## Portable generic packages (experimental)
+
+A dependency-free exported generic function can be stored as a versioned,
+validated typed-HIR/syntax snapshot, then specialized **without the provider
+source file**. Explicit `extern def` dependencies survive as named MIR imports;
+link them against matching concrete libraries. Source-level `import` statements
+inside generic packages are not yet supported.
+
+```sh
+./sirius-run --emit-generic Ops ops.smirg Ops.sirius
+./sirius-run --specialize-generic ops.smirg twice twice.smirl i64
+./sirius-run --list-lib twice.smirl
+```
+
+Accepted type arguments include canonical scalar and structural type signatures
+(e.g. `Array[i64]`, `Dict[string,i64]`, `Record{1:x=i64;}`). Use
+`--link-lib` to link the resulting concrete `.smirl` with a caller. The
+`.smirg` format is **not** executable MIR and has no stable cross-version ABI.
+Its specialization step is explicit; `--build-modules` still requires source
+for its generic providers. Test with `python tools/test_mir_generic_packages.py`.
 
 ## Current development priorities
 
@@ -237,8 +258,9 @@ To run the discovery step alone, use `./sirius-module-scan source-root App`;
 The separate scanner can be built with `tools/build_module_scanner.py`. Explicit imports map directly to paths; a directory walk is not
 needed for dependency resolution.
 
-Current restrictions: exported functions require explicitly annotated
-parameters and return types. `export rec Point(x: i64, y: i64)` makes both
+Current restrictions: concrete exported functions require annotated
+parameters and return types; generic exports may leave parameters unannotated
+when their return types are explicit. `export rec Point(x: i64, y: i64)` makes both
 `Alias.Point(...)` construction and the `Alias.Point` type annotation available
 to importers, including inside `Array[Alias.Point]`. Public constructors must
 have annotated parameters and direct `pub` fields (implicit parameter publication
@@ -252,7 +274,7 @@ copy of their typed value arena, without a runtime getter. Constant-only modules
 are supported. Exported functions and direct-publication constructors may use
 imported public record types (including nested `Array`, `Optional` and `Dict`
 annotations); their resolved structural descriptors are passed to consumers.
-Cross-module type aliases, generic functions, operator overloads, re-exports,
+Cross-module type aliases, automatic use of packaged generic functions, operator overloads, re-exports,
 and runtime module objects are not yet supported.
 `import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);

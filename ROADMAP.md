@@ -48,8 +48,9 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    native parsing/HIR namespace resolution now works with structured typed
    interfaces. The builder reuses scanner AST/HIR results, re-interns imported
    type descriptors and links concrete modules without interface serialization
-   or synthetic source parsing; Python is an optional launcher. Generic cross-library specialization
-   and native linking remain future work.
+   or synthetic source parsing; Python is an optional launcher. Source-free generic specialization from explicitly supplied `.smirg` HIR
+   snapshots is available; automatic package resolution/specialization and
+   native linking remain future work.
    Keep further slices isolated and protect MIR self-hosting and snapshots.
    As an initial compiler-source migration check, `src/module.sirius` is now a
    usable source module exporting its naming/path utilities. The regression
@@ -57,7 +58,7 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    imports and the MIR linker. The bootstrap still consumes the flat manifest;
    structural records, public constructors/type names and exported constants now
    cross module boundaries; concrete exported signatures now accept imported
-   public record types. Generic specialization and named re-exports still
+   public record types. Automatic package specialization and named re-exports still
    block broad HIR/MIR migration.
 
 **Validation status (2026-10-23):** `test_bootstrap.py --fixed-point-only`
@@ -143,7 +144,7 @@ The Python scripts under `tools/` provide build/test orchestration; the historic
 | **Done** | Legacy backend retirement | Independent MIR bootstrap and regression checks verified the replacement | Old emitter and legacy-only CLI/scripts removed; `test_mir_direct_c.py` retains direct-emission coverage |
 | **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
-| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; next add portable generic MIR artifacts, named re-exports and compiler-source import migration |
+| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; explicit source-free HIR snapshots now exist; next automate package specialization, add named re-exports, and migrate compiler sources |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
 | **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
@@ -197,8 +198,8 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
   referencing imported public record types, including nested collection types;
   share typed interface injection between scanner and builder.
 - [x] Export generic functions with unannotated parameters and explicitly annotated concrete return types; compile each requested concrete specialization in its defining source module, deduplicate canonical signature keys, and link the resulting MIR (including transitive imports and structural arguments).
-- [ ] Support computed `pub` exports, generic declarations, named re-exports,
-  and portable cross-library generic specialization (beyond source-available build-time instantiation).
+- [x] Add versioned `.smirg` generic declaration snapshots (serialized and revalidated syntax + typed HIR), explicit source-free specialization into concrete `.smirl` libraries, canonical structural argument signatures, and preserved named `extern def` imports. Test scalar, array, dictionary, record, malformed-artifact and source-removal cases (`tools/test_mir_generic_packages.py`).
+- [ ] Support automatic generic package discovery/specialization during module builds, persisted source-module dependency interfaces, computed `pub` exports and named re-exports. The `.smirg` artifact is **not** a generic MIR executable and currently rejects Sirius `import` declarations.
 - [ ] Mixed native/interpreted dispatch and native registration ABI.
 - [ ] Compile-time MIR execution and purity inference (deferred by design).
 

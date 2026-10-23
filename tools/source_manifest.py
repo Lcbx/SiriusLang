@@ -35,7 +35,8 @@ MIR_ONLY_COMPILER_SOURCES = COMPILER_SOURCES  # compatibility with MIR test tool
 MIR_DRIVER_SOURCES = COMPILER_SOURCES[:-1] + ('src/mir_interpreter.sirius',)
 MIR_RUNNER_SOURCES = MODULE_FRONTEND_SOURCES + MIR_SOURCES[:-1] + (
 	'src/mir_interpreter.sirius', 'src/mir_wire.sirius', 'src/mir_library.sirius', 'src/mir_link.sirius',
-	'src/module_scan.sirius', 'src/module_build.sirius', 'src/run_cli.sirius',)
+	'src/mir_template.sirius', 'src/mir_semantic.sirius',
+	'src/module_scan.sirius', 'src/module_build.sirius', 'src/mir_generic.sirius', 'src/run_cli.sirius',)
 
 
 def normalize_newlines(data: bytes) -> bytes:
