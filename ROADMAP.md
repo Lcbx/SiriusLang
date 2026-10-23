@@ -50,12 +50,17 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    type descriptors and links concrete modules without interface serialization
    or synthetic source parsing; Python is an optional launcher. Source-free generic specialization from `.smirg` HIR snapshots now works
    both explicitly and automatically when the corresponding source is absent;
-   native linking remain future work.
+   native linking is implemented; native registration and mixed compiled/interpreted
+   dispatch remain future work.
    Keep further slices isolated and protect MIR self-hosting and snapshots.
-   As an initial compiler-source migration check, `src/module.sirius` is now a
-   usable source module exporting its naming/path utilities. The regression
-   `tools/test_compiler_source_modules.py` compiles the real source through typed
-   imports and the MIR linker. The bootstrap still consumes the flat manifest;
+   As initial compiler-source migration checks, `src/module.sirius`,
+   `src/tokenizer.sirius`, `src/parser.sirius`, and `src/types.sirius` now expose typed public APIs.
+   `tools/test_compiler_source_modules.py` verifies naming/path utilities;
+   `tools/test_compiler_core_modules.py` links the real lexer and canonical type
+   interner as independent native modules and runs the tokenizer golden fixtures,
+   structural type and visibility checks. `tools/test_compiler_frontend_module.py`
+   checks the real tokenizer/parser together as a native frontend module against
+   the parser golden fixtures. The bootstrap still consumes the flat manifest;
    structural records, public constructors/type names and exported constants now
    cross module boundaries; concrete exported signatures now accept imported
    public record types. Named member re-exports now work, but importing larger
@@ -204,6 +209,8 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Cache parsed source modules and completed typed dependency interfaces across `.smirg` discovery retries, scoped to one native build. Preserve source precedence, deterministic output, and fresh discovery on subsequent builds (`tools/test_module_discovery_cache.py`). A 30-source/14-package synthetic build took 24.1 ms without caching vs 10.5 ms with caching (median of 30 runs, same native runner toolchain; discovery + linking, not a full application benchmark).
 - [x] Resolve missing `.smirg` packages during a single depth-first source/package traversal rather than retrying discovery from the entry module. Retain source precedence, pinned interface validation, and deterministic linking. Cover deep mixed graphs and package/source cycles (`tools/test_module_incremental_discovery.py`). In one 30-source/14-package benchmark, median build time was 19.7 ms before vs 18.6 ms after (30 runs, same toolchain and byte-identical MIR); this small difference is not a reliable general speedup estimate.
 - [x] Support named re-exports of public imported concrete/generic functions, constructors and constants, including renaming, transitive forwarding, source-free `.smirg` facade interfaces, visibility and collision errors (`tools/test_module_reexports.py`). The original function symbol is preserved without a forwarding MIR stub.
+- [x] Validate native module boundaries for real compiler lexer and type-table implementations (`src/tokenizer.sirius`, `src/types.sirius`): public constants, record constructors, imported signatures, canonical interning and tokenizer golden output (`tools/test_compiler_core_modules.py`). Link the combined tokenizer/parser (`src/parser.sirius`) as a standalone frontend module and verify all parser golden cases (`tools/test_compiler_frontend_module.py`). This does **not** replace the flat bootstrap or migrate the parser/HIR/MIR dependencies.
+- [ ] Migrate the parser and remaining compiler components to native imports, then make the modular build path the self-hosting path while preserving the C bootstrap fixed point.
 - [ ] Bundle or register dependency closures where useful; add computed `pub` exports and optional namespace-wide re-exports. The `.smirg` artifact is **not** a generic MIR executable.
 - [ ] Mixed native/interpreted dispatch and native registration ABI.
 - [ ] Compile-time MIR execution and purity inference (deferred by design).

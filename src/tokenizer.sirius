@@ -1,27 +1,27 @@
 # Sirius stage-1 tokenizer. Byte offsets are half-open UTF-8 source spans.
 # The first lexical error terminates tokenization.
 # Module-level integers name the token kinds without a runtime enum type.
-let TOKEN_NAME = 1
-let TOKEN_INT = 2
-let TOKEN_FLOAT = 3
-let TOKEN_STRING = 4
-let TOKEN_OP = 5
-let TOKEN_NEWLINE = 6
-let TOKEN_INDENT = 7
-let TOKEN_DEDENT = 8
-let TOKEN_EOF = 9
-let TOKEN_INVALID_CHAR = -1
-let TOKEN_INVALID_INDENT = -2
-let TOKEN_UNCLOSED_STRING = -3
-let TOKEN_INVALID_BRACKET = -4
-let TOKEN_UNCLOSED_BRACKET = -5
+export let TOKEN_NAME = 1
+export let TOKEN_INT = 2
+export let TOKEN_FLOAT = 3
+export let TOKEN_STRING = 4
+export let TOKEN_OP = 5
+export let TOKEN_NEWLINE = 6
+export let TOKEN_INDENT = 7
+export let TOKEN_DEDENT = 8
+export let TOKEN_EOF = 9
+export let TOKEN_INVALID_CHAR = -1
+export let TOKEN_INVALID_INDENT = -2
+export let TOKEN_UNCLOSED_STRING = -3
+export let TOKEN_INVALID_BRACKET = -4
+export let TOKEN_UNCLOSED_BRACKET = -5
 
-rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
+export rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
 
-def token_text(source: string, token: Token) -> string
+export def token_text(source: string, token: Token) -> string
 	return source.slice(token.start, token.end)
 
-def token_kind_name(kind: i64) -> string
+export def token_kind_name(kind: i64) -> string
 	if kind == TOKEN_NAME
 		return "NAME"
 	if kind == TOKEN_INT
@@ -180,7 +180,7 @@ def scan_operator(source: string, start: i64) -> i64
 # Negative token kinds describe errors. All other tokens are ordered source spans.
 # Tabs indent code; whitespace-only and comment-only lines do not change depth.
 # Bracketed continuations suppress indentation and NEWLINE tokens.
-def tokenize(source: string) -> Array[Token]
+export def tokenize(source: string) -> Array[Token]
 	var tokens = Array[Token]()
 	var brackets = Array[i64]()
 	var depth = 0

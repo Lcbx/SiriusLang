@@ -2,24 +2,24 @@
 # description encoded into an integer. This table is separate from the legacy
 # C-emitter kind integers while callers migrate to canonical IDs.
 
-let TYPE_TAG_INVALID = 0
-let TYPE_TAG_I64 = 1
-let TYPE_TAG_F64 = 2
-let TYPE_TAG_BOOL = 3
-let TYPE_TAG_STRING = 4
-let TYPE_TAG_VOID = 5
-let TYPE_TAG_RECORD = 6
-let TYPE_TAG_ARRAY = 7
-let TYPE_TAG_DICT = 8
-let TYPE_TAG_OPTIONAL = 9
+export let TYPE_TAG_INVALID = 0
+export let TYPE_TAG_I64 = 1
+export let TYPE_TAG_F64 = 2
+export let TYPE_TAG_BOOL = 3
+export let TYPE_TAG_STRING = 4
+export let TYPE_TAG_VOID = 5
+export let TYPE_TAG_RECORD = 6
+export let TYPE_TAG_ARRAY = 7
+export let TYPE_TAG_DICT = 8
+export let TYPE_TAG_OPTIONAL = 9
 
-rec RecordField(name: string, kind: i64)
+export rec RecordField(name: string, kind: i64)
 
-rec TypeDescriptor(tag: i64, first: i64, second: i64, fields: Array[RecordField])
+export rec TypeDescriptor(tag: i64, first: i64, second: i64, fields: Array[RecordField])
 
-rec TypeTable(entries: Array[TypeDescriptor], lookup: Dict[string,i64])
+export rec TypeTable(entries: Array[TypeDescriptor], lookup: Dict[string,i64])
 
-rec InternedType(table: TypeTable, id: i64)
+export rec InternedType(table: TypeTable, id: i64)
 
 # Interned type keys are based on canonical child TypeIds and sorted fields.
 # Identifier names cannot contain the separators, so the encoding is unique.
@@ -30,7 +30,7 @@ def type_descriptor_key(tag: i64, first: i64, second: i64, fields: Array[RecordF
 		parts = parts.append(str(len(field.name)) + ":" + field.name + ":" + str(field.kind) + ";")
 	return "".join(parts)
 
-def new_type_table() -> TypeTable
+export def new_type_table() -> TypeTable
 	var entries = Array[TypeDescriptor]()
 	var lookup = Dict[string,i64]()
 	for tag in 0..6
@@ -40,7 +40,7 @@ def new_type_table() -> TypeTable
 
 # Canonical fields are sorted by the caller. A repeated descriptor reuses its
 # existing TypeId; fresh IDs retain the same deterministic insertion order.
-def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
+export def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
 	let key = type_descriptor_key(tag, first, second, fields)
 	let existing = table.lookup.get(key) or -1
 	if existing >= 0
@@ -51,13 +51,13 @@ def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Arr
 	next.lookup = next.lookup.insert(key, id)
 	return InternedType(next, id)
 
-def intern_array_type(table: TypeTable, element: i64) -> InternedType
+export def intern_array_type(table: TypeTable, element: i64) -> InternedType
 	return intern_type(table, TYPE_TAG_ARRAY, element, 0, Array[RecordField]())
 
-def intern_dict_type(table: TypeTable, key: i64, value: i64) -> InternedType
+export def intern_dict_type(table: TypeTable, key: i64, value: i64) -> InternedType
 	return intern_type(table, TYPE_TAG_DICT, key, value, Array[RecordField]())
 
-def intern_optional_type(table: TypeTable, value: i64) -> InternedType
+export def intern_optional_type(table: TypeTable, value: i64) -> InternedType
 	return intern_type(table, TYPE_TAG_OPTIONAL, value, 0, Array[RecordField]())
 
 def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
@@ -75,5 +75,5 @@ def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
 		result = sorted
 	return result
 
-def intern_record_type(table: TypeTable, fields: Array[RecordField]) -> InternedType
+export def intern_record_type(table: TypeTable, fields: Array[RecordField]) -> InternedType
 	return intern_type(table, TYPE_TAG_RECORD, 0, 0, ordered_fields(fields))

@@ -279,6 +279,8 @@ python tools/build_modules.py --root examples --entry App --output app.smirl --r
 python tools/test_module_scanner.py
 python tools/test_source_modules.py
 python tools/test_compiler_source_modules.py
+python tools/test_compiler_core_modules.py
+python tools/test_compiler_frontend_module.py
 ```
 
 `src/module_scan.sirius` checks source dependency cycles,
@@ -408,15 +410,22 @@ generated C by hand.** The *previous* committed compiler must be able to compile
 the updated Sirius source; introduce new syntax in stages.
 
 The bootstrap compiler sources are still concatenated in dependency order using
-`tools/source_manifest.py`. The first compiler utility source, `src/module.sirius`,
-now exports the symbol mangler and module-name-to-filepath conversion as typed
-Sirius functions. `tools/test_compiler_source_modules.py` compiles that *same*
-source as an independent module and invokes it via `import module alias Names`.
+`tools/source_manifest.py`. The compiler naming utilities (`src/module.sirius`),
+byte-oriented tokenizer (`src/tokenizer.sirius`), and canonical type interning
+(`src/types.sirius`) now expose typed interfaces usable through Sirius imports.
+The tokenizer and parser can also be combined into a standalone **frontend** module
+for native linkage without duplicating their implementations.
+`tools/test_compiler_source_modules.py` exercises the naming utilities;
+`tools/test_compiler_core_modules.py` links the real lexer and type interner
+as independent modules and checks all 19 tokenizer golden fixtures, structural
+type interning, visibility and deterministic output.
+`tools/test_compiler_frontend_module.py` imports the combined real tokenizer/parser
+frontend and checks 11 parser golden fixtures through native MIR linking.
 This is a migration compatibility check, **not** a modular self-hosted compiler:
 HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
 now cross module boundaries. Exported function and constructor signatures may
 also reference imported public record types. Generic specialization works through source modules and `.smirg` packages,
-but namespace re-exports, mutual source dependencies and some cross-module compiler
+but namespace-wide re-exports, mutual source dependencies and some cross-module compiler
 interfaces still prevent a general compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture
@@ -432,7 +441,9 @@ Run individual suites as needed:
 | `python tools/test_runtime_collections.py` | Runtime generic arrays/dictionaries, aliasing, CoW and managed values |
 | `python tools/test_compiler.py` | Default MIR backend: 96 native executions and 50 expected diagnostics |
 | `python tools/test_mir_compiler.py` | Default MIR backend: 91 native executions, 46 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
-| `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures |
+| `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures through the flat bootstrap path |
+| `python tools/test_compiler_core_modules.py` | Real tokenizer/type interner through native imports; 19 golden fixtures and canonical types |
+| `python tools/test_compiler_frontend_module.py` | Real tokenizer/parser in one natively linked frontend; 11 parser golden fixtures |
 | `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
 | `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
 | `python tools/test_mir_call_move.py` | Last-use managed call argument transfers, duplicate-argument safety, use-after-move rejection and native/interpreter parity; optional `--compiler PATH` |

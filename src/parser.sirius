@@ -3,57 +3,57 @@
 # Node.token indexes the original token array; identifiers/literals retain source spans.
 
 # Named integer AST kinds; every Node stores a compact i64 kind.
-let NODE_ARM = 1
-let NODE_ARRAY = 2
-let NODE_ASSIGN = 3
-let NODE_ATTR = 4
-let NODE_BINARY = 5
-let NODE_BINDING = 6
-let NODE_BLOCK = 7
-let NODE_BOOL = 8
-let NODE_BREAK = 9
-let NODE_CALL = 10
-let NODE_CASE = 11
-let NODE_CHECKED_INDEX = 12
-let NODE_CONTINUE = 13
-let NODE_DEF = 14
-let NODE_DELETE = 15
-let NODE_ELSE = 16
-let NODE_ELSE_RETURN = 17
-let NODE_EXPR = 18
-let NODE_FIELD = 19
-let NODE_FLOAT = 20
-let NODE_FOR = 21
-let NODE_IF = 22
-let NODE_INDEX = 23
-let NODE_INTEGER = 24
-let NODE_LAMBDA = 25
-let NODE_LET = 26
-let NODE_MATCH = 27
-let NODE_MODULE = 28
-let NODE_NAME = 29
-let NODE_OPTIONAL_INDEX = 30
-let NODE_PARAM = 31
-let NODE_PUB = 32
-let NODE_RECORD = 33
-let NODE_RECUR = 34
-let NODE_RETURN = 35
-let NODE_SPREAD = 36
-let NODE_STRING = 37
-let NODE_TYPE = 38
-let NODE_UNARY = 39
-let NODE_VAR = 40
-let NODE_WHILE = 41
-let NODE_REC = 42
-let NODE_GUARD = 43
-let NODE_UNWRAP = 44
-let NODE_DESTRUCTURE = 45
-let NODE_EXTERN_DEF = 46
-let NODE_IMPORT = 47
-let NODE_EXPORT = 48
-let NODE_REEXPORT = 49
+export let NODE_ARM = 1
+export let NODE_ARRAY = 2
+export let NODE_ASSIGN = 3
+export let NODE_ATTR = 4
+export let NODE_BINARY = 5
+export let NODE_BINDING = 6
+export let NODE_BLOCK = 7
+export let NODE_BOOL = 8
+export let NODE_BREAK = 9
+export let NODE_CALL = 10
+export let NODE_CASE = 11
+export let NODE_CHECKED_INDEX = 12
+export let NODE_CONTINUE = 13
+export let NODE_DEF = 14
+export let NODE_DELETE = 15
+export let NODE_ELSE = 16
+export let NODE_ELSE_RETURN = 17
+export let NODE_EXPR = 18
+export let NODE_FIELD = 19
+export let NODE_FLOAT = 20
+export let NODE_FOR = 21
+export let NODE_IF = 22
+export let NODE_INDEX = 23
+export let NODE_INTEGER = 24
+export let NODE_LAMBDA = 25
+export let NODE_LET = 26
+export let NODE_MATCH = 27
+export let NODE_MODULE = 28
+export let NODE_NAME = 29
+export let NODE_OPTIONAL_INDEX = 30
+export let NODE_PARAM = 31
+export let NODE_PUB = 32
+export let NODE_RECORD = 33
+export let NODE_RECUR = 34
+export let NODE_RETURN = 35
+export let NODE_SPREAD = 36
+export let NODE_STRING = 37
+export let NODE_TYPE = 38
+export let NODE_UNARY = 39
+export let NODE_VAR = 40
+export let NODE_WHILE = 41
+export let NODE_REC = 42
+export let NODE_GUARD = 43
+export let NODE_UNWRAP = 44
+export let NODE_DESTRUCTURE = 45
+export let NODE_EXTERN_DEF = 46
+export let NODE_IMPORT = 47
+export let NODE_EXPORT = 48
+export let NODE_REEXPORT = 49
 
-def node_kind_name(kind: i64) -> string
+export def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
 		return "arm"
 	if kind == NODE_ARRAY
@@ -822,7 +822,7 @@ def parse_statement(p: ParseState) -> ParseResult
 	next = expect_kind(next, TOKEN_NEWLINE, "newline")
 	return unary_node(next, NODE_EXPR, token, lhs.node)
 
-def parse_module(source: string) -> ParseResult
+export def parse_module(source: string) -> ParseResult
 	let tokens = tokenize(source)
 	var p = ParseState(source, tokens)
 	for token in tokens

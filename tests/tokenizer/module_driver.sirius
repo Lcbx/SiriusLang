@@ -1,0 +1,26 @@
+# Native-module variant of the existing tokenizer golden-test driver.
+import Lexer alias Lex
+import Types alias T
+
+def main() -> i64
+	let args = arguments()
+	let source = read_text(args[!1]) or ""
+	# Independently imported type interning must preserve canonical identities.
+	let first = T.intern_array_type(T.new_type_table(), T.TYPE_TAG_I64)
+	let repeated = T.intern_array_type(first.table, T.TYPE_TAG_I64)
+	if first.id != repeated.id or len(first.table.entries) != len(repeated.table.entries)
+		return 2
+	let fields = [T.RecordField("z", T.TYPE_TAG_I64), T.RecordField("a", T.TYPE_TAG_STRING)]
+	let record = T.intern_record_type(repeated.table, fields)
+	let reverse = T.intern_record_type(record.table, [fields[!1], fields[!0]])
+	if record.id != reverse.id
+		return 3
+	let nested = T.intern_dict_type(reverse.table, T.TYPE_TAG_STRING, record.id)
+	if nested.table.entries[!nested.id].tag != T.TYPE_TAG_DICT
+		return 4
+	for token in Lex.tokenize(source)
+		var shown = ""
+		if token.kind >= Lex.TOKEN_NAME and token.kind <= Lex.TOKEN_OP
+			shown = " " + Lex.token_text(source, token)
+		print(Lex.token_kind_name(token.kind) + " " + str(token.start) + ":" + str(token.end) + " " + str(token.line) + ":" + str(token.column) + shown)
+	return 0
