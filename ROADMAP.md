@@ -58,8 +58,8 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    imports and the MIR linker. The bootstrap still consumes the flat manifest;
    structural records, public constructors/type names and exported constants now
    cross module boundaries; concrete exported signatures now accept imported
-   public record types. Named re-exports still
-   block broad HIR/MIR migration.
+   public record types. Named member re-exports now work, but importing larger
+   compiler components remains blocked by their shared globals and cross-file dependencies.
 
 **Validation status (2026-10-23):** `test_bootstrap.py --fixed-point-only`
 reached generation 2 and verified regenerated `bootstrap/compiler.c` byte-for-byte.
@@ -144,7 +144,7 @@ The Python scripts under `tools/` provide build/test orchestration; the historic
 | **Done** | Legacy backend retirement | Independent MIR bootstrap and regression checks verified the replacement | Old emitter and legacy-only CLI/scripts removed; `test_mir_direct_c.py` retains direct-emission coverage |
 | **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
-| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; explicit source-free HIR snapshots now exist; automatic source-free package specialization now works; dependency interface pinning and package imports are implemented; build-local parsed-source caching and single-pass dependency traversal are implemented; next add named re-exports and migrate compiler sources |
+| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; explicit source-free HIR snapshots now exist; automatic source-free package specialization now works; dependency interface pinning and package imports are implemented; build-local parsed-source caching and single-pass dependency traversal are implemented; named re-exports are implemented; next migrate compiler sources |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
 | **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
@@ -203,7 +203,8 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Support ordinary `import` in `.smirg` packages (`SIRIUS-MIR-GENERIC/2`), pin each direct dependency's public structural signatures and immutable exported values, and verify the recursive package/source dependency graph before specialization. Test source-free chained packages and incompatible dependency replacement (`tools/test_module_package_dependencies.py`). Version 1 artifacts remain readable.
 - [x] Cache parsed source modules and completed typed dependency interfaces across `.smirg` discovery retries, scoped to one native build. Preserve source precedence, deterministic output, and fresh discovery on subsequent builds (`tools/test_module_discovery_cache.py`). A 30-source/14-package synthetic build took 24.1 ms without caching vs 10.5 ms with caching (median of 30 runs, same native runner toolchain; discovery + linking, not a full application benchmark).
 - [x] Resolve missing `.smirg` packages during a single depth-first source/package traversal rather than retrying discovery from the entry module. Retain source precedence, pinned interface validation, and deterministic linking. Cover deep mixed graphs and package/source cycles (`tools/test_module_incremental_discovery.py`). In one 30-source/14-package benchmark, median build time was 19.7 ms before vs 18.6 ms after (30 runs, same toolchain and byte-identical MIR); this small difference is not a reliable general speedup estimate.
-- [ ] Bundle or register dependency closures where useful; add computed `pub` exports and named re-exports. The `.smirg` artifact is **not** a generic MIR executable.
+- [x] Support named re-exports of public imported concrete/generic functions, constructors and constants, including renaming, transitive forwarding, source-free `.smirg` facade interfaces, visibility and collision errors (`tools/test_module_reexports.py`). The original function symbol is preserved without a forwarding MIR stub.
+- [ ] Bundle or register dependency closures where useful; add computed `pub` exports and optional namespace-wide re-exports. The `.smirg` artifact is **not** a generic MIR executable.
 - [ ] Mixed native/interpreted dispatch and native registration ABI.
 - [ ] Compile-time MIR execution and purity inference (deferred by design).
 

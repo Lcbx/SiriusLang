@@ -4,8 +4,10 @@
 rec ModuleScanExport(name: string, parameters: Array[HirParameterDecl], argument_types: Array[i64], result_type: i64)
 	pub constructor = false
 	pub generic = false
+	pub origin = "" # Original linked symbol for a named re-export.
 rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: HirModuleDecl, types: TypeTable, exports: Array[ModuleScanExport], has_main: bool)
 	pub exported_constants = Array[HirModuleConstant]()
+	pub exported_values = Array[HirConstantValue]()
 rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
 	pub missing = ""
 rec ModuleScanType(text: string, valid: bool)
@@ -37,14 +39,24 @@ def module_scan_import_declarations(decl: HirModuleDecl, units: Array[ModuleScan
 				types = result_type.table
 				if result_type.id == TYPE_TAG_INVALID
 					return ModuleScanImports(declarations, "unsupported imported return type: " + dependency.name + "." + exported.name)
-				var function = HirFunctionDecl(hir_module_symbol(dependency.name, exported.name), -1, -1 - len(declarations.functions), false, -1, parameters)
-				function.external = true
-				function.constructor = exported.constructor
-				function.argument_types = arguments
-				function.result_type = result_type.id
-				declarations.functions = declarations.functions.append(function)
+				let public_symbol = hir_module_symbol(dependency.name, exported.name)
+				var target = public_symbol
+				if exported.origin != ""
+					target = exported.origin
+					declarations.external_aliases = declarations.external_aliases.append(HirExternalAlias(public_symbol, target))
+				var found_function = false
+				for existing in declarations.functions
+					if existing.name == target
+						found_function = true
+				if not found_function
+					var function = HirFunctionDecl(target, -1, -1 - len(declarations.functions), false, -1, parameters)
+					function.external = true
+					function.constructor = exported.constructor
+					function.argument_types = arguments
+					function.result_type = result_type.id
+					declarations.functions = declarations.functions.append(function)
 			for constant in dependency.exported_constants
-				let copied = module_import_constant(types, declarations.values, dependency.types, dependency.declarations.values, constant.value)
+				let copied = module_import_constant(types, declarations.values, dependency.types, dependency.exported_values, constant.value)
 				if copied.index < 0
 					return ModuleScanImports(declarations, "unsupported imported constant: " + dependency.name + "." + constant.name)
 				types = copied.table
@@ -285,12 +297,55 @@ def module_scan_complete(name: string, path: string, tree: ParseState, decl: Hir
 					found = true
 		if not found
 			return ModuleScanResult(done, name + ": missing exported declaration: " + exported, units)
+	# Re-export only members that are public in the direct dependency. Keep
+	# the original function symbol so no forwarding MIR functions are needed.
+	for reexport in decl.reexports
+		var dependency_name = ""
+		for imported in decl.imports
+			if imported.alias == reexport.alias
+				dependency_name = imported.path
+		var found = false
+		for dependency in units
+			if dependency.name != dependency_name
+				continue
+			for exported in dependency.exports
+				if exported.name != reexport.name
+					continue
+				var arguments = Array[i64]()
+				for argument in exported.argument_types
+					let mapped = module_import_type(types, dependency.types, argument)
+					if mapped.id == TYPE_TAG_INVALID and argument != TYPE_TAG_INVALID
+						return ModuleScanResult(done, name + ": unsupported re-export type: " + reexport.public_name, units)
+					types = mapped.table
+					arguments = arguments.append(mapped.id)
+				let result_type = module_import_type(types, dependency.types, exported.result_type)
+				if result_type.id == TYPE_TAG_INVALID
+					return ModuleScanResult(done, name + ": unsupported re-export type: " + reexport.public_name, units)
+				types = result_type.table
+				var signature = ModuleScanExport(reexport.public_name, exported.parameters, arguments, result_type.id)
+				signature.constructor = exported.constructor
+				signature.generic = exported.generic
+				signature.origin = hir_module_symbol(dependency.name, exported.name)
+				if exported.origin != ""
+					signature.origin = exported.origin
+				signatures = signatures.append(signature)
+				found = true
+			for constant in dependency.exported_constants
+				if constant.name != reexport.name
+					continue
+				for imported_constant in imported.declarations.constants
+					if imported_constant.name == hir_module_symbol(dependency.name, reexport.name)
+						exported_constants = exported_constants.append(HirModuleConstant(reexport.public_name, imported_constant.value, imported_constant.type_id))
+						found = true
+		if not found
+			return ModuleScanResult(done, name + ": member is not exported: " + reexport.alias + "." + reexport.name, units)
 	var has_main = false
 	for fn_decl in decl.functions
 		if fn_decl.name == "main" and tree.nodes[!fn_decl.source].kind == NODE_DEF
 			has_main = true
 	var unit = ModuleScanUnit(name, path, tree, decl, types, signatures, has_main)
 	unit.exported_constants = exported_constants
+	unit.exported_values = imported.declarations.values
 	return ModuleScanResult(done.append(name), "", units.append(unit))
 
 
@@ -306,9 +361,19 @@ def module_scan_manifest(units: Array[ModuleScanUnit]) -> string
 			if exported.constructor
 				manifest += "T\t" + exported.name + "\t" + hir_type_name(unit.types, exported.result_type) + "\n"
 			else
-				for function in unit.declarations.functions
-					if function.name == exported.name
-						manifest += "E\t" + module_scan_export(unit.tree, function)
+				if exported.origin != ""
+					var params = ""
+					for i in 0..len(exported.parameters)
+						if i > 0
+							params += ", "
+						params += exported.parameters[!i].name
+						if exported.argument_types[!i] != TYPE_TAG_INVALID
+							params += ": " + hir_type_name(unit.types, exported.argument_types[!i])
+					manifest += "E\t" + exported.name + "\t" + params + "\t" + hir_type_name(unit.types, exported.result_type) + "\n"
+				else
+					for function in unit.declarations.functions
+						if function.name == exported.name
+							manifest += "E\t" + module_scan_export(unit.tree, function)
 		for constant in unit.exported_constants
 			manifest += "C\t" + constant.name + "\t" + hir_type_name(unit.types, constant.type_id) + "\n"
 		if unit.has_main

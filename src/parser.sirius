@@ -51,6 +51,7 @@ let NODE_DESTRUCTURE = 45
 let NODE_EXTERN_DEF = 46
 let NODE_IMPORT = 47
 let NODE_EXPORT = 48
+let NODE_REEXPORT = 49
 
 def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -87,6 +88,8 @@ def node_kind_name(kind: i64) -> string
 		return "import"
 	if kind == NODE_EXPORT
 		return "export"
+	if kind == NODE_REEXPORT
+		return "reexport"
 	if kind == NODE_DELETE
 		return "delete"
 	if kind == NODE_DESTRUCTURE
@@ -565,8 +568,27 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_IMPORT, token, path)
 	if op == "export"
 		next.index += 1
+		if is_name(next) and not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
+			let owner = next.index
+			next = expect_kind(next, TOKEN_NAME, "import alias")
+			next = expect(next, ".")
+			let member = next.index
+			next = expect_kind(next, TOKEN_NAME, "exported member")
+			let receiver = leaf(next, NODE_NAME, owner)
+			let attribute = append_node(receiver.state, NODE_REEXPORT, member, [receiver.node])
+			next = attribute.state
+			var children = [attribute.node]
+			if is_token(next, "alias")
+				next = expect(next, "alias")
+				let public_name = next.index
+				next = expect_kind(next, TOKEN_NAME, "re-export name")
+				let renamed = leaf(next, NODE_BINDING, public_name)
+				next = renamed.state
+				children = children.append(renamed.node)
+			next = expect_kind(next, TOKEN_NEWLINE, "newline")
+			return append_node(next, NODE_EXPORT, token, children)
 		if not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
-			return ParseResult(fail(next, "export requires def, rec or let"), -1)
+			return ParseResult(fail(next, "export requires def, rec, let or imported member"), -1)
 		let definition = parse_statement(next)
 		return unary_node(definition.state, NODE_EXPORT, token, definition.node)
 	if op == "def" or op == "rec" or op == "extern"

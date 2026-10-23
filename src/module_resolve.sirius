@@ -2,6 +2,12 @@
 # Module namespaces are compile-time only; MIR sees ordinary named calls.
 rec HirModuleResolution(tree: ParseState, error: string, line: i64)
 
+def hir_module_export_target(declarations: HirModuleDecl, name: string) -> string
+	for alias in declarations.external_aliases
+		if alias.name == name
+			return alias.target
+	return name
+
 def hir_module_replace_name(tree: ParseState, node: i64, target: string, line: i64) -> ParseState
 	var next = tree
 	let start = len(next.source)
@@ -26,7 +32,7 @@ def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> H
 				continue
 			matched = true
 			let member = name.slice(len(prefix), len(name))
-			let target = hir_module_symbol(imported.path, member)
+			let target = hir_module_export_target(declarations, hir_module_symbol(imported.path, member))
 			var found = false
 			for function in declarations.functions
 				if function.name == target and function.constructor and function.external
@@ -58,7 +64,7 @@ def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> H
 		for imported in declarations.imports
 			if imported.alias == receiver
 				let name = hir_ast_text(tree, callee_id)
-				let target = hir_module_symbol(imported.path, name)
+				let target = hir_module_export_target(declarations, hir_module_symbol(imported.path, name))
 				var found = false
 				for declaration in declarations.functions
 					if declaration.name == target and hir_function_external(tree, declaration)

@@ -181,4 +181,5 @@ def mir_deserialize_semantic(data: string) -> MirSemanticLoad
 	var verified = declarations
 	verified.imports = checked.imports
 	verified.exports = checked.exports
+	verified.reexports = checked.reexports
 	return MirSemanticLoad(parsed.tree, parsed.root, verified, "")

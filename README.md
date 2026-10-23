@@ -315,8 +315,13 @@ copy of their typed value arena, without a runtime getter. Constant-only modules
 are supported. Exported functions and direct-publication constructors may use
 imported public record types (including nested `Array`, `Optional` and `Dict`
 annotations); their resolved structural descriptors are passed to consumers.
-Cross-module type aliases, operator overloads, re-exports,
-and runtime module objects are not yet supported.
+Named re-exports of imported public functions, generic functions, direct-publication
+constructors and constants use `export Alias.member alias PublicName` (or
+`export Alias.member` without renaming). They preserve the original linked
+function symbol, so no forwarding MIR function is needed; re-exports also work
+transitively and in `.smirg` dependency interfaces. Namespace-wide re-exports,
+standalone type aliases, operator overloads and runtime module objects are not
+supported.
 `import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);
 standalone native compilation cannot resolve module dependencies yet.
@@ -411,7 +416,7 @@ This is a migration compatibility check, **not** a modular self-hosted compiler:
 HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
 now cross module boundaries. Exported function and constructor signatures may
 also reference imported public record types. Generic specialization works through source modules and `.smirg` packages,
-but named re-exports, mutual source dependencies and some cross-module compiler
+but namespace re-exports, mutual source dependencies and some cross-module compiler
 interfaces still prevent a general compiler-module migration.
 `--rebuild` clears content-addressed artifacts; test runners supporting parallel
 fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture

@@ -416,7 +416,7 @@ export def process(data)
 **Target module semantics (not yet fully implemented):**
 
 * One module per source file, named from its path relative to a source root (`Math/Stats.sirius` → `Math.Stats`). Case-sensitive names must resolve unambiguously; optional `namespace` declarations are deferred.
-* `import Math.Stats alias Stats` provides qualified access. Declarations are private by default; `export` makes them public, and `export import ...` explicitly re-exports a namespace. No wildcard imports or runtime module objects.
+* `import Math.Stats alias Stats` provides qualified access. Declarations are private by default; `export` makes them public, and `export Alias.member alias Name` re-exports a public member under a chosen name (omitting `alias Name` retains the original name). Namespace-wide re-exports are deferred. No wildcard imports or runtime module objects.
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 

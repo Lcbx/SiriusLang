@@ -13,11 +13,19 @@ export def describe(xs)
 	return Stats.mean(xs)
 ```
 
-Imports name compile-time namespaces; they do not instantiate runtime module objects. An ordinary import does not make the imported namespace public. An explicit re-export does:
+Imports name compile-time namespaces; they do not instantiate runtime module objects. An ordinary import does not make the imported namespace public. An explicit named member re-export does:
 
-```python
-export import Math.Stats alias Stats
+```sirius
+import Math.Stats alias Stats
+export Stats.mean alias average
+export Stats.DEFAULT_LIMIT
 ```
+
+A consumer imports these as `Facade.average(...)` and `Facade.DEFAULT_LIMIT`.
+Only exported members can be re-exported. Re-exported calls resolve to the
+original definition (including on-demand generic specialization); re-exported
+constants and direct-publication constructors retain their typed interfaces.
+Namespace-wide `export import` remains a proposal, not implemented syntax.
 
 Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
 expressions; importing a module does not execute runtime initialization code.
@@ -39,8 +47,8 @@ values, and direct-publication `export rec` constructors with qualified type nam
 are supported. Imported constructors are lowered inline; no runtime import is
 needed for them. Exported concrete signatures and direct-publication constructors
 can reference imported public record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, bundled standalone dependency closures, named re-exports,
-and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
+Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, bundled standalone dependency closures, namespace-wide re-exports,
+and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
 `tools/test_module_builder.py`, and `tools/test_source_modules.py`.

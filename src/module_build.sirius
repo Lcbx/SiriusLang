@@ -46,7 +46,7 @@ def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibrar
 		arguments = arguments.append(function.register_types[!i])
 	for unit in units
 		for exported in unit.exports
-			if not exported.generic
+			if exported.origin != "" or not exported.generic
 				continue
 			let name = hir_module_symbol(unit.name, exported.name)
 			if mir_generic_symbol(name, library.program.types, arguments) != imported.name
@@ -129,7 +129,7 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 	for unit in scanned.units
 		var roots = Array[string]()
 		for function in unit.exports
-			if not function.constructor and not function.generic
+			if not function.constructor and not function.generic and function.origin == ""
 				roots = roots.append(function.name)
 		if unit.name == entry
 			if not unit.has_main

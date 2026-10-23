@@ -20,6 +20,7 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 	let module = tree.nodes[!root]
 	var imports = Array[HirImport]()
 	var exports = Array[string]()
+	var reexports = Array[HirReexport]()
 	for i in 0..module.count
 		var id = hir_ast_child(tree, root, i)
 		var entry = tree.nodes[!id]
@@ -44,8 +45,16 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 			imports = imports.append(HirImport(path, alias))
 			continue
 		if entry.kind == NODE_EXPORT
+			let exported = id
 			id = hir_ast_child(tree, id, 0)
 			entry = tree.nodes[!id]
+			if entry.kind == NODE_REEXPORT
+				let owner = hir_ast_child(tree, id, 0)
+				var public_name = hir_ast_text(tree, id)
+				if tree.nodes[!exported].count == 2
+					public_name = hir_ast_text(tree, hir_ast_child(tree, exported, 1))
+				reexports = reexports.append(HirReexport(hir_ast_text(tree, owner), hir_ast_text(tree, id), public_name))
+				continue
 			if entry.kind != NODE_DEF and entry.kind != NODE_LET and entry.kind != NODE_REC
 				return hir_declaration_error(functions, constants, "export requires def, rec or let", hir_ast_line(tree, id))
 			if entry.kind == NODE_DEF and entry.count < 2
@@ -139,9 +148,25 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		for name in names
 			if imported.alias == name
 				return hir_declaration_error(functions, constants, "declaration shadows module alias '" + name + "'", 1)
+	var published_reexports = Array[string]()
+	for reexport in reexports
+		for previous in published_reexports
+			if previous == reexport.public_name
+				return hir_declaration_error(functions, constants, "duplicate exported name: " + reexport.public_name, 1)
+		published_reexports = published_reexports.append(reexport.public_name)
+		var found = false
+		for imported in imports
+			if imported.alias == reexport.alias
+				found = true
+		if not found
+			return hir_declaration_error(functions, constants, "unknown re-export module alias: " + reexport.alias, 1)
+		for name in names
+			if name == reexport.public_name
+				return hir_declaration_error(functions, constants, "duplicate exported name: " + name, 1)
 	var result = HirModuleDecl(functions, constants, types, values, "", 0)
 	result.imports = imports
 	result.exports = exports
+	result.reexports = reexports
 	return result
 
 

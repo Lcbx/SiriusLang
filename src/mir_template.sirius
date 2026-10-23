@@ -79,7 +79,7 @@ def mir_deserialize_template(data: string) -> MirTemplateLoad
 		let first = mir_wire_number(token.reader)
 		let count = mir_wire_count(first.reader)
 		reader = count.reader
-		if reader.error != "" or kind.value < NODE_ARM or kind.value > NODE_EXPORT or token.value < 0 or token.value >= len(tokens) or first.value < 0
+		if reader.error != "" or kind.value < NODE_ARM or kind.value > NODE_REEXPORT or token.value < 0 or token.value >= len(tokens) or first.value < 0
 			return mir_template_failure("invalid generic syntax node")
 		nodes = nodes.append(Node(kind.value, token.value, first.value, count.value))
 	let edge_count = mir_wire_count(reader)

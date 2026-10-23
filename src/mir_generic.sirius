@@ -55,7 +55,7 @@ def mir_generic_interface(unit: ModuleScanUnit) -> string
 	for constant in unit.exported_constants
 		parts = mir_wire_str(parts, constant.name)
 		parts = mir_wire_str(parts, mir_type_signature(unit.types, constant.type_id))
-		parts = mir_generic_constant_signature(unit.declarations.values, constant.value, parts)
+		parts = mir_generic_constant_signature(unit.exported_values, constant.value, parts)
 	return "".join(parts)
 
 # Imports are checked against the typed dependency closure at package creation.
