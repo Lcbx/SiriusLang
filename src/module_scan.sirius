@@ -136,7 +136,12 @@ def module_scan_visit_with_packages(root: string, name: string, visiting: Array[
 			return ModuleScanResult(done, "", units)
 	for package in packages
 		if package.name == name
-			return ModuleScanResult(done.append(name), "", units.append(package))
+			var state = ModuleScanResult(done, "", units)
+			for imported in package.declarations.imports
+				state = module_scan_visit_with_packages(root, imported.path, visiting.append(name), state.visited, state.units, packages)
+				if state.error != ""
+					return state
+			return ModuleScanResult(state.visited.append(name), "", state.units.append(package))
 	let path = module_scan_filename(root, name)
 	let source = read_text(path) or ""
 	if source == ""

@@ -56,7 +56,17 @@ def mir_deserialize_template(data: string) -> MirTemplateLoad
 		tokens = tokens.append(Token(kind.value, length, length + len(lexeme.value), line.value, column.value))
 		lexemes = lexemes.append(lexeme.value)
 		length += len(lexeme.value)
-	if tokens[!len(tokens) - 1].kind != TOKEN_EOF
+	# Qualified type names are represented by synthesized NAME tokens appended
+	# after the original lexer EOF. Preserve that index when restoring the tree.
+	var eof = -1
+	for i in 0..len(tokens)
+		if tokens[!i].kind == TOKEN_EOF
+			if eof >= 0
+				return mir_template_failure("duplicate generic syntax EOF")
+			eof = i
+		elif eof >= 0 and tokens[!i].kind != TOKEN_NAME
+			return mir_template_failure("invalid generic token after EOF")
+	if eof < 0
 		return mir_template_failure("generic syntax missing EOF")
 	let node_count = mir_wire_count(reader)
 	reader = node_count.reader
@@ -97,5 +107,5 @@ def mir_deserialize_template(data: string) -> MirTemplateLoad
 	var tree = ParseState("".join(lexemes), tokens)
 	tree.nodes = nodes
 	tree.edges = edges
-	tree.index = len(tokens) - 1
+	tree.index = eof
 	return MirTemplateLoad(tree, root.value, "")

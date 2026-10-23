@@ -42,13 +42,12 @@ def run_link_libraries(args: Array[string]) -> i64
 		return 2
 	return 0
 
-# Produce or instantiate a source-independent generic declaration package.
-# Import-dependent templates are deliberately rejected until their dependency
-# interfaces can be persisted and validated in the artifact.
+# Produce or instantiate portable generic declaration packages.
+# Imported packages pin their direct dependencies' public typed interfaces.
 def run_generic_package(args: Array[string]) -> i64
 	if args[!1] == "--emit-generic"
-		if len(args) != 5
-			eprint("usage: sirius-run --emit-generic module.name output.smirg source.sirius")
+		if len(args) != 5 and len(args) != 6
+			eprint("usage: sirius-run --emit-generic module.name output.smirg source.sirius [source-root]")
 			return 2
 		let source = read_text(args[!4]) or ""
 		if source == ""
@@ -62,7 +61,22 @@ def run_generic_package(args: Array[string]) -> i64
 		if declarations.error != ""
 			eprint("generic declarations: " + declarations.error)
 			return 2
-		let saved = mir_serialize_generic(args[!2], parsed.state, parsed.node, declarations)
+		var dependencies = Array[MirGenericDependency]()
+		if len(declarations.imports) > 0
+			if len(args) != 6
+				eprint("generic packages with imports require a source root")
+				return 2
+			let scanned = module_build_scan(args[!5], args[!2])
+			if scanned.error != ""
+				eprint("cannot resolve generic dependencies: " + scanned.error)
+				return 2
+			for unit in scanned.units
+				if unit.name == args[!2]
+					if (read_text(module_scan_filename(args[!5], args[!2])) or "") != source
+						eprint("generic source does not match module under source root")
+						return 2
+					dependencies = mir_generic_dependencies(declarations, scanned.units)
+		let saved = mir_serialize_generic_with_dependencies(args[!2], parsed.state, parsed.node, declarations, dependencies)
 		if saved.error != ""
 			eprint("cannot create generic package: " + saved.error)
 			return 2

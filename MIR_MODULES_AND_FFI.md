@@ -39,7 +39,7 @@ values, and direct-publication `export rec` constructors with qualified type nam
 are supported. Imported constructors are lowered inline; no runtime import is
 needed for them. Exported concrete signatures and direct-publication constructors
 can reference imported public record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, packaged transitive imports, named re-exports,
+Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, bundled standalone dependency closures, named re-exports,
 and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
@@ -103,7 +103,8 @@ A purely native application performs required monomorphization at build/link tim
 
 A single common specialization registry is a useful implementation goal, but its exact ownership and persistence are not settled.
 
-**Implemented experimental artifact:** `SIRIUS-MIR-GENERIC/1` (`.smirg`)
+**Implemented experimental artifacts:** `SIRIUS-MIR-GENERIC/1` and
+`SIRIUS-MIR-GENERIC/2` (`.smirg`)
 retains an AST token/node arena and a validated HIR declaration/type/constant
 snapshot, rather than concrete MIR instructions. The compiler can
 instantiate a named exported generic for supplied canonical type signatures
@@ -111,13 +112,16 @@ instantiate a named exported generic for supplied canonical type signatures
 ordinary `SIRIUS-MIR-LIB/2` with the same mangled symbol naming used by
 source-driven specialization. The defining source is not needed after packaging.
 It can retain explicit `extern def` imports which are resolved later by the
-normal MIR linker. Packages with Sirius `import` declarations are rejected until
-transitive interfaces can be serialized. The format is compiler-version-specific;
-there is no runtime generic specialization registry. For package imports,
-`--build-modules` validates the package and its module name, extracts the typed
-export interface, and specializes requested functions into ordinary MIR before
-linking. It prefers `.sirius` over `.smirg` and does not yet resolve imports
-inside packaged generic modules. The standalone scanner remains source-only.
+normal MIR linker. Version 2 packages retain the direct imports' canonical
+public type/function/constructor signatures and exported constant values.
+Packaging an importing module requires a source root argument and a resolvable
+dependency graph. `--build-modules` resolves those imports recursively from
+source or `.smirg` packages, verifies the pinned interfaces, and specializes
+functions into ordinary MIR before linking. Dependency packages are separate
+artifacts, not embedded in the importing `.smirg`. Source takes precedence.
+Standalone `--specialize-generic` supports only dependency-free packages.
+The format remains compiler-version-specific; no runtime generic specialization
+registry exists, and the standalone scanner remains source-only.
 
 ## 4. Library artifacts and registration
 
@@ -157,7 +161,7 @@ Initial interop should use explicit wrappers with C primitives and opaque handle
 ## 6. Suggested implementation order (proposal)
 
 1. Define portable exported-symbol and type-descriptor metadata in a module interface.
-2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots can generate concrete MIR without the provider source. Automatic package discovery is implemented; next persist transitive source-import interfaces inside packages.
+2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots produce concrete MIR without the provider source. Automatic package discovery and recursively validated dependency interfaces are implemented; next reduce repeated graph scans and migrate more compiler components.
 3. **Done for concrete executables and named concrete libraries:** serialize/load specialized MIR, validate exported symbols and signatures, and compare dynamic execution. Extend to imported modules and generic interfaces later.
 4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
 5. Register already compiled native specializations through a versioned C hook.

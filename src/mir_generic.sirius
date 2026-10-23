@@ -1,10 +1,12 @@
 # Portable generic declarations. A package stores verified source-independent
 # syntax/HIR data; concrete MIR is generated only when argument types are known.
-# Dependency-free packages are supported first. Cross-package symbol dependencies
-# must be represented explicitly before packages can contain imports.
+# Version 2 pins the exported interfaces of direct source/package dependencies.
 let MIR_GENERIC_MAGIC = "SIRIUS-MIR-GENERIC/1\n"
+let MIR_GENERIC_IMPORT_MAGIC = "SIRIUS-MIR-GENERIC/2\n"
 
+rec MirGenericDependency(name: string, signature: string)
 rec MirGenericLoad(module: string, tree: ParseState, declarations: HirModuleDecl, exports: Array[string], error: string)
+	pub dependencies = Array[MirGenericDependency]()
 
 def mir_generic_failure(message: string) -> MirGenericLoad
 	return MirGenericLoad("", ParseState("", Array[Token]()), hir_declaration_error(Array[HirFunctionDecl](), Array[HirModuleConstant](), message, 0), Array[string](), message)
@@ -23,11 +25,56 @@ def mir_generic_export_valid(declarations: HirModuleDecl, name: string) -> bool
 					return true
 	return false
 
-def mir_serialize_generic(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl) -> MirWireSave
+# Canonical public interface, independent of local TypeIds and source paths.
+# Include immutable constant values so a changed dependency cannot silently
+# change the meaning of an already published generic specialization.
+def mir_generic_constant_signature(values: Array[HirConstantValue], index: i64, parts: Array[string]) -> Array[string]
+	let value = values[!index]
+	var output = mir_wire_num(parts, value.bits)
+	output = mir_wire_str(output, value.text)
+	output = mir_wire_num(output, len(value.fields))
+	for field in value.fields
+		output = mir_generic_constant_signature(values, field, output)
+	return output
+
+def mir_generic_interface(unit: ModuleScanUnit) -> string
+	var parts = mir_wire_num(Array[string](), len(unit.exports))
+	for exported in unit.exports
+		parts = mir_wire_str(parts, exported.name)
+		var flags = 0
+		if exported.constructor
+			flags += 1
+		if exported.generic
+			flags += 2
+		parts = mir_wire_num(parts, flags)
+		parts = mir_wire_num(parts, len(exported.argument_types))
+		for argument in exported.argument_types
+			parts = mir_wire_str(parts, mir_type_signature(unit.types, argument))
+		parts = mir_wire_str(parts, mir_type_signature(unit.types, exported.result_type))
+	parts = mir_wire_num(parts, len(unit.exported_constants))
+	for constant in unit.exported_constants
+		parts = mir_wire_str(parts, constant.name)
+		parts = mir_wire_str(parts, mir_type_signature(unit.types, constant.type_id))
+		parts = mir_generic_constant_signature(unit.declarations.values, constant.value, parts)
+	return "".join(parts)
+
+# Imports are checked against the typed dependency closure at package creation.
+def mir_generic_dependencies(declarations: HirModuleDecl, units: Array[ModuleScanUnit]) -> Array[MirGenericDependency]
+	var result = Array[MirGenericDependency]()
+	for imported in declarations.imports
+		for unit in units
+			if unit.name == imported.path
+				result = result.append(MirGenericDependency(unit.name, mir_generic_interface(unit)))
+	return result
+
+def mir_serialize_generic_with_dependencies(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl, dependencies: Array[MirGenericDependency]) -> MirWireSave
 	if not module_scan_path_valid(module)
 		return MirWireSave("", "invalid generic module name")
-	if len(declarations.imports) != 0
-		return MirWireSave("", "generic packages with imports are not supported yet")
+	if len(declarations.imports) != len(dependencies)
+		return MirWireSave("", "generic dependency interfaces are required")
+	for i in 0..len(dependencies)
+		if dependencies[!i].name != declarations.imports[!i].path or not module_scan_path_valid(dependencies[!i].name) or dependencies[!i].signature == ""
+			return MirWireSave("", "invalid generic dependency interface")
 	var exports = Array[string]()
 	for name in declarations.exports
 		if mir_generic_export_valid(declarations, name)
@@ -37,21 +84,39 @@ def mir_serialize_generic(module: string, tree: ParseState, root: i64, declarati
 	let snapshot = mir_serialize_semantic(tree, root, declarations)
 	if snapshot.error != ""
 		return snapshot
-	var parts = [MIR_GENERIC_MAGIC]
+	var magic = MIR_GENERIC_MAGIC
+	if len(dependencies) > 0
+		magic = MIR_GENERIC_IMPORT_MAGIC
+	var parts = [magic]
 	parts = mir_wire_str(parts, module)
 	parts = mir_wire_num(parts, len(exports))
 	for name in exports
 		parts = mir_wire_str(parts, name)
+	if len(dependencies) > 0
+		parts = mir_wire_num(parts, len(dependencies))
+		for dependency in dependencies
+			parts = mir_wire_str(parts, dependency.name)
+			parts = mir_wire_str(parts, dependency.signature)
 	parts = mir_wire_str(parts, snapshot.text)
 	let result = "".join(parts)
 	if len(result) > MIR_WIRE_MAX_SIZE
 		return MirWireSave("", "generic package exceeds format size limit")
 	return MirWireSave(result, "")
 
+def mir_serialize_generic(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl) -> MirWireSave
+	return mir_serialize_generic_with_dependencies(module, tree, root, declarations, Array[MirGenericDependency]())
+
 def mir_deserialize_generic(data: string) -> MirGenericLoad
-	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_GENERIC_MAGIC)
+	if len(data) > MIR_WIRE_MAX_SIZE
 		return mir_generic_failure("unsupported generic package format or size")
-	var reader = MirWireReader(data, len(MIR_GENERIC_MAGIC), "")
+	var imported = false
+	var offset = len(MIR_GENERIC_MAGIC)
+	if data.starts_with(MIR_GENERIC_IMPORT_MAGIC)
+		imported = true
+		offset = len(MIR_GENERIC_IMPORT_MAGIC)
+	elif not data.starts_with(MIR_GENERIC_MAGIC)
+		return mir_generic_failure("unsupported generic package format or size")
+	var reader = MirWireReader(data, offset, "")
 	let module = mir_wire_string(reader)
 	reader = module.reader
 	if reader.error != "" or not module_scan_path_valid(module.value)
@@ -70,6 +135,19 @@ def mir_deserialize_generic(data: string) -> MirGenericLoad
 			if existing == name.value
 				return mir_generic_failure("duplicate generic export")
 		exports = exports.append(name.value)
+	var dependencies = Array[MirGenericDependency]()
+	if imported
+		let dependency_count = mir_wire_count(reader)
+		reader = dependency_count.reader
+		if reader.error != "" or dependency_count.value == 0 or dependency_count.value > 256
+			return mir_generic_failure("invalid generic dependency count")
+		for i in 0..dependency_count.value
+			let name = mir_wire_string(reader)
+			let signature = mir_wire_string(name.reader)
+			reader = signature.reader
+			if reader.error != "" or not module_scan_path_valid(name.value) or signature.value == ""
+				return mir_generic_failure("invalid generic dependency interface")
+			dependencies = dependencies.append(MirGenericDependency(name.value, signature.value))
 	let snapshot = mir_wire_string(reader)
 	reader = snapshot.reader
 	if reader.error != "" or reader.at != len(data)
@@ -77,15 +155,20 @@ def mir_deserialize_generic(data: string) -> MirGenericLoad
 	let restored = mir_deserialize_semantic(snapshot.value)
 	if restored.error != ""
 		return mir_generic_failure(restored.error)
-	if len(restored.declarations.imports) != 0
-		return mir_generic_failure("generic packages with imports are not supported yet")
+	if len(restored.declarations.imports) != len(dependencies)
+		return mir_generic_failure("generic dependency count mismatch")
+	for i in 0..len(dependencies)
+		if restored.declarations.imports[!i].path != dependencies[!i].name
+			return mir_generic_failure("generic dependency name mismatch")
 	for name in exports
 		if not mir_generic_export_valid(restored.declarations, name)
 			return mir_generic_failure("invalid generic export: " + name)
-	let canonical = mir_serialize_generic(module.value, restored.tree, restored.root, restored.declarations)
+	let canonical = mir_serialize_generic_with_dependencies(module.value, restored.tree, restored.root, restored.declarations, dependencies)
 	if canonical.error != "" or canonical.text != data
 		return mir_generic_failure("generic package metadata mismatch")
-	return MirGenericLoad(module.value, restored.tree, restored.declarations, exports, "")
+	var result = MirGenericLoad(module.value, restored.tree, restored.declarations, exports, "")
+	result.dependencies = dependencies
+	return result
 
 rec MirGenericType(table: TypeTable, type_id: i64)
 rec MirGenericParsedType(table: TypeTable, type_id: i64, at: i64)
@@ -178,6 +261,8 @@ def mir_generic_type(table: TypeTable, name: string) -> MirGenericType
 def mir_generic_specialize(generic: MirGenericLoad, name: string, type_names: Array[string]) -> ModuleBuildCompiled
 	if generic.error != ""
 		return ModuleBuildCompiled(mir_library_failure(generic.error), generic.error)
+	if len(generic.dependencies) > 0
+		return ModuleBuildCompiled(mir_library_failure("import-dependent packages need module linking"), "import-dependent packages need --build-modules")
 	var found = false
 	var arity = -1
 	for exported in generic.exports

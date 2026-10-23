@@ -23,17 +23,30 @@ and in-memory MIR linking; Python provides an optional launcher. Source-module b
 
 ## Portable generic packages (experimental)
 
-A dependency-free exported generic function can be stored as a versioned,
-validated typed-HIR/syntax snapshot, then specialized **without the provider
-source file**. Explicit `extern def` dependencies survive as named MIR imports;
-link them against matching concrete libraries. Source-level `import` statements
-inside generic packages are not yet supported.
+An exported generic function can be stored as a versioned, validated
+syntax/typed-HIR snapshot and specialized **without the provider source**.
+Explicit `extern def` dependencies survive as named MIR imports, while
+ordinary Sirius imports are supported by the module builder when their
+source or `.smirg` dependencies remain available.
 
 ```sh
 ./sirius-run --emit-generic Ops ops.smirg Ops.sirius
 ./sirius-run --specialize-generic ops.smirg twice twice.smirl i64
 ./sirius-run --list-lib twice.smirl
 ```
+
+For a package containing `import Ops alias O`, supply the source root at
+packaging time so the dependency's typed public interface can be pinned:
+
+```sh
+./sirius-run --emit-generic Adapter Adapter.smirg Adapter.sirius .
+```
+
+Package imports are resolved transitively during `--build-modules`; both
+`Adapter.sirius` and its imported provider sources may be removed if the
+corresponding `.smirg` packages are present. Interface changes (including
+exported constant values) are rejected. Standalone `--specialize-generic`
+remains limited to dependency-free packages.
 
 Accepted type arguments include canonical scalar and structural type signatures
 (e.g. `Array[i64]`, `Dict[string,i64]`, `Record{1:x=i64;}`). Use
@@ -59,11 +72,13 @@ The builder prefers `.sirius` when both exist. Package fallback may rescan
 the source dependency graph for each newly discovered package; caching that
 work remains an optimization opportunity. It validates package identity,
 recovers the exported typed interface, and specializes requested signatures in
-memory before linking. Packages currently cannot contain Sirius `import`
-declarations; they can retain explicit named `extern def` dependencies. The
-standalone source scanner (`sirius-module-scan`) only scans `.sirius` files.
-Test with `python tools/test_mir_generic_packages.py` and
-`python tools/test_module_packages.py`.
+memory before linking. Version 1 packages remain supported; version 2
+packages contain pinned interfaces for direct imports, recursively checked
+against their available transitive dependencies. Dependencies are referenced,
+not bundled into one file. The standalone source scanner
+(`sirius-module-scan`) still only scans `.sirius` files. Test with
+`python tools/test_mir_generic_packages.py`, `python tools/test_module_packages.py`
+and `python tools/test_module_package_dependencies.py`.
 
 ## Current development priorities
 
@@ -297,7 +312,7 @@ copy of their typed value arena, without a runtime getter. Constant-only modules
 are supported. Exported functions and direct-publication constructors may use
 imported public record types (including nested `Array`, `Optional` and `Dict`
 annotations); their resolved structural descriptors are passed to consumers.
-Cross-module type aliases, package-contained Sirius imports, operator overloads, re-exports,
+Cross-module type aliases, operator overloads, re-exports,
 and runtime module objects are not yet supported.
 `import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);
