@@ -89,7 +89,7 @@ def main() -> None:
 		write(root, 'Duplicate', 'import A.B alias Same\nimport C.B alias Same\ndef main() -> i64\n\treturn 0\n')
 		check_failure(root, 'Duplicate', 'duplicate import alias')
 		write(root, 'Generic', 'export def hidden(x) -> i64\n\treturn 1\n')
-		check_failure(root, 'Generic', 'exported function parameters require annotations')
+		assert discover(root, 'Generic')[-1].exports['hidden'].parameters == 'x'
 		write(root, 'UnsupportedType', 'export def other(x: Shape) -> i64\n\treturn 1\n')
 		check_failure(root, 'UnsupportedType', 'unsupported exported signature')
 		print('PASS source modules: missing, cycles, private names, aliases and unsupported signatures rejected')
@@ -295,6 +295,56 @@ def main() -> None:
 		else:
 			raise AssertionError('private module constant incorrectly accessible')
 		print('PASS source modules: exported scalar/record/array constants, privacy')
+
+		# Generic exports are instantiated in their defining modules on demand.
+		# A transitive import can request two concrete specializations, while
+		# another consumer reuses an already compiled signature.
+		write(root, 'GenericOps',
+			'export def size(x) -> i64\n'
+			'\treturn len(x)\n'
+			'export def total(point) -> i64\n'
+			'\treturn point.x + point.y\n')
+		write(root, 'GenericRelay',
+			'import GenericOps alias O\n'
+			'export def size(x) -> i64\n'
+			'\treturn O.size(x)\n')
+		write(root, 'GenericApp',
+			'import GenericOps alias O\n'
+			'import GenericRelay alias R\n'
+			'def main() -> i64\n'
+			'\treturn R.size("ab") + R.size([1, 2, 3]) + O.size("hi") + O.total({x=20, y=15})\n')
+		entry = build(root, 'GenericApp', output, runner)
+		result = run(str(runner), '--entry', entry, '--load-lib', str(output))
+		assert (result.returncode, result.stdout, result.stderr) == (42, b'', b''), result
+		first = output.read_bytes()
+		build(root, 'GenericApp', output, runner)
+		assert output.read_bytes() == first, 'generic specializations must link deterministically'
+		listing = run(str(runner), '--list-lib', str(output))
+		assert listing.returncode == 0
+		assert symbol('GenericOps', 'size').encode() + b'_G_' in listing.stdout
+		print('PASS source modules: on-demand generic specializations, transitive calls, structural arguments, deterministic linking')
+
+		write(root, 'GenericBad',
+			'import GenericOps alias O\n'
+			'def main() -> i64\n'
+			'\treturn O.total({wrong=1})\n')
+		try:
+			build(root, 'GenericBad', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'unknown record field' in str(exc), exc
+		else:
+			raise AssertionError('invalid generic specialization accepted')
+		write(root, 'GenericArity',
+			'import GenericOps alias O\n'
+			'def main() -> i64\n'
+			'\treturn O.size(1, 2)\n')
+		try:
+			build(root, 'GenericArity', root / 'bad.smirl', runner)
+		except ModuleError as exc:
+			assert 'argument count mismatch' in str(exc), exc
+		else:
+			raise AssertionError('incorrect generic argument count accepted')
+		print('PASS source modules: invalid generic specializations and arity rejected')
 
 		# The runner exposes namespaced exports without requiring source rewriting.
 		unnamed = root / 'unnamed.sirius'

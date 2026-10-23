@@ -6,31 +6,6 @@ let MIR_LIBRARY_MAGIC = "SIRIUS-MIR-LIB/2\n"
 rec MirLibraryLoad(program: MirProgram, exports: Array[MirNamedExport], error: string)
 	pub imports = Array[MirNamedImport]()
 
-def mir_type_signature(types: TypeTable, id: i64) -> string
-	if id == TYPE_TAG_I64
-		return "i64"
-	if id == TYPE_TAG_F64
-		return "f64"
-	if id == TYPE_TAG_BOOL
-		return "bool"
-	if id == TYPE_TAG_STRING
-		return "string"
-	if id == TYPE_TAG_VOID
-		return "void"
-	if id < 6 or id >= len(types.entries)
-		return "invalid"
-	let desc = types.entries[!id]
-	if desc.tag == TYPE_TAG_ARRAY
-		return "Array[" + mir_type_signature(types, desc.first) + "]"
-	if desc.tag == TYPE_TAG_OPTIONAL
-		return "Optional[" + mir_type_signature(types, desc.first) + "]"
-	if desc.tag == TYPE_TAG_DICT
-		return "Dict[" + mir_type_signature(types, desc.first) + "," + mir_type_signature(types, desc.second) + "]"
-	var parts = ["Record{"]
-	for field in desc.fields
-		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + mir_type_signature(types, field.kind) + ";")
-	return "".join(parts) + "}"
-
 def mir_function_signature(program: MirProgram, id: i64) -> string
 	let function = program.functions[!id]
 	var parts = ["("]

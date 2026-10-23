@@ -143,7 +143,7 @@ The Python scripts under `tools/` provide build/test orchestration; the historic
 | **Done** | Legacy backend retirement | Independent MIR bootstrap and regression checks verified the replacement | Old emitter and legacy-only CLI/scripts removed; `test_mir_direct_c.py` retains direct-emission coverage |
 | **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
 | **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
-| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Support generic exported signatures, cross-module specialization, and named re-exports; migrate a dependency-closed compiler component before HIR/MIR |
+| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; next add portable generic MIR artifacts, named re-exports and compiler-source import migration |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
 | **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
@@ -196,8 +196,9 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Resolve exported function and direct-publication constructor signatures
   referencing imported public record types, including nested collection types;
   share typed interface injection between scanner and builder.
+- [x] Export generic functions with unannotated parameters and explicitly annotated concrete return types; compile each requested concrete specialization in its defining source module, deduplicate canonical signature keys, and link the resulting MIR (including transitive imports and structural arguments).
 - [ ] Support computed `pub` exports, generic declarations, named re-exports,
-  and cross-library specialization.
+  and portable cross-library generic specialization (beyond source-available build-time instantiation).
 - [ ] Mixed native/interpreted dispatch and native registration ABI.
 - [ ] Compile-time MIR execution and purity inference (deferred by design).
 

@@ -50,10 +50,6 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 				return hir_declaration_error(functions, constants, "export requires def, rec or let", hir_ast_line(tree, id))
 			if entry.kind == NODE_DEF and entry.count < 2
 				return hir_declaration_error(functions, constants, "export requires an explicit return type", hir_ast_line(tree, id))
-			for j in 0..entry.count - 1
-				let member = hir_ast_child(tree, id, j)
-				if tree.nodes[!member].kind == NODE_PARAM and tree.nodes[!member].count == 0
-					return hir_declaration_error(functions, constants, "exported function parameters require annotations", hir_ast_line(tree, member))
 			var has_return = false
 			for j in 0..entry.count - 1
 				if tree.nodes[!hir_ast_child(tree, id, j)].kind == NODE_TYPE

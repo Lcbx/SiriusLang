@@ -208,7 +208,7 @@ def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i
 		return hir_body_error(result, id, "argument count mismatch for '" + name + "'")
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
-		if function.external and function.argument_types[!i] != args[!i]
+		if function.external and function.argument_types[!i] != TYPE_TAG_INVALID and function.argument_types[!i] != args[!i]
 			return hir_body_error(result, id, "expected " + hir_type_name(result.types, function.argument_types[!i]) + ", found " + hir_type_name(result.types, args[!i]))
 		if parameter.type_node >= 0
 			let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants)

@@ -420,7 +420,7 @@ export def process(data)
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported direct-publication constructors and compile-time constants, but not generic cross-module specialization; see [README.md](README.md) for status.
+See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported direct-publication constructors and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, but not portable generic MIR libraries; see [README.md](README.md) for status.
 
 ## 12. Compiler
 

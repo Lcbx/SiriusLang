@@ -19,8 +19,7 @@ static namespaced function/constant imports, exported record constructors and qu
 and existing MIR linking. The parser recognizes `import`, `export def`, `export rec` and `export let`; the frontend resolves
 qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
-and in-memory MIR linking; Python provides an optional launcher. Generic cross-module specialization is not implemented. Generic MIR libraries, compile-time execution and native
-linking remain unimplemented. Typed `extern def` declarations are still supported.
+and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Portable generic MIR libraries, compile-time execution and native linking remain unimplemented. Typed `extern def` declarations are still supported.
 
 ## Current development priorities
 

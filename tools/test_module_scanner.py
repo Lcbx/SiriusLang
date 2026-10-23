@@ -75,7 +75,7 @@ def main() -> None:
 		write(root, 'Reserved', 'import A.B alias while\ndef main() -> i64\n\treturn 0\n')
 		reject(root, 'Reserved', 'invalid import alias')
 		write(root, 'NoAnnotation', 'export def bad(x) -> i64\n\treturn 0\n')
-		reject(root, 'NoAnnotation', 'exported function parameters require annotations')
+		assert discover(root, 'NoAnnotation')[-1].exports['bad'].parameters == 'x'
 		write(root, 'NoReturn', 'export def bad(x: i64)\n\treturn x\n')
 		reject(root, 'NoReturn', 'exported function requires a return type')
 		write(root, 'UnknownType', 'export def bad(x: Something) -> i64\n\treturn 0\n')

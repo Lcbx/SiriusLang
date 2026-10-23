@@ -21,3 +21,46 @@ export def module_scan_filename(root: string, name: string) -> string
 		else
 			result += name.slice(i, i + 1)
 	return result + ".sirius"
+
+# Canonical structural signatures independent of local module TypeIds.
+def mir_type_signature(types: TypeTable, id: i64) -> string
+	if id == TYPE_TAG_I64
+		return "i64"
+	if id == TYPE_TAG_F64
+		return "f64"
+	if id == TYPE_TAG_BOOL
+		return "bool"
+	if id == TYPE_TAG_STRING
+		return "string"
+	if id == TYPE_TAG_VOID
+		return "void"
+	if id < 6 or id >= len(types.entries)
+		return "invalid"
+	let desc = types.entries[!id]
+	if desc.tag == TYPE_TAG_ARRAY
+		return "Array[" + mir_type_signature(types, desc.first) + "]"
+	if desc.tag == TYPE_TAG_OPTIONAL
+		return "Optional[" + mir_type_signature(types, desc.first) + "]"
+	if desc.tag == TYPE_TAG_DICT
+		return "Dict[" + mir_type_signature(types, desc.first) + "," + mir_type_signature(types, desc.second) + "]"
+	var parts = ["Record{"]
+	for field in desc.fields
+		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + mir_type_signature(types, field.kind) + ";")
+	return "".join(parts) + "}"
+
+
+# Encode each concrete argument signature as an identifier-safe, unambiguous
+# suffix. Reject excessively long names at the existing MIR library boundary.
+def mir_generic_symbol(name: string, types: TypeTable, arguments: Array[i64]) -> string
+	var result = name + "_G"
+	for argument in arguments
+		let signature = mir_type_signature(types, argument)
+		var encoded = ""
+		for i in 0..len(signature)
+			let byte = signature.byte_at(i) or 0
+			if (byte >= 65 and byte <= 90) or (byte >= 97 and byte <= 122) or (byte >= 48 and byte <= 57)
+				encoded += signature.slice(i, i + 1)
+			else
+				encoded += "_" + str(byte) + "_"
+		result += "_" + str(len(encoded)) + "_" + encoded
+	return result

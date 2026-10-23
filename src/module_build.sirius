@@ -1,27 +1,71 @@
-# Compile scanned source modules once, importing structured HIR signatures.
-# TypeIds are local to each module, so dependencies are re-interned by shape.
+# Compile scanned source modules, specializing imported generics on demand.
+# Concrete MIR libraries are linked only after all referenced specializations
+# have been emitted from their defining module.
 rec ModuleBuildResult(entry: string, error: string)
+rec ModuleBuildCompiled(library: MirLibraryLoad, error: string)
+
+def module_build_compile(unit: ModuleScanUnit, units: Array[ModuleScanUnit], roots: Array[string], arguments: Array[i64], generic: bool, caller_types: TypeTable) -> ModuleBuildCompiled
+	let imported = module_scan_import_declarations(unit.declarations, units)
+	if imported.error != ""
+		return ModuleBuildCompiled(mir_library_failure(imported.error), imported.error)
+	var declarations = imported.declarations
+	var concrete = arguments
+	if generic
+		concrete = Array[i64]()
+		var types = declarations.types
+		for argument in arguments
+			let mapped = module_import_type(types, caller_types, argument)
+			if mapped.id == TYPE_TAG_INVALID
+				return ModuleBuildCompiled(mir_library_failure("unsupported generic argument type"), "unsupported generic argument type")
+			types = mapped.table
+			concrete = concrete.append(mapped.id)
+		declarations.types = types
+	let resolved = hir_resolve_module_calls(unit.tree, declarations)
+	if resolved.error != ""
+		let message = str(resolved.line) + ": " + resolved.error
+		return ModuleBuildCompiled(mir_library_failure(message), message)
+	let lowered = mir_build_program_roots(resolved.tree, declarations, roots, concrete)
+	if lowered.error != ""
+		return ModuleBuildCompiled(mir_library_failure(lowered.error), lowered.error)
+	var exports = Array[MirNamedExport]()
+	for exported in lowered.exports
+		var symbol = hir_module_symbol(unit.name, exported.name)
+		if generic
+			symbol = mir_generic_symbol(symbol, lowered.program.types, concrete)
+		exports = exports.append(MirNamedExport(symbol, exported.function_id))
+	var library = MirLibraryLoad(lowered.program, exports, "")
+	library.imports = lowered.imports
+	return ModuleBuildCompiled(library, "")
+
+# Find a generic definition matching the import's canonical type signature.
+# Each distinct concrete signature is compiled once, even if many modules use it.
+def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibraryLoad, imported: MirNamedImport) -> ModuleBuildCompiled
+	let function = library.program.functions[!imported.function_id]
+	var arguments = Array[i64]()
+	for i in 0..function.argument_count
+		arguments = arguments.append(function.register_types[!i])
+	for unit in units
+		for exported in unit.exports
+			if not exported.generic
+				continue
+			let name = hir_module_symbol(unit.name, exported.name)
+			if mir_generic_symbol(name, library.program.types, arguments) != imported.name
+				continue
+			return module_build_compile(unit, units, [exported.name], arguments, true, library.program.types)
+	return ModuleBuildCompiled(mir_library_failure(""), "")
 
 def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
 	let scanned = module_scan_visit(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit]())
 	if scanned.error != ""
 		return ModuleBuildResult("", scanned.error)
 	var libraries = Array[MirLibraryLoad]()
-	for module in scanned.units
-		var declarations = module.declarations
-		let imported = module_scan_import_declarations(declarations, scanned.units)
-		if imported.error != ""
-			return ModuleBuildResult("", module.name + ": " + imported.error)
-		declarations = imported.declarations
-		let resolved = hir_resolve_module_calls(module.tree, declarations)
-		if resolved.error != ""
-			return ModuleBuildResult("", module.name + ":" + str(resolved.line) + ": " + resolved.error)
+	for unit in scanned.units
 		var roots = Array[string]()
-		for function in module.exports
-			if not function.constructor
+		for function in unit.exports
+			if not function.constructor and not function.generic
 				roots = roots.append(function.name)
-		if module.name == entry
-			if not module.has_main
+		if unit.name == entry
+			if not unit.has_main
 				return ModuleBuildResult("", "entry module has no main() function: " + entry)
 			var main_exported = false
 			for name in roots
@@ -30,18 +74,30 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 			if not main_exported
 				roots = roots.append("main")
 		if len(roots) == 0
-			if len(module.exported_constants) > 0 or len(module.exports) > 0
-				continue # Compile-time constants and constructors have no library functions.
-			return ModuleBuildResult("", "module has no exported declarations: " + module.name)
-		let lowered = mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
-		if lowered.error != ""
-			return ModuleBuildResult("", module.name + ": " + lowered.error)
-		var exports = Array[MirNamedExport]()
-		for i in 0..len(lowered.exports)
-			exports = exports.append(MirNamedExport(hir_module_symbol(module.name, lowered.exports[!i].name), lowered.exports[!i].function_id))
-		var library = MirLibraryLoad(lowered.program, exports, "")
-		library.imports = lowered.imports
-		libraries = libraries.append(library)
+			if len(unit.exported_constants) > 0 or len(unit.exports) > 0
+				continue
+			return ModuleBuildResult("", "module has no exported declarations: " + unit.name)
+		let compiled = module_build_compile(unit, scanned.units, roots, Array[i64](), false, unit.types)
+		if compiled.error != ""
+			return ModuleBuildResult("", unit.name + ": " + compiled.error)
+		libraries = libraries.append(compiled.library)
+	# Scan newly emitted imports too: specializations can call other generics.
+	var cursor = 0
+	while cursor < len(libraries)
+		let library = libraries[!cursor]
+		for imported in library.imports
+			var resolved = false
+			for existing in libraries
+				for exported in existing.exports
+					if imported.name == exported.name
+						resolved = true
+			if not resolved
+				let compiled = module_build_specialization(scanned.units, library, imported)
+				if compiled.error != ""
+					return ModuleBuildResult("", compiled.error)
+				if len(compiled.library.exports) > 0
+					libraries = libraries.append(compiled.library)
+		cursor += 1
 	let linked = mir_link_libraries(libraries)
 	if linked.error != ""
 		return ModuleBuildResult("", linked.error)

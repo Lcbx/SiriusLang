@@ -94,7 +94,7 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 				return HirSpecializedProgram(registry, bodies, types, entry, "external specialization arity mismatch")
 			if header.external
 				for i in 0..len(spec.arguments)
-					if header.argument_types[!i] != spec.arguments[!i]
+					if header.argument_types[!i] != TYPE_TAG_INVALID and header.argument_types[!i] != spec.arguments[!i]
 						return HirSpecializedProgram(registry, bodies, types, entry, "external specialization type mismatch")
 				typed.return_type = header.result_type
 			else
