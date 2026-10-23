@@ -19,7 +19,7 @@ static namespaced function/constant imports, exported record constructors and qu
 and existing MIR linking. The parser recognizes `import`, `export def`, `export rec` and `export let`; the frontend resolves
 qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
-and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Source-independent generic declaration packages (`.smirg`) can now be specialized explicitly into concrete `.smirl` libraries; automatic package discovery/specialization by the native module linker remains unimplemented. Compile-time execution and native linking are also future work. Typed `extern def` declarations are still supported.
+and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Source-independent generic declaration packages (`.smirg`) can be specialized explicitly into concrete `.smirl` libraries, or discovered and specialized automatically by the native module builder when an imported source is absent. Compile-time execution and native linking are also future work. Typed `extern def` declarations are still supported.
 
 ## Portable generic packages (experimental)
 
@@ -39,8 +39,31 @@ Accepted type arguments include canonical scalar and structural type signatures
 (e.g. `Array[i64]`, `Dict[string,i64]`, `Record{1:x=i64;}`). Use
 `--link-lib` to link the resulting concrete `.smirl` with a caller. The
 `.smirg` format is **not** executable MIR and has no stable cross-version ABI.
-Its specialization step is explicit; `--build-modules` still requires source
-for its generic providers. Test with `python tools/test_mir_generic_packages.py`.
+For automatic specialization, place `Ops.smirg` under the source root at the
+same path as `Ops.sirius`, remove the provider source, and build an importing
+module normally:
+
+```sirius
+import Ops alias O
+
+def main() -> i64
+	return O.twice(21)
+```
+
+```sh
+./sirius-run --build-modules . App app.smirl
+./sirius-run --entry M_3_App_4_main --load-lib app.smirl
+```
+
+The builder prefers `.sirius` when both exist. Package fallback may rescan
+the source dependency graph for each newly discovered package; caching that
+work remains an optimization opportunity. It validates package identity,
+recovers the exported typed interface, and specializes requested signatures in
+memory before linking. Packages currently cannot contain Sirius `import`
+declarations; they can retain explicit named `extern def` dependencies. The
+standalone source scanner (`sirius-module-scan`) only scans `.sirius` files.
+Test with `python tools/test_mir_generic_packages.py` and
+`python tools/test_module_packages.py`.
 
 ## Current development priorities
 
@@ -240,7 +263,7 @@ python tools/test_source_modules.py
 python tools/test_compiler_source_modules.py
 ```
 
-`src/module_scan.sirius` parses each source module once, checks dependency cycles,
+`src/module_scan.sirius` checks source dependency cycles,
 and retains the AST, HIR declarations, and canonical typed export signatures.
 `src/module_interface.sirius` re-interns imported types and compile-time values.
 The scanner and `src/module_build.sirius` share HIR interface injection, including
@@ -274,7 +297,7 @@ copy of their typed value arena, without a runtime getter. Constant-only modules
 are supported. Exported functions and direct-publication constructors may use
 imported public record types (including nested `Array`, `Optional` and `Dict`
 annotations); their resolved structural descriptors are passed to consumers.
-Cross-module type aliases, automatic use of packaged generic functions, operator overloads, re-exports,
+Cross-module type aliases, package-contained Sirius imports, operator overloads, re-exports,
 and runtime module objects are not yet supported.
 `import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
 builder (or a typed interface supplied through `sirius-run --module-interface`);

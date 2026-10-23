@@ -54,8 +54,35 @@ def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibrar
 			return module_build_compile(unit, units, [exported.name], arguments, true, library.program.types)
 	return ModuleBuildCompiled(mir_library_failure(""), "")
 
+# Load generic artifacts only when an imported .sirius module is missing.
+# A package supplies validated declarations but no concrete functions until
+# an importing call requests a specialization.
+def module_build_scan(root: string, entry: string) -> ModuleScanResult
+	var packages = Array[ModuleScanUnit]()
+	var scanned = module_scan_visit_with_packages(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit](), packages)
+	while scanned.missing != "" and len(packages) < 256
+		let name = scanned.missing
+		let source_path = module_scan_filename(root, name)
+		let package_path = source_path.slice(0, len(source_path) - 7) + ".smirg"
+		let contents = read_text(package_path) or ""
+		if contents == ""
+			return scanned
+		let loaded = mir_deserialize_generic(contents)
+		if loaded.error != ""
+			return ModuleScanResult(scanned.visited, "invalid generic package " + name + ": " + loaded.error, scanned.units)
+		if loaded.module != name
+			return ModuleScanResult(scanned.visited, "generic package module mismatch: " + name, scanned.units)
+		var declarations = loaded.declarations
+		declarations.exports = loaded.exports
+		let extracted = module_scan_complete(name, package_path, loaded.tree, declarations, Array[string](), Array[ModuleScanUnit]())
+		if extracted.error != "" or len(extracted.units) != 1
+			return ModuleScanResult(scanned.visited, name + ": " + extracted.error, scanned.units)
+		packages = packages.append(extracted.units[!0])
+		scanned = module_scan_visit_with_packages(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit](), packages)
+	return scanned
+
 def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
-	let scanned = module_scan_visit(root, entry, Array[string](), Array[string](), Array[ModuleScanUnit]())
+	let scanned = module_build_scan(root, entry)
 	if scanned.error != ""
 		return ModuleBuildResult("", scanned.error)
 	var libraries = Array[MirLibraryLoad]()

@@ -7,6 +7,7 @@ rec ModuleScanExport(name: string, parameters: Array[HirParameterDecl], argument
 rec ModuleScanUnit(name: string, path: string, tree: ParseState, declarations: HirModuleDecl, types: TypeTable, exports: Array[ModuleScanExport], has_main: bool)
 	pub exported_constants = Array[HirModuleConstant]()
 rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit])
+	pub missing = ""
 rec ModuleScanType(text: string, valid: bool)
 
 # Import dependency interfaces into a private HIR declaration context. This
@@ -117,7 +118,9 @@ def module_scan_export(tree: ParseState, fn_decl: HirFunctionDecl) -> string
 		return ""
 	return fn_decl.name + "\t" + params + "\t" + result.text + "\n"
 
-def module_scan_visit(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit]) -> ModuleScanResult
+# The standalone scanner has no MIR library dependency. The native builder may
+# supply already verified generic packages as leaf units instead.
+def module_scan_visit_with_packages(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit], packages: Array[ModuleScanUnit]) -> ModuleScanResult
 	if not module_scan_path_valid(name)
 		return ModuleScanResult(done, "invalid module path: " + name, units)
 	for current in visiting
@@ -131,8 +134,15 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 	for current in done
 		if current == name
 			return ModuleScanResult(done, "", units)
+	for package in packages
+		if package.name == name
+			return ModuleScanResult(done.append(name), "", units.append(package))
 	let path = module_scan_filename(root, name)
-	let source = read_text(path) else return ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
+	let source = read_text(path) or ""
+	if source == ""
+		var missing = ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
+		missing.missing = name
+		return missing
 	let parsed = parse_module(source)
 	if parsed.state.error != ""
 		return ModuleScanResult(done, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, units)
@@ -144,15 +154,21 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 	for imported in decl.imports
 		if module_scan_reserved(imported.alias)
 			return ModuleScanResult(state.visited, name + ": invalid import alias: " + imported.alias, state.units)
-		state = module_scan_visit(root, imported.path, stack, state.visited, state.units)
+		state = module_scan_visit_with_packages(root, imported.path, stack, state.visited, state.units, packages)
 		if state.error != ""
 			return state
-	let imported = module_scan_import_declarations(decl, state.units)
+	return module_scan_complete(name, path, parsed.state, decl, state.visited, state.units)
+
+def module_scan_visit(root: string, name: string, visiting: Array[string], done: Array[string], units: Array[ModuleScanUnit]) -> ModuleScanResult
+	return module_scan_visit_with_packages(root, name, visiting, done, units, Array[ModuleScanUnit]())
+
+def module_scan_complete(name: string, path: string, tree: ParseState, decl: HirModuleDecl, done: Array[string], units: Array[ModuleScanUnit]) -> ModuleScanResult
+	let imported = module_scan_import_declarations(decl, units)
 	if imported.error != ""
-		return ModuleScanResult(state.visited, name + ": " + imported.error, state.units)
-	let resolved = hir_resolve_module_calls(parsed.state, imported.declarations)
+		return ModuleScanResult(done, name + ": " + imported.error, units)
+	let resolved = hir_resolve_module_calls(tree, imported.declarations)
 	if resolved.error != ""
-		return ModuleScanResult(state.visited, name + ":" + str(resolved.line) + ": " + resolved.error, state.units)
+		return ModuleScanResult(done, name + ":" + str(resolved.line) + ": " + resolved.error, units)
 	var signatures = Array[ModuleScanExport]()
 	var exported_constants = Array[HirModuleConstant]()
 	var types = imported.declarations.types
@@ -165,14 +181,14 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 				for parameter in fn_decl.parameters
 					if parameter.type_node < 0
 						if fn_decl.constructor
-							return ModuleScanResult(state.visited, name + ": exported constructors require parameter annotations: " + exported, state.units)
+							return ModuleScanResult(done, name + ": exported constructors require parameter annotations: " + exported, units)
 						generic = true
 						arguments = arguments.append(TYPE_TAG_INVALID)
 						continue
 					let resolved = hir_module_type_reference_with_constants(types, resolved.tree, parameter.type_node, imported.declarations.functions, imported.declarations.constants)
 					types = resolved.table
 					if resolved.type_id == TYPE_TAG_INVALID
-						return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
+						return ModuleScanResult(done, name + ": unsupported exported signature: " + exported, units)
 					arguments = arguments.append(resolved.type_id)
 				var return_type = TYPE_TAG_INVALID
 				if fn_decl.constructor
@@ -180,18 +196,18 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 					# Computed pub expressions require exporting executable code instead.
 					let body = resolved.tree.nodes[!fn_decl.body]
 					if body.count == 0
-						return ModuleScanResult(state.visited, name + ": exported constructor requires public fields: " + exported, state.units)
+						return ModuleScanResult(done, name + ": exported constructor requires public fields: " + exported, units)
 					for i in 0..body.count
 						let pub_id = hir_ast_child(resolved.tree, fn_decl.body, i)
 						let pub = resolved.tree.nodes[!pub_id]
 						if pub.kind != NODE_PUB or pub.count != 0
-							return ModuleScanResult(state.visited, name + ": exported constructor requires direct pub fields: " + exported, state.units)
+							return ModuleScanResult(done, name + ": exported constructor requires direct pub fields: " + exported, units)
 						var matches = false
 						for parameter in fn_decl.parameters
 							if parameter.name == hir_ast_text(resolved.tree, pub_id)
 								matches = true
 						if not matches
-							return ModuleScanResult(state.visited, name + ": exported constructor field is not a parameter: " + exported, state.units)
+							return ModuleScanResult(done, name + ": exported constructor field is not a parameter: " + exported, units)
 					# Resolve its published shape with the same HIR implementation
 					# used by named local annotations.
 					var reference_tree = resolved.tree
@@ -205,7 +221,7 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 					types = returned.table
 					return_type = returned.type_id
 				if return_type == TYPE_TAG_INVALID
-					return ModuleScanResult(state.visited, name + ": unsupported exported signature: " + exported, state.units)
+					return ModuleScanResult(done, name + ": unsupported exported signature: " + exported, units)
 				var signature = ModuleScanExport(exported, fn_decl.parameters, arguments, return_type)
 				signature.constructor = fn_decl.constructor
 				signature.generic = generic
@@ -217,14 +233,14 @@ def module_scan_visit(root: string, name: string, visiting: Array[string], done:
 					exported_constants = exported_constants.append(constant)
 					found = true
 		if not found
-			return ModuleScanResult(state.visited, name + ": missing exported declaration: " + exported, state.units)
+			return ModuleScanResult(done, name + ": missing exported declaration: " + exported, units)
 	var has_main = false
 	for fn_decl in decl.functions
-		if fn_decl.name == "main" and parsed.state.nodes[!fn_decl.source].kind == NODE_DEF
+		if fn_decl.name == "main" and tree.nodes[!fn_decl.source].kind == NODE_DEF
 			has_main = true
-	var unit = ModuleScanUnit(name, path, parsed.state, decl, types, signatures, has_main)
+	var unit = ModuleScanUnit(name, path, tree, decl, types, signatures, has_main)
 	unit.exported_constants = exported_constants
-	return ModuleScanResult(state.visited.append(name), "", state.units.append(unit))
+	return ModuleScanResult(done.append(name), "", units.append(unit))
 
 
 # Text manifest is only a scanner CLI interchange format. Native module builds

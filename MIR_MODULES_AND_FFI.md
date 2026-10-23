@@ -1,6 +1,6 @@
 # Sirius — MIR, Modules, Libraries, and FFI
 
-> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based source-module builder supports concrete imports and on-demand monomorphization from available generic source; full compiler-integrated modules, automatic generic package resolution, and native dispatch are not. Experimental source-free HIR template packages are supported. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
+> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based source-module builder supports concrete imports and on-demand monomorphization from available generic source; full compiler-integrated modules and native dispatch are not; native builds can now resolve source-free generic packages. Experimental source-free HIR template packages are supported. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
 
 ## 1. Module resolution and visibility
 
@@ -39,7 +39,7 @@ values, and direct-publication `export rec` constructors with qualified type nam
 are supported. Imported constructors are lowered inline; no runtime import is
 needed for them. Exported concrete signatures and direct-publication constructors
 can reference imported public record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, automatic generic package discovery, named re-exports,
+Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, packaged transitive imports, named re-exports,
 and runtime module objects remain pending. `src/module.sirius` is the first actual compiler
 source tested as an independent imported module; the compiler bootstrap still
 assembles its other sources in one translation unit. Tests: `tools/test_module_scanner.py`,
@@ -77,7 +77,7 @@ concrete transitive call graph. `src/mir_link.sirius` can combine multiple
 independent concrete libraries and deduplicate structural type descriptors,
 relocating local call indices. Typed `extern def` declarations produce import placeholders and signature
 metadata. The linker resolves them against concrete exports with matching
-structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`, `export def` and `export let`, discovery and typed export interfaces; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Source builds specialize exported generics on demand while source definitions are available. Explicit source-free instantiation from separate `.smirg` typed-HIR snapshots is supported; automatic lookup and instantiation of those packages during source-module builds, and native linking, remain future work. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
+structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`, `export def` and `export let`, discovery and typed export interfaces; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Source builds specialize exported generics on demand while source definitions are available. Source-free instantiation from separate `.smirg` typed-HIR snapshots is supported both explicitly and automatically by source-module builds when the corresponding `.sirius` file is absent; native linking remains future work. A **library** artifact may additionally preserve generic function bodies for future specializations. Serialization must include persistent type identities, symbol references, and format/ABI version information, rather than process-local pointers.
 
 The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
 
@@ -90,7 +90,7 @@ export def double(x) -> i64
 	return x + x
 ```
 
-The implemented source-module builder has the defining source and specializes this function for each concrete imported signature before final linking. A distributed `.smirl` library still contains **concrete specializations only**. An experimental separate `.smirg` package now stores checked syntax/typed HIR declarations and supports explicit source-free specialization into a linkable `.smirl` through `sirius-run --specialize-generic`. It is not executable MIR or an automated package resolver.
+The implemented source-module builder has the defining source and specializes this function for each concrete imported signature before final linking. A distributed `.smirl` library still contains **concrete specializations only**. An experimental separate `.smirg` package now stores checked syntax/typed HIR declarations and supports explicit source-free specialization into a linkable `.smirl` through `sirius-run --specialize-generic`. It is not executable MIR. The native module builder automatically locates it as a fallback for a missing `.sirius` import and links the requested specializations.
 
 For a call with concrete argument types:
 
@@ -113,8 +113,11 @@ source-driven specialization. The defining source is not needed after packaging.
 It can retain explicit `extern def` imports which are resolved later by the
 normal MIR linker. Packages with Sirius `import` declarations are rejected until
 transitive interfaces can be serialized. The format is compiler-version-specific;
-there is no runtime generic specialization registry or automatic source-module
-package fallback yet.
+there is no runtime generic specialization registry. For package imports,
+`--build-modules` validates the package and its module name, extracts the typed
+export interface, and specializes requested functions into ordinary MIR before
+linking. It prefers `.sirius` over `.smirg` and does not yet resolve imports
+inside packaged generic modules. The standalone scanner remains source-only.
 
 ## 4. Library artifacts and registration
 
@@ -154,7 +157,7 @@ Initial interop should use explicit wrappers with C primitives and opaque handle
 ## 6. Suggested implementation order (proposal)
 
 1. Define portable exported-symbol and type-descriptor metadata in a module interface.
-2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots can generate concrete MIR without the provider source. Next persist transitive source-import interfaces and let the module builder discover packages automatically.
+2. **Partly done:** source builds use canonical specialization keys and `.smirg` snapshots can generate concrete MIR without the provider source. Automatic package discovery is implemented; next persist transitive source-import interfaces inside packages.
 3. **Done for concrete executables and named concrete libraries:** serialize/load specialized MIR, validate exported symbols and signatures, and compare dynamic execution. Extend to imported modules and generic interfaces later.
 4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
 5. Register already compiled native specializations through a versioned C hook.
