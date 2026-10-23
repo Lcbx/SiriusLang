@@ -68,10 +68,10 @@ def main() -> i64
 ./sirius-run --entry M_3_App_4_main --load-lib app.smirl
 ```
 
-The builder prefers `.sirius` when both exist. During package discovery, a
-build-local cache reuses parsed source modules and completed typed interfaces
-across dependency-graph retries. It does not persist between builds and does
-not yet eliminate repeated graph traversal. The builder validates package identity,
+The builder prefers `.sirius` when both exist. It resolves source and package
+imports in a single depth-first traversal, completing each typed interface after
+its dependencies. Parsed source data is cached only within the current build;
+subsequent builds reread the inputs. The builder validates package identity,
 recovers the exported typed interface, and specializes requested signatures in
 memory before linking. Version 1 packages remain supported; version 2
 packages contain pinned interfaces for direct imports, recursively checked
@@ -80,7 +80,8 @@ not bundled into one file. The standalone source scanner
 (`sirius-module-scan`) still only scans `.sirius` files. Test with
 `python tools/test_mir_generic_packages.py`, `python tools/test_module_packages.py`
 and `python tools/test_module_package_dependencies.py`, and
-`python tools/test_module_discovery_cache.py`.
+`python tools/test_module_discovery_cache.py` and
+`python tools/test_module_incremental_discovery.py`.
 
 ## Current development priorities
 

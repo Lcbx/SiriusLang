@@ -128,6 +128,30 @@ rec ModuleScanCached(result: ModuleScanResult, cache: ModuleScanCache)
 def module_scan_empty_cache() -> ModuleScanCache
 	return ModuleScanCache(Array[ModuleScanSource](), Array[ModuleScanUnit]())
 
+# Parse each source at most once within a build. Both scanner and native builder
+# use the same parse/declaration path, but maintain their own traversal state.
+rec ModuleScanParsed(index: i64, error: string, cache: ModuleScanCache)
+	pub missing = false
+
+def module_scan_parse_cached(root: string, name: string, cache: ModuleScanCache) -> ModuleScanParsed
+	for i in 0..len(cache.sources)
+		if cache.sources[!i].name == name
+			return ModuleScanParsed(i, "", cache)
+	let path = module_scan_filename(root, name)
+	let text = read_text(path) or ""
+	if text == ""
+		var missing = ModuleScanParsed(-1, "module " + name + " not found under source root: " + path, cache)
+		missing.missing = true
+		return missing
+	let parsed = parse_module(text)
+	if parsed.state.error != ""
+		return ModuleScanParsed(-1, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, cache)
+	let declarations = hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return ModuleScanParsed(-1, name + ":" + str(declarations.error_line) + ": " + declarations.error, cache)
+	let updated = ModuleScanCache(cache.sources.append(ModuleScanSource(name, path, parsed.state, declarations)), cache.completed)
+	return ModuleScanParsed(len(cache.sources), "", updated)
+
 # The standalone scanner uses an empty cache; the native builder carries it
 # across retries while resolving missing packages.
 def module_scan_visit_cached(root: string, name: string, visiting: Array[string], state: ModuleScanCached, packages: Array[ModuleScanUnit]) -> ModuleScanCached
@@ -155,27 +179,15 @@ def module_scan_visit_cached(root: string, name: string, visiting: Array[string]
 					return current
 			let result = current.result
 			return ModuleScanCached(ModuleScanResult(result.visited.append(name), "", result.units.append(package)), current.cache)
-	let path = module_scan_filename(root, name)
-	var current = state
-	var source_index = -1
-	for i in 0..len(current.cache.sources)
-		if current.cache.sources[!i].name == name
-			source_index = i
-	if source_index < 0
-		let text = read_text(path) or ""
-		if text == ""
-			var missing = ModuleScanResult(done, "module " + name + " not found under source root: " + path, units)
-			missing.missing = name
-			return ModuleScanCached(missing, current.cache)
-		let parsed = parse_module(text)
-		if parsed.state.error != ""
-			return ModuleScanCached(ModuleScanResult(done, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, units), current.cache)
-		let declarations = hir_module_declarations(parsed.state, parsed.node)
-		if declarations.error != ""
-			return ModuleScanCached(ModuleScanResult(done, name + ":" + str(declarations.error_line) + ": " + declarations.error, units), current.cache)
-		source_index = len(current.cache.sources)
-		current.cache.sources = current.cache.sources.append(ModuleScanSource(name, path, parsed.state, declarations))
-	let source = current.cache.sources[!source_index]
+	let parsed = module_scan_parse_cached(root, name, state.cache)
+	if parsed.error != ""
+		var failed = ModuleScanResult(done, parsed.error, units)
+		if parsed.missing
+			failed.missing = name
+		return ModuleScanCached(failed, parsed.cache)
+	var current = ModuleScanCached(state.result, parsed.cache)
+	let source = current.cache.sources[!parsed.index]
+	let path = source.path
 	let tree = source.tree
 	let decl = source.declarations
 	let stack = visiting.append(name)
