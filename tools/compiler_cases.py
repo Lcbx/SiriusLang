@@ -7,7 +7,7 @@ import sys
 
 from build_support import BuildCache, compile_c, execute, validate_jobs
 
-from source_manifest import ROOT, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 
 REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '29_strings_and_arguments', '36_string_byte_at', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
 ERRORS = {

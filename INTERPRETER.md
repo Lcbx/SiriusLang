@@ -6,8 +6,9 @@ executes it dynamically. `src/run_cli.sirius` lowers a source file through the
 normal HIR specialization, MIR ownership/optimization pipeline and interprets
 the linked program. The runner itself is built once as a native executable;
 the input source does not generate C. `src/mir_wire.sirius` also persists and
-reloads concrete executable MIR. It does not perform compile-time execution,
-effect inference, library specialization or native library linking.
+reloads concrete executable MIR. The interpreter itself does not perform compile-time execution or effect
+inference. The surrounding runner supports source-free generic specialization
+through `.smirg` packages and concrete MIR library linking.
 
 ## Dynamic source execution
 
@@ -53,7 +54,7 @@ Artifacts contain only already specialized, executable functions. They do
 exported symbols, imports, native bindings or a persistent library interface.
 Named exports in the separate concrete-library format are described below;
 concrete imports are supported in the separate library format; generic
-interfaces remain future work. This feature does not imply compile-time execution
+interfaces are stored separately in `.smirg` packages. This feature does not imply compile-time execution
 or purity inference.
 
 ## Named concrete MIR libraries
@@ -105,8 +106,9 @@ format replaces `/1`, without a compatibility reader.
 
 **Now available separately:** a Sirius-native source-module scanner and
 `--build-modules` pipeline compile concrete modules and link them into a
-loadable MIR library. **Not yet implemented:** cross-library generic
-specialization, native C registration and native/interpreter interop.
+loadable MIR library. **Also implemented:** exported generic specialization through portable
+`.smirg` packages. Native C registration and native/interpreter interop remain
+future work.
 `--entry` must precede `--load-lib` in the CLI invocation.
 
 ## Run isolated tests
@@ -128,11 +130,11 @@ python tools/test_mir_arrays.py         # CoW, bounds, and nested managed arrays
 python tools/test_mir_dict.py           # Dictionary CoW and nested-value ownership
 ```
 
-`tests/mir/driver.sirius` builds MIR blocks directly. Tests assert program results as well as instruction budgets, branch selection, function calls, verifier diagnostics, panics, invalid inputs, and uninitialized registers. `MirOutcome` returns a value, an error string, and consumed instruction/terminator steps. The separate `tests/mir/lowering_driver.sirius` and `tools/test_mir_lower.py` exercise pre-emission typed HIR, lowering, MIR verification, and execution with no C generation for the input source.
+`tests/mir/driver_native.sirius` builds MIR blocks directly. Tests assert program results as well as instruction budgets, branch selection, function calls, verifier diagnostics, panics, invalid inputs, and uninitialized registers. `MirOutcome` returns a value, an error string, and consumed instruction/terminator steps. The separate `tests/mir/lowering_driver_native.sirius` and `tools/test_mir_lower.py` exercise pre-emission typed HIR, lowering, MIR verification, and execution with no C generation for the input source.
 
 Initial coverage: `i64`, `f64`, `bool`, owned `string`, canonical structural records, rank-1 arrays, dictionaries, copies, integer arithmetic/comparisons, boolean equality/negation, print, direct calls, jumps, branches, return and panic. All registers have a declared type; function parameters occupy the first registers. Calls have explicit argument register lists. Loops are CFG backedges. The verifier checks structural/type consistency before execution. Reads of potentially uninitialized registers are detected dynamically. Interpreter execution has configurable total-step and call-depth limits. Integer overflow/edge division semantics remain to be specified; avoid testing those boundaries as backend-equivalent until resolved.
 
-**Dynamic interpreter limitations:** full unwinding/ownership cleanup on implicit runtime failure, exact decimal literal rounding at all IEEE-754 boundaries, generic MIR libraries, and cross-boundary native calls. `f64` now uses a separate real-valued field in `MirValue`, including for nested collection elements, and implements every current MIR floating opcode (`sqrt`, comparisons, arithmetic and print). Decimal spelling is parsed by a Sirius implementation rather than native `strtod`; parity for difficult rounding ties and extreme magnitudes remains to be proven. The source frontend already supports several deeper updates, record spreads and type inference; source programs use the same MIR lowerer for either backend. `Array.append` and direct record-field updates now have experimental support. The current lowering also supports checked string literals (with a restricted escape set), string `+`, `len(string)`, simple record/array literals, field projection, checked array access/update/length, and managed values in generic calls, assignments and returns. Unsupported syntax gives an explicit lowering error.
+**Dynamic interpreter limitations:** full unwinding/ownership cleanup on implicit runtime failure, exact decimal literal rounding at all IEEE-754 boundaries, execution of generic declarations without specialization, and cross-boundary native calls. `f64` now uses a separate real-valued field in `MirValue`, including for nested collection elements, and implements every current MIR floating opcode (`sqrt`, comparisons, arithmetic and print). Decimal spelling is parsed by a Sirius implementation rather than native `strtod`; parity for difficult rounding ties and extreme magnitudes remains to be proven. The source frontend already supports several deeper updates, record spreads and type inference; source programs use the same MIR lowerer for either backend. `Array.append` and direct record-field updates now have experimental support. The current lowering also supports checked string literals (with a restricted escape set), string `+`, `len(string)`, simple record/array literals, field projection, checked array access/update/length, and managed values in generic calls, assignments and returns. Unsupported syntax gives an explicit lowering error.
 
 **Managed-value ownership:** Initialized string/record/array/dictionary/optional registers own one reference each. `MIR_COPY`/`MIR_RETAIN` preserve the source and produce another owned value; `MIR_MOVE` transfers ownership and invalidates the source; `MIR_RELEASE` invalidates its register. Function calls retain managed arguments and transfer the credits to the callee; managed returns transfer ownership to the caller. `MIR_RECORD_NEW` constructs immutable records with canonical field order; `MIR_RECORD_GET` copies a field (retaining managed fields). `MIR_ARRAY_NEW` builds rank-1 arrays, `MIR_ARRAY_GET` performs bounds-checked reads, and `MIR_ARRAY_LENGTH` returns their length. `MIR_ARRAY_SET` **consumes the source register** (which may also be the destination), cloning if shared and reusing storage if uniquely owned; the replacement element is retained before the overwritten element is dropped. Generated C reference-counts record storage and releases nested strings/records/arrays when the last owner is dropped, using canonical descriptors; `Optional[T]` uses zero/one-element owned storage and recursively releases any managed payload; all live owned registers are cleaned up on normal function return. The Sirius interpreter maintains logical record/array/dictionary reference counts in a heap with recursive drops. This is a conservative subset, not the full CFG ownership pass or proof of ARC across every exit. The Python MIR prototype from earlier exploration is not part of the maintained path.
 
@@ -182,8 +184,8 @@ Compile-time diagnostics still use the compiler's existing stdout format.
 3. **Done in part:** 91 positive fixtures, 18 differential examples and three
    runtime-failure cases; add more corner cases and CLI execution budgets.
 4. **Done:** versioned serialization and loading of concrete MIR executables,
-   with validation and round-trip tests. Next: generic exported interfaces and
-   interpreted/compiled native library boundaries. General comptime remains deferred.
+   concrete libraries and separate portable generic packages. Next: interpreted/compiled
+   native-library boundaries. General comptime remains deferred.
 
 ### Dictionary limitations
 
@@ -195,6 +197,24 @@ The linked HIR specialization program runs `mir_insert_lifetimes` and then `mir_
 
 ## CFG ownership balance (experimental)
 
-`src/mir_ownership.sirius` computes forward **must-initialize** and **may-initialize** states across the CFG. `mir_check_balance` rejects any reachable `Return` or explicit `Panic` that may leave a managed register owned (except the returned register, whose ownership is transferred). `src/mir_cleanup.sirius` releases definitely owned values on edges and exits and uses `MIR_RELEASE_IF_INIT` where initialization differs between predecessor paths. The MIR interpreter and C backend implement this guarded release consistently. See `tools/test_mir_balance.py`.
+`src/mir_ownership.sirius` computes forward **must-initialize** and **may-initialize** states across the CFG. `mir_check_balance` checks managed borrow/transfer/release/overwrite credit transitions under both states, and rejects any reachable `Return` or explicit `Panic` that may leave a managed register owned (except the returned register, whose ownership is transferred). This is a register-credit audit, not a heap-reference or exceptional-unwinding proof. `src/mir_cleanup.sirius` releases definitely owned values on edges and exits and uses `MIR_RELEASE_IF_INIT` where initialization differs between predecessor paths. The MIR interpreter and C backend implement this guarded release consistently. See `tools/test_mir_balance.py`.
 
 This verifies explicit exits, not hidden panics from bounds checks, division, failed unwrapping, or allocation errors. Backend return cleanup is retained as defense in depth; a separate unwinding strategy is still required.
+
+## Optional return-credit audit
+
+`MirInterpreter.mir_audit_return_credits(types, outcome)` validates a successful run: the return value contributes one root credit, each reachable heap object contributes one credit for each of its owned child fields (not per reference to the parent), and all unreachable heap objects must have zero references. It reports mismatched reference counts, forged type/handle pairs and leaked objects. The audit is opt-in and does not unwind failures or replace the static MIR ownership/balance proof. Exercise it with `python tools/test_mir_credits.py`.
+
+## Failure results and host execution errors
+
+Routine recoverable failures currently return `Optional`/status values; future
+`Result` unions with exhaustive matching will use ordinary MIR return and
+branch ownership rules. IEEE-754 floating operations may return NaN/infinity
+rather than trapping. Invalid integer division, checked indexing and forced
+unwrap still take explicit fatal `MIR_PANIC` paths.
+
+`MirOutcome.error` reports a **host-visible execution failure**, such as a
+step/depth budget abort or fatal MIR panic. It is not a catchable Sirius value.
+Neither dynamic execution nor native `s_panic` promises to unwind all live
+calling frames on fatal termination. Ownership-credit audits apply to
+successful normal returns and future union-valued recoverable errors.

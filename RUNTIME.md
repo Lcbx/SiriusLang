@@ -16,6 +16,19 @@ collection layouts.
 | MIR generated records/arrays | Type-directed `S_MirRecord` fields emitted by `mir_emit_c.sirius` | MIR ownership operations + runtime primitives | Preserve wrapper/array ABI |
 | MIR generated dictionaries | `S_MirRecord` owner containing the generic `S_Dict` hash table | `S_Dict` callback-owned entries; wrapper and table have CoW | Benchmark hashing/allocations on compiler workloads |
 
+## Compiler-visible runtime layout metadata
+
+The canonical `src/types.sirius` table now exposes a target-neutral
+`RuntimeLayout`: storage category, ownership strategy and fixed/variable
+`S_MirField` slot counts. These properties drive MIR C scalar/pointer types,
+field selection and retain/release dispatch, and shared interpreter ownership.
+For records, field slot indices follow canonical name sorting. Arrays use a
+variable number of slots; optionals use zero or one; dictionary wrappers hold
+one `S_Dict *`. This metadata does **not** provide portable byte offsets or
+an emitted runtime registration table. The C target controls union size and
+alignment, and emitted `S_MirRecord.type_id` remains executable-local.
+Neither the C runtime ABI nor the on-disk `.smir` format changed.
+
 ## First runtime improvement
 
 Generic array append and set formerly allocated and freed a temporary heap
@@ -71,8 +84,9 @@ collection test was also checked with Clang ASan/UBSan.
 
 ## Next runtime steps
 
-1. Measure allocations in **MIR-generated** collection and record operations;
-   these are the relevant paths for compiler self-hosting.
+1. **Measured:** MIR-generated record/collection allocation counts in self-hosting
+   (see the October 2026 profile below). Continue with type-directed profiling
+   before attempting further allocation or layout changes.
 2. Consider unifying generic and emitted runtime storage only after a concrete
    stable ABI and differential tests exist. Avoid merging older specialized
    structures merely because they have similar operations.
@@ -80,7 +94,7 @@ collection test was also checked with Clang ASan/UBSan.
    of a real workload bottleneck.
 4. Continue testing managed values, aliasing and CoW with sanitizers.
 
-Keep the C11 API stable through MIR-default migration. Functional behavior and
+Keep the C11 API stable during runtime cleanup. Functional behavior and
 snapshot semantics take priority over micro-optimizations.
 
 ## MIR-generated storage cleanup
@@ -194,4 +208,146 @@ names and explicit failure (`none`), while the MIR interpreter calls the same
 Sirius builtins. Directory symlinks are not followed by `is_dir`. The
 Sirius-side `walk_files` helper lives in `stdlib/Std/Filesystem.sirius`;
 recursion policy is not hardwired in the C runtime. File I/O and directory
-enumeration remain effectful and host-dependent.
+enumeration remain effectful and host-dependent. `read_text` and `write_text`
+share a file-opening helper: MSVC uses `_wfopen_s` with UTF-8-to-UTF-16
+path conversion, other Windows toolchains use `_wfopen`, and POSIX uses the
+standard C `fopen`. The runtime does not suppress MSVC CRT warnings globally.
+Embedded NUL bytes in paths are rejected. `tools/test_filesystem.py` checks
+Unicode filenames, binary round-trips, and invalid paths.
+
+## MIR collection-allocation profile and shared append (October 2026)
+
+`python tools/profile_mir_allocations.py --runs 3` instruments a **temporary**
+copy of generated compiler C (not the committed bootstrap or runtime) to count
+MIR record allocations, CoW clones, array appends, capacity growth, and
+per-type allocations during module-root self-compilation. It verifies that the
+compiled result remains byte-identical to the input C seed, and asserts
+identical counter results across runs. Use `--opt` to select the native C
+optimization level or `--source` to inspect a smaller Sirius input. Type IDs
+are local to each generated compiler; the tool does not count allocations
+inside generic `S_Dict`, `S_String`, or C library functions. Instrumented
+execution times are **not** comparable performance benchmarks.
+
+Before the optimization, self-compilation performed approximately 9.04 million
+MIR record allocations, 2.13 million CoW clones, 7.04 million appends, and
+1.99 million record-capacity growth operations. About 246,000 appends first
+cloned a shared array, then immediately reallocated the exact-size clone.
+
+`src/mir_emit_c.sirius` now lets a shared-array clone reserve one additional
+field before copying its elements. Unique arrays retain their existing growth
+policy; other CoW operations still make exact-length clones. The snapshot's
+length and reference counts are unchanged, and the append checks capacity
+limits before incrementing length. In a subsequent self-hosting profile,
+capacity-growth operations fell to approximately 1.77 million (about 11%
+fewer); total allocation counts changed slightly as the compiler's emitted C
+changed. The focused `test_mir_array_alloc.py` test confirms that cloning and
+appending scalar or nested managed arrays do not perform the redundant
+`realloc`, and verifies retained snapshots. No end-to-end speedup is claimed.
+
+## MIR operand-read allocation profile (2026-10-24)
+
+The MIR C-emitted runtime was instrumented while the native modular compiler
+self-compiled. `tools/profile_mir_allocations.py --runs 3 --type-names` reports
+allocation counts by structural type, including CoW clone counts, empty
+containers and requested bytes. These are **cumulative requests**, not peak
+memory, and do not account for all allocations inside `S_String` or `S_Dict`.
+
+`mir_cfg.mir_instruction_reads` previously constructed a temporary empty
+`Array[i64]` before branches that either returned no register operands or
+returned `ins.inputs` directly. It now performs those returns first and builds
+an initial one-element array when needed. This preserves read ordering and
+value semantics, including malformed unused input metadata. The native
+instruction-read tests cover constants, calls, writes, duplicate operands and
+multi-register instructions. No runtime ABI or MIR storage layout changed.
+
+| Profile (single `-O1` self-compilation) | Before | After |
+| --- | ---: | ---: |
+| Generated MIR record/collection allocations | 9,042,739 | 8,423,359 |
+| `Array[i64]` allocations | 3,845,067 | 3,225,125 |
+| Empty generated containers | 2,739,174 | 1,516,617 |
+| Capacity growth operations | 1,769,984 | 1,333,101 |
+
+The reduction in `Array[i64]` allocation calls is about 16%; total generated
+record/collection allocations fell about 6.8%. The generated bootstrap remains
+reproducible; these counts do **not** establish a wall-clock speedup. `Array[i64]`
+still accounts for most cumulative requested bytes, largely due to CoW clones.
+
+## Forward ownership snapshot reuse (2026-10-24)
+
+The MIR ownership worklist now initializes non-entry blocks directly from
+the first reachable predecessor's packed outgoing state. This avoids the CoW
+clone previously incurred by intersecting the `top` or unioning the `bottom`
+identity with that predecessor. Remaining predecessors use word-wise joins,
+cloning the snapshot only if a bit changes. Entry-loop handling still includes
+the function argument state; separate ownership states remain value-isolated.
+
+In one instrumented self-compilation, `Array[i64]` clones declined from
+1,949,722 to 966,353 (~50%). Total MIR-generated record/collection
+allocations declined from 8,423,359 to 7,437,274 (~11.7%). This is a
+compiler dataflow improvement rather than an ABI, storage or runtime CoW
+change. Counts are workload-dependent and do not imply a measured speedup.
+
+## Backward CFG liveness allocation reduction (2026-10-24)
+
+The backward liveness solver reuses a jump/branch target's `live_in` array
+as its `live_out` snapshot; only a distinct second branch successor requires
+a union. The CoW runtime remains unchanged, so subsequent updates to the
+local live mask do not modify the successor's saved state. On instrumented
+modular self-compilation, `Array[i64]` clones fell from 966,353 to 870,856
+and total MIR-generated record allocations from 7,437,326 to 7,343,095.
+These counts do not establish a native runtime speedup; see
+[MIR_PROFILE.md](MIR_PROFILE.md) for the full profile and test conditions.
+
+## Direct ownership transfer (2026-10-24)
+
+Forward CFG ownership propagation now executes its block instructions directly
+rather than building two temporary register/value effect arrays per block.
+This does not change bitset representation, CoW behavior or the C runtime ABI.
+On modular self-compilation, generated MIR allocation calls fell from
+7,343,095 to 7,016,214 (4.5%), with largely unchanged clone counts.
+Revisiting a block repeats the instruction walk; profile on workloads with
+highly iterative CFGs before assuming a speed improvement. See
+[MIR_PROFILE.md](MIR_PROFILE.md) for measurement details.
+
+## Runtime failure and ARC exit policy
+
+Recoverable failures use ordinary return values (`Optional` and status values
+now; constructor-based `Result` unions with exhaustive `match` are planned).
+Their managed payloads use the same retain/move/release obligations as successful
+returns. Default floating-point arithmetic can yield IEEE-754 NaN/infinity
+without trapping; integer division by zero remains fatal.
+
+`s_panic` terminates the process without walking live caller frames. Under
+`SIRIUS_ARC_AUDIT`, immediate retain/release consistency checks still apply,
+but the `atexit` leak check is skipped on this fatal path. A normally returning
+program must release all credits, including those held by recoverable error
+values. There is no supported exception unwinder in the current runtime.
+
+### Opt-in heap-edge ARC audit (2026-10-24)
+
+With `SIRIUS_ARC_AUDIT`, generated MIR C registers type-directed heap-edge
+scanners for records, arrays, optionals and dictionaries. Each CFG block
+checks that live managed objects have at least as many reference credits as
+owned incoming heap edges. A test-only `s_arc_audit_check_roots()` API checks
+equality when given the complete collection of register/stack/global roots.
+Regular builds compile out both checks. The audit does not yet scan all
+standalone native/FFI layouts or synthesize roots across every calling frame;
+see [OWNERSHIP.md](OWNERSHIP.md).
+
+### Native ARC root snapshots (audit builds)
+
+With `SIRIUS_ARC_AUDIT`, generated MIR functions register their managed
+register-slot addresses in a stack of `S_ArcAuditFrame` entries. Each basic-block
+boundary calls `s_arc_audit_check_frames()` to count live roots from every
+active caller/callee frame, known native globals (including CLI arguments),
+and type-directed heap-child scanners. Shadow ARC credits must equal these
+incoming credits. Transferred call arguments leave the caller slots before
+callee execution; borrowed arguments retain their own credits.
+
+This is a **dynamic** assertion at stable CFG boundaries, not a static proof or
+an instruction-by-instruction invariant. Additional native/FFI objects need
+explicit scanner and root registration to participate in exact snapshots.
+Fatal `s_panic` still terminates without unwinding managed frames. Audit frame
+registration and scanning incur no normal-runtime audit cost; debug-only
+metadata is removed without the audit define. `MIR_CALL_MOVE` now materializes
+call arguments before clearing moved caller slots in both build modes.

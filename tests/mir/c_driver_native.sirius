@@ -1,0 +1,44 @@
+import mir alias Mir
+import types alias Types
+import mir_emit_c alias Emit
+
+# Exercise direct MIR->C code generation, including runtime checks and escaped
+# panic text, without passing through source/HIR lowering.
+def main() -> i64
+	let args = arguments()
+	if len(args) != 5
+		return 2
+	var instructions = Array[Mir.MirInstruction]()
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 42))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_PRINT, -1, 0, -1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, 1))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_PRINT, -1, 1, -1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0))
+	let done = Mir.MirBlock(instructions, Mir.mir_return(2))
+	let print_function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], [done], 0)
+	let output = Mir.new_mir_program([print_function])
+	let printed = Emit.mir_emit_c(output, 0)
+	if printed.error != "" or not write_text(args[!1], printed.code)
+		return 3
+	let panic_term = Mir.mir_panic("quoted \"panic\" and backslash \\ end")
+	let panic_block = Mir.MirBlock(Array[Mir.MirInstruction](), panic_term)
+	let panic_function = Mir.MirFunction(0, Types.TYPE_TAG_I64, Array[i64](), [panic_block], 0)
+	let panic_program = Mir.new_mir_program([panic_function])
+	let panicked = Emit.mir_emit_c(panic_program, 0)
+	if panicked.error != "" or not write_text(args[!2], panicked.code)
+		return 4
+	let missing_block = Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))
+	let missing_fn = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64], [missing_block], 0)
+	let missing_program = Mir.new_mir_program([missing_fn])
+	let uninitialized = Emit.mir_emit_c(missing_program, 0)
+	if uninitialized.error != "" or not write_text(args[!3], uninitialized.code)
+		return 5
+	# Verified linked emission removes defensive init checks only after the
+	# ownership/balance proof succeeds; arbitrary MIR keeps checked emission.
+	let verified = Emit.mir_emit_c_reachable_verified(output, 0)
+	if verified.error != "" or not write_text(args[!4], verified.code)
+		return 6
+	let rejected = Emit.mir_emit_c_reachable_verified(missing_program, 0)
+	if rejected.error == "" or not rejected.error.starts_with("MIR function 0:")
+		return 7
+	return 0

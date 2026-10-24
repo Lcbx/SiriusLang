@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES, ROOT, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 from test_tokenizer import fixture_bytes
 
 
@@ -19,13 +19,13 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path, help='reuse a previously built MIR runner')
 	args = parser.parse_args()
-	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
 	cases = sorted((ROOT / 'tests/tokenizer/fixtures').glob('*.sirius'))
 	assert cases, 'missing tokenizer fixtures'
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
-		shutil.copy2(ROOT / 'src/tokenizer.sirius', root / 'Lexer.sirius')
-		shutil.copy2(ROOT / 'src/types.sirius', root / 'Types.sirius')
+		shutil.copy2(ROOT / 'src/tokenizer.sirius', root / 'tokenizer.sirius')
+		shutil.copy2(ROOT / 'src/types.sirius', root / 'types.sirius')
 		shutil.copy2(ROOT / 'tests/tokenizer/module_driver.sirius', root / 'Main.sirius')
 		library = root / 'app.smirl'
 		built = run(runner, '--build-modules', root, 'Main', library)
@@ -40,7 +40,7 @@ def main() -> None:
 		print(f'PASS native compiler tokenizer and types: {len(cases)} golden cases')
 		built = run(runner, '--build-modules', root, 'Main', library)
 		assert built.returncode == 0 and library.read_bytes() == first, 'non-deterministic linked tokenizer'
-		(root / 'Private.sirius').write_text('import Lexer alias Lex\ndef main() -> i64\n\treturn Lex.scan_number("1", 0)\n', encoding='utf-8')
+		(root / 'Private.sirius').write_text('import tokenizer alias Lex\ndef main() -> i64\n\treturn Lex.scan_number("1", 0)\n', encoding='utf-8')
 		bad = run(runner, '--build-modules', root, 'Private', library)
 		assert bad.returncode != 0 and b'not exported' in bad.stderr, bad.stderr
 		print('PASS compiler modules: deterministic linking, helper visibility')

@@ -1,196 +1,199 @@
+import types alias Types
+import hir alias Hir
+
 # Call signature validation is semantic: no C names or ownership helpers.
 # A checked call returns an interned result type, and (possibly) an extended
 # type table for results such as Optional[string].
-let HIR_CALL = 6
+export let HIR_CALL = 6
 
-rec HirCallCheck(table: TypeTable, type_id: i64, error: string)
+export rec HirCallCheck(table: Types.TypeTable, type_id: i64, error: string)
 
-def hir_type_name(types: TypeTable, id: i64) -> string
+export def hir_type_name(types: Types.TypeTable, id: i64) -> string
 	if id < 0 or id >= len(types.entries)
 		return "unknown"
 	let descriptor = types.entries[!id]
-	if descriptor.tag == TYPE_TAG_I64
+	if descriptor.tag == Types.TYPE_TAG_I64
 		return "i64"
-	if descriptor.tag == TYPE_TAG_F64
+	if descriptor.tag == Types.TYPE_TAG_F64
 		return "f64"
-	if descriptor.tag == TYPE_TAG_BOOL
+	if descriptor.tag == Types.TYPE_TAG_BOOL
 		return "bool"
-	if descriptor.tag == TYPE_TAG_STRING
+	if descriptor.tag == Types.TYPE_TAG_STRING
 		return "string"
-	if descriptor.tag == TYPE_TAG_VOID
+	if descriptor.tag == Types.TYPE_TAG_VOID
 		return "void"
-	if descriptor.tag == TYPE_TAG_ARRAY
+	if descriptor.tag == Types.TYPE_TAG_ARRAY
 		return "Array[" + hir_type_name(types, descriptor.first) + "]"
-	if descriptor.tag == TYPE_TAG_DICT
+	if descriptor.tag == Types.TYPE_TAG_DICT
 		return "Dict[" + hir_type_name(types, descriptor.first) + "," + hir_type_name(types, descriptor.second) + "]"
-	if descriptor.tag == TYPE_TAG_OPTIONAL
+	if descriptor.tag == Types.TYPE_TAG_OPTIONAL
 		return "Optional[" + hir_type_name(types, descriptor.first) + "]"
 	return "record"
 
-def hir_expected(types: TypeTable, expected: i64, found: i64) -> HirCallCheck
-	if hir_types_equal(expected, found)
+export def hir_expected(types: Types.TypeTable, expected: i64, found: i64) -> HirCallCheck
+	if Hir.hir_types_equal(expected, found)
 		return HirCallCheck(types, expected, "")
-	return HirCallCheck(types, TYPE_TAG_INVALID, "expected " + hir_type_name(types, expected) + ", found " + hir_type_name(types, found))
+	return HirCallCheck(types, Types.TYPE_TAG_INVALID, "expected " + hir_type_name(types, expected) + ", found " + hir_type_name(types, found))
 
-def hir_call_arguments(types: TypeTable, actual: Array[i64], expected: Array[i64], result: i64, arity_error: string) -> HirCallCheck
+export def hir_call_arguments(types: Types.TypeTable, actual: Array[i64], expected: Array[i64], result: i64, arity_error: string) -> HirCallCheck
 	if len(actual) != len(expected)
-		return HirCallCheck(types, TYPE_TAG_INVALID, arity_error)
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, arity_error)
 	for i in 0..len(actual)
 		let check = hir_expected(types, expected[!i], actual[!i])
 		check.error == "" else return check
 	return HirCallCheck(types, result, "")
 
-def hir_is_builtin(name: string) -> bool
+export def hir_is_builtin(name: string) -> bool
 	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt"
 
-def resolve_hir_builtin_call(types: TypeTable, name: string, args: Array[i64]) -> HirCallCheck
+export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: Array[i64]) -> HirCallCheck
 	if name == "arguments"
-		let array = intern_array_type(types, TYPE_TAG_STRING)
+		let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
 		return hir_call_arguments(array.table, args, Array[i64](), array.id, "arguments expects no arguments")
 	if name == "read_text"
-		let optional = intern_optional_type(types, TYPE_TAG_STRING)
-		return hir_call_arguments(optional.table, args, [TYPE_TAG_STRING], optional.id, "read_text expects one string argument")
+		let optional = Types.intern_optional_type(types, Types.TYPE_TAG_STRING)
+		return hir_call_arguments(optional.table, args, [Types.TYPE_TAG_STRING], optional.id, "read_text expects one string argument")
 	if name == "write_text"
-		return hir_call_arguments(types, args, [TYPE_TAG_STRING, TYPE_TAG_STRING], TYPE_TAG_BOOL, "write_text expects two string arguments")
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING], Types.TYPE_TAG_BOOL, "write_text expects two string arguments")
 	if name == "list_dir"
-		let array = intern_array_type(types, TYPE_TAG_STRING)
-		let optional = intern_optional_type(array.table, array.id)
-		return hir_call_arguments(optional.table, args, [TYPE_TAG_STRING], optional.id, "list_dir expects one string argument")
+		let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
+		let optional = Types.intern_optional_type(array.table, array.id)
+		return hir_call_arguments(optional.table, args, [Types.TYPE_TAG_STRING], optional.id, "list_dir expects one string argument")
 	if name == "is_dir"
-		return hir_call_arguments(types, args, [TYPE_TAG_STRING], TYPE_TAG_BOOL, "is_dir expects one string argument")
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_STRING], Types.TYPE_TAG_BOOL, "is_dir expects one string argument")
 	if name == "str"
-		if len(args) != 1 or args[!0] != TYPE_TAG_I64
-			return HirCallCheck(types, TYPE_TAG_INVALID, "str expects one i64 argument")
-		return HirCallCheck(types, TYPE_TAG_STRING, "")
+		if len(args) != 1 or args[!0] != Types.TYPE_TAG_I64
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "str expects one i64 argument")
+		return HirCallCheck(types, Types.TYPE_TAG_STRING, "")
 	if name == "sqrt"
-		return hir_call_arguments(types, args, [TYPE_TAG_F64], TYPE_TAG_F64, "sqrt expects one argument")
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_F64], Types.TYPE_TAG_F64, "sqrt expects one argument")
 	if name == "print" or name == "eprint"
 		if len(args) != 1
-			return HirCallCheck(types, TYPE_TAG_INVALID, "print expects one argument")
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "print expects one argument")
 		let id = args[!0]
-		if id == TYPE_TAG_I64 or id == TYPE_TAG_F64 or id == TYPE_TAG_BOOL or id == TYPE_TAG_STRING
-			return HirCallCheck(types, TYPE_TAG_VOID, "")
-		return HirCallCheck(types, TYPE_TAG_INVALID, "cannot print this type")
+		if id == Types.TYPE_TAG_I64 or id == Types.TYPE_TAG_F64 or id == Types.TYPE_TAG_BOOL or id == Types.TYPE_TAG_STRING
+			return HirCallCheck(types, Types.TYPE_TAG_VOID, "")
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "cannot print this type")
 	if name == "len"
 		if len(args) != 1
-			return HirCallCheck(types, TYPE_TAG_INVALID, "len expects one argument")
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "len expects one argument")
 		let id = args[!0]
 		if id >= 0 and id < len(types.entries)
 			let tag = types.entries[!id].tag
-			if tag == TYPE_TAG_STRING or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT
-				return HirCallCheck(types, TYPE_TAG_I64, "")
-		return HirCallCheck(types, TYPE_TAG_INVALID, "len expects a string or array")
-	return HirCallCheck(types, TYPE_TAG_INVALID, "unknown builtin")
+			if tag == Types.TYPE_TAG_STRING or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_DICT
+				return HirCallCheck(types, Types.TYPE_TAG_I64, "")
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "len expects a string or array")
+	return HirCallCheck(types, Types.TYPE_TAG_INVALID, "unknown builtin")
 
-def hir_is_string_method(name: string) -> bool
+export def hir_is_string_method(name: string) -> bool
 	return name == "byte_at" or name == "slice" or name == "find" or name == "starts_with" or name == "ends_with" or name == "join"
 
-def resolve_hir_string_call(types: TypeTable, receiver: i64, method: string, args: Array[i64]) -> HirCallCheck
+export def resolve_hir_string_call(types: Types.TypeTable, receiver: i64, method: string, args: Array[i64]) -> HirCallCheck
 	var current = types
-	let check = hir_expected(types, TYPE_TAG_STRING, receiver)
+	let check = hir_expected(types, Types.TYPE_TAG_STRING, receiver)
 	check.error == "" else return check
 	var expected = Array[i64]()
-	var result = TYPE_TAG_BOOL
+	var result = Types.TYPE_TAG_BOOL
 	if method == "byte_at"
-		expected = [TYPE_TAG_I64]
+		expected = [Types.TYPE_TAG_I64]
 	elif method == "slice"
-		expected = [TYPE_TAG_I64, TYPE_TAG_I64]
-		result = TYPE_TAG_STRING
+		expected = [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64]
+		result = Types.TYPE_TAG_STRING
 	elif method == "find"
-		expected = [TYPE_TAG_STRING]
+		expected = [Types.TYPE_TAG_STRING]
 	elif method == "starts_with" or method == "ends_with"
-		expected = [TYPE_TAG_STRING]
+		expected = [Types.TYPE_TAG_STRING]
 	elif method == "join"
-		let array = intern_array_type(types, TYPE_TAG_STRING)
+		let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
 		current = array.table
 		expected = [array.id]
-		result = TYPE_TAG_STRING
+		result = Types.TYPE_TAG_STRING
 	if method == "byte_at" or method == "find"
-		let optional = intern_optional_type(types, TYPE_TAG_I64)
+		let optional = Types.intern_optional_type(types, Types.TYPE_TAG_I64)
 		current = optional.table
 		result = optional.id
 	return hir_call_arguments(current, args, expected, result, "string method argument count mismatch")
 
-def resolve_hir_function_call(types: TypeTable, name: string, args: Array[i64], params: Array[i64], result: i64) -> HirCallCheck
+export def resolve_hir_function_call(types: Types.TypeTable, name: string, args: Array[i64], params: Array[i64], result: i64) -> HirCallCheck
 	if len(args) != len(params)
-		return HirCallCheck(types, TYPE_TAG_INVALID, "argument count mismatch for '" + name + "'")
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "argument count mismatch for '" + name + "'")
 	for i in 0..len(args)
-		if params[!i] != TYPE_TAG_INVALID
+		if params[!i] != Types.TYPE_TAG_INVALID
 			let check = hir_expected(types, params[!i], args[!i])
 			check.error == "" else return check
 	return HirCallCheck(types, result, "")
 
 # Collection method typing only examines the canonical container descriptor.
-def resolve_hir_collection_call(types: TypeTable, receiver: i64, method: string, args: Array[i64]) -> HirCallCheck
+export def resolve_hir_collection_call(types: Types.TypeTable, receiver: i64, method: string, args: Array[i64]) -> HirCallCheck
 	if receiver < 0 or receiver >= len(types.entries)
-		return HirCallCheck(types, TYPE_TAG_INVALID, "unknown collection receiver type")
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "unknown collection receiver type")
 	let descriptor = types.entries[!receiver]
 	if method == "append"
-		if descriptor.tag != TYPE_TAG_ARRAY
-			return HirCallCheck(types, TYPE_TAG_INVALID, "append requires an array")
+		if descriptor.tag != Types.TYPE_TAG_ARRAY
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "append requires an array")
 		return hir_call_arguments(types, args, [descriptor.first], receiver, "append expects one argument")
-	if descriptor.tag != TYPE_TAG_DICT
-		return HirCallCheck(types, TYPE_TAG_INVALID, "dictionary method requires Dict")
+	if descriptor.tag != Types.TYPE_TAG_DICT
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "dictionary method requires Dict")
 	if method == "insert"
 		return hir_call_arguments(types, args, [descriptor.first, descriptor.second], receiver, "dictionary method argument count mismatch")
 	if method == "get"
-		let optional = intern_optional_type(types, descriptor.second)
+		let optional = Types.intern_optional_type(types, descriptor.second)
 		return hir_call_arguments(optional.table, args, [descriptor.first], optional.id, "dictionary method argument count mismatch")
-	return HirCallCheck(types, TYPE_TAG_INVALID, "unknown collection method")
+	return HirCallCheck(types, Types.TYPE_TAG_INVALID, "unknown collection method")
 
 
 # Record construction is a semantic operation. The editor carries canonical
 # TypeIds, independent of source-level field ordering and C field expressions.
-let HIR_RECORD = 7
-let HIR_CONSTRUCTOR = 8
+export let HIR_RECORD = 7
+export let HIR_CONSTRUCTOR = 8
 
-rec HirRecordEdit(fields: Array[RecordField], index: i64, error: string)
+export rec HirRecordEdit(fields: Array[Types.RecordField], index: i64, error: string)
 
-def hir_record_field(fields: Array[RecordField], name: string) -> i64
+export def hir_record_field(fields: Array[Types.RecordField], name: string) -> i64
 	for i in 0..len(fields)
 		if fields[!i].name == name
 			return i
 	return -1
 
-def hir_record_put(fields: Array[RecordField], name: string, type_id: i64) -> HirRecordEdit
-	if type_id == TYPE_TAG_INVALID or type_id == TYPE_TAG_VOID
+export def hir_record_put(fields: Array[Types.RecordField], name: string, type_id: i64) -> HirRecordEdit
+	if type_id == Types.TYPE_TAG_INVALID or type_id == Types.TYPE_TAG_VOID
 		return HirRecordEdit(fields, -1, "invalid record field type")
 	let index = hir_record_field(fields, name)
 	var result = fields
 	if index >= 0
-		result[!index] = RecordField(name, type_id)
+		result[!index] = Types.RecordField(name, type_id)
 	else
-		result = result.append(RecordField(name, type_id))
+		result = result.append(Types.RecordField(name, type_id))
 	return HirRecordEdit(result, index, "")
 
-def hir_record_delete(fields: Array[RecordField], name: string) -> HirRecordEdit
+export def hir_record_delete(fields: Array[Types.RecordField], name: string) -> HirRecordEdit
 	let index = hir_record_field(fields, name)
 	if index < 0
 		return HirRecordEdit(fields, -1, "unknown deleted field '" + name + "'")
-	var result = Array[RecordField]()
+	var result = Array[Types.RecordField]()
 	for i in 0..len(fields)
 		if i != index
 			result = result.append(fields[!i])
 	return HirRecordEdit(result, index, "")
 
-def hir_record_spread(types: TypeTable, fields: Array[RecordField], owner: i64) -> HirRecordEdit
+export def hir_record_spread(types: Types.TypeTable, fields: Array[Types.RecordField], owner: i64) -> HirRecordEdit
 	if owner < 0 or owner >= len(types.entries)
 		return HirRecordEdit(fields, -1, "record spread expects a record")
 	let descriptor = types.entries[!owner]
-	if descriptor.tag != TYPE_TAG_RECORD
+	if descriptor.tag != Types.TYPE_TAG_RECORD
 		return HirRecordEdit(fields, -1, "record spread expects a record")
 	var result = fields
 	for field in descriptor.fields
 		result = hir_record_put(result, field.name, field.kind).fields
 	return HirRecordEdit(result, -1, "")
 
-def resolve_hir_record(types: TypeTable, fields: Array[RecordField]) -> HirCallCheck
+export def resolve_hir_record(types: Types.TypeTable, fields: Array[Types.RecordField]) -> HirCallCheck
 	if len(fields) == 0
-		return HirCallCheck(types, TYPE_TAG_INVALID, "empty records are not supported yet")
-	let interned = intern_record_type(types, fields)
+		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "empty records are not supported yet")
+	let interned = Types.intern_record_type(types, fields)
 	return HirCallCheck(interned.table, interned.id, "")
 
-def hir_constructor_publish(fields: Array[RecordField], name: string, type_id: i64) -> HirRecordEdit
+export def hir_constructor_publish(fields: Array[Types.RecordField], name: string, type_id: i64) -> HirRecordEdit
 	if hir_record_field(fields, name) >= 0
 		return HirRecordEdit(fields, -1, "constructor field overrides are not supported yet")
 	return hir_record_put(fields, name, type_id)

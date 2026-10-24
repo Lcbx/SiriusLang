@@ -70,13 +70,54 @@ void s_eprint_f64(double v);
 void s_eprint_bool(bool v);
 _Noreturn void s_panic(const char *reason);
 
+typedef struct S_Dict S_Dict;
+
+/* Opt-in native ARC checker. Compile both generated C and the runtime with
+   -DSIRIUS_ARC_AUDIT. Hooks are compiled away in regular builds. */
+#ifdef SIRIUS_ARC_AUDIT
+void s_arc_audit_begin(void);
+void s_arc_audit_new(const void *object, size_t actual);
+void s_arc_audit_retain(const void *object, size_t actual);
+void s_arc_audit_release(const void *object, size_t actual);
+void s_arc_audit_relocate(uintptr_t previous, const void *object);
+/* A scan is independent of retain/release bookkeeping. It enumerates each
+   owned child reference, including duplicates, at a stable CFG boundary. */
+typedef void (*S_ArcAuditVisit)(const void *child, void *context);
+typedef void (*S_ArcAuditScan)(const void *object, S_ArcAuditVisit visit, void *context);
+void s_arc_audit_watch(const void *object, S_ArcAuditScan scan);
+void s_arc_audit_check_edges(void);
+void s_arc_audit_check_roots(const void *const *roots, size_t count);
+/* Active MIR frames expose owned register slots (not copies of their values).
+   Transfers clear the caller slot before entering a callee. No threading yet. */
+typedef struct S_ArcAuditFrame {
+    struct S_ArcAuditFrame *previous;
+    const void *const *slots;
+    size_t count;
+} S_ArcAuditFrame;
+void s_arc_audit_frame_enter(S_ArcAuditFrame *frame, const void *const *slots, size_t count);
+void s_arc_audit_frame_leave(S_ArcAuditFrame *frame);
+void s_arc_audit_check_frames(void);
+void s_arc_audit_global_root(const void *slot);
+void s_dict_arc_audit_fields(S_Dict *dict, bool key_managed, bool value_managed);
+#else
+#define s_arc_audit_begin() ((void)0)
+#define s_arc_audit_new(object, actual) ((void)0)
+#define s_arc_audit_retain(object, actual) ((void)0)
+#define s_arc_audit_release(object, actual) ((void)0)
+#define s_arc_audit_relocate(previous, object) ((void)(previous))
+#define s_arc_audit_watch(object, scan) ((void)0)
+#define s_arc_audit_check_edges() ((void)0)
+#define s_arc_audit_check_roots(roots, count) ((void)0)
+#define s_arc_audit_check_frames() ((void)0)
+#define s_dict_arc_audit_fields(dict, key_managed, value_managed) ((void)0)
+#endif
+
 /* Generic, type-specialized-by-the-compiler bootstrap collections.  The
    callbacks retain/drop embedded managed values; NULL denotes trivial data. */
 typedef void (*S_CopyElem)(void *, const void *);
 typedef void (*S_DropElem)(void *);
 typedef uint64_t (*S_HashKey)(const void *);
 typedef bool (*S_EqualKey)(const void *, const void *);
-typedef struct S_Dict S_Dict;
 S_Array *s_array_new(size_t size, S_CopyElem copy, S_DropElem drop);
 S_Array *s_array_make(size_t n, const void *data, size_t size, S_CopyElem copy, S_DropElem drop);
 S_Array *s_array_retain(S_Array *a);

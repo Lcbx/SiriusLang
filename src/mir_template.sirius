@@ -1,101 +1,104 @@
+import mir_wire alias MirWire
+import parser alias Parser
+import tokenizer alias Tokenizer
 # Persist the parsed generic syntax arena, not the provider's original source.
 # Generic bodies require concrete argument types before typed HIR is possible.
 # Token lexemes retain spelling while offsets are rebuilt into a synthetic
 # source buffer; node and edge IDs remain unchanged.
 let MIR_TEMPLATE_MAGIC = "SIRIUS-TEMPLATE-AST/1\n"
 
-rec MirTemplateLoad(tree: ParseState, root: i64, error: string)
+export rec MirTemplateLoad(tree: Parser.ParseState, root: i64, error: string)
 
 def mir_template_failure(message: string) -> MirTemplateLoad
-	return MirTemplateLoad(ParseState("", Array[Token]()), -1, message)
+	return MirTemplateLoad(Parser.new_parse_state("", Array[Tokenizer.Token]()), -1, message)
 
-def mir_serialize_template(tree: ParseState, root: i64) -> MirWireSave
-	if tree.error != "" or root < 0 or root >= len(tree.nodes) or tree.nodes[!root].kind != NODE_MODULE
-		return MirWireSave("", "invalid generic template syntax")
+export def mir_serialize_template(tree: Parser.ParseState, root: i64) -> MirWire.MirWireSave
+	if tree.error != "" or root < 0 or root >= len(tree.nodes) or tree.nodes[!root].kind != Parser.NODE_MODULE
+		return MirWire.MirWireSave("", "invalid generic template syntax")
 	var parts = [MIR_TEMPLATE_MAGIC]
-	parts = mir_wire_num(parts, len(tree.tokens))
+	parts = MirWire.mir_wire_num(parts, len(tree.tokens))
 	for token in tree.tokens
-		parts = mir_wire_num(parts, token.kind)
-		parts = mir_wire_num(parts, token.line)
-		parts = mir_wire_num(parts, token.column)
-		parts = mir_wire_str(parts, token_text(tree.source, token))
-	parts = mir_wire_num(parts, len(tree.nodes))
+		parts = MirWire.mir_wire_num(parts, token.kind)
+		parts = MirWire.mir_wire_num(parts, token.line)
+		parts = MirWire.mir_wire_num(parts, token.column)
+		parts = MirWire.mir_wire_str(parts, Tokenizer.token_text(tree.source, token))
+	parts = MirWire.mir_wire_num(parts, len(tree.nodes))
 	for node in tree.nodes
-		parts = mir_wire_num(parts, node.kind)
-		parts = mir_wire_num(parts, node.token)
-		parts = mir_wire_num(parts, node.first)
-		parts = mir_wire_num(parts, node.count)
-	parts = mir_wire_num(parts, len(tree.edges))
+		parts = MirWire.mir_wire_num(parts, node.kind)
+		parts = MirWire.mir_wire_num(parts, node.token)
+		parts = MirWire.mir_wire_num(parts, node.first)
+		parts = MirWire.mir_wire_num(parts, node.count)
+	parts = MirWire.mir_wire_num(parts, len(tree.edges))
 	for edge in tree.edges
-		parts = mir_wire_num(parts, edge)
-	parts = mir_wire_num(parts, root)
+		parts = MirWire.mir_wire_num(parts, edge)
+	parts = MirWire.mir_wire_num(parts, root)
 	let data = "".join(parts)
-	if len(data) > MIR_WIRE_MAX_SIZE
-		return MirWireSave("", "generic syntax snapshot exceeds format size limit")
-	return MirWireSave(data, "")
+	if len(data) > MirWire.MIR_WIRE_MAX_SIZE
+		return MirWire.MirWireSave("", "generic syntax snapshot exceeds format size limit")
+	return MirWire.MirWireSave(data, "")
 
-def mir_deserialize_template(data: string) -> MirTemplateLoad
-	if len(data) > MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_TEMPLATE_MAGIC)
+export def mir_deserialize_template(data: string) -> MirTemplateLoad
+	if len(data) > MirWire.MIR_WIRE_MAX_SIZE or not data.starts_with(MIR_TEMPLATE_MAGIC)
 		return mir_template_failure("unsupported generic syntax snapshot")
-	var reader = MirWireReader(data, len(MIR_TEMPLATE_MAGIC), "")
-	let token_count = mir_wire_count(reader)
+	var reader = MirWire.MirWireReader(data, len(MIR_TEMPLATE_MAGIC), "")
+	let token_count = MirWire.mir_wire_count(reader)
 	reader = token_count.reader
 	if reader.error != "" or token_count.value < 1
 		return mir_template_failure("invalid generic syntax token count")
-	var tokens = Array[Token]()
+	var tokens = Array[Tokenizer.Token]()
 	var lexemes = Array[string]()
 	var length = 0
 	for i in 0..token_count.value
-		let kind = mir_wire_number(reader)
-		let line = mir_wire_number(kind.reader)
-		let column = mir_wire_number(line.reader)
-		let lexeme = mir_wire_string(column.reader)
+		let kind = MirWire.mir_wire_number(reader)
+		let line = MirWire.mir_wire_number(kind.reader)
+		let column = MirWire.mir_wire_number(line.reader)
+		let lexeme = MirWire.mir_wire_string(column.reader)
 		reader = lexeme.reader
-		if reader.error != "" or kind.value < TOKEN_NAME or kind.value > TOKEN_EOF or line.value < 1 or column.value < 0
+		if reader.error != "" or kind.value < Tokenizer.TOKEN_NAME or kind.value > Tokenizer.TOKEN_EOF or line.value < 1 or column.value < 0
 			return mir_template_failure("invalid generic syntax token")
-		tokens = tokens.append(Token(kind.value, length, length + len(lexeme.value), line.value, column.value))
+		tokens = tokens.append(Tokenizer.Token(kind.value, length, length + len(lexeme.value), line.value, column.value))
 		lexemes = lexemes.append(lexeme.value)
 		length += len(lexeme.value)
 	# Qualified type names are represented by synthesized NAME tokens appended
 	# after the original lexer EOF. Preserve that index when restoring the tree.
 	var eof = -1
 	for i in 0..len(tokens)
-		if tokens[!i].kind == TOKEN_EOF
+		if tokens[!i].kind == Tokenizer.TOKEN_EOF
 			if eof >= 0
 				return mir_template_failure("duplicate generic syntax EOF")
 			eof = i
-		elif eof >= 0 and tokens[!i].kind != TOKEN_NAME
+		elif eof >= 0 and tokens[!i].kind != Tokenizer.TOKEN_NAME
 			return mir_template_failure("invalid generic token after EOF")
 	if eof < 0
 		return mir_template_failure("generic syntax missing EOF")
-	let node_count = mir_wire_count(reader)
+	let node_count = MirWire.mir_wire_count(reader)
 	reader = node_count.reader
 	if reader.error != "" or node_count.value < 1
 		return mir_template_failure("invalid generic syntax node count")
-	var nodes = Array[Node]()
+	var nodes = Array[Parser.Node]()
 	for i in 0..node_count.value
-		let kind = mir_wire_number(reader)
-		let token = mir_wire_number(kind.reader)
-		let first = mir_wire_number(token.reader)
-		let count = mir_wire_count(first.reader)
+		let kind = MirWire.mir_wire_number(reader)
+		let token = MirWire.mir_wire_number(kind.reader)
+		let first = MirWire.mir_wire_number(token.reader)
+		let count = MirWire.mir_wire_count(first.reader)
 		reader = count.reader
-		if reader.error != "" or kind.value < NODE_ARM or kind.value > NODE_REEXPORT or token.value < 0 or token.value >= len(tokens) or first.value < 0
+		if reader.error != "" or kind.value < Parser.NODE_ARM or kind.value > Parser.NODE_REEXPORT or token.value < 0 or token.value >= len(tokens) or first.value < 0
 			return mir_template_failure("invalid generic syntax node")
-		nodes = nodes.append(Node(kind.value, token.value, first.value, count.value))
-	let edge_count = mir_wire_count(reader)
+		nodes = nodes.append(Parser.Node(kind.value, token.value, first.value, count.value))
+	let edge_count = MirWire.mir_wire_count(reader)
 	reader = edge_count.reader
 	if reader.error != ""
 		return mir_template_failure("invalid generic syntax edge count")
 	var edges = Array[i64]()
 	for i in 0..edge_count.value
-		let edge = mir_wire_number(reader)
+		let edge = MirWire.mir_wire_number(reader)
 		reader = edge.reader
 		if reader.error != "" or edge.value < 0 or edge.value >= len(nodes)
 			return mir_template_failure("invalid generic syntax edge")
 		edges = edges.append(edge.value)
-	let root = mir_wire_number(reader)
+	let root = MirWire.mir_wire_number(reader)
 	reader = root.reader
-	if reader.error != "" or reader.at != len(data) or root.value < 0 or root.value >= len(nodes) or nodes[!root.value].kind != NODE_MODULE
+	if reader.error != "" or reader.at != len(data) or root.value < 0 or root.value >= len(nodes) or nodes[!root.value].kind != Parser.NODE_MODULE
 		return mir_template_failure("invalid generic syntax root")
 	for i in 0..len(nodes)
 		let node = nodes[!i]
@@ -104,7 +107,7 @@ def mir_deserialize_template(data: string) -> MirTemplateLoad
 		for j in node.first..node.first + node.count
 			if edges[!j] >= i
 				return mir_template_failure("invalid generic syntax child order")
-	var tree = ParseState("".join(lexemes), tokens)
+	var tree = Parser.new_parse_state("".join(lexemes), tokens)
 	tree.nodes = nodes
 	tree.edges = edges
 	tree.index = eof

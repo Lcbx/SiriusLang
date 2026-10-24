@@ -3,13 +3,13 @@
 import tempfile
 from pathlib import Path
 
+from project_paths import ROOT
 from build_support import BuildCache, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.sirius('mir-record-array-append', MIR_DRIVER_SOURCES + ('tests/mir/record_array_append_driver.sirius',))
+	driver = cache.native_driver('mir-record-array-append', ROOT / 'tests/mir/record_array_append_driver_native.sirius')
 	with tempfile.TemporaryDirectory() as directory:
 		generated = Path(directory) / 'appended.c'
 		result = execute([str(driver), str(generated)])

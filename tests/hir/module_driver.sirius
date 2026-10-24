@@ -1,0 +1,122 @@
+# HIR core is separately compiled and imports parser and types.
+import hir alias H
+import types alias T
+import parser alias P
+
+def main() -> i64
+	let start = T.new_type_table()
+	let record = T.intern_record_type(start, [T.RecordField("y", T.TYPE_TAG_STRING), T.RecordField("x", T.TYPE_TAG_I64)])
+	let field = H.resolve_hir_field(record.table, record.id, "x")
+	if field.type_id != T.TYPE_TAG_I64 or field.field_index != 0
+		return 1
+	if H.resolve_hir_field(record.table, record.id, "missing").error == ""
+		return 2
+	let sum = H.resolve_hir_binary(record.table, T.TYPE_TAG_I64, T.TYPE_TAG_I64, "+")
+	if sum.error != "" or sum.type_id != T.TYPE_TAG_I64
+		return 3
+	if H.resolve_hir_binary(record.table, T.TYPE_TAG_I64, T.TYPE_TAG_STRING, "+").error == ""
+		return 4
+	if H.resolve_hir_literal(P.NODE_STRING) != T.TYPE_TAG_STRING
+		return 5
+	let symbols = [H.SymbolInfo("x", 0, T.TYPE_TAG_I64, false, 0)]
+	if H.resolve_hir_name(symbols, "x").type_id != T.TYPE_TAG_I64
+		return 6
+	let nodes = [H.HirNode(1, H.HIR_NAME, T.TYPE_TAG_I64, -1), H.HirNode(1, H.HIR_FIELD, T.TYPE_TAG_STRING, 0)]
+	let index = H.hir_annotation_index(nodes, 3)
+	if H.hir_annotation_find(nodes, index, 1, H.HIR_FIELD) != 1
+		return 7
+	let begin = H.hir_begin_specialization(H.new_hir_specializations(), 4, [T.TYPE_TAG_I64], T.TYPE_TAG_I64)
+	if not begin.created or H.hir_find_specialization(begin.registry, 4, [T.TYPE_TAG_I64]) != begin.index
+		return 8
+	let again = H.hir_begin_specialization(begin.registry, 4, [T.TYPE_TAG_I64], T.TYPE_TAG_I64)
+	if again.created
+		return 9
+	let complete = H.hir_complete_specialization(again.registry, begin.index, T.TYPE_TAG_I64)
+	if complete.entries[!begin.index].status != H.HIR_SPEC_COMPLETE
+		return 10
+	if T.type_tag(start, -1) != T.TYPE_TAG_INVALID or T.type_tag(start, 100000) != T.TYPE_TAG_INVALID
+		return 11
+	if not T.type_has_tag(start, T.TYPE_TAG_I64, T.TYPE_TAG_I64) or T.type_has_tag(start, -1, T.TYPE_TAG_I64)
+		return 12
+	if T.type_has_tag(start, T.TYPE_TAG_I64, T.TYPE_TAG_ARRAY) or T.type_has_tag(start, T.TYPE_TAG_INVALID, T.TYPE_TAG_INVALID)
+		return 13
+	let array = T.intern_array_type(record.table, record.id)
+	if T.type_tag(array.table, array.id) != T.TYPE_TAG_ARRAY or T.type_tag(array.table, record.id) != T.TYPE_TAG_RECORD
+		return 14
+	if H.resolve_hir_field(array.table, 100000, "x").error == ""
+		return 15
+	if H.resolve_hir_binary(array.table, 100000, 100000, "+").error == ""
+		return 16
+	# Public constructors must not insert descriptors that fail canonical checks.
+	let before = len(array.table.entries)
+	let invalid_array = T.intern_array_type(array.table, 999999)
+	if invalid_array.id != T.TYPE_TAG_INVALID or len(invalid_array.table.entries) != before
+		return 17
+	let invalid_optional = T.intern_optional_type(array.table, T.TYPE_TAG_VOID)
+	if invalid_optional.id != T.TYPE_TAG_INVALID or len(invalid_optional.table.entries) != before
+		return 18
+	let invalid_dict = T.intern_dict_type(array.table, T.TYPE_TAG_STRING, -1)
+	if invalid_dict.id != T.TYPE_TAG_INVALID or len(invalid_dict.table.entries) != before
+		return 19
+	let duplicate = T.intern_record_type(array.table, [T.RecordField("x", T.TYPE_TAG_I64), T.RecordField("x", T.TYPE_TAG_STRING)])
+	if duplicate.id != T.TYPE_TAG_INVALID or len(duplicate.table.entries) != before
+		return 20
+	let invalid_fields = T.intern_record_type(array.table, [T.RecordField("bad", T.TYPE_TAG_INVALID)])
+	if invalid_fields.id != T.TYPE_TAG_INVALID or len(invalid_fields.table.entries) != before
+		return 21
+	let invalid_kind = T.intern_type(array.table, 100, 0, 0, Array[T.RecordField]())
+	if invalid_kind.id != T.TYPE_TAG_INVALID or len(invalid_kind.table.entries) != before
+		return 22
+	let negative_tag = T.intern_type(array.table, -2, 0, 0, Array[T.RecordField]())
+	if negative_tag.id != T.TYPE_TAG_INVALID or len(negative_tag.table.entries) != before
+		return 24
+	let malformed_primitive = T.intern_type(array.table, T.TYPE_TAG_I64, 1, 0, Array[T.RecordField]())
+	if malformed_primitive.id != T.TYPE_TAG_INVALID or len(malformed_primitive.table.entries) != before
+		return 25
+	let valid_primitive = T.intern_type(array.table, T.TYPE_TAG_STRING, 0, 0, Array[T.RecordField]())
+	if valid_primitive.id != T.TYPE_TAG_STRING or len(valid_primitive.table.entries) != before
+		return 26
+	let valid_dict = T.intern_dict_type(array.table, T.TYPE_TAG_STRING, array.id)
+	if not T.type_descriptor_canonical(valid_dict.table, valid_dict.id)
+		return 23
+	# Runtime layout describes payload slots and ownership, not platform byte offsets.
+	let scalar_layout = T.runtime_layout(start, T.TYPE_TAG_I64)
+	if scalar_layout.storage != T.TYPE_STORAGE_I64 or scalar_layout.ownership != T.TYPE_OWNERSHIP_NONE or scalar_layout.fixed_slots != 0 or scalar_layout.variable_slots
+		return 27
+	let float_layout = T.runtime_layout(start, T.TYPE_TAG_F64)
+	if float_layout.storage != T.TYPE_STORAGE_F64 or float_layout.ownership != T.TYPE_OWNERSHIP_NONE
+		return 28
+	let bool_layout = T.runtime_layout(start, T.TYPE_TAG_BOOL)
+	if bool_layout.storage != T.TYPE_STORAGE_BOOL or bool_layout.ownership != T.TYPE_OWNERSHIP_NONE
+		return 29
+	let string_layout = T.runtime_layout(start, T.TYPE_TAG_STRING)
+	if string_layout.storage != T.TYPE_STORAGE_STRING or string_layout.ownership != T.TYPE_OWNERSHIP_STRING
+		return 30
+	let void_layout = T.runtime_layout(start, T.TYPE_TAG_VOID)
+	if void_layout.storage != T.TYPE_STORAGE_VOID or void_layout.ownership != T.TYPE_OWNERSHIP_NONE
+		return 31
+	let invalid_layout = T.runtime_layout(start, -1)
+	if invalid_layout.storage != T.TYPE_STORAGE_INVALID or invalid_layout.ownership != T.TYPE_OWNERSHIP_INVALID
+		return 32
+	if T.runtime_layout(start, 99999).storage != T.TYPE_STORAGE_INVALID
+		return 33
+	let record_layout = T.runtime_layout(record.table, record.id)
+	if record_layout.storage != T.TYPE_STORAGE_OBJECT or record_layout.ownership != T.TYPE_OWNERSHIP_OBJECT or record_layout.fixed_slots != 2 or record_layout.variable_slots
+		return 34
+	let array_layout = T.runtime_layout(array.table, array.id)
+	if array_layout.storage != T.TYPE_STORAGE_OBJECT or array_layout.fixed_slots != 0 or not array_layout.variable_slots
+		return 35
+	let valid_optional = T.intern_optional_type(record.table, record.id)
+	let optional_layout = T.runtime_layout(valid_optional.table, valid_optional.id)
+	if optional_layout.storage != T.TYPE_STORAGE_OBJECT or optional_layout.fixed_slots != 0 or not optional_layout.variable_slots
+		return 36
+	let dict_layout = T.runtime_layout(valid_dict.table, valid_dict.id)
+	if dict_layout.storage != T.TYPE_STORAGE_OBJECT or dict_layout.fixed_slots != 1 or dict_layout.variable_slots
+		return 37
+	let empty_record = T.intern_record_type(start, Array[T.RecordField]())
+	if T.runtime_layout(empty_record.table, empty_record.id).fixed_slots != 0 or T.runtime_layout(empty_record.table, empty_record.id).variable_slots
+		return 38
+	if T.runtime_ownership(start, 99999) != T.TYPE_OWNERSHIP_INVALID
+		return 39
+	print("HIR module OK")
+	return 0

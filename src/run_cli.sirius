@@ -1,3 +1,18 @@
+import hir_declarations alias HirDeclarations
+import mir alias Mir
+import mir_bundle alias MirBundle
+import mir_emit_c alias MirEmitC
+import mir_generic alias MirGeneric
+import mir_interpreter alias MirInterpreter
+import mir_library alias MirLibrary
+import mir_link alias MirLink
+import mir_program alias MirProgram
+import mir_wire alias MirWire
+import module alias Module
+import module_build alias ModuleBuild
+import module_resolve alias ModuleResolve
+import parser alias Parser
+import types alias Types
 # Standalone dynamic MIR execution and versioned MIR executable artifacts.
 def run_positive_limit(value: string, maximum: i64) -> i64
 	if len(value) == 0
@@ -18,27 +33,45 @@ def run_link_libraries(args: Array[string]) -> i64
 	if len(args) < 4
 		eprint("usage: sirius-run --link-lib output.smirl input1.smirl input2.smirl ...")
 		return 2
-	var inputs = Array[MirLibraryLoad]()
+	var inputs = Array[MirLibrary.MirLibraryLoad]()
 	for i in 3..len(args)
 		let contents = read_text(args[!i]) or ""
 		if contents == ""
 			eprint("cannot read MIR library: " + args[!i])
 			return 2
-		let library = mir_deserialize_library(contents)
+		let library = MirLibrary.mir_deserialize_library(contents)
 		if library.error != ""
 			eprint("invalid MIR library: " + library.error)
 			return 2
 		inputs = inputs.append(library)
-	let linked = mir_link_libraries(inputs)
+	let linked = MirLink.mir_link_libraries(inputs)
 	if linked.error != ""
 		eprint("cannot link MIR libraries: " + linked.error)
 		return 2
-	let saved = mir_serialize_library(linked.program, linked.exports, Array[MirNamedImport]())
+	let saved = MirLibrary.mir_serialize_library(linked.program, linked.exports, Array[Mir.MirNamedImport]())
 	if saved.error != ""
 		eprint("cannot serialize linked MIR library: " + saved.error)
 		return 2
 	if not write_text(args[!2], saved.text)
 		eprint("cannot write linked MIR library")
+		return 2
+	return 0
+
+# Optional self-contained bundle of transitive generic dependencies.
+def run_bundle_generic(args: Array[string]) -> i64
+	if len(args) != 5
+		eprint("usage: sirius-run --bundle-generic input.smirg output.smirg source-root")
+		return 2
+	let contents = read_text(args[!2]) or ""
+	if contents == ""
+		eprint("cannot read generic package")
+		return 2
+	let bundle = MirBundle.mir_bundle_create(contents, args[!4])
+	if bundle.error != ""
+		eprint("cannot bundle generic package: " + bundle.error)
+		return 2
+	if not write_text(args[!3], bundle.text)
+		eprint("cannot write generic bundle")
 		return 2
 	return 0
 
@@ -53,30 +86,30 @@ def run_generic_package(args: Array[string]) -> i64
 		if source == ""
 			eprint("cannot read generic source")
 			return 2
-		let parsed = parse_module(source)
+		let parsed = Parser.parse_module(source)
 		if parsed.state.error != ""
 			eprint("generic syntax: " + parsed.state.error)
 			return 2
-		let declarations = hir_module_declarations(parsed.state, parsed.node)
+		let declarations = HirDeclarations.hir_module_declarations(parsed.state, parsed.node)
 		if declarations.error != ""
 			eprint("generic declarations: " + declarations.error)
 			return 2
-		var dependencies = Array[MirGenericDependency]()
+		var dependencies = Array[MirGeneric.MirGenericDependency]()
 		if len(declarations.imports) > 0
 			if len(args) != 6
 				eprint("generic packages with imports require a source root")
 				return 2
-			let scanned = module_build_scan(args[!5], args[!2])
+			let scanned = ModuleBuild.module_build_scan(args[!5], args[!2])
 			if scanned.error != ""
 				eprint("cannot resolve generic dependencies: " + scanned.error)
 				return 2
 			for unit in scanned.units
 				if unit.name == args[!2]
-					if (read_text(module_scan_filename(args[!5], args[!2])) or "") != source
+					if (read_text(Module.module_scan_filename(args[!5], args[!2])) or "") != source
 						eprint("generic source does not match module under source root")
 						return 2
-					dependencies = mir_generic_dependencies(declarations, scanned.units)
-		let saved = mir_serialize_generic_with_dependencies(args[!2], parsed.state, parsed.node, declarations, dependencies)
+					dependencies = MirGeneric.mir_generic_dependencies(declarations, scanned.units)
+		let saved = MirGeneric.mir_serialize_generic_with_dependencies(args[!2], parsed.state, parsed.node, declarations, dependencies)
 		if saved.error != ""
 			eprint("cannot create generic package: " + saved.error)
 			return 2
@@ -91,18 +124,18 @@ def run_generic_package(args: Array[string]) -> i64
 	if contents == ""
 		eprint("cannot read generic package")
 		return 2
-	let generic = mir_deserialize_generic(contents)
+	let generic = MirGeneric.mir_deserialize_generic(contents)
 	if generic.error != ""
 		eprint("invalid generic package: " + generic.error)
 		return 2
 	var types = Array[string]()
 	for i in 5..len(args)
 		types = types.append(args[!i])
-	let compiled = mir_generic_specialize(generic, args[!3], types)
+	let compiled = MirGeneric.mir_generic_specialize(generic, args[!3], types)
 	if compiled.error != ""
 		eprint("cannot specialize generic: " + compiled.error)
 		return 2
-	let saved = mir_serialize_library(compiled.library.program, compiled.library.exports, compiled.library.imports)
+	let saved = MirLibrary.mir_serialize_library(compiled.library.program, compiled.library.exports, compiled.library.imports)
 	if saved.error != ""
 		eprint("cannot serialize specialization: " + saved.error)
 		return 2
@@ -111,15 +144,56 @@ def run_generic_package(args: Array[string]) -> i64
 		return 2
 	return 0
 
+# Emit native C directly from a fully linked concrete MIR library.
+# This bypasses dynamic interpretation when building self-hosted tools.
+def run_emit_linked_c(args: Array[string]) -> i64
+	if len(args) != 5
+		eprint("usage: sirius-run --emit-linked-c input.smirl export-symbol output.c")
+		return 2
+	let contents = read_text(args[!2]) or ""
+	if contents == ""
+		eprint("cannot read MIR library")
+		return 2
+	let library = MirLibrary.mir_deserialize_library(contents)
+	if library.error != ""
+		eprint("invalid MIR library: " + library.error)
+		return 2
+	if len(library.imports) != 0
+		eprint("cannot emit C from MIR library with unresolved imports")
+		return 2
+	var entry = -1
+	for symbol in library.exports
+		if symbol.name == args[!3]
+			entry = symbol.function_id
+	if entry < 0
+		eprint("unknown MIR library export: " + args[!3])
+		return 2
+	let function = library.program.functions[!entry]
+	if function.argument_count != 0 or function.return_type != Types.TYPE_TAG_I64
+		eprint("native C entry must be () -> i64")
+		return 2
+	let emitted = MirEmitC.mir_emit_c_reachable(library.program, entry)
+	if emitted.error != ""
+		eprint("cannot emit C: " + emitted.error)
+		return 2
+	if not write_text(args[!4], emitted.code)
+		eprint("cannot write C output: " + args[!4])
+		return 2
+	return 0
+
 def main() -> i64
 	let args = arguments()
+	if len(args) > 1 and args[!1] == "--bundle-generic"
+		return run_bundle_generic(args)
+	if len(args) > 1 and args[!1] == "--emit-linked-c"
+		return run_emit_linked_c(args)
 	if len(args) > 1 and (args[!1] == "--emit-generic" or args[!1] == "--specialize-generic")
 		return run_generic_package(args)
 	if len(args) > 1 and args[!1] == "--build-modules"
 		if len(args) != 5
 			eprint("usage: sirius-run --build-modules source-root entry.module output.smirl")
 			return 2
-		let built = module_build(args[!2], args[!3], args[!4])
+		let built = ModuleBuild.module_build(args[!2], args[!3], args[!4])
 		if built.error != ""
 			eprint("module error: " + built.error)
 			return 2
@@ -215,7 +289,7 @@ def main() -> i64
 	if (emit_lib_path == "" and len(export_names) != 0) or (emit_lib_path != "" and len(export_names) == 0) or (load_lib_path == "" and entry_name != "")
 		eprint("--export requires --emit-lib; --entry requires --load-lib")
 		return 2
-	var program = MirProgram(Array[MirFunction]())
+	var program = Mir.new_mir_program(Array[Mir.MirFunction]())
 	var entry_id = -1
 	var runtime_args = Array[string]()
 	if load_lib_path != ""
@@ -223,15 +297,15 @@ def main() -> i64
 		if contents == ""
 			eprint("cannot read MIR library")
 			return 2
-		let library = mir_deserialize_library(contents)
+		let library = MirLibrary.mir_deserialize_library(contents)
 		if library.error != ""
 			eprint("invalid MIR library: " + library.error)
 			return 2
 		if list_lib
 			for symbol in library.exports
-				print(symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
+				print(symbol.name + " : " + MirLibrary.mir_function_signature(library.program, symbol.function_id))
 			for symbol in library.imports
-				print("import " + symbol.name + " : " + mir_function_signature(library.program, symbol.function_id))
+				print("import " + symbol.name + " : " + MirLibrary.mir_function_signature(library.program, symbol.function_id))
 			return 0
 		if len(library.imports) != 0
 			eprint("cannot execute MIR library with unresolved imports; link it first")
@@ -251,7 +325,7 @@ def main() -> i64
 		if contents == ""
 			eprint("cannot read MIR artifact")
 			return 2
-		let loaded = mir_deserialize_program(contents)
+		let loaded = MirWire.mir_deserialize_program(contents)
 		if loaded.error != ""
 			eprint("invalid MIR artifact: " + loaded.error)
 			return 2
@@ -265,25 +339,25 @@ def main() -> i64
 		if module_interface != ""
 			let interface = read_text(module_interface) or ""
 			source += "\n" + interface
-		let parsed = parse_module(source)
+		let parsed = Parser.parse_module(source)
 		if parsed.state.error != ""
 			print("ERROR " + str(parsed.state.error_line) + ": " + parsed.state.error)
 			return 1
-		let declarations = hir_module_declarations(parsed.state, parsed.node)
+		let declarations = HirDeclarations.hir_module_declarations(parsed.state, parsed.node)
 		if declarations.error != ""
 			print("ERROR " + str(declarations.error_line) + ": " + declarations.error)
 			return 1
 		if len(declarations.imports) != 0 and module_interface == ""
 			eprint("source imports require --module-interface and library linking")
 			return 2
-		let resolved = hir_resolve_module_calls(parsed.state, declarations)
+		let resolved = ModuleResolve.hir_resolve_module_calls(parsed.state, declarations)
 		if resolved.error != ""
 			print("ERROR " + str(resolved.line) + ": " + resolved.error)
 			return 1
 		var roots = ["main"]
 		if emit_lib_path != ""
 			roots = export_names
-		let lowered = mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
+		let lowered = MirProgram.mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())
 		if lowered.error != ""
 			print("ERROR 1: " + lowered.error)
 			return 1
@@ -293,10 +367,10 @@ def main() -> i64
 			eprint("unresolved imports require --emit-lib and linking")
 			return 2
 		if emit_lib_path != ""
-			var public_exports = Array[MirNamedExport]()
+			var public_exports = Array[Mir.MirNamedExport]()
 			for i in 0..len(lowered.exports)
-				public_exports = public_exports.append(MirNamedExport(export_symbols[!i], lowered.exports[!i].function_id))
-			let saved = mir_serialize_library(program, public_exports, lowered.imports)
+				public_exports = public_exports.append(Mir.MirNamedExport(export_symbols[!i], lowered.exports[!i].function_id))
+			let saved = MirLibrary.mir_serialize_library(program, public_exports, lowered.imports)
 			if saved.error != ""
 				eprint("cannot serialize MIR library: " + saved.error)
 				return 2
@@ -311,11 +385,11 @@ def main() -> i64
 		eprint("invalid MIR entry")
 		return 2
 	let entry = program.functions[!entry_id]
-	if entry.argument_count != 0 or entry.return_type != TYPE_TAG_I64
+	if entry.argument_count != 0 or entry.return_type != Types.TYPE_TAG_I64
 		eprint("MIR entry must be main() -> i64")
 		return 2
 	if emit_path != ""
-		let saved = mir_serialize_program(program, entry_id)
+		let saved = MirWire.mir_serialize_program(program, entry_id)
 		if saved.error != ""
 			eprint("cannot serialize MIR: " + saved.error)
 			return 2
@@ -323,7 +397,7 @@ def main() -> i64
 			eprint("cannot write MIR artifact")
 			return 2
 		return 0
-	let outcome = mir_execute_with_arguments(program, entry_id, Array[MirValue](), max_steps, max_depth, runtime_args)
+	let outcome = MirInterpreter.mir_execute_with_arguments(program, entry_id, Array[Mir.MirValue](), max_steps, max_depth, runtime_args)
 	if outcome.error != ""
 		eprint("Sirius panic: " + outcome.error)
 		return 1

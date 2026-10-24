@@ -1,51 +1,54 @@
+import hir alias Hir
+import parser alias Parser
+import types alias Types
 # Canonicalize imported HIR types and compile-time constant graphs.
 # TypeIds and value-arena indices are local to their defining module.
-rec ModuleImportType(table: TypeTable, id: i64)
+rec ModuleImportType(table: Types.TypeTable, id: i64)
 
-def module_import_type(table: TypeTable, foreign: TypeTable, id: i64) -> ModuleImportType
+export def module_import_type(table: Types.TypeTable, foreign: Types.TypeTable, id: i64) -> ModuleImportType
 	if id < 0 or id >= len(foreign.entries)
-		return ModuleImportType(table, TYPE_TAG_INVALID)
+		return ModuleImportType(table, Types.TYPE_TAG_INVALID)
 	let descriptor = foreign.entries[!id]
-	if descriptor.tag <= TYPE_TAG_VOID
+	if descriptor.tag <= Types.TYPE_TAG_VOID
 		return ModuleImportType(table, descriptor.tag)
-	if descriptor.tag == TYPE_TAG_ARRAY or descriptor.tag == TYPE_TAG_OPTIONAL or descriptor.tag == TYPE_TAG_DICT
+	if descriptor.tag == Types.TYPE_TAG_ARRAY or descriptor.tag == Types.TYPE_TAG_OPTIONAL or descriptor.tag == Types.TYPE_TAG_DICT
 		let first = module_import_type(table, foreign, descriptor.first)
-		if first.id == TYPE_TAG_INVALID
+		if first.id == Types.TYPE_TAG_INVALID
 			return first
-		if descriptor.tag == TYPE_TAG_ARRAY
-			let result = intern_array_type(first.table, first.id)
+		if descriptor.tag == Types.TYPE_TAG_ARRAY
+			let result = Types.intern_array_type(first.table, first.id)
 			return ModuleImportType(result.table, result.id)
-		if descriptor.tag == TYPE_TAG_OPTIONAL
-			let result = intern_optional_type(first.table, first.id)
+		if descriptor.tag == Types.TYPE_TAG_OPTIONAL
+			let result = Types.intern_optional_type(first.table, first.id)
 			return ModuleImportType(result.table, result.id)
 		let second = module_import_type(first.table, foreign, descriptor.second)
-		if second.id == TYPE_TAG_INVALID
+		if second.id == Types.TYPE_TAG_INVALID
 			return second
-		let result = intern_dict_type(second.table, first.id, second.id)
+		let result = Types.intern_dict_type(second.table, first.id, second.id)
 		return ModuleImportType(result.table, result.id)
-	if descriptor.tag == TYPE_TAG_RECORD
+	if descriptor.tag == Types.TYPE_TAG_RECORD
 		var current = table
-		var fields = Array[RecordField]()
+		var fields = Array[Types.RecordField]()
 		for field in descriptor.fields
 			let imported = module_import_type(current, foreign, field.kind)
-			if imported.id == TYPE_TAG_INVALID
+			if imported.id == Types.TYPE_TAG_INVALID
 				return imported
 			current = imported.table
-			fields = fields.append(RecordField(field.name, imported.id))
-		let result = intern_record_type(current, fields)
+			fields = fields.append(Types.RecordField(field.name, imported.id))
+		let result = Types.intern_record_type(current, fields)
 		return ModuleImportType(result.table, result.id)
-	return ModuleImportType(table, TYPE_TAG_INVALID)
+	return ModuleImportType(table, Types.TYPE_TAG_INVALID)
 
 # Copy a compile-time constant arena recursively, replacing module-local TypeIds.
 # Each imported constant owns a new immutable value graph in the importing HIR.
-rec ModuleImportConstant(table: TypeTable, values: Array[HirConstantValue], index: i64)
+rec ModuleImportConstant(table: Types.TypeTable, values: Array[Hir.HirConstantValue], index: i64)
 
-def module_import_constant(table: TypeTable, values: Array[HirConstantValue], foreign_types: TypeTable, foreign_values: Array[HirConstantValue], index: i64) -> ModuleImportConstant
+export def module_import_constant(table: Types.TypeTable, values: Array[Hir.HirConstantValue], foreign_types: Types.TypeTable, foreign_values: Array[Hir.HirConstantValue], index: i64) -> ModuleImportConstant
 	if index < 0 or index >= len(foreign_values)
 		return ModuleImportConstant(table, values, -1)
 	let foreign = foreign_values[!index]
 	let mapped = module_import_type(table, foreign_types, foreign.type_id)
-	if mapped.id == TYPE_TAG_INVALID
+	if mapped.id == Types.TYPE_TAG_INVALID
 		return ModuleImportConstant(table, values, -1)
 	var current = mapped.table
 	var copied = values
@@ -58,5 +61,5 @@ def module_import_constant(table: TypeTable, values: Array[HirConstantValue], fo
 		copied = result.values
 		fields = fields.append(result.index)
 	let at = len(copied)
-	copied = copied.append(HirConstantValue(mapped.id, foreign.bits, fields, foreign.text))
+	copied = copied.append(Hir.HirConstantValue(mapped.id, foreign.bits, fields, foreign.text))
 	return ModuleImportConstant(current, copied, at)

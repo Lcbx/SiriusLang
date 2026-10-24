@@ -1,69 +1,84 @@
+import types alias Types
+import parser alias Ast
+import hir alias Hir
+import hir_declarations alias Decl
+import hir_specialize alias Spec
+import mir alias Mir
+import mir_verify alias Verify
+import mir_lower alias Lower
+import mir_ownership alias Ownership
+import mir_guard alias Guard
+import mir_lifetime alias Lifetime
+import mir_cleanup alias Cleanup
+import mir_opt alias Opt
+import module alias Module
 # Convert the HIR-owned specialization worklist to a complete supported MIR
 # program. Function indices exactly match HIR specialization IDs.
 
 # The backend owns only MIR output; HIR analyses remain local to lowering.
-rec MirProgramBuild(program: MirProgram, entry: i64, error: string)
-	pub exports = Array[MirNamedExport]()
-	pub imports = Array[MirNamedImport]()
+export rec MirProgramBuild(program: Mir.MirProgram, entry: i64, error: string, exports: Array[Mir.MirNamedExport], imports: Array[Mir.MirNamedImport])
 
-def mir_build_program_roots(tree: ParseState, declarations: HirModuleDecl, names: Array[string], arguments: Array[i64]) -> MirProgramBuild
-	let analyzed = hir_specialize_program_roots(tree, declarations, names, arguments)
-	var functions = Array[MirFunction]()
+def new_mir_program_build(program: Mir.MirProgram, entry: i64, error: string) -> MirProgramBuild
+	return MirProgramBuild(program, entry, error, Array[Mir.MirNamedExport](), Array[Mir.MirNamedImport]())
+
+export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirModuleDecl, names: Array[string], arguments: Array[i64]) -> MirProgramBuild
+	let analyzed = Spec.hir_specialize_program_roots(tree, declarations, names, arguments)
+	var functions = Array[Mir.MirFunction]()
 	if analyzed.error != ""
-		return MirProgramBuild(MirProgram(functions), analyzed.entry, analyzed.error)
+		return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, analyzed.error)
 	for i in 0..len(analyzed.bodies)
 		let body = analyzed.bodies[!i]
 		let spec = analyzed.registry.entries[!i]
-		let definition = hir_definition(declarations.functions, spec.definition)
+		let definition = Spec.hir_definition(declarations.functions, spec.definition)
 		let header = declarations.functions[!definition]
-		if not mir_type_supported(analyzed.types, body.return_type)
-			return MirProgramBuild(MirProgram(functions), analyzed.entry, "MIR specialization requires a scalar return type")
-		if hir_function_external(tree, header)
-			var releases = Array[MirInstruction]()
+		if not Verify.mir_type_supported(analyzed.types, body.return_type)
+			return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, "MIR specialization requires a scalar return type")
+		if Decl.hir_function_external(tree, header)
+			var releases = Array[Mir.MirInstruction]()
 			for j in 0..len(spec.arguments)
-				if mir_managed_type(analyzed.types, spec.arguments[!j])
-					releases = releases.append(mir_op(MIR_RELEASE, j, j, -1, 0))
+				if Verify.mir_managed_type(analyzed.types, spec.arguments[!j])
+					releases = releases.append(Mir.mir_op(Mir.MIR_RELEASE, j, j, -1, 0))
 			var symbol = header.name
 			for argument in header.argument_types
-				if argument == TYPE_TAG_INVALID
-					symbol = mir_generic_symbol(header.name, analyzed.types, spec.arguments)
+				if argument == Types.TYPE_TAG_INVALID
+					symbol = Module.mir_generic_symbol(header.name, analyzed.types, spec.arguments)
 					break
-			functions = functions.append(MirFunction(len(spec.arguments), body.return_type, spec.arguments, [MirBlock(releases, mir_panic("unresolved MIR import: " + symbol))], 0))
+			functions = functions.append(Mir.MirFunction(len(spec.arguments), body.return_type, spec.arguments, [Mir.MirBlock(releases, Mir.mir_panic("unresolved MIR import: " + symbol))], 0))
 		else
-			let lowered = mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
+			let lowered = Lower.mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
 			if lowered.error != ""
-				return MirProgramBuild(MirProgram(functions), analyzed.entry, lowered.error)
+				return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, lowered.error)
 			functions = functions.append(lowered.function)
-	let program = mir_program_with_types(functions, analyzed.types)
+	let program = Mir.mir_program_with_types(functions, analyzed.types)
 	# Only the public individual passes check MIR at every boundary. The
 	# combined compiler pipeline validates before transformations and after
 	# cleanup, avoiding repeated CFG fixed-point and MIR verifier passes.
-	let error = mir_check_ownership(program)
+	let error = Ownership.mir_check_ownership(program)
 	if error != ""
-		return MirProgramBuild(program, analyzed.entry, error)
-	let guarded = mir_insert_guards_unchecked(program)
-	let owned = mir_insert_lifetimes_unchecked(guarded.program)
-	let cleaned = mir_insert_exit_cleanup_unchecked(owned.program)
-	let optimized = mir_optimize_unchecked(cleaned.program)
-	let checked = mir_check_balance(optimized.program)
+		return new_mir_program_build(program, analyzed.entry, error)
+	let guarded = Guard.mir_insert_guards_unchecked(program)
+	let owned = Lifetime.mir_insert_lifetimes_unchecked(guarded.program)
+	let cleaned = Cleanup.mir_insert_exit_cleanup_unchecked(owned.program)
+	let optimized = Opt.mir_optimize_unchecked(cleaned.program)
+	let checked = Ownership.mir_check_balance(optimized.program)
 	if checked != ""
-		return MirProgramBuild(optimized.program, analyzed.entry, checked)
-	let audited = mir_audit_failures_unchecked(optimized.program)
-	var result = MirProgramBuild(optimized.program, analyzed.entry, audited.error)
+		return new_mir_program_build(optimized.program, analyzed.entry, checked)
+	let audited = Verify.mir_audit_failures_unchecked(optimized.program)
+	var result = new_mir_program_build(optimized.program, analyzed.entry, audited.error)
 	for i in 0..len(analyzed.registry.entries)
 		let spec = analyzed.registry.entries[!i]
-		let declaration = hir_definition(declarations.functions, spec.definition)
-		if declaration >= 0 and hir_function_external(tree, declarations.functions[!declaration])
+		let declaration = Spec.hir_definition(declarations.functions, spec.definition)
+		if declaration >= 0 and Decl.hir_function_external(tree, declarations.functions[!declaration])
 			let header = declarations.functions[!declaration]
 			var symbol = header.name
 			for argument in header.argument_types
-				if argument == TYPE_TAG_INVALID
-					symbol = mir_generic_symbol(header.name, analyzed.types, spec.arguments)
+				if argument == Types.TYPE_TAG_INVALID
+					symbol = Module.mir_generic_symbol(header.name, analyzed.types, spec.arguments)
 					break
-			result.imports = result.imports.append(MirNamedImport(symbol, i))
+			result.imports = result.imports.append(Mir.MirNamedImport(symbol, i))
 	for root in analyzed.roots
-		result.exports = result.exports.append(MirNamedExport(root.name, root.function_id))
+		result.exports = result.exports.append(Mir.MirNamedExport(root.name, root.function_id))
 	return result
 
-def mir_build_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild
+export def mir_build_program(tree: Ast.ParseState, declarations: Hir.HirModuleDecl, name: string, arguments: Array[i64]) -> MirProgramBuild
 	return mir_build_program_roots(tree, declarations, [name], arguments)

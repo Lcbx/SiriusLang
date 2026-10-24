@@ -7,19 +7,29 @@ value semantics and copy-on-write collections. Its compiler emits **C11**.
 **Current status:** the compiler is written in Sirius and can reproduce its own
 committed C bootstrap. Self-hosting covers a subset of
 [the intended language](LANGUAGE_DESIGN.md), not the complete design.
-The historical Python compiler is archived and is **not** used for active builds.
+The historical Python compiler and flat source adapter have been retired.
+The MIR optimizer can now transfer last-use managed inputs directly into
+record/array construction as well as calls; the ownership tests cover both
+interpreted and C-generated execution.
+
+**Compiler structure:** [COMPILER_STRUCTURE.md](COMPILER_STRUCTURE.md) maps the
+active modules, test-only code, and refactoring boundaries.
+
+**Ownership and analysis:** [OWNERSHIP.md](OWNERSHIP.md) documents
+implemented MIR ownership contracts, CFG proofs, nested heap edges, the opt-in
+native ARC audit, and remaining failure-path limitations.
 
 **Design vs. implementation:** [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md)
 defines language semantics; [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)
-proposes path-derived modules, portable MIR libraries, compile-time execution,
-and native/FFI interoperability. The dynamic MIR interpreter can load versioned
+documents the implemented module/package system and proposes future
+compile-time execution and native/FFI interoperability. The dynamic MIR interpreter can load versioned
 executables and **concrete multi-entry MIR libraries** with named exports and
 canonical structural signatures. A first path-based source-module workflow is available via `sirius-run --build-modules` (also exposed by `tools/build_modules.py`):
 static namespaced function/constant imports, exported record constructors and qualified type names, separate compilation
 and existing MIR linking. The parser recognizes `import`, `export def`, `export rec` and `export let`; the frontend resolves
 qualified function calls and constants using typed HIR declarations. A Sirius-native scanner now discovers the source dependency graph and
 extracts concrete export signatures. Sirius orchestrates per-module compilation
-and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Source-independent generic declaration packages (`.smirg`) can be specialized explicitly into concrete `.smirl` libraries, or discovered and specialized automatically by the native module builder when an imported source is absent. Compile-time execution and native linking are also future work. Typed `extern def` declarations are still supported.
+and in-memory MIR linking; Python provides an optional launcher. Source-module builds now specialize exported generic functions on demand for concrete imported argument types (with explicit return annotations). These concrete specializations are linked by canonical structural signatures. Source-independent generic declaration packages (`.smirg`) can be specialized explicitly into concrete `.smirl` libraries, or discovered and specialized automatically by the native module builder when an imported source is absent. Compile-time execution and native registration remain future work. Typed `extern def` declarations are still supported.
 
 ## Portable generic packages (experimental)
 
@@ -41,6 +51,25 @@ packaging time so the dependency's typed public interface can be pinned:
 ```sh
 ./sirius-run --emit-generic Adapter Adapter.smirg Adapter.sirius .
 ```
+
+To distribute an importing `.smirg` with its full **package** dependency
+closure, optionally create a bundle. All transitive providers must already
+have `.smirg` artifacts; the command never compiles sources implicitly:
+
+```sh
+./sirius-run --bundle-generic Adapter.smirg Adapter-bundle.smirg .
+# Install Adapter-bundle.smirg as Adapter.smirg in the target module root.
+```
+
+The bundle uses `SIRIUS-MIR-BUNDLE/1` around unchanged `.smirg` artifacts.
+Only its importing root package needs to be distributed; embedded dependencies
+are used when no source or external `.smirg` exists. Local `.sirius` files
+and separate `.smirg` packages still take precedence; pinned dependency
+interfaces are checked as usual. This is a distribution wrapper, **not** a
+standalone source-free executable or a cross-compiler-version ABI. Nested
+bundles and unresolved package dependencies are rejected. The output is
+reproducible and capped by the MIR interchange size limit (64 MiB, 256
+embedded packages). Test with `python tools/test_module_bundles.py`.
 
 Package imports are resolved transitively during `--build-modules`; both
 `Adapter.sirius` and its imported provider sources may be removed if the
@@ -74,9 +103,11 @@ its dependencies. Parsed source data is cached only within the current build;
 subsequent builds reread the inputs. The builder validates package identity,
 recovers the exported typed interface, and specializes requested signatures in
 memory before linking. Version 1 packages remain supported; version 2
-packages contain pinned interfaces for direct imports, recursively checked
-against their available transitive dependencies. Dependencies are referenced,
-not bundled into one file. The standalone source scanner
+packages retain source-order dependency interface fingerprints. New version 3
+packages pin interfaces independent of declaration order, including the identity
+of named re-export targets; both versions verify available dependency interfaces
+recursively. Unbundled packages remain the default, while `--bundle-generic`
+can embed the transitive `.smirg` closure. The standalone source scanner
 (`sirius-module-scan`) still only scans `.sirius` files. Test with
 `python tools/test_mir_generic_packages.py`, `python tools/test_module_packages.py`
 and `python tools/test_module_package_dependencies.py`, and
@@ -84,6 +115,13 @@ and `python tools/test_module_package_dependencies.py`, and
 `python tools/test_module_incremental_discovery.py`.
 
 ## Current development priorities
+
+MIR-generated collection allocations can be profiled with
+`python tools/profile_mir_allocations.py --runs 3 --type-names`; the profiler
+reports per-TypeId allocations, clone counts and cumulative byte requests.
+MIR operand-read analysis now avoids allocating temporary empty arrays; shared-
+array appends avoid a redundant resize after CoW cloning, and forward CFG
+ownership transfers no longer allocate temporary effect lists. See [RUNTIME.md](RUNTIME.md).
 
 The runtime and MIR migration milestones are stable; feature development has
 resumed. Bitwise `i64` operators (`&`, `|`, `<<`, `>>`) and packed 63-register-word
@@ -122,6 +160,14 @@ criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
 its own typed records and arrays, but now delegates dictionary storage to
 `S_Dict` through a managed wrapper; record keys use structural hashing.
 
+## Examples and language capability inventory
+
+See [examples/README.md](examples/README.md) for tested standalone programs,
+including **Game of Life**, prime sieve, insertion sort, dictionary counting,
+CoW snapshots, generics, and integer bitwise operations. It also distinguishes
+currently supported constructs from planned features. Run
+`python tools/test_examples.py` to compile and compare their native output.
+
 ## Build and use
 
 Requires a C11 compiler (`cc` or `gcc`). Python 3.10+ is required for development
@@ -135,7 +181,9 @@ cc -std=c11 -I runtime output.c runtime/sirius_runtime.c -lm -o output
 ```
 
 On Windows use `sirius.exe` / `output.exe`; the build script selects the executable
-suffix. Building without Python is also possible:
+suffix and uses the compiler target to choose the 16 MiB PE stack flag (`/STACK`
+for MSVC-target Clang, `--stack` for MinGW). MSVC also uses the UCRT math
+functions without a separate `-lm` library. Building without Python is also possible:
 
 ```sh
 cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o sirius
@@ -234,7 +282,8 @@ or read, distinct from an empty array. `is_dir(path) -> bool` checks directories
 without following directory symlinks, avoiding cycles during a recursive walk.
 Paths use the host filesystem's conventions, with `/` usable as a separator on
 supported platforms. The Windows implementation converts UTF-8 paths to wide
-Win32 paths; POSIX treats path strings as bytes.
+Win32 paths, including for `read_text`/`write_text` (`_wfopen_s` under MSVC);
+POSIX treats path strings as bytes. Embedded NUL bytes are rejected.
 
 Reusable `walk_files(root) -> Array[string]` lives in
 `stdlib/Std/Filesystem.sirius` (use `Std.Filesystem` within a source root).
@@ -248,7 +297,7 @@ python tools/test_filesystem.py
 python tools/test_filesystem.py --runner ./sirius-run
 ```
 
-The file APIs are supported by the MIR emitter and interpreter; the retained
+The file APIs are supported by the MIR emitter and interpreter; the
 retired AST-to-C backend is no longer present.
 
 ### Path-based source modules (initial subset)
@@ -281,6 +330,7 @@ python tools/test_source_modules.py
 python tools/test_compiler_source_modules.py
 python tools/test_compiler_core_modules.py
 python tools/test_compiler_frontend_module.py
+python tools/test_compiler_hir_module.py
 ```
 
 `src/module_scan.sirius` checks source dependency cycles,
@@ -324,9 +374,16 @@ function symbol, so no forwarding MIR function is needed; re-exports also work
 transitively and in `.smirg` dependency interfaces. Namespace-wide re-exports,
 standalone type aliases, operator overloads and runtime module objects are not
 supported.
-`import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend. Imports require the module
-builder (or a typed interface supplied through `sirius-run --module-interface`);
-standalone native compilation cannot resolve module dependencies yet.
+`import`, `export def`, `export rec` and `export let` are parsed by the Sirius frontend.
+The native compiler accepts a module root and resolves imports through its
+module builder (rather than requiring concatenated sources):
+
+```sh
+./sirius --module-root examples App app.c
+```
+
+Ordinary single-file compilation still accepts typed interfaces through
+`sirius-run --module-interface`.
 
 Cross-library calls use *declarations without bodies* in the consuming source:
 
@@ -346,9 +403,9 @@ errors. Libraries with unresolved imports cannot execute directly. The
 library format is `SIRIUS-MIR-LIB/2`; the format is experimental and not
 backward-compatible with `/1`.
 
-This is concrete function linking. The source-module tool above builds on
-it; full compiler-integrated modules and cross-library generic specialization
-are still pending, as are native registration and mixed native/interpreted dispatch.
+This is concrete function linking. Native module-root compilation and
+source-independent specialization of exported generics are also implemented.
+Native registration and mixed native/interpreted dispatch remain future work.
 
 For phase-level performance profiling of the native MIR compiler, see
 [MIR_PROFILE.md](MIR_PROFILE.md) and `tools/profile_mir.py`.
@@ -380,89 +437,31 @@ including three transfers in one call.
 
 The build, fixed-point and regression commands have different responsibilities.
 `python tools/test_all.py` runs all active regression scripts. Use
-`--list` to inspect the selected scripts. Full runs include expensive native builds and self-hosting checks.
+`--list` to inspect them, `--match "test_mir_*"` to select a subset,
+`--exclude "*selfhost*"` to omit expensive groups, or `--fail-fast` to stop
+on the first failure. Glob filters match script names or stems and can be
+repeated. Full runs include expensive native builds and self-hosting checks.
 
 | Command | Purpose |
 | --- | --- |
-| `python tools/build_mir_runner.py [--output PATH]` | Build `sirius-run` for source and serialized MIR execution |
-| `python tools/test_mir_wire.py --all-fixtures` | Check versioned MIR serialization, malformed-input rejection and round-trip parity for 91 fixtures |
-| `python tools/test_mir_run.py --all-fixtures` | Compare native/interpreted execution on 18 cases, 3 runtime failures and all 91 shared fixtures |
-| `python tools/build_compiler.py [--output PATH]` | Compile the **committed** C bootstrap and runtime into an executable; does not regenerate Sirius sources |
-| `python tools/generate_bootstrap.py` | Compile Sirius sources through successive compiler generations to a byte-identical fixed point, then update `bootstrap/compiler.c`; **does not run language fixtures** |
-| `python tools/generate_bootstrap.py --check` | Verify committed bootstrap matches the computed fixed point, without modifying it or running fixtures |
-| `python tools/test_bootstrap.py` | Verify the fixed point and committed C, then run compiler execution and diagnostic fixtures |
-| `python tools/test_bootstrap.py --fixed-point-only` | Verify self-hosting and committed C without running language fixtures |
-| `python tools/test_compiler.py` | Test the default MIR compiler built from the committed C bootstrap |
-| `python tools/test_all.py` | Run all active test scripts, reporting every failure |
-| `python tools/probe_mir_selfhost.py --require-ready` | Quick source-generation probe of the default MIR backend; **not** a fixed-point test |
-| `python tools/test_mir_selfhost.py` | Build the standalone MIR compiler, compile successive native generations and compare their C byte-for-byte; run MIR runtime smoke cases (prefers Clang for the large generated C) |
+| `python tools/build_compiler.py` | Build `sirius` from committed bootstrap C |
+| `python tools/build_mir_runner.py` | Build `sirius-run` with the dynamic MIR interpreter |
+| `python tools/build_modular_compiler.py` | Build `sirius-modular` from native modules |
+| `python tools/build_modular_runner.py` | Build `sirius-run-modular` from native modules |
+| `python tools/build_module_scanner.py` | Build standalone native source-module scanner |
+| `python tools/generate_bootstrap.py --check` | Check the committed C against the modular self-hosting fixed point |
+| `python tools/generate_bootstrap.py` | Regenerate the committed C; does not run fixtures |
+| `python tools/test_bootstrap.py` | Fixed point and compiler execution/diagnostic fixtures |
+| `python tools/test_mir_selfhost.py` | Independent MIR generations 2–4 and native smoke tests |
+| `python tools/test_all.py` | All active regression scripts (native builds may be expensive) |
+| `python tools/test_all.py --list` | Enumerate active test scripts |
+| `python tools/test_all.py --match 'test_module_*' --fail-fast` | Run a selected test family |
 
-Normal changes to the Sirius compiler:
-
-```sh
-python tools/test_compiler.py --jobs 4
-python tools/generate_bootstrap.py
-python tools/test_bootstrap.py --jobs 4
-```
-
-Commit Sirius source and generated `bootstrap/compiler.c` together. **Never edit
-generated C by hand.** The *previous* committed compiler must be able to compile
-the updated Sirius source; introduce new syntax in stages.
-
-The bootstrap compiler sources are still concatenated in dependency order using
-`tools/source_manifest.py`. The compiler naming utilities (`src/module.sirius`),
-byte-oriented tokenizer (`src/tokenizer.sirius`), and canonical type interning
-(`src/types.sirius`) now expose typed interfaces usable through Sirius imports.
-The parser now imports the tokenizer as an **independent Sirius module**.
-For the remaining flat self-hosting path, `combined_sources()` removes that import
-and its `Lex.` qualification while concatenating the existing sources.
-`tools/test_compiler_source_modules.py` exercises the naming utilities;
-`tools/test_compiler_core_modules.py` links the real lexer and type interner
-as independent modules and checks all 19 tokenizer golden fixtures, structural
-type interning, visibility and deterministic output.
-`tools/test_compiler_frontend_module.py` compiles the original `tokenizer.sirius`
-and `parser.sirius` separately and checks 11 parser golden fixtures through
-native MIR linking.
-This is a migration compatibility check, **not** a modular self-hosted compiler:
-HIR/MIR still use flat cross-file references. Concrete record signatures, public constructors/type names, and constant values
-now cross module boundaries. Exported function and constructor signatures may
-also reference imported public record types. Generic specialization works through source modules and `.smirg` packages,
-but namespace-wide re-exports, mutual source dependencies and some cross-module compiler
-interfaces still prevent a general compiler-module migration.
-`--rebuild` clears content-addressed artifacts; test runners supporting parallel
-fixtures accept `--jobs N` (default up to 4). Cached objects and binaries are stored under `.build/cache/`, while fixture
-executables and successive compiler generations use temporary directories.
-
-## Tests
-
-Run individual suites as needed:
-
-| Command | Scope |
-| --- | --- |
-| `python tools/test_bootstrap_tools.py` | Bootstrap generation, stale-C rejection and CLI dispatch |
-| `python tools/test_runtime_collections.py` | Runtime generic arrays/dictionaries, aliasing, CoW and managed values |
-| `python tools/test_compiler.py` | Default MIR backend: 96 native executions and 50 expected diagnostics |
-| `python tools/test_mir_compiler.py` | Default MIR backend: 91 native executions, 46 expected diagnostics, and two additional positive cases; `--compiler PATH` reuses a native compiler for regression testing |
-| `python tools/test_tokenizer.py` | 19 tokenizer golden fixtures through the flat bootstrap path |
-| `python tools/test_compiler_core_modules.py` | Real tokenizer/type interner through native imports; 19 golden fixtures and canonical types |
-| `python tools/test_compiler_frontend_module.py` | Separate tokenizer → parser native imports; 11 parser golden fixtures |
-| `python tools/test_mir_record_set.py` | MIR record updates, snapshot CoW and native C |
-| `python tools/test_mir_record_array_append.py` | Fused record-array append, snapshot CoW, verifier and interpreter/native parity |
-| `python tools/test_mir_call_move.py` | Last-use managed call argument transfers, duplicate-argument safety, use-after-move rejection and native/interpreter parity; optional `--compiler PATH` |
-| `python tools/test_parser.py` | 11 parser golden fixtures and smoke checks |
-| `python tools/test_types.py` | Type interning, typed HIR and specialization |
-| `python tools/test_hir_worklist.py` | Independent HIR specialization worklist |
-| `python tools/test_mir.py` | Hand-constructed executable MIR and verifier |
-| `python tools/test_mir_lower.py` | HIR → MIR lowering and interpreter execution |
-| `python tools/test_mir_program.py` | Linked concrete MIR specializations |
-| `python tools/test_mir_direct_c.py` | Direct MIR-to-C printing, panic escaping, and uninitialized-register checks |
-| `python tools/test_mir_selfhost.py` | Native MIR stage-2/3/4 fixed point and targeted runtime regressions |
-| `python tools/test_mir_opt.py` | Managed copy-to-move optimization, interpreter, native C and ownership balance |
-| `python tools/test_mir_interpreter.py` | MIR interpreter behavior |
-| `tools/test_mir_*.py` | Focused MIR behavior and ownership tests (run scripts individually) |
-| `python tools/test_reference_c.py` | 24 independent handwritten C references plus runtime-panic checks; not a compiler test |
-| `python tools/test_build_cache.py` | Content-addressed build-cache invalidation |
-| `python tools/test_tool_utils.py` | Process result and newline test helpers |
+Use `python tools/test_all.py --list` for the full, maintained test inventory;
+individual `tools/test_*.py` docstrings describe their coverage. Important
+focused suites include `test_mir_managed_slots.py`, `test_mir_scalar_slots.py`,
+`test_module_bundles.py`, `test_compiler_native_runner.py` and
+`test_runtime_collections.py`.
 
 The fixture counts describe tested behavior, not a full language conformance
 claim. The old emitter's diagnostic fixtures (`f64` arrays and optional
@@ -474,7 +473,7 @@ fallback in `elif`) are accepted by MIR and tested as positive programs. The fix
 
 ```text
 src/                    Sirius compiler modules, entry points and MIR interpreter
-bootstrap/compiler.c    Committed, reproducible C compiler bootstrap
+bootstrap/compiler.c    Committed modular C bootstrap (reproducible from src/modular_cli.sirius)
 runtime/                C11 runtime implementation and header
 tests/compiler/         Compiler feature and diagnostic fixtures
 tests/fixtures/         Earlier language examples
@@ -484,8 +483,8 @@ tools/                  Build/generation commands, shared helpers and test runne
 benchmarks/             Standalone C collection microbenchmarks
 ```
 
-`src/cli.sirius` is the compiler entry point; `src/mir_emit_c.sirius` is
-the sole C emitter. `tools/test_mir_direct_c.py` checks direct emission
+`src/modular_cli.sirius` is the compiler entry point;
+`src/mir_emit_c.sirius` is the sole C emitter. `tools/test_mir_direct_c.py` checks direct emission
 independently of source lowering.
 
 ## Implementation boundaries
@@ -502,9 +501,10 @@ in-place append for unique owners; string join allocates once. The MIR C emitter
 shares managed-value cleanup across return paths to reduce generated C size.
 The native and interpreted paths pass their differential execution and runtime-failure cases, as well as all 91 shared positive output fixtures. The serialized MIR runner also passes 91 source-versus-loaded comparisons. Exact decimal-to-`f64` rounding for every literal and complete abnormal-exit unwinding remain open.
 
-Generic cross-module specialization, native/FFI linking, multidimensional
-arrays, broadcasting, full effect/purity checking, universal runtime type
-descriptors and concurrent map are future work.
+Native/FFI registration and cross-boundary calls, multidimensional arrays,
+broadcasting, full effect/purity checking, universal runtime type descriptors
+and concurrent map remain future work. Cross-module generic specialization
+through `.smirg` packages is already supported.
 Negative indexing remains deferred.
 
 See [ROADMAP.md](ROADMAP.md) for priorities, [IR_DESIGN.md](IR_DESIGN.md)

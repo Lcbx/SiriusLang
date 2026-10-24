@@ -5,19 +5,16 @@ from pathlib import Path
 import sys
 
 from build_support import BuildCache, compile_c, execute
-from source_manifest import COMPILER_SOURCES, combined_sources, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 
 
 def generate_fixed_point(cache: BuildCache, work: Path, *, max_generations: int = 8) -> tuple[bytes, Path]:
 	"""Return self-reproducing C and its compiler binary, valid while work exists."""
-	source = work / 'compiler.sirius'
-	# Retain exact historical concatenation; adding separators changes C output.
-	source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
 	current = cache.seed()
 	previous = None
 	for generation in range(1, max_generations + 1):
 		generated = work / f'generation_{generation}.c'
-		execute([str(current), str(source), str(generated)])
+		execute([str(current), '--module-root', str(ROOT / 'src'), 'modular_cli', str(generated)])
 		result = generated.read_bytes()
 		if previous == result:
 			print(f'PASS C bootstrap fixed point at generation {generation}')

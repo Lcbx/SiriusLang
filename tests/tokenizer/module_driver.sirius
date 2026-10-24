@@ -1,6 +1,6 @@
 # Native-module variant of the existing tokenizer golden-test driver.
-import Lexer alias Lex
-import Types alias T
+import tokenizer alias Lex
+import types alias T
 
 def main() -> i64
 	let args = arguments()

@@ -1,0 +1,13 @@
+# Typed record constructors, typed functions, and f64.
+rec Point(x: f64, y: f64)
+
+def distance(a: Point, b: Point) -> f64
+	let dx = a.x - b.x
+	let dy = a.y - b.y
+	return sqrt(dx * dx + dy * dy)
+
+def main() -> i64
+	let origin = Point(0.0, 0.0)
+	let point = Point(3.0, 4.0)
+	print(distance(origin, point))
+	return 0

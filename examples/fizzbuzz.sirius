@@ -1,0 +1,12 @@
+# Control flow, arithmetic, and string conversion.
+def main() -> i64
+	for i in 1..21
+		if i % 15 == 0
+			print("FizzBuzz")
+		elif i % 3 == 0
+			print("Fizz")
+		elif i % 5 == 0
+			print("Buzz")
+		else
+			print(i)
+	return 0

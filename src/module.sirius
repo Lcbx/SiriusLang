@@ -1,3 +1,5 @@
+import types alias Types
+
 # Shared, length-prefixed naming for imported and exported symbols.
 export def hir_module_symbol(path: string, name: string) -> string
 	var result = "M"
@@ -23,35 +25,50 @@ export def module_scan_filename(root: string, name: string) -> string
 	return result + ".sirius"
 
 # Canonical structural signatures independent of local module TypeIds.
-def mir_type_signature(types: TypeTable, id: i64) -> string
-	if id == TYPE_TAG_I64
-		return "i64"
-	if id == TYPE_TAG_F64
-		return "f64"
-	if id == TYPE_TAG_BOOL
-		return "bool"
-	if id == TYPE_TAG_STRING
-		return "string"
-	if id == TYPE_TAG_VOID
-		return "void"
-	if id < 6 or id >= len(types.entries)
+export def mir_type_signature(types: Types.TypeTable, id: i64) -> string
+	if not Types.type_descriptor_canonical(types, id)
 		return "invalid"
 	let desc = types.entries[!id]
-	if desc.tag == TYPE_TAG_ARRAY
-		return "Array[" + mir_type_signature(types, desc.first) + "]"
-	if desc.tag == TYPE_TAG_OPTIONAL
-		return "Optional[" + mir_type_signature(types, desc.first) + "]"
-	if desc.tag == TYPE_TAG_DICT
-		return "Dict[" + mir_type_signature(types, desc.first) + "," + mir_type_signature(types, desc.second) + "]"
+	if desc.tag == Types.TYPE_TAG_I64
+		return "i64"
+	if desc.tag == Types.TYPE_TAG_F64
+		return "f64"
+	if desc.tag == Types.TYPE_TAG_BOOL
+		return "bool"
+	if desc.tag == Types.TYPE_TAG_STRING
+		return "string"
+	if desc.tag == Types.TYPE_TAG_VOID
+		return "void"
+	if desc.tag == Types.TYPE_TAG_ARRAY
+		let element = mir_type_signature(types, desc.first)
+		if element == "invalid"
+			return "invalid"
+		return "Array[" + element + "]"
+	if desc.tag == Types.TYPE_TAG_OPTIONAL
+		let element = mir_type_signature(types, desc.first)
+		if element == "invalid"
+			return "invalid"
+		return "Optional[" + element + "]"
+	if desc.tag == Types.TYPE_TAG_DICT
+		let key = mir_type_signature(types, desc.first)
+		let value = mir_type_signature(types, desc.second)
+		if key == "invalid" or value == "invalid"
+			return "invalid"
+		return "Dict[" + key + "," + value + "]"
+	if desc.tag != Types.TYPE_TAG_RECORD
+		return "invalid"
 	var parts = ["Record{"]
 	for field in desc.fields
-		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + mir_type_signature(types, field.kind) + ";")
+		let value = mir_type_signature(types, field.kind)
+		if value == "invalid"
+			return "invalid"
+		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + value + ";")
 	return "".join(parts) + "}"
 
 
 # Encode each concrete argument signature as an identifier-safe, unambiguous
 # suffix. Reject excessively long names at the existing MIR library boundary.
-def mir_generic_symbol(name: string, types: TypeTable, arguments: Array[i64]) -> string
+export def mir_generic_symbol(name: string, types: Types.TypeTable, arguments: Array[i64]) -> string
 	var result = name + "_G"
 	for argument in arguments
 		let signature = mir_type_signature(types, argument)

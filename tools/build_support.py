@@ -14,12 +14,22 @@ import sys
 import tempfile
 from typing import Callable
 
-from source_manifest import ROOT, combined_sources, normalize_newlines
+from project_paths import ROOT, executable_path, normalize_newlines
 
 BUILD = ROOT / '.build' / 'cache'
 C_FLAGS = ('-std=c11', '-O0', '-Wall', '-Wextra', '-Werror', '-pedantic')
 # Windows PE executables default to a small stack; self-hosting needs more.
-LINK_FLAGS = ('-Wl,--stack,16777216',) if sys.platform == 'win32' else ()
+# MSVC link.exe and MinGW GNU ld use different flags. Include the math library
+# only where it is separate from the C runtime (not with the MSVC/UCRT target).
+def link_flags(cc: str) -> tuple[str, ...]:
+	if sys.platform != 'win32':
+		return ('-lm',)
+	target = execute([cc, '-dumpmachine']).stdout.strip().lower()
+	if 'msvc' in target:
+		return ('-Xlinker', '/STACK:16777216')
+	if 'mingw' in target or 'windows-gnu' in target:
+		return ('-Wl,--stack,16777216', '-lm')
+	raise RuntimeError(f'Unsupported Windows C compiler target: {target!r}')
 
 
 def options(parser: argparse.ArgumentParser) -> None:
@@ -35,8 +45,16 @@ def validate_jobs(jobs: int) -> int:
 	return jobs
 
 
+def copy_binary(source: Path, output: Path) -> Path:
+	"""Publish a cached executable without copying it onto itself."""
+	output.parent.mkdir(parents=True, exist_ok=True)
+	if source.resolve() != output.resolve():
+		shutil.copy2(source, output)
+	return output
+
+
 def require_cc() -> str:
-	cc = shutil.which('cc') or shutil.which('gcc')
+	cc = shutil.which('clang') or shutil.which('cc') or shutil.which('gcc')
 	if cc is None:
 		raise SystemExit('A C11 compiler (cc or gcc) is required')
 	return cc
@@ -62,7 +80,7 @@ class BuildCache:
 	def _artifact(self, category: str, inputs: tuple[bytes, ...], filename: str,
 		build: Callable[[Path, Path], None]) -> Path:
 		hash_value = hashlib.sha256()
-		for value in (self.toolchain.encode(), category.encode(), repr((C_FLAGS, LINK_FLAGS)).encode(), *inputs):
+		for value in (self.toolchain.encode(), category.encode(), repr((C_FLAGS, link_flags(self.cc))).encode(), *inputs):
 			hash_value.update(len(value).to_bytes(8, 'big'))
 			hash_value.update(value)
 		folder = BUILD / category / hash_value.hexdigest()
@@ -97,7 +115,7 @@ class BuildCache:
 
 	def _binary(self, category: str, source: Path, inputs: tuple[bytes, ...]) -> Path:
 		runtime = self.runtime()
-		filename = 'program.exe' if sys.platform == 'win32' else 'program'
+		filename = executable_path(Path('program')).name
 		def build(output: Path, _: Path) -> None:
 			compile_c(self.cc, source, output, runtime)
 		return self._artifact(category, (source.read_bytes(), runtime.parent.name.encode(), *inputs), filename, build)
@@ -105,18 +123,38 @@ class BuildCache:
 	def seed(self) -> Path:
 		return self._binary('seed', ROOT / 'bootstrap/compiler.c', ())
 
-	def sirius(self, category: str, sources: tuple[str, ...], separator: bytes = b'\n') -> Path:
-		data = combined_sources(sources, separator=separator)
+	def native_tool(self, entry: str) -> Path:
+		"""Build a Sirius CLI from its native module root with the checked-in C seed."""
+		sources = tuple(path for path in sorted((ROOT / 'src').glob('*.sirius')))
 		seed = self.seed()
 		runtime = self.runtime()
-		filename = 'program.exe' if sys.platform == 'win32' else 'program'
+		filename = executable_path(Path('program')).name
+		inputs = (entry.encode(), seed.parent.name.encode(), runtime.parent.name.encode(),
+			*(path.name.encode() + b'\0' + path.read_bytes() for path in sources))
 		def build(output: Path, folder: Path) -> None:
-			combined = folder / 'source.sirius'
-			combined.write_bytes(data)
 			generated = folder / 'generated.c'
-			execute([str(seed), str(combined), str(generated)])
+			execute([str(seed), '--module-root', str(ROOT / 'src'), entry, str(generated)])
 			compile_c(self.cc, generated, output, runtime)
-		return self._artifact(category, (data, seed.parent.name.encode(), runtime.parent.name.encode()), filename, build)
+		return self._artifact('native-' + entry, inputs, filename, build)
+
+	def native_driver(self, category: str, source: Path) -> Path:
+		"""Build a test entry as Main using actual native compiler source modules."""
+		modules = sorted((ROOT / 'src').glob('*.sirius'))
+		seed = self.seed()
+		runtime = self.runtime()
+		filename = executable_path(Path('program')).name
+		inputs = (source.read_bytes(), seed.parent.name.encode(), runtime.parent.name.encode(),
+			*(path.name.encode() + b'\0' + path.read_bytes() for path in modules))
+		def build(output: Path, folder: Path) -> None:
+			root = folder / 'modules'
+			root.mkdir()
+			for module in modules:
+				shutil.copyfile(module, root / module.name)
+			shutil.copyfile(source, root / 'Main.sirius')
+			generated = folder / 'generated.c'
+			execute([str(seed), '--module-root', str(root), 'Main', str(generated)])
+			compile_c(self.cc, generated, output, runtime)
+		return self._artifact('native-driver-' + category, inputs, filename, build)
 
 
 def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
@@ -124,14 +162,14 @@ def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
 	# The MIR C emitter declares generic static-inline helpers, some unused by
 	# a particular specialization. Clang warns about these under -Wall.
 	extra = ('-Wno-unused-function',) if 'clang' in Path(cc).name else ()
-	execute([cc, *C_FLAGS, *extra, *LINK_FLAGS, '-I', str(ROOT / 'runtime'),
-		str(source), str(runtime), '-lm', '-o', str(output)])
+	execute([cc, *C_FLAGS, *extra, '-I', str(ROOT / 'runtime'),
+		str(source), str(runtime), *link_flags(cc), '-o', str(output)])
 
 
 def compile_native(cache: BuildCache, source: Path, output: Path | None = None) -> Path:
 	"""Compile generated/reference C with the shared strict flags and runtime."""
 	if output is None:
-		output = source.with_suffix('.exe' if sys.platform == 'win32' else '')
+		output = executable_path(source.with_suffix(''))
 	compile_c(cache.cc, source, output, cache.runtime())
 	return output
 
@@ -161,12 +199,3 @@ def check_native(cache: BuildCache, source: Path, *, stdout: bytes = b'',
 	"""Compile and assert a native executable in one step."""
 	assert_native(run_native(cache, source, output=output, args=args, cwd=cwd),
 		stdout=stdout, code=code, stderr_contains=stderr_contains)
-
-
-def check_sirius_driver(cache: BuildCache, category: str, sources: tuple[str, ...],
-	expected: str) -> str:
-	"""Compile a Sirius test driver, execute it, and check its text output."""
-	result = execute([str(cache.sirius(category, sources))]).stdout
-	if result != expected:
-		raise AssertionError(f'Unexpected {category} output: {result!r}; expected {expected!r}')
-	return result

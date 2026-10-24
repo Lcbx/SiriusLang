@@ -16,8 +16,8 @@ import subprocess
 import tempfile
 from time import perf_counter
 
-from build_support import LINK_FLAGS
-from source_manifest import COMPILER_SOURCES, ROOT, combined_sources
+from build_support import link_flags
+from project_paths import ROOT
 
 COUNTERS = ('new', 'empty_release', 'insert', 'overwrite', 'get', 'miss', 'clone',
 	'cloned_entries', 'grow', 'slots', 'probes', 'equal', 'size_le5', 'size_le11', 'size_gt11')
@@ -35,16 +35,14 @@ def main() -> None:
 	parser.add_argument('--cc', default=shutil.which('clang') or shutil.which('cc') or 'cc')
 	parser.add_argument('--runs', type=int, default=3)
 	parser.add_argument('--opt', choices=('0', '1', '2'), default='0', help='Native compiler optimization')
-	parser.add_argument('--source', type=Path, help='Alternate Sirius input (default: concatenated compiler sources)')
+	parser.add_argument('--source', type=Path, help='Alternate Sirius input (default: native modular compiler root)')
 	parser.add_argument('--generated-c', type=Path, help='Use a newer generated compiler C (default: committed bootstrap)')
 	args = parser.parse_args()
 	if args.runs < 1:
 		parser.error('--runs must be positive')
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
-		source = args.source or (work / 'compiler.sirius')
-		if args.source is None:
-			source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
+		source = args.source
 		compiler_c = args.generated_c or ROOT / 'bootstrap/compiler.c'
 		inputs = (compiler_c, ROOT / 'runtime/sirius_runtime.c',
 			ROOT / 'runtime/sirius_runtime.h')
@@ -58,13 +56,15 @@ def main() -> None:
 			cache_dir.mkdir(parents=True, exist_ok=True)
 			run([args.cc, '-std=c11', f'-O{args.opt}', '-DS_DICT_PROFILE',
 				'-I', str(ROOT / 'runtime'), str(compiler_c),
-				str(ROOT / 'runtime/sirius_runtime.c'), '-lm', *LINK_FLAGS, '-o', str(binary)])
+				str(ROOT / 'runtime/sirius_runtime.c'), *link_flags(args.cc), '-o', str(binary)])
 		timings = []
 		counts = []
 		for i in range(args.runs):
 			output = work / f'output_{i}.c'
 			start = perf_counter()
-			result = run([str(binary), str(source), str(output)])
+			command = ([str(binary), str(source), str(output)] if source else
+				[str(binary), '--module-root', str(ROOT / 'src'), 'modular_cli', str(output)])
+			result = run(command)
 			timings.append(perf_counter() - start)
 			match = re.search(r'^S_DICT_PROFILE (.+)$', result.stderr, re.M)
 			if not match:
@@ -73,7 +73,7 @@ def main() -> None:
 				(token.split('=', 1) for token in match.group(1).split())))
 			if set(counts[-1]) != set(COUNTERS):
 				raise RuntimeError(f'Unexpected counters: {counts[-1]}')
-			if args.source is None and output.read_bytes() != compiler_c.read_bytes():
+			if source is None and output.read_bytes() != compiler_c.read_bytes():
 				raise RuntimeError('Profiled compiler does not reproduce the committed C bootstrap')
 		if any(value != counts[0] for value in counts[1:]):
 			raise RuntimeError('Non-deterministic dictionary workload counters')

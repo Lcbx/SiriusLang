@@ -1,10 +1,1 @@
-# Stable UTF-8 byte offsets in tokenizer golden fixtures across Git checkouts.
-tests/tokenizer/fixtures/*.sirius text eol=lf
-# Preserve explicitly tested line endings instead of letting Git translate them.
-tests/tokenizer/fixtures/08_crlf.sirius -text
-tests/tokenizer/fixtures/18_cr.sirius -text
-# Parser golden fixtures are also byte/line-position sensitive.
-tests/parser/fixtures/*.sirius text eol=lf
-tests/parser/expected_output/*.txt text eol=lf
-# Generated bootstrap C must have stable bytes on all platforms.
-bootstrap/compiler.c text eol=lf
+tests/fixtures/*.smirg binary

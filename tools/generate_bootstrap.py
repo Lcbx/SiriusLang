@@ -6,7 +6,7 @@ from pathlib import Path
 
 from bootstrap_support import check_committed, generate_fixed_point
 from build_support import BuildCache, require_cc
-from source_manifest import ROOT
+from project_paths import ROOT
 
 
 def main() -> None:

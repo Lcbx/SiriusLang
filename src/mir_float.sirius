@@ -1,0 +1,70 @@
+# Decimal decoding for MIR floating-point literals.
+# Kept separate from interpreter heap and frame semantics.
+
+# Parse the decimal spelling carried by MIR_CONST_F64, including exponents.
+# This needs no native C dependency, but decimal rounding parity with strtod
+# at extreme magnitudes remains to be verified separately.
+export def mir_parse_real(source: string) -> f64
+	var value = 0.0
+	var i = 0
+	while i < len(source)
+		let digit = source.byte_at(i) or -1
+		if digit < 48 or digit > 57
+			break
+		value = value * 10.0 + mir_float_digit(digit - 48)
+		i += 1
+	if i < len(source) and (source.byte_at(i) or -1) == 46
+		i += 1
+		var divisor = 1.0
+		var fraction = 0.0
+		while i < len(source)
+			let digit = source.byte_at(i) or -1
+			if digit < 48 or digit > 57
+				break
+			divisor = divisor * 10.0
+			fraction = fraction * 10.0 + mir_float_digit(digit - 48)
+			i += 1
+		value = value + fraction / divisor
+	if i < len(source)
+		i += 1  # e or E (guaranteed by the source lexer)
+		var negative = false
+		if i < len(source) and (source.byte_at(i) or -1) == 45
+			negative = true
+			i += 1
+		elif i < len(source) and (source.byte_at(i) or -1) == 43
+			i += 1
+		var exponent = 0
+		while i < len(source)
+			let digit = source.byte_at(i) or -1
+			# Bound work even for untrusted literals with huge exponents.
+			if exponent < 400
+				exponent = exponent * 10 + digit - 48
+			i += 1
+		for j in 0..exponent
+			if negative
+				value = value / 10.0
+			else
+				value = value * 10.0
+	return value
+
+# No i64-to-f64 conversion intrinsic is available yet.
+def mir_float_digit(digit: i64) -> f64
+	if digit == 0
+		return 0.0
+	if digit == 1
+		return 1.0
+	if digit == 2
+		return 2.0
+	if digit == 3
+		return 3.0
+	if digit == 4
+		return 4.0
+	if digit == 5
+		return 5.0
+	if digit == 6
+		return 6.0
+	if digit == 7
+		return 7.0
+	if digit == 8
+		return 8.0
+	return 9.0

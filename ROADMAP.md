@@ -14,7 +14,21 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    Generic arrays reuse aligned temporary storage and `realloc`;
    generic dictionaries share key/value allocations. Both dictionary layouts
    now clone at their existing capacity and avoid rehashing on overwrite.
-   Focused CoW and aliasing tests cover these changes.
+   Focused CoW and aliasing tests cover these changes. The MIR-generated
+   allocation profiler (`tools/profile_mir_allocations.py`) now measures
+   self-hosting record/collection traffic by structural type, including CoW
+   clones and cumulative byte requests. The MIR operand-read helper no longer
+   constructs unused temporary arrays; shared-array append clones reserve the
+   appended slot before copying, avoiding their immediate resize. The forward
+   ownership solver now reuses a sole predecessor's outgoing bitset as its
+   incoming snapshot, merging only additional predecessors. This halves
+   `Array[i64]` clone counts in instrumented modular self-compilation without
+   changing runtime CoW semantics. Backward liveness now also shares a single
+   successor's live-in snapshot instead of unioning it with an empty mask;
+   branch joins retain CoW isolation. The ownership CFG worklist now applies
+   instruction transfers directly instead of allocating short-lived effect
+   register/value arrays per block. The exported effect-summary helpers remain
+   available. Profile again before more optimization.
 2. **Simplify the codebase — in progress.** Factor common mechanisms where they
    demonstrably reduce complexity. Keep public and bootstrap interfaces stable;
    remove unused code only with proof from manifests/callers/tests. The runtime
@@ -23,8 +37,8 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    array positions as specialization IDs, and `MirProgramBuild` no longer
    retains HIR analyses after lowering. Avoid merging the legacy
    collection ABI with the separate MIR-emitted storage prematurely.
-3. **Make MIR the default backend — completed.** `COMPILER_SOURCES` and
-   `bootstrap/compiler.c` now use MIR with a lean `src/cli.sirius` entry point.
+3. **Make MIR the default backend — completed.** `bootstrap/compiler.c`
+   now uses MIR and the native `src/modular_cli.sirius` entry point.
    Independent self-hosting and MIR regression checks now pass. The historical
    AST-to-C emitter and legacy-only build/test scripts have been removed.
    Direct MIR emission checks remain under `tools/test_mir_direct_c.py`.
@@ -53,27 +67,61 @@ to resume incremental feature implementation; avoid speculative micro-optimizati
    native linking is implemented; native registration and mixed compiled/interpreted
    dispatch remain future work.
    Keep further slices isolated and protect MIR self-hosting and snapshots.
-   As initial compiler-source migration checks, `src/module.sirius`,
-   `src/tokenizer.sirius`, `src/parser.sirius`, and `src/types.sirius` now expose typed public APIs.
+   As compiler-source migration checks, `src/module.sirius`,
+   `src/tokenizer.sirius`, `src/parser.sirius`, `src/types.sirius`, the HIR
+   resolver/analysis/specialization chain, and MIR's core structures, CFG,
+   verifier and common semantics now expose typed public APIs.
    `tools/test_compiler_source_modules.py` verifies naming/path utilities;
    `tools/test_compiler_core_modules.py` links the real lexer and canonical type
    interner as independent native modules and runs the tokenizer golden fixtures,
    structural type and visibility checks. `tools/test_compiler_frontend_module.py`
    checks the parser importing the tokenizer as a distinct Sirius module
-   against the parser golden fixtures. The bootstrap still consumes the flat manifest;
-   structural records, public constructors/type names and exported constants now
-   cross module boundaries; concrete exported signatures now accept imported
-   public record types. Named member re-exports now work, but importing larger
-   compiler components remains blocked by their shared globals and cross-file dependencies.
+   against the parser golden fixtures. `tools/test_compiler_hir_module.py`
+   tests HIR's native imports of parser and canonical types, including
+   annotation lookup, semantic field/binary resolution and specialization
+   registry operations. `tools/test_compiler_analysis_modules.py` exercises
+   HIR analysis, MIR core, lowering, ownership, lifetime, cleanup, optimization,
+   program assembly and C emission through native imports, with deterministic
+   linked artifacts. Default bootstrap and runner builds now use the
+   `--module-root` entry point and native imports, including MIR linking.
+   Public record constructors with default fields use compatibility factories;
+   named member re-exports are available. The standalone scanner also has a
+   narrow native exported API. Internal test drivers also use native imports.
 
-**Validation status (2026-10-23):** `test_bootstrap.py --fixed-point-only`
-reached generation 2 and verified regenerated `bootstrap/compiler.c` byte-for-byte.
-`test_mir_selfhost.py` independently matched generations 2–4. Default compiler
-regressions pass (96 executions, 50 diagnostic fixtures); packed/combined
-ownership, HIR/types, parser, MIR linking, wire format and dynamic execution
-checks pass. The direct MIR-to-C test covers former legacy differential test
-cases for printing, panic escaping and uninitialized registers. Further
-the exhaustive `test_all.py` run remains a separate validation task.
+**Modular compiler bootstrap validation (2026-10-23):**
+The checked-in C seed builds `src/modular_cli.sirius` directly from its source
+module graph, reproducing itself byte-for-byte; generation 2 is identical.
+`build_modular_compiler.py`, `build_modular_runner.py`, `build_mir_runner.py`
+and the scanner build no longer construct an intermediate flat-built runner.
+The independently rebuilt native MIR runner links, executes and emits the same
+C as its peer. All 96 compiler execution fixtures and 50 expected diagnostics
+pass. `test_mir_selfhost.py` checks generations 2–4. The historical flat assembly adapter has been retired; test drivers now link
+compiler modules natively.
+
+**Current modular baseline (2026-10-25):** The flat source manifest and Python
+MIR prototype have been retired. The native modular compiler, interpreter
+runner and package builder use Sirius imports; the compiler self-hosts to a
+byte-identical C fixed point. The regression suite covers 96 compiled
+execution fixtures and 50 expected diagnostics. Managed register storage now
+supports CFG-wide verified reuse; the former block-local restriction no longer
+applies. The currently checked-in bootstrap is `bootstrap/compiler.c`; historical
+size/performance figures are retained in [MIR_PROFILE.md](MIR_PROFILE.md).
+
+**Source-layout cleanup:** Shared dense state equality now lives in
+`src/mir_cfg.sirius`, with existing ownership/lifetime wrapper names preserved.
+MIR floating literal parsing lives in `src/mir_float.sirius` rather than the
+interpreter's heap/frame executor. Removed the unused flat snapshot experiment
+`mir_parametric.sirius`; the distinct `hir_parametric.sirius` remains in the
+native analysis test graph. `tools/test_compiler_layout.py` checks reachable
+modules and records the deliberate test-only exception. See
+[COMPILER_STRUCTURE.md](COMPILER_STRUCTURE.md).
+
+**Managed-slot optimization (2026-10-24):** The verified emitter now reuses
+same-type managed storage for nonoverlapping ownership intervals fully contained
+in one block and ended by unconditional release. The generated bootstrap shrank
+from 4,334,410 to 4,250,979 bytes (-1.9%); conditional cleanup, transfers,
+arguments and cross-block owners remain excluded. Ownership-specific tests and
+the MIR self-hosting fixed point pass. See [MIR_PROFILE.md](MIR_PROFILE.md).
 
 **Decisions:** MIR is the only compiler backend. Retain the self-hosted C
 bootstrap and value/CoW semantics. Prefer correctness and simpler interfaces
@@ -111,9 +159,9 @@ longer-term library/ABI milestones.
 The checked-in C compiler is the **sole seed for ongoing development**. The Python implementation is not part of the loop:
 
 1. Implement a compiler change in `src/` and add tests. Keep the compiler's own source within the *previous* seed compiler's accepted Sirius subset.
-2. Run `python tools/test_compiler.py` and the relevant tokenizer/parser tests (these use the committed C compiler). The committed-C comparison in `test_bootstrap.py` may intentionally fail until the generated bootstrap has been refreshed.
-3. Run `python tools/generate_bootstrap.py` to compile the updated compiler with the **current C bootstrap**, iterate until the generated C is self-reproducing, and replace `bootstrap/compiler.c` without running the fixture suite.
-4. Run `python tools/test_bootstrap.py` for the fixed-point/committed-C comparison and full emitter fixture suite, then commit the Sirius source, tests, and regenerated C together. Review the C diff rather than editing generated C.
+2. Run `python tools/test_compiler.py` and the relevant native module tests. The committed-C comparison in `test_bootstrap.py` may intentionally fail until the generated bootstrap has been refreshed.
+3. Run `python tools/generate_bootstrap.py`: the committed modular C seed compiles `src/modular_cli.sirius` and its imports from the `src/` module root, then repeats until the generated C is self-reproducing. Update `bootstrap/compiler.c` without running the fixture suite.
+4. Run `python tools/test_bootstrap.py` for the modular fixed-point/committed-C comparison and full fixture suite, and `python tools/test_compiler_native_runner.py` for the independently built native runner. Commit Sirius sources, tests, and generated C together; never hand-edit C.
 
 When the new compiler adds syntax or semantics that the previous seed cannot compile, implement the compiler support first using **old-subset syntax**, refresh the C bootstrap, and only then adopt the new feature inside the compiler source. Otherwise the bootstrap chain cannot advance. A source change that cannot be compiled by the seed is a bootstrapping blocker, not a reason to unfreeze Python.
 
@@ -135,11 +183,17 @@ The Python scripts under `tools/` provide build/test orchestration; the historic
 - [x] Replace full record reconstruction on direct field assignment with consuming `MIR_RECORD_SET`. C and interpreter use in-place updates for unique owners and copy-on-write for shared owners. Verified on 85 native fixtures, snapshot/alias tests and three self-hosting generations; generated C is ~3.17 MB versus ~3.45 MB previously. Runtime speed improvement is not yet established.
 - [x] Fuse `r.array = r.array.append(x)` into `MIR_RECORD_ARRAY_APPEND` to eliminate temporary CoW aliases. Native microbenchmark: 100,000 appends fall from 6.35 s to <0.01 s (`-O1`); self-compilation speed remains approximately unchanged.
 - [x] Transfer multiple distinct, last-use managed arguments in one call without retain/release; preserve duplicate-argument and use-after-move safety in MIR verification, interpreter and C emission.
-- [ ] Investigate constructor ownership transfers and CFG-aware register-slot reuse after profiling.
+- [x] Transfer distinct last-use managed inputs directly into record/array constructors, avoiding retained temporary references. Preserve borrowed duplicates and later uses; validate both MIR backends and ownership/liveness (`tools/test_mir_constructor_move.py`).
+- [x] Extend verified C managed register-slot reuse across CFG blocks using forward may-ownership states and a packed interference graph. Interfere overlapping owners, managed destinations with their source operands, and conditional cleanup with other owners even when the cleaned register is absent. Only same-TypeId, non-argument slots are shared; direct defensive emission and original MIR remain unchanged (`tools/test_mir_managed_slots.py`).
 - [x] Represent forward must/may ownership with packed 63-bit `i64` words; cover register boundaries, CoW snapshots, and joins in `tools/test_mir_ownership_packed.py`.
 - [x] Benchmark packed ownership against an otherwise identical dense-state implementation: three native `-O0` self-compilation runs per variant on the same toolchain give 6.33 s (dense) vs 3.43 s (packed) median, or 0.542× time. This measures execution only, not C build time; see `MIR_PROFILE.md`.
 - [x] Evaluate constructor call arguments in the caller scope before introducing constructor parameter bindings; regression fixture `95_constructor_argument_scope.sirius` now passes.
 - [x] Implement bitwise syntax (`&`, `|`, `<<`, `>>`) and packed ownership, regenerate the C seed and verify the real bootstrap fixed point with `test_bootstrap.py --fixed-point-only`.
+- [x] Make MIR C storage, field payloads and managed ownership descriptor-directed instead of classifying TypeIds by numeric ranges; enforce canonical primitive/composite descriptors in MIR verification (`src/mir_common.sirius`, `src/mir_emit_c.sirius`, `src/mir_verify.sirius`).
+- [x] Make exported structural type signatures descriptor-directed for primitive and composite types (`src/module.sirius`), rejecting noncanonical descriptors instead of interpreting unknown tags as records. Check canonical type shapes and acyclic child IDs when loading both `.smir` and semantic `.smirg` snapshots (`src/types.sirius`, `src/mir_wire.sirius`, `src/mir_semantic.sirius`). Native tests cover cross-table signature identity and malformed descriptor rejection.
+- [x] Add bounded canonical type-kind queries (`Types.type_tag`, `Types.type_has_tag`) and route HIR composite dispatch, constant evaluation and MIR lowering through them. Reserved primitive TypeIds remain stable; HIR import regressions cover invalid indices and composite identity. Bootstrap and compiler fixtures pass.
+- [x] Audit remaining scalar-kind dispatch: opcode choices and builtin signatures legitimately use reserved primitive TypeIds 0–5; composite type identity remains descriptor-driven. Validate composite shapes at `Types.intern_type` before insertion, sharing the same canonical check with artifact loaders. Invalid descriptors now return TypeId 0 with the original table unchanged; HIR native tests cover malformed child IDs, duplicate record fields, invalid tags and primitive descriptors.
+- [x] Expose compiler-visible runtime storage, ownership and payload-slot metadata through `Types.runtime_storage`, `Types.runtime_ownership` and `Types.runtime_layout`. Use them in MIR common ownership and C type/union/retain/drop selection; test primitives, invalid IDs, records, arrays, dictionaries, optionals, and both backends. This is target-neutral metadata for **current static types**, not an emitted runtime registry or a stable byte-layout/FFI ABI.
 - [ ] Consider compact MIR instruction layout only after the higher-priority improvements.
 
 ## 3. Technical and organizational debt
@@ -147,9 +201,9 @@ The Python scripts under `tools/` provide build/test orchestration; the historic
 | Priority | Debt | Evidence / risk | Recommended remedy |
 | --- | --- | --- | --- |
 | **Done** | Legacy backend retirement | Independent MIR bootstrap and regression checks verified the replacement | Old emitter and legacy-only CLI/scripts removed; `test_mir_direct_c.py` retains direct-emission coverage |
-| **P0** | Ad-hoc numeric type IDs | The new interned descriptors coexist with legacy `TYPE_*` ranges and arithmetic type IDs during migration | Intern canonical `TypeId` entries in a type table; use integer IDs as handles, not as type definitions |
-| **P0** | Incomplete ownership coverage | Manual retain/drop and scope cleanup are interleaved with C generation; branch/loop exits and nested lvalues need stronger guarantees | Make ownership explicit on MIR instructions; test all terminators and paths, including errors |
-| **P1** | Incomplete module integration | Structural signatures, constants and direct-publication constructors now cross module boundaries; the compiler still uses the ordered source manifest | Build-time specialization for exported generics with concrete return annotations is implemented; explicit source-free HIR snapshots now exist; automatic source-free package specialization now works; dependency interface pinning and package imports are implemented; build-local parsed-source caching and single-pass dependency traversal are implemented; named re-exports are implemented; next migrate compiler sources |
+| **Done (current types)** | Static canonical TypeId migration | Reserved primitive IDs 0–5 are stable; composite interning, structural signatures, serialized descriptors and static runtime storage/ownership/slot layouts use descriptors | Defer function/union type descriptors until their features exist; runtime registration, portable byte layouts and dynamic `Any` require separate ABI work |
+| **P0** | Incomplete ownership coverage | Register-level must/may checks and exit balance do not independently establish heap reference-credit conservation; process-fatal aborts deliberately do not unwind callers | Keep explicit MIR guards for fatal checks, verify normal-return/in-band-result credits, and test nested lvalues and calling frames |
+| **P1** | Module and native ABI evolution | Compiler sources now use native imports; concrete library linking and source-free generic specialization are supported, but runtime native registration is not | Keep versioned type/signature validation and test module linkers; defer native registration and mixed native/interpreted dispatch until an ABI is designed |
 | **P1** | Seed-versus-current compiler compatibility | The committed C bootstrap must be able to parse and compile updated compiler sources | Introduce new language features using syntax supported by the seed compiler; regenerate C only after fixed-point tests |
 | **P1** | Testing is broad but uneven | fixed-point and emitter suites were previously separate, risking divergent coverage; sanitizers and Windows are not continuous requirements | Run all supported fixtures through the fixed-point compiler; add sanitizer and platform CI where supported |
 | **P1** | Limited source diagnostics | Emitter diagnostics are largely free-form strings; node locations are imperfect for some lowered constructs | Preserve spans through HIR/MIR, use stable error categories, report original source positions |
@@ -205,12 +259,38 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Export generic functions with unannotated parameters and explicitly annotated concrete return types; compile each requested concrete specialization in its defining source module, deduplicate canonical signature keys, and link the resulting MIR (including transitive imports and structural arguments).
 - [x] Add versioned `.smirg` generic declaration snapshots (serialized and revalidated syntax + typed HIR), explicit source-free specialization into concrete `.smirl` libraries, canonical structural argument signatures, and preserved named `extern def` imports. Test scalar, array, dictionary, record, malformed-artifact and source-removal cases (`tools/test_mir_generic_packages.py`).
 - [x] Resolve `.smirg` packages by their dotted path when a source import has no `.sirius` provider, validate package identity/typed exports, and specialize/link requested concrete functions automatically. Source takes precedence. Test source removal, transitive source importers, structural signatures, deduplication and invalid packages (`tools/test_module_packages.py`).
-- [x] Support ordinary `import` in `.smirg` packages (`SIRIUS-MIR-GENERIC/2`), pin each direct dependency's public structural signatures and immutable exported values, and verify the recursive package/source dependency graph before specialization. Test source-free chained packages and incompatible dependency replacement (`tools/test_module_package_dependencies.py`). Version 1 artifacts remain readable.
+- [x] Support ordinary `import` in `.smirg` packages (`SIRIUS-MIR-GENERIC/2`), pin each direct dependency's public structural signatures and immutable exported values, and verify the recursive package/source dependency graph before specialization. Test source-free chained packages and incompatible dependency replacement (`tools/test_module_package_dependencies.py`). Version 1 and 2 artifacts remain readable; new dependency packages use version 3.
 - [x] Cache parsed source modules and completed typed dependency interfaces across `.smirg` discovery retries, scoped to one native build. Preserve source precedence, deterministic output, and fresh discovery on subsequent builds (`tools/test_module_discovery_cache.py`). A 30-source/14-package synthetic build took 24.1 ms without caching vs 10.5 ms with caching (median of 30 runs, same native runner toolchain; discovery + linking, not a full application benchmark).
 - [x] Resolve missing `.smirg` packages during a single depth-first source/package traversal rather than retrying discovery from the entry module. Retain source precedence, pinned interface validation, and deterministic linking. Cover deep mixed graphs and package/source cycles (`tools/test_module_incremental_discovery.py`). In one 30-source/14-package benchmark, median build time was 19.7 ms before vs 18.6 ms after (30 runs, same toolchain and byte-identical MIR); this small difference is not a reliable general speedup estimate.
 - [x] Support named re-exports of public imported concrete/generic functions, constructors and constants, including renaming, transitive forwarding, source-free `.smirg` facade interfaces, visibility and collision errors (`tools/test_module_reexports.py`). The original function symbol is preserved without a forwarding MIR stub.
-- [x] Validate native module boundaries for real compiler lexer and type-table implementations (`src/tokenizer.sirius`, `src/types.sirius`): public constants, record constructors, imported signatures, canonical interning and tokenizer golden output (`tools/test_compiler_core_modules.py`). Compile `src/parser.sirius` with an explicit `import tokenizer alias Lex` as a separate module and verify all parser golden cases (`tools/test_compiler_frontend_module.py`). The flat bootstrap source assembler temporarily removes this import and the `Lex.` qualifiers, without duplicating the parser implementation.
-- [ ] Migrate HIR and MIR compiler components to native imports, then make the modular build path the self-hosting path while preserving the C bootstrap fixed point. Remove the flat parser adapter at that point.
+- [x] Validate the real tokenizer and canonical type interner as native modules,
+  including tokenizer fixtures, structural types, and visibility checks
+  (`tools/test_compiler_core_modules.py`). The parser imports tokenizer and
+  passes its golden fixtures (`tools/test_compiler_frontend_module.py`).
+- [x] Migrate the HIR core (`src/hir.sirius`) to native `parser` and `types`
+  imports; verify typed field/binary/literal resolution, annotation indexing,
+  specialization lookup, deterministic linking, and visibility
+  (`tools/test_compiler_hir_module.py`). Preserve flat bootstrap semantics
+  through the source-assembly adapter; do not duplicate implementations.
+- [x] Migrate `hir_resolve.sirius`, HIR constants/declarations/body analysis/specialization, and MIR core/CFG/verifier/common helpers to native imports. Cover real HIR analysis and MIR execution with `tools/test_compiler_analysis_modules.py`, preserving the flat self-hosting path and C fixed point.
+- [x] Migrate MIR lowering, ownership/liveness, guards, cleanup, optimization, program assembly and C emission to native imports. Export required pass interfaces, keep flat adapter compatibility, and test end-to-end native MIR/C emission with deterministic linking (`tools/test_compiler_analysis_modules.py`).
+- [x] Link the compiler CLI and MIR C emitter through native source imports, emit entry-reachable linked MIR as native C, and check that the native compiler reproduces the flat bootstrap C fixed point (`tools/test_compiler_modular_selfhost.py`).
+- [x] Migrate module discovery/building, MIR library/serialization/linking, generic packages and runner dependencies to native imports. Add `src/modular_cli.sirius` with direct `--module-root source-root entry.module output.c` compilation using in-memory linking. Validate module-root execution and deterministic output, and native/flat runner parity (`tools/test_compiler_modular_selfhost.py`, `tools/test_compiler_native_runner.py`).
+- [x] Make native modular self-hosting the default: `bootstrap/compiler.c` compiles the `modular_cli` module root directly; `build_modular_compiler.py`, `build_modular_runner.py`, the default compiler tests, and bootstrap regeneration no longer use a flat-built runner. Validate the C fixed point, 96 generated-C fixtures and 50 diagnostics, and an independent native-runner parity test.
+- [x] Retire the test-only flat source manifest and import-stripping adapter after migrating remaining internal MIR/AST test drivers. Production and test builds now use native module imports.
+  - [x] Provide native test-driver builds from actual compiler modules. Migrate tokenizer (19 golden), parser (11 golden + smoke), canonical types, forward ownership, and direct MIR-to-C driver tests.
+  - [x] Run module/linker/package test harnesses on the native MIR runner; move bootstrap profiling and ownership benchmarks to module-root workloads (`profile_mir.py` reports unstable generated function IDs without invented phase labels).
+  - [x] Migrate remaining private-API driver fixtures, then delete `source_manifest.py`, its adapter, and `BuildCache.sirius`.
+  - [x] Replace obsolete `--template`/`--expose` generic-library tests with current `--export`/`--emit-linked-c`, portable `.smirg` specialization and negative-artifact tests.
+  - [x] Restore the missing filesystem example and reusable `Std.Filesystem` helper; validate directory enumeration, symlink policy and error handling.
+  - [x] Verify `python tools/test_all.py` end-to-end: all 62 selected scripts pass, including modular self-hosting, 96 compiled executions, 50 expected diagnostics, MIR parity and filesystem coverage.
+- [x] Canonicalize `.smirg` dependency interface fingerprints independent of export declaration order, pin named re-export target symbols, emit `SIRIUS-MIR-GENERIC/3` and preserve genuine version 2 package compatibility (including a legacy fixture). Test reordering, constant-value changes and facade retargeting (`tools/test_module_package_dependencies.py`).
+- [x] Optionally bundle transitive `.smirg` dependencies using `SIRIUS-MIR-BUNDLE/1` and `sirius-run --bundle-generic`, while keeping separate packages the default and validating embedded interfaces during module builds. Cover reproducibility, source/package precedence, missing dependencies, malformed archives, and offline execution (`tools/test_module_bundles.py`).
+- [x] Reduce modular compiler C bootstrap size by checking ownership/balance before entry-reachable native emission and omitting redundant defensive init flags on that path (10,621,160 -> 5,175,457 bytes, -51.3%). Keep the public direct MIR-C emitter checked, test rejection of uninitialized reads and verify the modular self-hosting fixed point. `tools/profile_generated_c.py` reports per-function size.
+- [x] Profile generated-C function size, register declarations and CFG-block counts. Merge identical short MIR blocks, bypass empty forwarding blocks and remove unreachable blocks after cleanup; preserve register numbering. In verified C, emit NULL-safe conditional releases without redundant pointer guards (5,175,457 -> 4,679,289 bytes combined). Cover interpreter/native execution and defensive emitter behavior.
+- [x] Introduce conservative scalar register-slot reuse in verified C emission. Only non-argument `i64`, `bool`, and `f64` registers whose first access defines them and whose full use/definition interval is confined to one basic block can share storage; same-type intervals must not overlap. Remap emission-only register indices; leave original MIR and defensive C emission unchanged. Cover branches, loops and native/interpreted execution (`tools/test_mir_scalar_slots.py`). The 64-script `tools/test_all.py` suite passes, including compiler generations 2–4.
+- [x] Extend verified-C scalar slot reuse across CFG blocks using backward MIR liveness and a packed symmetric interference graph. Add conflicts at CFG boundaries, definitions and simultaneously evaluated inputs; greedily reuse compatible `i64`, `bool`, and `f64` slots. Preserve argument/managed slots and defensive emission. Add cross-block, loop, join and interpreted/native tests; verify the modular bootstrap fixed point (4,388,950 -> 4,334,410 C bytes).
+- [x] Implement conservative CFG-aware managed register-slot reuse using may-ownership at joins and loop backedges. The proof is path-insensitive at joins (safe overapproximation); code-size reductions alone do not establish runtime benefit. See `MIR_PROFILE.md`.
 - [ ] Bundle or register dependency closures where useful; add computed `pub` exports and optional namespace-wide re-exports. The `.smirg` artifact is **not** a generic MIR executable.
 - [ ] Mixed native/interpreted dispatch and native registration ABI.
 - [ ] Compile-time MIR execution and purity inference (deferred by design).
@@ -221,13 +301,13 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 **Available now:** Python test runners, C11, Sirius scalar/record/array/dictionary support, byte-oriented strings, the existing indexed AST and self-hosted emitter.
 
-- [x] Centralize the ordered `src/` source manifest in `tools/source_manifest.py`, retaining byte-exact historical concatenation for the bootstrap fixed point.
+- [x] Historically centralized flat source assembly; subsequently retired it after native modular bootstrapping and test-driver migration.
 - [x] Run tokenizer, parser, emitter and self-hosting tests using the committed C bootstrap; keep Python-stage-0 tests explicitly archival.
 - [x] Share expected output, exit codes and diagnostic substrings for the stage-1 and fixed-point compiler suites.
 - [ ] Compare output/diagnostics between successive compiler generations for new language semantics.
 - [x] Run the complete 85-positive/37-negative emitter suite against the fixed-point compiler using `tools/compiler_cases.py`.
 - [ ] Add sanitizer builds (ASan/UBSan where supported) and Windows GCC checks. The C-bootstrap fixed-point/currentness check is already implemented in `tools/test_bootstrap.py`.
-- [ ] Extend ownership regression coverage to managed `recur`, nested short-circuit branches, and conditional failures. Three new focused cases cover managed `return`, `break`, and `continue` (55–57); these also passed UBSan.
+- [ ] Extend ownership regression coverage to managed `recur`, nested short-circuit branches, and conditional failures. Three new focused cases cover managed `return`, `break`, and `continue` (55–57); these also passed UBSan. `tools/test_mir_credits.py` adds successful-return heap credit auditing for nested/duplicated children, nested CoW field updates, loop self-updates, branch cleanup, and nested calling frames. `tools/test_mir_inband_ownership.py` now checks `Optional` Some/None across borrowed/moved calling frames, including nested duplicate child edges, native ARC auditing and rejected missing-cleanup/use-after-move cases. A full static heap-reference conservation proof remains open.
 
 **Done when:** the committed C bootstrap alone (plus a native C compiler) is sufficient to build the active compiler and run its full supported-subset tests on development platforms. No Sirius language additions needed.
 
@@ -237,7 +317,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [x] Begin a typed HIR arena with AST source-node IDs, canonical `TypeId`s and resolved field/binding indices (`src/hir.sirius`). This covers basic expressions only; the separate full-program HIR pass is still pending.
 - [x] Introduce a canonical `TypeTable` for primitive, record, `Array`, `Dict`, and `Optional` descriptors; intern by structure with sorted record fields. Register record and bound-value types through the compatibility bridge.
-- [ ] Complete the migration from legacy arithmetic type IDs to canonical `TypeId`s. **Done:** generic specialization cache keys, binding metadata and record-field name lookup now use canonical IDs. **Done in part:** C record-field layout and managed helper selection now derive from canonical descriptor tags and fields. **Remaining:** C naming still uses legacy kinds, as do static type checks and some expression-level ownership operations. Add function/union descriptors when implemented.
+- [x] Canonical `TypeId` migration for implemented static types: generic specialization, binding metadata, field lookup, HIR/MIR type dispatch, C scalar/field storage and retain/drop selection use descriptor APIs. Interner and loaders reject malformed shapes, structural signatures validate nested types, and runtime layouts expose target-neutral storage/ownership/payload slots. Reserved primitive IDs 0–5 remain stable. Function/union types and runtime type registration will be scoped separately when supported.
 - [ ] Move all lexical scope/name resolution, field lookup and type checking out of the C emitter into HIR construction. **Started:** module declarations and parameter syntax/uniqueness are checked in a pre-emission HIR indexing pass; name lookup, record fields, primitive literals, unary/binary operations and assignment compatibility use C-independent HIR resolvers; call signatures, collection methods, and record/constructor field composition are checked in HIR. A pre-emission traversal now visits evaluator bodies, tracks lexical scopes, resolves scalar types, known record/array/dictionary construction, field and indexing operations, optionals and selected calls, and checks definite binding/assignment errors. Known-argument generic evaluator calls and record constructors now resolve result types pre-emission, including forward and nested calls; unresolvable or recursive cases defer to the existing emitter. Monomorphization caching, full control-flow semantics, ownership, and consumption of HIR by the backend still need conversion. HIR nodes preserve syntax AST IDs for source spans.
 - [x] Add an HIR-owned specialization registry keyed by function declaration identity and canonical argument `TypeId`s, tracking in-progress and completed entries. C emission now delegates cache identity/lifecycle to HIR but still initiates specialization and generates bodies. **Remaining:** schedule/type-check specialized HIR functions before backend emission, and use the shared registry for MIR function identities.
 - [x] Add backend-independent concrete-specialization analysis in `src/hir_specialize.sirius`: a worklist of canonical signatures, typed HIR bodies, stable call targets, and in-progress recursion tracking. The worklist is tested without MIR/C. **Remaining:** unannotated callee result inference, constructors, effect signatures and redirecting production C emission to the analyzed specializations.
@@ -267,7 +347,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [ ] Define ownership for every argument, result, local, field projection and call (borrow, owned value or transferred value); conservatively retain when in doubt.
 - [ ] Insert `Retain`, `Release`, `Move`, `Borrow` and `CoWSet`-like MIR operations; ensure nested record/array paths are safe under aliasing.
-- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. **Partially done:** `src/mir_cleanup.sirius` inserts path-specific dead-value releases on CFG edges and explicit return/panic cleanup, including unused arguments and path-dependent initialization. `mir_check_balance` now proves no managed register remains possibly owned at a reachable explicit exit; conditional releases are represented explicitly by `MIR_RELEASE_IF_INIT`. `break`, `continue` and `recur` now lower into MIR; the latter snapshots new arguments before its entry-block backedge. Division/remainder, checked array reads/writes, and optional unwrap now have explicit guarded panic CFG edges before lifetime/cleanup insertion. Other implicit aborts (including allocation failures) remain non-unwinding.
+- [ ] Add cleanup blocks for all normal/early control-flow exits, including returns, `break`, `continue` and `recur` backedges. **Partially done:** `src/mir_cleanup.sirius` inserts path-specific dead-value releases on CFG edges and explicit return/panic cleanup, including unused arguments and path-dependent initialization. `mir_check_balance` now proves no managed register remains possibly owned at a reachable explicit exit; conditional releases are represented explicitly by `MIR_RELEASE_IF_INIT`. `break`, `continue` and `recur` now lower into MIR; the latter snapshots new arguments before its entry-block backedge. Division/remainder, shifts with invalid counts, checked array reads/writes, and optional unwrap have explicit guarded panic CFG edges before lifetime/cleanup insertion. Guard markers are verified against the CFG's successful and panic edges (including intervening cleanup blocks) before unchecked C emission. Other implicit aborts (including allocation failures) remain non-unwinding.
 - [ ] Test managed records, nested arrays, dictionary values, optionals and unions under repeated aliasing, branch exits and sanitizers.
 - [ ] **Only afterward** add ownership/uniqueness optimization and in-place storage reuse; keep these invisible at language level.
 
@@ -293,7 +373,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 **Available then:** a tested typed IR, ownership semantics, module system, and an established C backend.
 
-- [ ] Canonical type descriptors (kind, layout, ownership operations) before dynamic `Any`; ordinary static values need no runtime type tag.
+- [x] Static canonical descriptors for supported types (kind, storage, ownership, field slots). **Still deferred before dynamic `Any`:** target/ABI-specific byte layouts, runtime descriptor registration, and reflection/union/function metadata; ordinary static values need no runtime type tag.
 - [ ] Rank-`N` dense arrays, shape/broadcast validation, scalar and elementwise operations, reductions and linear algebra primitives.
 - [ ] `map`, `filter`, `generate` with **transitive purity/effect checking** before fusion, SIMD, or parallel execution; callback order is intentionally unspecified.
 - [ ] Improve FBIP/ARC and compiler optimizations after semantics and numerical determinism are pinned down.
@@ -321,7 +401,8 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 - [x] Lower checked division/remainder, array access/CoW updates, and optional unwrap into explicit guarded panic CFG edges before lifetime insertion; exercise both backends and ownership cleanup (`tools/test_mir_guard.py`).
 - [x] Add forward definite-initialization analysis across CFG joins/backedges (`src/mir_ownership.sirius`), rejecting uninitialized reads, use-after-move and double release. Validate both original and lifetime-instrumented MIR, with negative tests (`tools/test_mir_ownership.py`).
 - [x] Centralize MIR fallibility metadata (`mir_failure_info`) and audit compiler-produced MIR for missing explicit traps (`mir_audit_failures`); enumerate still-non-unwinding operations (`tools/test_mir_failure_contract.py`).
-- [ ] Complete ownership verification: remaining runtime failures and path-specific ownership-credit proofs. Explicit division/bounds/unwrap exits and conditional releases are implemented; retain defensive return cleanup until this analysis is complete.
+- [x] Make invalid shift counts explicit MIR panic edges (`MIR_SHIFT_VALID`) and verify that guarded instructions have matching CFG success/panic paths, including cleanup-only edges. Reject forged markers and unguarded operations from the verified C entry point; test interpreter/native parity for both shifts (`tools/test_mir_guard.py`, `tools/test_mir_failure_contract.py`).
+- [ ] Complete ownership verification: remaining runtime failures and path-specific ownership-credit proofs. Explicit division/bounds/unwrap/shift exits and conditional releases are implemented; the failure audit validates guard CFG paths before verified emission. **Credit-transition audit added:** final balance verification now checks managed borrow/move/release/result credit transitions for both must-own and may-own CFG states. Regression tests cover conditional overwrites at joins and replacement of an occupied move destination, with heap-audited interpreter/native parity (`tools/test_mir_credits.py`). This verifies register-level transfer contracts, **not** heap-wide static credit conservation or all feasible paths. Type-directed nested heap edge and interprocedural frame-credit contracts now cover records, arrays, optionals, dictionaries, CoW, borrowed calls and moved calls (`tools/test_mir_nested_credits.py`). See `OWNERSHIP.md` for proof assumptions. An opt-in shadow-credit audit now instruments native C allocations, retains, releases and reallocations, with 12 nested/CoW/frame native executions and two injected faults (`tools/test_mir_native_arc.py`). Native type-directed scanners now independently count child pointers in MIR records, arrays, optionals and dictionaries at CFG block boundaries; the audit rejects untracked children and missing heap-edge credits. Explicit-root snapshots additionally prove exact credits in tested returned graphs (tools/test_mir_heap_edges.py). Automatic active-frame root enumeration and CLI-global root scanning now provide exact dynamic credit equality at generated MIR block boundaries, including across moved calls (`tools/test_mir_frame_roots.py`). General native/FFI collection/root registration remains incomplete, so this is dynamic evidence, **not** a heap-wide static conservation proof. Heap-wide alias/refcount proof and exhaustive normal-return/in-band-result coverage remain open; retain defensive cleanup where verification is not available. **Failure policy:** recoverable errors will be ordinary `Result` unions with exhaustive `match`; `Optional`, status results and IEEE-754 nonfinite values are already in-band. Process-fatal aborts may discard caller frames without unwinding. The MIR failure audit now classifies these outcomes independently, and native ARC exit-leak reporting is restricted to normal exits.
 - [ ] Expand interpreter/native differential testing to every managed construct and migrate the default C backend only after coverage is sufficient.
 
 ## 5. Consistency with the language design
@@ -332,7 +413,7 @@ These are **language-completeness goals**, not prerequisites for preserving the 
 
 - **Self-hosting does not mean full semantics.** The current compiler is a bootstrap subset; modules, type descriptors, array broadcasting, vector operations, effect analysis, first-class function coverage, dynamic `Any` and parallel transforms remain outstanding.
 - **Effects/purity:** no general transitive effect checker yet. Do not expose an unrestricted parallelizable `map` that silently accepts side effects.
-- **Type identity:** semantic interning has begun in `src/types.sirius`, but legacy numeric kinds still drive code generation. Canonical runtime layout/introspection descriptors remain future work.
+- **Type identity:** current static types have canonical `TypeId`s and compiler-visible storage/ownership/slot descriptors. Numeric primitive IDs 0–5 are reserved for the bootstrap. ABI-specific layouts, runtime registration/reflection, and future union/function descriptors are not yet implemented.
 - **Ownership:** manual emitter-level ARC is an implementation bridge, not a durable proof of value semantics; phases C/D address this.
 - **Backend:** C11 via `cc`/`gcc` is the current implementation. The design mentions Zig's C toolchain, which remains optional; portability should be measured rather than assumed.
 
@@ -366,7 +447,7 @@ Update this roadmap at **phase milestones**, not with an entry for every small p
   Four runtime failures (including nested managed arrays) now match exit code,
   exact stdout, and stderr via shared `eprint`/`MIR_EPRINT` support. The runner
   accepts `--max-steps` and `--max-depth` independently of program arguments.
-  Unwinding on implicit allocation failures and budget aborts remains pending.
+  Policy revised: process-fatal allocation failures and budget aborts need not unwind caller frames. Recoverable failures will use union returns and exhaustive matching once implemented; verify ownership on those normal control-flow paths. The ARC leak report now skips fatal `s_panic` exits without weakening immediate credit mismatch checks.
 - [x] Serialize and load versioned concrete MIR executables, including canonical
   type descriptors, validation and round-trip execution tests (91 fixtures).
 - [x] Add named concrete exports, typed `extern def` imports, versioned library

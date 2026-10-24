@@ -1,0 +1,105 @@
+import mir alias Mir
+import mir_emit_c alias MirEmitC
+import mir_interpreter alias MirInterpreter
+import mir_lifetime alias MirLifetime
+import types alias Types
+# Liveness must preserve ownership across branches and loop backedges.
+def lifetime_branch_program(condition: i64) -> Mir.MirProgram
+	var first = Array[Mir.MirInstruction]()
+	first = first.append(Mir.mir_string(0, "four"))
+	first = first.append(Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, condition))
+	var yes = Array[Mir.MirInstruction]()
+	yes = yes.append(Mir.mir_op(Mir.MIR_COPY, 2, 0, -1, 0))
+	yes = yes.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 2, -1, 0))
+	let no = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 4, 0, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(first, Mir.mir_branch(1, 1, 2)), Mir.MirBlock(yes, Mir.mir_return(3)), Mir.MirBlock(no, Mir.mir_return(4))], 0)
+	return Mir.new_mir_program([function])
+
+def lifetime_loop_program() -> Mir.MirProgram
+	var start = Array[Mir.MirInstruction]()
+	start = start.append(Mir.mir_string(0, "x"))
+	start = start.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 0))
+	start = start.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 3))
+	start = start.append(Mir.mir_op(Mir.MIR_CONST_I64, 5, -1, -1, 1))
+	let check = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_LT_I64, 2, 1, 3, 0))
+	var body = Array[Mir.MirInstruction]()
+	body = body.append(Mir.mir_string(4, "q"))
+	body = body.append(Mir.mir_op(Mir.MIR_STRING_CONCAT, 0, 0, 4, 0))
+	body = body.append(Mir.mir_op(Mir.MIR_ADD_I64, 1, 1, 5, 0))
+	let done = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 6, 0, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(start, Mir.mir_jump(1)), Mir.MirBlock(check, Mir.mir_branch(2, 2, 3)), Mir.MirBlock(body, Mir.mir_jump(1)), Mir.MirBlock(done, Mir.mir_return(6))], 0)
+	return Mir.new_mir_program([function])
+
+def lifetime_nested_program() -> Mir.MirProgram
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_string(0, "abc"))
+	code = code.append(Mir.mir_array_new(1, [0]))
+	code = code.append(Mir.mir_op(Mir.MIR_COPY, 2, 1, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 3, 2, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, array.id, array.id, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(3))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = array.table
+	return program
+
+def lifetime_cow_program() -> Mir.MirProgram
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	code = code.append(Mir.mir_array_new(0, [1]))
+	code = code.append(Mir.mir_op(Mir.MIR_COPY, 4, 0, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 5))
+	code = code.append(Mir.mir_array_set(0, 0, 2, 3))
+	code = code.append(Mir.mir_array_get(5, 4, 2))
+	code = code.append(Mir.mir_array_get(6, 0, 2))
+	code = code.append(Mir.mir_op(Mir.MIR_ADD_I64, 7, 5, 6, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(7))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = array.table
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 6
+		return 1
+	var programs = Array[Mir.MirProgram]()
+	programs = programs.append(lifetime_branch_program(0))
+	programs = programs.append(lifetime_branch_program(1))
+	programs = programs.append(lifetime_loop_program())
+	programs = programs.append(lifetime_nested_program())
+	programs = programs.append(lifetime_cow_program())
+	# Forward successors share their live-in snapshot with a predecessor's
+	# live-out state. Mutating a copy must not change either stored state.
+	let loop_states = MirLifetime.mir_lifetime_states(programs[!2].functions[!0])
+	if not MirLifetime.mir_live_contains(loop_states[!0].live_out, 0) or not MirLifetime.mir_live_contains(loop_states[!1].live_in, 0)
+		return 7
+	var changed = loop_states[!0].live_out
+	changed[!0] = 0
+	if MirLifetime.mir_live_contains(changed, 0) or not MirLifetime.mir_live_contains(loop_states[!0].live_out, 0) or not MirLifetime.mir_live_contains(loop_states[!1].live_in, 0)
+		return 8
+	for i in 0..len(programs)
+		let owned = MirLifetime.mir_insert_lifetimes(programs[!i])
+		if owned.error != "" or owned.releases < 2
+			print(owned.error)
+			return 2
+		let repeated = MirLifetime.mir_insert_lifetimes(owned.program)
+		if repeated.error != "" or repeated.releases != 0
+			return 3
+		let result = MirInterpreter.mir_execute(owned.program, 0, Array[Mir.MirValue](), 500, 10)
+		var expected = 4
+		if i == 3
+			expected = 1
+		if i == 4
+			expected = 7
+		if result.error != "" or result.value.bits != expected
+			print(result.error)
+			return 4
+		for item in result.heap
+			if item.refs != 0
+				return 5
+		let generated = MirEmitC.mir_emit_c(owned.program, 0)
+		if generated.error != "" or not write_text(args[!i + 1], generated.code)
+			return 6
+	print("PASS MIR CFG lifetimes")
+	return 0

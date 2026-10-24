@@ -1,0 +1,90 @@
+import mir alias Mir
+import mir_cfg alias MirCfg
+import mir_ownership alias MirOwnership
+import types alias Types
+# Verify the shared must/may worklist across joins, a backedge, and unreachable code.
+
+def ownership_combined_program() -> Mir.MirProgram
+	let yes = Array[Mir.MirInstruction]().append(Mir.mir_string(1, "owned"))
+	let released = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0))
+	var finished = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0))
+	finished = finished.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 7))
+	let unreachable = Array[Mir.MirInstruction]().append(Mir.mir_string(1, "unreachable"))
+	var blocks = Array[Mir.MirBlock]()
+	blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_branch(0, 1, 2)))
+	blocks = blocks.append(Mir.MirBlock(yes, Mir.mir_jump(3)))
+	blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(3)))
+	blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_branch(0, 4, 5)))
+	blocks = blocks.append(Mir.MirBlock(released, Mir.mir_jump(0)))
+	blocks = blocks.append(Mir.MirBlock(finished, Mir.mir_return(2)))
+	blocks = blocks.append(Mir.MirBlock(unreachable, Mir.mir_return(2)))
+	return Mir.new_mir_program([Mir.MirFunction(1, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	let program = ownership_combined_program()
+	let function = program.functions[!0]
+	let reached = MirCfg.mir_ownership_reachable(function)
+	let predecessors = MirCfg.mir_cfg_predecessors(function)
+	let combined = MirOwnership.mir_ownership_analyze_cfg(function, true, true, reached, predecessors)
+	let must = MirOwnership.mir_ownership_states(function)
+	let maybe = MirOwnership.mir_ownership_maybe_states(function)
+	if reached[!6] != 0 or len(combined.must) != len(function.blocks) or len(combined.maybe) != len(function.blocks)
+		return 1
+	for i in 0..len(function.blocks)
+		if not MirOwnership.mir_ownership_equal(combined.must[!i].incoming, must[!i].incoming) or not MirOwnership.mir_ownership_equal(combined.must[!i].outgoing, must[!i].outgoing)
+			return 2
+		if not MirOwnership.mir_ownership_equal(combined.maybe[!i].incoming, maybe[!i].incoming) or not MirOwnership.mir_ownership_equal(combined.maybe[!i].outgoing, maybe[!i].outgoing)
+			return 3
+	if MirOwnership.mir_ownership_get(combined.must[!3].incoming, 1) != 0 or MirOwnership.mir_ownership_get(combined.maybe[!3].incoming, 1) != 1
+		return 4
+	if MirOwnership.mir_ownership_get(combined.must[!4].outgoing, 1) != 0 or MirOwnership.mir_ownership_get(combined.maybe[!4].outgoing, 1) != 0
+		return 5
+	if MirOwnership.mir_check_balance(program) != ""
+		return 6
+	# Single-predecessor states may share a snapshot, but must not mutate it.
+	if not MirOwnership.mir_ownership_equal(combined.must[!1].incoming, combined.must[!0].outgoing)
+		return 8
+	let modified = MirOwnership.mir_ownership_set(combined.must[!1].incoming, 1, 1)
+	if MirOwnership.mir_ownership_get(modified, 1) != 1 or MirOwnership.mir_ownership_get(combined.must[!0].outgoing, 1) != 0
+		return 9
+	if not MirOwnership.mir_ownership_equal(combined.maybe[!1].incoming, combined.maybe[!0].outgoing)
+		return 10
+	let changed_maybe = MirOwnership.mir_ownership_set(combined.maybe[!1].incoming, 1, 1)
+	if MirOwnership.mir_ownership_get(changed_maybe, 1) != 1 or MirOwnership.mir_ownership_get(combined.maybe[!0].outgoing, 1) != 0
+		return 11
+	# On every reachable block, direct instruction transfer must agree with
+	# the legacy cached-effect interface for both must and may states.
+	for i in 0..len(function.blocks)
+		if reached[!i] != 0
+			let effect = MirOwnership.mir_ownership_effects(function.blocks[!i])
+			if not MirOwnership.mir_ownership_equal(MirOwnership.mir_ownership_apply_effects(combined.must[!i].incoming, effect), combined.must[!i].outgoing)
+				return 12
+			if not MirOwnership.mir_ownership_equal(MirOwnership.mir_ownership_apply_effects(combined.maybe[!i].incoming, effect), combined.maybe[!i].outgoing)
+				return 13
+	# Block effects must preserve sequential writes, including reinitialization.
+	var writes = Array[Mir.MirInstruction]()
+	writes = writes.append(Mir.mir_string(1, "first"))
+	writes = writes.append(Mir.mir_op(Mir.MIR_MOVE, 2, 1, -1, 0))
+	writes = writes.append(Mir.mir_string(1, "again"))
+	writes = writes.append(Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 2, 2, -1, 0))
+	let block = Mir.MirBlock(writes, Mir.mir_return(1))
+	let initial = MirOwnership.mir_ownership_entry(function)
+	var sequential = initial
+	for ins in block.instructions
+		sequential = MirOwnership.mir_ownership_after(ins, sequential)
+	let summarized = MirOwnership.mir_ownership_apply_effects(initial, MirOwnership.mir_ownership_effects(block))
+	if not MirOwnership.mir_ownership_equal(sequential, summarized)
+		return 7
+	# Multi-source call transfer and repeated writes must agree with the
+	# public effects helper when analyzed directly in instruction order.
+	let call = Mir.mir_call_moves(3, 0, [0, 1, 2], [0, 2])
+	let call_block = Mir.MirBlock([call], Mir.mir_return(3))
+	let all_owned = MirOwnership.mir_ownership_top(4)
+	let direct = MirOwnership.mir_ownership_after(call, all_owned)
+	let summarized_call = MirOwnership.mir_ownership_apply_effects(all_owned, MirOwnership.mir_ownership_effects(call_block))
+	if not MirOwnership.mir_ownership_equal(direct, summarized_call)
+		return 14
+	if MirOwnership.mir_ownership_get(direct, 0) != 0 or MirOwnership.mir_ownership_get(direct, 1) != 1 or MirOwnership.mir_ownership_get(direct, 2) != 0 or MirOwnership.mir_ownership_get(direct, 3) != 1
+		return 15
+	print("PASS MIR combined forward ownership")
+	return 0

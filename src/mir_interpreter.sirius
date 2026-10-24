@@ -1,15 +1,19 @@
+import mir alias Mir
+import mir_common alias MirCommon
+import mir_float alias Float
+import types alias Types
 # Dynamic execution of verified typed MIR; the source runner uses the same
 # HIR specialization, MIR lowering, and optimization as the C backend.
 
-def mir_failure(error: string, steps: i64) -> MirOutcome
-	return MirOutcome(MirValue(TYPE_TAG_INVALID, 0, ""), error, steps)
+def mir_failure(error: string, steps: i64) -> Mir.MirOutcome
+	return Mir.new_mir_outcome(Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, ""), error, steps)
 
-def mir_success(value: MirValue, steps: i64, heap: Array[MirHeapRecord]) -> MirOutcome
-	var result = MirOutcome(value, "", steps)
+def mir_success(value: Mir.MirValue, steps: i64, heap: Array[Mir.MirHeapRecord]) -> Mir.MirOutcome
+	var result = Mir.new_mir_outcome(value, "", steps)
 	result.heap = heap
 	return result
 
-def mir_heap_retain(heap: Array[MirHeapRecord], index: i64) -> Array[MirHeapRecord]
+def mir_heap_retain(heap: Array[Mir.MirHeapRecord], index: i64) -> Array[Mir.MirHeapRecord]
 	var next = heap
 	var record = next[!index]
 	record.refs += 1
@@ -17,122 +21,54 @@ def mir_heap_retain(heap: Array[MirHeapRecord], index: i64) -> Array[MirHeapReco
 	return next
 
 # Records own their fields. Releasing the last owner recursively drops fields.
-def mir_heap_release(types: TypeTable, heap: Array[MirHeapRecord], index: i64) -> Array[MirHeapRecord]
+def mir_heap_release(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], index: i64) -> Array[Mir.MirHeapRecord]
 	var next = heap
 	var record = next[!index]
 	record.refs -= 1
 	next[!index] = record
 	if record.refs == 0
 		for field in record.fields
-			if mir_common_managed(field.type_id) and field.type_id != TYPE_TAG_STRING
+			if MirCommon.mir_common_managed(types, field.type_id) and field.type_id != Types.TYPE_TAG_STRING
 				next = mir_heap_release(types, next, field.bits)
 	return next
 
-def mir_heap_drop(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and mir_common_managed(value.type_id) and value.type_id != TYPE_TAG_STRING
+def mir_heap_drop(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], value: Mir.MirValue) -> Array[Mir.MirHeapRecord]
+	if value.type_id != Types.TYPE_TAG_INVALID and MirCommon.mir_common_managed(types, value.type_id) and value.type_id != Types.TYPE_TAG_STRING
 		return mir_heap_release(types, heap, value.bits)
 	return heap
 
-def mir_heap_copy(types: TypeTable, heap: Array[MirHeapRecord], value: MirValue) -> Array[MirHeapRecord]
-	if value.type_id != TYPE_TAG_INVALID and mir_common_managed(value.type_id) and value.type_id != TYPE_TAG_STRING
+def mir_heap_copy(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], value: Mir.MirValue) -> Array[Mir.MirHeapRecord]
+	if value.type_id != Types.TYPE_TAG_INVALID and MirCommon.mir_common_managed(types, value.type_id) and value.type_id != Types.TYPE_TAG_STRING
 		return mir_heap_retain(heap, value.bits)
 	return heap
 
 # Preserve the presence bit of read_text without conflating missing and empty files.
-def mir_read_text_fields(path: string) -> Array[MirValue]
-	let content = read_text(path) else return Array[MirValue]()
-	return [MirValue(TYPE_TAG_STRING, 0, content)]
+def mir_read_text_fields(path: string) -> Array[Mir.MirValue]
+	let content = read_text(path) else return Array[Mir.MirValue]()
+	return [Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, content)]
 
-rec MirDirectoryValues(present: bool, values: Array[MirValue])
+rec MirDirectoryValues(present: bool, values: Array[Mir.MirValue])
 def mir_list_dir_values(path: string) -> MirDirectoryValues
-	let names = list_dir(path) else return MirDirectoryValues(false, Array[MirValue]())
-	var values = Array[MirValue]()
+	let names = list_dir(path) else return MirDirectoryValues(false, Array[Mir.MirValue]())
+	var values = Array[Mir.MirValue]()
 	for name in names
-		values = values.append(MirValue(TYPE_TAG_STRING, 0, name))
+		values = values.append(Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, name))
 	return MirDirectoryValues(true, values)
 
 # The interpreter stores floating values separately from i64 handles/integers.
-def mir_real_value(value: f64) -> MirValue
-	var result = MirValue(TYPE_TAG_F64, 0, "")
+def mir_real_value(value: f64) -> Mir.MirValue
+	var result = Mir.new_mir_value(Types.TYPE_TAG_F64, 0, "")
 	result.real = value
 	return result
 
-# Parse the decimal spelling carried by MIR_CONST_F64, including exponents.
-# This needs no native C dependency, but decimal rounding parity with strtod
-# at extreme magnitudes remains to be verified separately.
-def mir_parse_real(source: string) -> f64
-	var value = 0.0
-	var i = 0
-	while i < len(source)
-		let digit = source.byte_at(i) or -1
-		if digit < 48 or digit > 57
-			break
-		value = value * 10.0 + mir_float_digit(digit - 48)
-		i += 1
-	if i < len(source) and (source.byte_at(i) or -1) == 46
-		i += 1
-		var divisor = 1.0
-		var fraction = 0.0
-		while i < len(source)
-			let digit = source.byte_at(i) or -1
-			if digit < 48 or digit > 57
-				break
-			divisor = divisor * 10.0
-			fraction = fraction * 10.0 + mir_float_digit(digit - 48)
-			i += 1
-		value = value + fraction / divisor
-	if i < len(source)
-		i += 1  # e or E (guaranteed by the source lexer)
-		var negative = false
-		if i < len(source) and (source.byte_at(i) or -1) == 45
-			negative = true
-			i += 1
-		elif i < len(source) and (source.byte_at(i) or -1) == 43
-			i += 1
-		var exponent = 0
-		while i < len(source)
-			let digit = source.byte_at(i) or -1
-			# Bound work even for untrusted literals with huge exponents.
-			if exponent < 400
-				exponent = exponent * 10 + digit - 48
-			i += 1
-		for j in 0..exponent
-			if negative
-				value = value / 10.0
-			else
-				value = value * 10.0
-	return value
-
-# No i64-to-f64 conversion intrinsic is available yet.
-def mir_float_digit(digit: i64) -> f64
-	if digit == 0
-		return 0.0
-	if digit == 1
-		return 1.0
-	if digit == 2
-		return 2.0
-	if digit == 3
-		return 3.0
-	if digit == 4
-		return 4.0
-	if digit == 5
-		return 5.0
-	if digit == 6
-		return 6.0
-	if digit == 7
-		return 7.0
-	if digit == 8
-		return 8.0
-	return 9.0
-
-def mir_dict_equal(types: TypeTable, heap: Array[MirHeapRecord], a: MirValue, b: MirValue) -> bool
+def mir_dict_equal(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], a: Mir.MirValue, b: Mir.MirValue) -> bool
 	if a.type_id != b.type_id
 		return false
-	if a.type_id == TYPE_TAG_STRING
+	if a.type_id == Types.TYPE_TAG_STRING
 		return a.text == b.text
-	if a.type_id == TYPE_TAG_F64
+	if a.type_id == Types.TYPE_TAG_F64
 		return a.real == b.real
-	if a.type_id >= TYPE_TAG_RECORD and a.type_id < len(types.entries) and types.entries[!a.type_id].tag == TYPE_TAG_RECORD
+	if a.type_id >= Types.TYPE_TAG_RECORD and a.type_id < len(types.entries) and types.entries[!a.type_id].tag == Types.TYPE_TAG_RECORD
 		let first = heap[!a.bits]
 		let second = heap[!b.bits]
 		if len(first.fields) != len(second.fields)
@@ -143,21 +79,21 @@ def mir_dict_equal(types: TypeTable, heap: Array[MirHeapRecord], a: MirValue, b:
 		return true
 	return a.bits == b.bits
 
-def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], moved_args: Array[i64], runtime_args: Array[string]) -> MirOutcome
+def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, arguments: Array[Mir.MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[Mir.MirHeapRecord], moved_args: Array[i64], runtime_args: Array[string]) -> Mir.MirOutcome
 	if depth >= max_depth
 		return mir_failure("call depth limit exceeded", 0)
 	let function = program.functions[!function_id]
 	if len(arguments) != function.argument_count
 		return mir_failure("wrong argument count", 0)
 	var heap = input_heap
-	var registers = Array[MirValue]()
+	var registers = Array[Mir.MirValue]()
 	while len(registers) < len(function.register_types)
-		registers = registers.append(MirValue(TYPE_TAG_INVALID, 0, ""))
+		registers = registers.append(Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, ""))
 	for i in 0..len(arguments)
 		let argument = arguments[!i]
 		if argument.type_id != function.register_types[!i]
 			return mir_failure("argument type mismatch", 0)
-		if argument.type_id == TYPE_TAG_BOOL and argument.bits != 0 and argument.bits != 1
+		if argument.type_id == Types.TYPE_TAG_BOOL and argument.bits != 0 and argument.bits != 1
 			return mir_failure("invalid boolean value", 0)
 		var moved = false
 		for position in moved_args
@@ -174,119 +110,122 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 			if steps >= budget
 				return mir_failure("step limit exceeded", steps)
 			steps += 1
-			if ins.op == MIR_CONST_F64
-				registers[!ins.dst] = mir_real_value(mir_parse_real(ins.text))
+			if ins.op == Mir.MIR_CONST_F64
+				registers[!ins.dst] = mir_real_value(Float.mir_parse_real(ins.text))
 				continue
-			if ins.op == MIR_NEG_F64 or ins.op == MIR_SQRT_F64
+			if ins.op == Mir.MIR_NEG_F64 or ins.op == Mir.MIR_SQRT_F64
 				let value = registers[!ins.first]
-				if value.type_id != TYPE_TAG_F64
+				if value.type_id != Types.TYPE_TAG_F64
 					return mir_failure("invalid floating operand", steps)
-				if ins.op == MIR_NEG_F64
+				if ins.op == Mir.MIR_NEG_F64
 					registers[!ins.dst] = mir_real_value(-value.real)
 				else
 					registers[!ins.dst] = mir_real_value(sqrt(value.real))
 				continue
-			if ins.op == MIR_RELEASE_IF_INIT
-				if registers[!ins.dst].type_id != TYPE_TAG_INVALID
+			if ins.op == Mir.MIR_RELEASE_IF_INIT
+				if registers[!ins.dst].type_id != Types.TYPE_TAG_INVALID
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-					registers[!ins.dst] = MirValue(TYPE_TAG_INVALID, 0, "")
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				continue
-			if ins.op == MIR_ARGUMENTS
-				var fields = Array[MirValue]()
+			if ins.op == Mir.MIR_ARGUMENTS
+				var fields = Array[Mir.MirValue]()
 				for argument in runtime_args
-					fields = fields.append(MirValue(TYPE_TAG_STRING, 0, argument))
+					fields = fields.append(Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, argument))
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op == MIR_STR_I64
+			if ins.op == Mir.MIR_STR_I64
 				let value = registers[!ins.first]
-				if value.type_id != TYPE_TAG_I64
+				if value.type_id != Types.TYPE_TAG_I64
 					return mir_failure("str expects i64", steps)
-				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, str(value.bits))
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, str(value.bits))
 				continue
-			if ins.op == MIR_READ_TEXT
+			if ins.op == Mir.MIR_READ_TEXT
 				let path = registers[!ins.first]
-				if path.type_id != TYPE_TAG_STRING
+				if path.type_id != Types.TYPE_TAG_STRING
 					return mir_failure("read_text expects a string", steps)
 				let fields = mir_read_text_fields(path.text)
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op == MIR_LIST_DIR
+			if ins.op == Mir.MIR_LIST_DIR
 				let path = registers[!ins.first]
-				if path.type_id != TYPE_TAG_STRING
+				if path.type_id != Types.TYPE_TAG_STRING
 					return mir_failure("list_dir expects a string", steps)
 				let entries = mir_list_dir_values(path.text)
-				var fields = Array[MirValue]()
+				var fields = Array[Mir.MirValue]()
 				if entries.present
 					let array_type = program.types.entries[!function.register_types[!ins.dst]].first
-					fields = fields.append(MirValue(array_type, len(heap), ""))
-					heap = heap.append(MirHeapRecord(array_type, entries.values, 1))
+					fields = fields.append(Mir.new_mir_value(array_type, len(heap), ""))
+					heap = heap.append(Mir.MirHeapRecord(array_type, entries.values, 1))
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op == MIR_IS_DIR
+			if ins.op == Mir.MIR_IS_DIR
 				let path = registers[!ins.first]
-				if path.type_id != TYPE_TAG_STRING
+				if path.type_id != Types.TYPE_TAG_STRING
 					return mir_failure("is_dir expects a string", steps)
 				var value = 0
 				if is_dir(path.text)
 					value = 1
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, value, "")
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, value, "")
 				continue
-			if ins.op == MIR_WRITE_TEXT
+			if ins.op == Mir.MIR_WRITE_TEXT
 				let path = registers[!ins.first]
 				let content = registers[!ins.second]
-				if path.type_id != TYPE_TAG_STRING or content.type_id != TYPE_TAG_STRING
+				if path.type_id != Types.TYPE_TAG_STRING or content.type_id != Types.TYPE_TAG_STRING
 					return mir_failure("write_text expects strings", steps)
 				var success = 0
 				if write_text(path.text, content.text)
 					success = 1
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, success, "")
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, success, "")
 				continue
-			if ins.op == MIR_OPTIONAL_NONE or ins.op == MIR_OPTIONAL_SOME
-				var fields = Array[MirValue]()
-				if ins.op == MIR_OPTIONAL_SOME
+			if ins.op == Mir.MIR_OPTIONAL_NONE or ins.op == Mir.MIR_OPTIONAL_SOME
+				var fields = Array[Mir.MirValue]()
+				if ins.op == Mir.MIR_OPTIONAL_SOME
 					let payload = registers[!ins.first]
-					if payload.type_id == TYPE_TAG_INVALID
+					if payload.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized optional payload", steps)
 					fields = fields.append(payload)
 					heap = mir_heap_copy(program.types, heap, payload)
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op == MIR_NONZERO_I64 or ins.op == MIR_DIV_NO_OVERFLOW_I64
+			if ins.op == Mir.MIR_NONZERO_I64 or ins.op == Mir.MIR_DIV_NO_OVERFLOW_I64 or ins.op == Mir.MIR_SHIFT_VALID
 				let first = registers[!ins.first]
 				var valid = 0
-				if first.type_id == TYPE_TAG_INVALID
+				if first.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized guard operand", steps)
-				if ins.op == MIR_NONZERO_I64
+				if ins.op == Mir.MIR_SHIFT_VALID
+					if first.bits >= 0 and first.bits < 64
+						valid = 1
+				elif ins.op == Mir.MIR_NONZERO_I64
 					if first.bits != 0
 						valid = 1
 				else
 					let second = registers[!ins.second]
-					if second.type_id == TYPE_TAG_INVALID
+					if second.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized guard operand", steps)
 					if first.bits != (-9223372036854775807 - 1) or second.bits != -1
 						valid = 1
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, valid, "")
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, valid, "")
 				continue
-			if ins.op == MIR_OPTIONAL_HAS or ins.op == MIR_OPTIONAL_UNWRAP
+			if ins.op == Mir.MIR_OPTIONAL_HAS or ins.op == Mir.MIR_OPTIONAL_UNWRAP
 				let wrapped = registers[!ins.first]
-				if wrapped.type_id == TYPE_TAG_INVALID
+				if wrapped.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized optional", steps)
 				if wrapped.bits < 0 or wrapped.bits >= len(heap) or heap[!wrapped.bits].refs <= 0
 					return mir_failure("invalid optional handle", steps)
 				let fields = heap[!wrapped.bits].fields
-				if ins.op == MIR_OPTIONAL_HAS
+				if ins.op == Mir.MIR_OPTIONAL_HAS
 					var present = 0
 					if len(fields) == 1
 						present = 1
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, present, "")
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, present, "")
 					continue
 				if len(fields) == 0
 					return mir_failure("missing optional value", steps)
@@ -295,54 +234,54 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = payload
 				continue
-			if ins.op == MIR_DICT_NEW
+			if ins.op == Mir.MIR_DICT_NEW
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], Array[MirValue](), 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], Array[Mir.MirValue](), 1))
 				continue
-			if ins.op == MIR_DICT_INSERT or ins.op == MIR_DICT_GET_OR or ins.op == MIR_DICT_LENGTH or ins.op == MIR_DICT_GET_OPTIONAL
+			if ins.op == Mir.MIR_DICT_INSERT or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_LENGTH or ins.op == Mir.MIR_DICT_GET_OPTIONAL
 				let owner = registers[!ins.first]
-				if owner.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized dictionary", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid dictionary handle", steps)
 				let dict = heap[!owner.bits]
-				if ins.op == MIR_DICT_LENGTH
-					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(dict.fields) / 2, "")
+				if ins.op == Mir.MIR_DICT_LENGTH
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, len(dict.fields) / 2, "")
 					continue
 				var key_slot = ins.second
-				if ins.op == MIR_DICT_INSERT
+				if ins.op == Mir.MIR_DICT_INSERT
 					key_slot = ins.inputs[!0]
 				let key = registers[!key_slot]
-				if key.type_id == TYPE_TAG_INVALID
+				if key.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized dictionary key", steps)
 				var at = -1
 				for i in 0..len(dict.fields) / 2
 					if mir_dict_equal(program.types, heap, dict.fields[!i * 2], key)
 						at = i
 						break
-				if ins.op == MIR_DICT_GET_OPTIONAL
-					var fields = Array[MirValue]()
+				if ins.op == Mir.MIR_DICT_GET_OPTIONAL
+					var fields = Array[Mir.MirValue]()
 					if at >= 0
 						let payload = dict.fields[!at * 2 + 1]
 						heap = mir_heap_copy(program.types, heap, payload)
 						fields = fields.append(payload)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 					continue
-				if ins.op == MIR_DICT_GET_OR
+				if ins.op == Mir.MIR_DICT_GET_OR
 					var selected = registers[!ins.immediate]
 					if at >= 0
 						selected = dict.fields[!at * 2 + 1]
-					if selected.type_id == TYPE_TAG_INVALID
+					if selected.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized dictionary fallback", steps)
 					heap = mir_heap_copy(program.types, heap, selected)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = selected
 					continue
 				let value = registers[!ins.inputs[!1]]
-				if value.type_id == TYPE_TAG_INVALID
+				if value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized dictionary value", steps)
 				# Retain inputs before modifying or dropping aliases.
 				heap = mir_heap_copy(program.types, heap, key)
@@ -352,7 +291,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					for field in dict.fields
 						heap = mir_heap_copy(program.types, heap, field)
 					result_index = len(heap)
-					heap = heap.append(MirHeapRecord(owner.type_id, dict.fields, 1))
+					heap = heap.append(Mir.MirHeapRecord(owner.type_id, dict.fields, 1))
 					heap = mir_heap_release(program.types, heap, owner.bits)
 				var modified = heap[!result_index]
 				if at >= 0
@@ -364,15 +303,15 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				else
 					modified.fields = modified.fields.append(key).append(value)
 				heap[!result_index] = modified
-				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, result_index, "")
 				continue
-			if ins.op == MIR_ARRAY_APPEND
+			if ins.op == Mir.MIR_ARRAY_APPEND
 				let owner = registers[!ins.first]
 				let value = registers[!ins.second]
-				if owner.type_id == TYPE_TAG_INVALID or value.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID or value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized array append", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid array handle", steps)
@@ -382,64 +321,67 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				heap = mir_heap_copy(program.types, heap, value)
 				fields = fields.append(value)
 				heap = mir_heap_drop(program.types, heap, owner)
-				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(owner.type_id, len(heap), "")
-				heap = heap.append(MirHeapRecord(owner.type_id, fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(owner.type_id, fields, 1))
 				continue
-			if ins.op == MIR_ARRAY_NEW
-				var values = Array[MirValue]()
+			if ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+				var values = Array[Mir.MirValue]()
 				for source in ins.inputs
 					let element = registers[!source]
-					if element.type_id == TYPE_TAG_INVALID
+					if element.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized array element", steps)
 					values = values.append(element)
-				for element in values
-					heap = mir_heap_copy(program.types, heap, element)
+				for i in 0..len(values)
+					if not Mir.mir_input_move_at(ins, i)
+						heap = mir_heap_copy(program.types, heap, values[!i])
+					else
+						registers[!ins.inputs[!i]] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], values, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], values, 1))
 				continue
-			if ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_LENGTH or ins.op == MIR_ARRAY_SET or ins.op == MIR_ARRAY_GET_OPTIONAL or ins.op == MIR_ARRAY_INDEX_VALID
+			if ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_LENGTH or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_ARRAY_INDEX_VALID
 				let owner = registers[!ins.first]
-				if owner.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized array", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid array handle", steps)
 				let array = heap[!owner.bits]
-				if ins.op == MIR_ARRAY_LENGTH
-					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(array.fields), "")
+				if ins.op == Mir.MIR_ARRAY_LENGTH
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, len(array.fields), "")
 					continue
 				let index = registers[!ins.second]
-				if index.type_id == TYPE_TAG_INVALID
+				if index.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized array index", steps)
-				if ins.op == MIR_ARRAY_INDEX_VALID
+				if ins.op == Mir.MIR_ARRAY_INDEX_VALID
 					var valid = 0
 					if index.bits >= 0 and index.bits < len(array.fields)
 						valid = 1
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, valid, "")
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, valid, "")
 					continue
-				if ins.op == MIR_ARRAY_GET_OPTIONAL
-					var fields = Array[MirValue]()
+				if ins.op == Mir.MIR_ARRAY_GET_OPTIONAL
+					var fields = Array[Mir.MirValue]()
 					if index.bits >= 0 and index.bits < len(array.fields)
 						let payload = array.fields[!index.bits]
 						heap = mir_heap_copy(program.types, heap, payload)
 						fields = fields.append(payload)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 					continue
 				if index.bits < 0 or index.bits >= len(array.fields)
 					return mir_failure("array index out of bounds", steps)
-				if ins.op == MIR_ARRAY_GET
+				if ins.op == Mir.MIR_ARRAY_GET
 					let element = array.fields[!index.bits]
 					heap = mir_heap_copy(program.types, heap, element)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = element
 					continue
 				let value = registers[!ins.immediate]
-				if value.type_id == TYPE_TAG_INVALID
+				if value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized array update value", steps)
 				# Retain replacement before releasing the previous element, even on self-update.
 				heap = mir_heap_copy(program.types, heap, value)
@@ -448,34 +390,37 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					for element in array.fields
 						heap = mir_heap_copy(program.types, heap, element)
 					result_index = len(heap)
-					heap = heap.append(MirHeapRecord(owner.type_id, array.fields, 1))
+					heap = heap.append(Mir.MirHeapRecord(owner.type_id, array.fields, 1))
 					heap = mir_heap_release(program.types, heap, owner.bits)
 				var changed = heap[!result_index]
 				heap = mir_heap_drop(program.types, heap, changed.fields[!index.bits])
 				changed.fields[!index.bits] = value
 				heap[!result_index] = changed
-				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, result_index, "")
 				continue
-			if ins.op == MIR_RECORD_NEW
-				var fields = Array[MirValue]()
+			if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE
+				var fields = Array[Mir.MirValue]()
 				for input in ins.inputs
 					let field = registers[!input]
-					if field.type_id == TYPE_TAG_INVALID
+					if field.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized record field", steps)
 					fields = fields.append(field)
-				for field in fields
-					heap = mir_heap_copy(program.types, heap, field)
+				for i in 0..len(fields)
+					if not Mir.mir_input_move_at(ins, i)
+						heap = mir_heap_copy(program.types, heap, fields[!i])
+					else
+						registers[!ins.inputs[!i]] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-				heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op == MIR_RECORD_ARRAY_APPEND
+			if ins.op == Mir.MIR_RECORD_ARRAY_APPEND
 				let owner = registers[!ins.first]
 				let value = registers[!ins.second]
-				if owner.type_id == TYPE_TAG_INVALID or value.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID or value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized record array append", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid record handle", steps)
@@ -488,7 +433,7 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					for element in record.fields
 						heap = mir_heap_copy(program.types, heap, element)
 					result_index = len(heap)
-					heap = heap.append(MirHeapRecord(owner.type_id, record.fields, 1))
+					heap = heap.append(Mir.MirHeapRecord(owner.type_id, record.fields, 1))
 					heap = mir_heap_release(program.types, heap, owner.bits)
 				let field_value = heap[!result_index].fields[!ins.immediate]
 				let array = heap[!field_value.bits]
@@ -497,24 +442,24 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					for element in array.fields
 						heap = mir_heap_copy(program.types, heap, element)
 					array_index = len(heap)
-					heap = heap.append(MirHeapRecord(field_value.type_id, array.fields, 1))
+					heap = heap.append(Mir.MirHeapRecord(field_value.type_id, array.fields, 1))
 					heap = mir_heap_release(program.types, heap, field_value.bits)
 				heap = mir_heap_copy(program.types, heap, value)
 				var updated_array = heap[!array_index]
 				updated_array.fields = updated_array.fields.append(value)
 				heap[!array_index] = updated_array
 				var updated = heap[!result_index]
-				updated.fields[!ins.immediate] = MirValue(field_value.type_id, array_index, "")
+				updated.fields[!ins.immediate] = Mir.new_mir_value(field_value.type_id, array_index, "")
 				heap[!result_index] = updated
-				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, result_index, "")
 				continue
-			if ins.op == MIR_RECORD_SET
+			if ins.op == Mir.MIR_RECORD_SET
 				let owner = registers[!ins.first]
 				let value = registers[!ins.second]
-				if owner.type_id == TYPE_TAG_INVALID or value.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID or value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized record update", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid record handle", steps)
@@ -528,20 +473,20 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 					for field in record.fields
 						heap = mir_heap_copy(program.types, heap, field)
 					result_index = len(heap)
-					heap = heap.append(MirHeapRecord(owner.type_id, record.fields, 1))
+					heap = heap.append(Mir.MirHeapRecord(owner.type_id, record.fields, 1))
 					heap = mir_heap_release(program.types, heap, owner.bits)
 				var updated = heap[!result_index]
 				heap = mir_heap_drop(program.types, heap, updated.fields[!ins.immediate])
 				updated.fields[!ins.immediate] = value
 				heap[!result_index] = updated
-				registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
+				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-				registers[!ins.dst] = MirValue(owner.type_id, result_index, "")
+				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, result_index, "")
 				continue
-			if ins.op == MIR_RECORD_GET
+			if ins.op == Mir.MIR_RECORD_GET
 				let owner = registers[!ins.first]
-				if owner.type_id == TYPE_TAG_INVALID
+				if owner.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized record", steps)
 				if owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
 					return mir_failure("invalid record handle", steps)
@@ -550,50 +495,50 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = field
 				continue
-			if ins.op == MIR_CONST_I64
-				registers[!ins.dst] = MirValue(TYPE_TAG_I64, ins.immediate, "")
+			if ins.op == Mir.MIR_CONST_I64
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, ins.immediate, "")
 				continue
-			if ins.op == MIR_CONST_BOOL
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, ins.immediate, "")
+			if ins.op == Mir.MIR_CONST_BOOL
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, ins.immediate, "")
 				continue
-			if ins.op == MIR_CONST_STRING
-				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, ins.text)
+			if ins.op == Mir.MIR_CONST_STRING
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, ins.text)
 				continue
-			if ins.op == MIR_COPY or ins.op == MIR_RETAIN or ins.op == MIR_MOVE or ins.op == MIR_RELEASE or ins.op == MIR_STRING_LENGTH or ins.op == MIR_NEG_I64 or ins.op == MIR_NOT_BOOL or ins.op == MIR_PRINT or ins.op == MIR_EPRINT
+			if ins.op == Mir.MIR_COPY or ins.op == Mir.MIR_RETAIN or ins.op == Mir.MIR_MOVE or ins.op == Mir.MIR_RELEASE or ins.op == Mir.MIR_STRING_LENGTH or ins.op == Mir.MIR_NEG_I64 or ins.op == Mir.MIR_NOT_BOOL or ins.op == Mir.MIR_PRINT or ins.op == Mir.MIR_EPRINT
 				let value = registers[!ins.first]
-				if value.type_id == TYPE_TAG_INVALID
+				if value.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized register", steps)
-				if ins.op == MIR_COPY or ins.op == MIR_RETAIN
+				if ins.op == Mir.MIR_COPY or ins.op == Mir.MIR_RETAIN
 					heap = mir_heap_copy(program.types, heap, value)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = value
-				elif ins.op == MIR_MOVE
+				elif ins.op == Mir.MIR_MOVE
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = value
-					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
-				elif ins.op == MIR_RELEASE
+					registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
+				elif ins.op == Mir.MIR_RELEASE
 					heap = mir_heap_drop(program.types, heap, value)
-					registers[!ins.first] = MirValue(TYPE_TAG_INVALID, 0, "")
-				elif ins.op == MIR_STRING_LENGTH
-					registers[!ins.dst] = MirValue(TYPE_TAG_I64, len(value.text), "")
-				elif ins.op == MIR_NEG_I64
-					registers[!ins.dst] = MirValue(TYPE_TAG_I64, -value.bits, "")
-				elif ins.op == MIR_NOT_BOOL
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, 1 - value.bits, "")
-				elif ins.op == MIR_EPRINT
-					if value.type_id == TYPE_TAG_F64
+					registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
+				elif ins.op == Mir.MIR_STRING_LENGTH
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, len(value.text), "")
+				elif ins.op == Mir.MIR_NEG_I64
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, -value.bits, "")
+				elif ins.op == Mir.MIR_NOT_BOOL
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, 1 - value.bits, "")
+				elif ins.op == Mir.MIR_EPRINT
+					if value.type_id == Types.TYPE_TAG_F64
 						eprint(value.real)
-					elif value.type_id == TYPE_TAG_STRING
+					elif value.type_id == Types.TYPE_TAG_STRING
 						eprint(value.text)
-					elif value.type_id == TYPE_TAG_BOOL
+					elif value.type_id == Types.TYPE_TAG_BOOL
 						eprint(value.bits != 0)
 					else
 						eprint(value.bits)
-				elif value.type_id == TYPE_TAG_F64
+				elif value.type_id == Types.TYPE_TAG_F64
 					print(value.real)
-				elif value.type_id == TYPE_TAG_STRING
+				elif value.type_id == Types.TYPE_TAG_STRING
 					print(value.text)
-				elif value.type_id == TYPE_TAG_BOOL
+				elif value.type_id == Types.TYPE_TAG_BOOL
 					if value.bits == 0
 						print(false)
 					else
@@ -601,19 +546,19 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				else
 					print(value.bits)
 				continue
-			if ins.op == MIR_CALL or ins.op == MIR_CALL_MOVE
-				var call_args = Array[MirValue]()
+			if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+				var call_args = Array[Mir.MirValue]()
 				for arg_register in ins.inputs
 					let argument = registers[!arg_register]
-					if argument.type_id == TYPE_TAG_INVALID
+					if argument.type_id == Types.TYPE_TAG_INVALID
 						return mir_failure("uninitialized register", steps)
 					call_args = call_args.append(argument)
 				var moved_args = Array[i64]()
-				if ins.op == MIR_CALL_MOVE
+				if ins.op == Mir.MIR_CALL_MOVE
 					for i in 0..len(ins.inputs)
-						if mir_call_move_at(ins, i)
+						if Mir.mir_call_move_at(ins, i)
 							moved_args = moved_args.append(i)
-							registers[!ins.inputs[!i]] = MirValue(TYPE_TAG_INVALID, 0, "")
+							registers[!ins.inputs[!i]] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				let outcome = mir_execute_function_owned(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1, heap, moved_args, runtime_args)
 				steps += outcome.steps
 				if outcome.error != ""
@@ -624,45 +569,45 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				continue
 			let left = registers[!ins.first]
 			let right = registers[!ins.second]
-			if ins.op == MIR_STRING_CONCAT
-				if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
+			if ins.op == Mir.MIR_STRING_CONCAT
+				if left.type_id == Types.TYPE_TAG_INVALID or right.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized register", steps)
-				registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, left.text + right.text)
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, left.text + right.text)
 				continue
-			if ins.op >= MIR_EQ_STRING and ins.op <= MIR_LE_STRING
-				if left.type_id != TYPE_TAG_STRING or right.type_id != TYPE_TAG_STRING
+			if ins.op >= Mir.MIR_EQ_STRING and ins.op <= Mir.MIR_LE_STRING
+				if left.type_id != Types.TYPE_TAG_STRING or right.type_id != Types.TYPE_TAG_STRING
 					return mir_failure("invalid string comparison operands", steps)
 				var compare = false
-				if ins.op == MIR_EQ_STRING
+				if ins.op == Mir.MIR_EQ_STRING
 					compare = left.text == right.text
-				elif ins.op == MIR_LT_STRING
+				elif ins.op == Mir.MIR_LT_STRING
 					compare = left.text < right.text
 				else
 					compare = left.text <= right.text
 				var bits = 0
 				if compare
 					bits = 1
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, bits, "")
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, bits, "")
 				continue
-			if ins.op >= MIR_STRING_SLICE and ins.op <= MIR_STRING_JOIN
-				if left.type_id != TYPE_TAG_STRING or right.type_id == TYPE_TAG_INVALID
+			if ins.op >= Mir.MIR_STRING_SLICE and ins.op <= Mir.MIR_STRING_JOIN
+				if left.type_id != Types.TYPE_TAG_STRING or right.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("invalid string operation operands", steps)
-				if ins.op == MIR_STRING_SLICE
+				if ins.op == Mir.MIR_STRING_SLICE
 					let end = registers[!ins.immediate]
-					if end.type_id != TYPE_TAG_I64
+					if end.type_id != Types.TYPE_TAG_I64
 						return mir_failure("invalid string slice end", steps)
-					registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, left.text.slice(right.bits, end.bits))
-				elif ins.op == MIR_STRING_STARTS_WITH or ins.op == MIR_STRING_ENDS_WITH
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, left.text.slice(right.bits, end.bits))
+				elif ins.op == Mir.MIR_STRING_STARTS_WITH or ins.op == Mir.MIR_STRING_ENDS_WITH
 					var matches = false
-					if ins.op == MIR_STRING_STARTS_WITH
+					if ins.op == Mir.MIR_STRING_STARTS_WITH
 						matches = left.text.starts_with(right.text)
 					else
 						matches = left.text.ends_with(right.text)
 					var bits = 0
 					if matches
 						bits = 1
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, bits, "")
-				elif ins.op == MIR_STRING_JOIN
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, bits, "")
+				elif ins.op == Mir.MIR_STRING_JOIN
 					if right.bits < 0 or right.bits >= len(heap)
 						return mir_failure("invalid join array", steps)
 					var joined = ""
@@ -671,98 +616,98 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 						if i > 0
 							joined = joined + left.text
 						joined = joined + parts[!i].text
-					registers[!ins.dst] = MirValue(TYPE_TAG_STRING, 0, joined)
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, joined)
 				else
 					var index = -1
-					if ins.op == MIR_STRING_BYTE_AT
+					if ins.op == Mir.MIR_STRING_BYTE_AT
 						index = left.text.byte_at(right.bits) or -1
 					else
 						index = left.text.find(right.text) or -1
-					var fields = Array[MirValue]()
+					var fields = Array[Mir.MirValue]()
 					if index >= 0
-						fields = fields.append(MirValue(TYPE_TAG_I64, index, ""))
+						fields = fields.append(Mir.new_mir_value(Types.TYPE_TAG_I64, index, ""))
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
-					registers[!ins.dst] = MirValue(function.register_types[!ins.dst], len(heap), "")
-					heap = heap.append(MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+					heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 				continue
-			if ins.op >= MIR_ADD_F64 and ins.op <= MIR_LE_F64
-				if left.type_id != TYPE_TAG_F64 or right.type_id != TYPE_TAG_F64
+			if ins.op >= Mir.MIR_ADD_F64 and ins.op <= Mir.MIR_LE_F64
+				if left.type_id != Types.TYPE_TAG_F64 or right.type_id != Types.TYPE_TAG_F64
 					return mir_failure("invalid floating operands", steps)
-				if ins.op == MIR_ADD_F64
+				if ins.op == Mir.MIR_ADD_F64
 					registers[!ins.dst] = mir_real_value(left.real + right.real)
-				elif ins.op == MIR_SUB_F64
+				elif ins.op == Mir.MIR_SUB_F64
 					registers[!ins.dst] = mir_real_value(left.real - right.real)
-				elif ins.op == MIR_MUL_F64
+				elif ins.op == Mir.MIR_MUL_F64
 					registers[!ins.dst] = mir_real_value(left.real * right.real)
-				elif ins.op == MIR_DIV_F64
+				elif ins.op == Mir.MIR_DIV_F64
 					registers[!ins.dst] = mir_real_value(left.real / right.real)
 				else
 					var answer = 0
-					if ins.op == MIR_EQ_F64 and left.real == right.real or ins.op == MIR_LT_F64 and left.real < right.real or ins.op == MIR_LE_F64 and left.real <= right.real
+					if ins.op == Mir.MIR_EQ_F64 and left.real == right.real or ins.op == Mir.MIR_LT_F64 and left.real < right.real or ins.op == Mir.MIR_LE_F64 and left.real <= right.real
 						answer = 1
-					registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer, "")
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, answer, "")
 				continue
-			if left.type_id == TYPE_TAG_INVALID or right.type_id == TYPE_TAG_INVALID
+			if left.type_id == Types.TYPE_TAG_INVALID or right.type_id == Types.TYPE_TAG_INVALID
 				return mir_failure("uninitialized register", steps)
 			var answer = 0
-			if ins.op == MIR_ADD_I64
+			if ins.op == Mir.MIR_ADD_I64
 				answer = left.bits + right.bits
-			elif ins.op == MIR_SUB_I64
+			elif ins.op == Mir.MIR_SUB_I64
 				answer = left.bits - right.bits
-			elif ins.op == MIR_MUL_I64
+			elif ins.op == Mir.MIR_MUL_I64
 				answer = left.bits * right.bits
-			elif ins.op == MIR_DIV_I64 or ins.op == MIR_REM_I64
+			elif ins.op == Mir.MIR_DIV_I64 or ins.op == Mir.MIR_REM_I64
 				if right.bits == 0
 					return mir_failure("division by zero", steps)
-				if ins.op == MIR_DIV_I64
+				if ins.op == Mir.MIR_DIV_I64
 					answer = left.bits / right.bits
 				else
 					answer = left.bits % right.bits
-			elif ins.op == MIR_BIT_AND_I64
+			elif ins.op == Mir.MIR_BIT_AND_I64
 				answer = left.bits & right.bits
-			elif ins.op == MIR_BIT_OR_I64
+			elif ins.op == Mir.MIR_BIT_OR_I64
 				answer = left.bits | right.bits
-			elif ins.op == MIR_SHL_I64 or ins.op == MIR_SHR_I64
+			elif ins.op == Mir.MIR_SHL_I64 or ins.op == Mir.MIR_SHR_I64
 				if right.bits < 0 or right.bits >= 64
 					return mir_failure("shift count out of range", steps)
-				if ins.op == MIR_SHL_I64
+				if ins.op == Mir.MIR_SHL_I64
 					answer = left.bits << right.bits
 				else
 					answer = left.bits >> right.bits
-			elif ins.op == MIR_EQ_I64 or ins.op == MIR_EQ_BOOL
+			elif ins.op == Mir.MIR_EQ_I64 or ins.op == Mir.MIR_EQ_BOOL
 				if left.bits == right.bits
 					answer = 1
-			elif ins.op == MIR_LT_I64
+			elif ins.op == Mir.MIR_LT_I64
 				if left.bits < right.bits
 					answer = 1
-			elif ins.op == MIR_LE_I64
+			elif ins.op == Mir.MIR_LE_I64
 				if left.bits <= right.bits
 					answer = 1
 			else
 				return mir_failure("unsupported MIR opcode " + str(ins.op), steps)
-			if ins.op == MIR_EQ_I64 or ins.op == MIR_EQ_BOOL or ins.op == MIR_LT_I64 or ins.op == MIR_LE_I64
-				registers[!ins.dst] = MirValue(TYPE_TAG_BOOL, answer, "")
+			if ins.op == Mir.MIR_EQ_I64 or ins.op == Mir.MIR_EQ_BOOL or ins.op == Mir.MIR_LT_I64 or ins.op == Mir.MIR_LE_I64
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, answer, "")
 			else
-				registers[!ins.dst] = MirValue(TYPE_TAG_I64, answer, "")
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, answer, "")
 		if steps >= budget
 			return mir_failure("step limit exceeded", steps)
 		steps += 1
 		let term = block.terminator
-		if term.kind == MIR_RETURN
+		if term.kind == Mir.MIR_RETURN
 			let result = registers[!term.operand]
-			if result.type_id == TYPE_TAG_INVALID
+			if result.type_id == Types.TYPE_TAG_INVALID
 				return mir_failure("uninitialized return register", steps)
-			registers[!term.operand] = MirValue(TYPE_TAG_INVALID, 0, "")
+			registers[!term.operand] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 			for value in registers
 				heap = mir_heap_drop(program.types, heap, value)
 			return mir_success(result, steps, heap)
-		if term.kind == MIR_PANIC
+		if term.kind == Mir.MIR_PANIC
 			return mir_failure(term.message, steps)
-		if term.kind == MIR_JUMP
+		if term.kind == Mir.MIR_JUMP
 			block_id = term.target
 		else
 			let condition = registers[!term.operand]
-			if condition.type_id == TYPE_TAG_INVALID
+			if condition.type_id == Types.TYPE_TAG_INVALID
 				return mir_failure("uninitialized branch condition", steps)
 			if condition.bits == 0
 				block_id = term.alternative
@@ -770,21 +715,55 @@ def mir_execute_function_owned(program: MirProgram, function_id: i64, arguments:
 				block_id = term.target
 	return mir_failure("unreachable", steps)
 
-def mir_execute_function(program: MirProgram, function_id: i64, arguments: Array[MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[MirHeapRecord], runtime_args: Array[string]) -> MirOutcome
+def mir_execute_function(program: Mir.MirProgram, function_id: i64, arguments: Array[Mir.MirValue], budget: i64, max_depth: i64, depth: i64, input_heap: Array[Mir.MirHeapRecord], runtime_args: Array[string]) -> Mir.MirOutcome
 	return mir_execute_function_owned(program, function_id, arguments, budget, max_depth, depth, input_heap, Array[i64](), runtime_args)
 
 # Runtime arguments are provided by the execution host, not the compiler CLI.
-def mir_execute_with_arguments(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64, runtime_args: Array[string]) -> MirOutcome
-	let error = mir_common_entry_error(program, function_id)
+export def mir_execute_with_arguments(program: Mir.MirProgram, function_id: i64, arguments: Array[Mir.MirValue], max_steps: i64, max_depth: i64, runtime_args: Array[string]) -> Mir.MirOutcome
+	let error = MirCommon.mir_common_entry_error(program, function_id)
 	if error != ""
 		return mir_failure(error, 0)
 	if max_steps <= 0 or max_depth <= 0
 		return mir_failure("invalid execution limits", 0)
 	# External callers cannot fabricate record handles without the execution heap.
 	for argument in arguments
-		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == TYPE_TAG_ARRAY or program.types.entries[!argument.type_id].tag == TYPE_TAG_DICT or program.types.entries[!argument.type_id].tag == TYPE_TAG_OPTIONAL)
+		if argument.type_id >= 0 and argument.type_id < len(program.types.entries) and (program.types.entries[!argument.type_id].tag == Types.TYPE_TAG_RECORD or program.types.entries[!argument.type_id].tag == Types.TYPE_TAG_ARRAY or program.types.entries[!argument.type_id].tag == Types.TYPE_TAG_DICT or program.types.entries[!argument.type_id].tag == Types.TYPE_TAG_OPTIONAL)
 			return mir_failure("managed collection arguments require an execution heap", 0)
-	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[MirHeapRecord](), runtime_args)
+	return mir_execute_function(program, function_id, arguments, max_steps, max_depth, 0, Array[Mir.MirHeapRecord](), runtime_args)
 
-def mir_execute(program: MirProgram, function_id: i64, arguments: Array[MirValue], max_steps: i64, max_depth: i64) -> MirOutcome
+export def mir_execute(program: Mir.MirProgram, function_id: i64, arguments: Array[Mir.MirValue], max_steps: i64, max_depth: i64) -> Mir.MirOutcome
 	return mir_execute_with_arguments(program, function_id, arguments, max_steps, max_depth, arguments())
+
+# On a successful return, the returned value is the sole external owner.
+# Each reachable heap object owns its fields once, regardless of its refcount;
+# multiple parent fields (or parents) contribute independent credits.
+# This is an optional dynamic audit, not an unwinding guarantee on failure.
+export def mir_audit_return_credits(types: Types.TypeTable, outcome: Mir.MirOutcome) -> string
+	if outcome.error != ""
+		return "cannot audit failed MIR execution"
+	var credits = Array[i64]()
+	var visited = Array[i64]()
+	for cell in outcome.heap
+		credits = credits.append(0)
+		visited = visited.append(0)
+	var queue = [outcome.value]
+	var head = 0
+	while head < len(queue)
+		let value = queue[!head]
+		head += 1
+		if value.type_id != Types.TYPE_TAG_INVALID and MirCommon.mir_common_managed(types, value.type_id) and value.type_id != Types.TYPE_TAG_STRING
+			if value.bits < 0 or value.bits >= len(outcome.heap)
+				return "invalid owned heap handle"
+			let index = value.bits
+			let cell = outcome.heap[!index]
+			if cell.type_id != value.type_id
+				return "owned heap handle type mismatch"
+			credits[!index] += 1
+			if visited[!index] == 0
+				visited[!index] = 1
+				for field in cell.fields
+					queue = queue.append(field)
+	for i in 0..len(outcome.heap)
+		if outcome.heap[!i].refs != credits[!i]
+			return "heap ownership credit mismatch at object " + str(i)
+	return ""

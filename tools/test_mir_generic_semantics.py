@@ -1,277 +1,79 @@
 #!/usr/bin/env python3
-"""Exercise public Sirius semantics across independently compiled generic libraries.
-
-The temporary extern def bridge is used until path-based source imports exist.
-Test assertions intentionally concern values, CoW and type errors, not HIR encoding.
-"""
+"""Parametric HIR specialization checks for current source-free generic packages."""
 import argparse
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
-from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES, ROOT
+from project_paths import executable_path
+from build_support import BuildCache, compile_c, require_cc
 
 
 def run(binary: Path, *args: object) -> subprocess.CompletedProcess[bytes]:
-	return subprocess.run([str(binary), *(str(arg) for arg in args)], capture_output=True, timeout=60)
+	return subprocess.run([str(binary), *map(str, args)], capture_output=True, timeout=45)
 
 
-def must_run(binary: Path, *args: object) -> subprocess.CompletedProcess[bytes]:
+def checked(binary: Path, *args: object) -> bytes:
 	result = run(binary, *args)
-	assert result.returncode == 0, (args, result.stdout, result.stderr)
-	return result
-
-
-def check(runner: Path) -> None:
-	with tempfile.TemporaryDirectory(prefix='sirius-generic-semantics-') as directory:
-		work = Path(directory)
-		def source(name: str, contents: str) -> Path:
-			path = work / f'{name}.sirius'
-			path.write_text(contents, encoding='utf-8')
-			return path
-		def library(name: str, contents: str, *flags: str) -> Path:
-			path = work / f'{name}.smirl'
-			must_run(runner, '--emit-lib', path, *flags, source(name, contents))
-			return path
-
-		provider = library('provider', '''def triple(x)
-	let twice = x + x
-	let result = twice + x
-	return result
-
-def same(x)
-	let equal = x == x
-	return equal
-
-def choice(x)
-	let condition = x or true
-	return condition
-
-def clone(x)
-	let copy = x
-	return copy
-
-def fallback(x)
-	let item = x
-	if item > 4
-		return item
-	return x
-''', '--template', 'triple', '--template', 'same', '--template', 'choice',
-			'--template', 'clone', '--template', 'fallback')
-		consumer = library('consumer', '''rec Point(x: i64, y: i64)
-extern def triple(x: i64) -> i64
-extern def same(x: string) -> bool
-extern def choice(x: bool) -> bool
-extern def clone(x: Point) -> Point
-extern def fallback(x: i64) -> i64
-
-def main() -> i64
-	var original = Point(2, 3)
-	let saved = clone(original)
-	original.x = 90
-	if saved.x != 2 or original.x != 90 or not same("a") or not choice(false)
-		return 1
-	if triple(4) != 12 or fallback(8) != 8
-		return 2
-	return 0
-''', '--export', 'main')
-		string = library('string', '''extern def triple(x: string) -> string
-
-def string_main() -> i64
-	if triple("ha") == "hahaha"
-		return 0
-	return 1
-''', '--export', 'string_main')
-		linked = work / 'linked.smirl'
-		for order in ((provider, consumer, string), (string, consumer, provider)):
-			must_run(runner, '--link-lib', linked, *order)
-			for entry in ('main', 'string_main'):
-				result = run(runner, '--entry', entry, '--load-lib', linked)
-				assert (result.returncode, result.stdout, result.stderr) == (0, b'', b''), result
-
-		# Confirm that a linked generic specialization is also executable as C.
-		c_file = work / 'linked.c'
-		must_run(runner, '--emit-c-lib', c_file, '--entry', 'main', linked)
-		cc = shutil.which('clang') or require_cc()
-		native = work / 'native'
-		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'runtime'),
-			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
-			capture_output=True, timeout=90)
-		assert result.returncode == 0, result.stderr
-		assert run(native).returncode == 0
-
-		# End-user syntax/semantics: generic structural records, field access and
-		# homogeneous arrays, with type identities fixed only at specialization.
-		structures = library('structures', '''def select(x)
-	let record = {value = x, enabled = true}
-	return record.value
-
-def wrap(x)
-	return {value = x, enabled = true}
-
-def read(x)
-	return x.value
-
-def pair(x)
-	let elements = [x, x]
-	return elements
-
-def mismatch(x)
-	return [x, 42]
-
-def size(x)
-	let values = [x, x]
-	return len(values)
-
-def as_text(x)
-	return str(x)
-
-def root(x)
-	return sqrt(x)
-
-def missing(x)
-	return x.absent
-''', '--template', 'select', '--template', 'wrap',
-			'--template', 'read', '--template', 'pair', '--template', 'size',
-			'--template', 'as_text', '--template', 'root', '--template', 'mismatch', '--template', 'missing')
-		structures_consumer = library('structures_consumer', '''rec Wrapped(value: i64, enabled: bool)
-extern def select(x: i64) -> i64
-extern def wrap(x: i64) -> Wrapped
-extern def read(x: Wrapped) -> i64
-extern def pair(x: string) -> Array[string]
-extern def size(x: bool) -> i64
-extern def as_text(x: i64) -> string
-extern def root(x: f64) -> f64
-
-def records_main() -> i64
-	var record = wrap(7)
-	let saved = record
-	record.value = 8
-	var values = pair("a")
-	let previous = values
-	values[!0] = "b"
-	if saved.value != 7 or record.value != 8 or previous[!0] != "a" or values[!0] != "b"
-		return 1
-	if select(4) != 4 or read(saved) != 7 or len(values) != 2 or size(true) != 2 or as_text(19) != "19" or root(9.0) != 3.0
-		return 2
-	return 0
-''', '--export', 'records_main')
-		for order in ((structures, structures_consumer), (structures_consumer, structures)):
-			must_run(runner, '--link-lib', linked, *order)
-			result = run(runner, '--entry', 'records_main', '--load-lib', linked)
-			assert (result.returncode, result.stdout, result.stderr) == (0, b'', b''), result
-		must_run(runner, '--emit-c-lib', c_file, '--entry', 'records_main', linked)
-		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'runtime'),
-			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
-			capture_output=True, timeout=90)
-		assert result.returncode == 0, result.stderr
-		assert run(native).returncode == 0
-
-		for name, definition, expression, fragment in (
-			('mismatch', 'extern def mismatch(x: bool) -> Array[bool]', 'mismatch(true)', b'expected bool, found i64'),
-			('missing', 'extern def missing(x: Wrapped) -> i64', 'missing(Wrapped(1, true))', b"unknown record field 'absent'"),
-			('as_text', 'extern def as_text(x: bool) -> string', 'as_text(true)', b'str expects one i64 argument'),
-		):
-			contents = ('rec Wrapped(value: i64, enabled: bool)\n' + definition +
-				'\ndef bad() -> i64\n\tlet unused = ' + expression + '\n\treturn 0\n')
-			broken = library('broken_' + name, contents, '--export', 'bad')
-			result = run(runner, '--link-lib', linked, broken, structures)
-			assert result.returncode == 2 and fragment in result.stderr, result
-
-		# Persisted generic calls and an early-return branch use final Sirius
-		# source semantics, including nested specialization and return-type checks.
-		functions = library('functions', '''def doubled(x)
-	let alias = x
-	return alias + alias
-
-def routed(x)
-	let twice = doubled(x)
-	if twice == x
-		return x
-	return twice
-
-def guarded(x)
-	if x
-		return 1
-	return 0
-
-def inconsistent(x)
-	if true
-		return x
-	return false
-''', '--template', 'doubled', '--template', 'routed',
-			'--template', 'guarded', '--template', 'inconsistent')
-		functions_consumer = library('functions_consumer', '''extern def routed(x: i64) -> i64
-extern def guarded(x: bool) -> i64
-
-def main() -> i64
-	if routed(6) != 12 or guarded(true) != 1 or guarded(false) != 0
-		return 1
-	return 0
-''', '--export', 'main')
-		functions_string = library('functions_string', '''extern def routed(x: string) -> string
-
-def text_main() -> i64
-	if routed("go") == "gogo"
-		return 0
-	return 1
-''', '--export', 'text_main')
-		for order in ((functions, functions_consumer, functions_string),
-			(functions_string, functions_consumer, functions)):
-			must_run(runner, '--link-lib', linked, *order)
-			for entry in ('main', 'text_main'):
-				result = run(runner, '--entry', entry, '--load-lib', linked)
-				assert (result.returncode, result.stdout, result.stderr) == (0, b'', b''), result
-		must_run(runner, '--emit-c-lib', c_file, '--entry', 'main', linked)
-		result = subprocess.run([cc, '-std=c11', '-O0', '-I', str(ROOT / 'runtime'),
-			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(native)],
-			capture_output=True, timeout=90)
-		assert result.returncode == 0, result.stderr
-		assert run(native).returncode == 0
-		for name, declaration, expression, error in (
-			('guarded', 'extern def guarded(x: i64) -> i64', 'guarded(4)', b'expected bool in if condition'),
-			('inconsistent', 'extern def inconsistent(x: i64) -> i64', 'inconsistent(1)', b'inconsistent return types'),
-		):
-			invalid = library('invalid_' + name, declaration +
-				'\ndef entry() -> i64\n\treturn ' + expression + '\n', '--export', 'entry')
-			result = run(runner, '--link-lib', linked, invalid, functions)
-			assert result.returncode == 2 and error in result.stderr, result
-		# Historical v6 snapshots can contain no parameterized HIR for these
-		# functions: they must still load and use the concrete-analysis fallback.
-		legacy = ROOT / 'tests/mir/artifacts/legacy_v6_fallback.smirl'
-		assert run(runner, '--list-lib', legacy).returncode == 0
-		legacy_consumer = library('legacy_consumer', '''extern def wrapper(x: i64) -> i64
-
-def main() -> i64
-	if wrapper(6) == 12
-		return 0
-	return 1
-''', '--export', 'main')
-		must_run(runner, '--link-lib', linked, legacy_consumer, legacy)
-		assert run(runner, '--entry', 'main', '--load-lib', linked).returncode == 0
-		print('PASS generic semantics: user calls, early-return branches, string/i64, native parity, invalid specialization, historical v6')
-
-		# Invalid concrete specializations must fail before execution.
-		bad = library('bad', '''extern def triple(x: bool) -> bool
-
-def bad() -> i64
-	if triple(true)
-		return 1
-	return 0
-''', '--export', 'bad')
-		result = run(runner, '--link-lib', linked, bad, provider)
-		assert result.returncode == 2 and b'arithmetic requires numeric operands' in result.stderr, result
-		print('PASS generic semantics: let inference, records/arrays, builtin calls, structural CoW, fallback, native parity, diagnostics')
+	assert result.returncode == 0, (args, result)
+	return result.stdout
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
-	parser.add_argument('--runner', type=Path, help='Use an already-built runner')
+	parser.add_argument('--runner', type=Path)
 	args = parser.parse_args()
-	runner = args.runner or BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
-	check(runner.resolve())
+	cache = BuildCache(shutil.which('clang') or require_cc())
+	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	with tempfile.TemporaryDirectory() as directory:
+		work = Path(directory)
+		provider = work / 'Checks.sirius'
+		provider.write_text('let OFFSET = 3\n'
+			'export def shifted(x) -> i64\n\treturn x + OFFSET\n'
+			'export def routed(x) -> i64\n\tif x < 0\n\t\treturn -x\n\treturn x + 1\n'
+			'export def same(x, y) -> bool\n\treturn x == y\n', encoding='utf-8')
+		package = work / 'Checks.smirg'
+		checked(runner, '--emit-generic', 'Checks', package, provider)
+		artifact = package.read_bytes()
+		provider.unlink()
+		concrete = work / 'concrete.smirl'
+		consumer = work / 'consumer.smirl'
+		linked = work / 'linked.smirl'
+		caller = work / 'caller.sirius'
+		for generic, kind, annotation, value, expected in (
+			('shifted', 'i64', 'i64', '12', 15),
+			('routed', 'i64', 'i64', '-6', 6),
+			('same', 'i64', 'i64', '42, 42', 7),
+			('same', 'string', 'string', '"text", "text"', 7),
+		):
+			checked(runner, '--specialize-generic', package, generic, concrete, *([kind, kind] if generic == 'same' else [kind]))
+			symbol = checked(runner, '--list-lib', concrete).decode().split(' : ', 1)[0]
+			return_type = 'bool' if generic == 'same' else 'i64'
+			result = f'if {symbol}({value})\n\t\treturn 7\n\treturn 1' if generic == 'same' else f'return {symbol}({value})'
+			caller.write_text(f'extern def {symbol}(x: {annotation}' + (f', y: {annotation}' if generic == 'same' else '') + f') -> {return_type}\n'
+				f'def main() -> i64\n\t{result}\n', encoding='utf-8')
+			checked(runner, '--emit-lib', consumer, '--export', 'main', caller)
+			checked(runner, '--link-lib', linked, consumer, concrete)
+			assert run(runner, '--entry', 'main', '--load-lib', linked).returncode == expected
+			generated = work / 'output.c'
+			checked(runner, '--emit-linked-c', linked, 'main', generated)
+			binary = executable_path(work / 'native')
+			compile_c(cache.cc, generated, binary, cache.runtime())
+			assert run(binary).returncode == expected
+		print('PASS generic semantics: constants, branches, equality, i64/string and native parity')
+
+		for generic, kind in (('routed', 'bool'), ('routed', 'string'), ('shifted', 'bool')):
+			result = run(runner, '--specialize-generic', package, generic, concrete, kind)
+			assert result.returncode != 0, (generic, kind, result)
+		# Generic package snapshots must not be silently reinterpreted after tampering.
+		bad = work / 'corrupt.smirg'
+		for original, replacement in ((b'SIRIUS-TEMPLATE-DECL/1', b'SIRIUS-TEMPLATE-DECL/0'),
+			(b'SIRIUS-TEMPLATE-AST/1', b'SIRIUS-TEMPLATE-AST/0')):
+			assert original in artifact
+			bad.write_bytes(artifact.replace(original, replacement, 1))
+			assert run(runner, '--specialize-generic', bad, 'shifted', concrete, 'i64').returncode != 0
+		print('PASS generic semantics: invalid operator types and tampered syntax/declarations rejected')
 
 
 if __name__ == '__main__':

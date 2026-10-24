@@ -55,7 +55,7 @@ export def token_kind_name(kind: i64) -> string
 def peek(source: string, i: i64) -> i64
 	return source.byte_at(i) or -1
 
-def is_alpha(c: i64) -> bool
+export def is_alpha(c: i64) -> bool
 	return (
 		(c >= 65 and c <= 90) or # A-Z
 		(c >= 97 and c <= 122) or # a-z
@@ -65,7 +65,7 @@ def is_alpha(c: i64) -> bool
 def is_digit(c: i64) -> bool
 	return c >= 48 and c <= 57 # 0-9
 
-def is_ident(c: i64) -> bool
+export def is_ident(c: i64) -> bool
 	return is_alpha(c) or is_digit(c)
 
 def scan_identifier(source: string, start: i64) -> i64

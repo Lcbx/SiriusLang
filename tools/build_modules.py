@@ -13,7 +13,6 @@ import sys
 import tempfile
 
 from build_support import BuildCache, require_cc
-from source_manifest import MODULE_SCANNER_SOURCES
 
 
 class ModuleError(Exception):
@@ -51,7 +50,7 @@ def execute(*argv: str) -> subprocess.CompletedProcess[str]:
 
 
 def default_scanner() -> Path:
-	return BuildCache(shutil.which('clang') or require_cc()).sirius('module-scanner', MODULE_SCANNER_SOURCES)
+	return BuildCache(shutil.which('clang') or require_cc()).native_tool('module_scan_cli')
 
 
 def discover(root: Path, entry: str, scanner: Path | None = None) -> list[Module]:

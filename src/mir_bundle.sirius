@@ -1,0 +1,148 @@
+import mir_generic alias MirGeneric
+import mir_wire alias MirWire
+import module alias Module
+import module_scan alias ModuleScan
+
+# Optional bundle wrapper for a portable generic package and its transitive
+# package dependencies. Unbundled .smirg files remain the default format.
+let MIR_BUNDLE_MAGIC = "SIRIUS-MIR-BUNDLE/1\n"
+let MIR_BUNDLE_MAX_PACKAGES = 256
+
+export rec MirBundlePackage(name: string, contents: string)
+export rec MirBundleLoad(contents: string, packages: Array[MirBundlePackage], error: string)
+rec MirBundleCollected(packages: Array[MirBundlePackage], error: string)
+
+def mir_bundle_failure(message: string) -> MirBundleLoad
+	return MirBundleLoad("", Array[MirBundlePackage](), message)
+
+# Preserve canonical archives: sorted unique module names and validated,
+# unwrapped packages. All package imports must be in the archive closure.
+export def mir_bundle_read(data: string) -> MirBundleLoad
+	if not data.starts_with(MIR_BUNDLE_MAGIC)
+		return MirBundleLoad(data, Array[MirBundlePackage](), "")
+	if len(data) > MirWire.MIR_WIRE_MAX_SIZE
+		return mir_bundle_failure("generic bundle exceeds format size limit")
+	let root_data = MirWire.mir_wire_string(MirWire.MirWireReader(data, len(MIR_BUNDLE_MAGIC), ""))
+	let count = MirWire.mir_wire_count(root_data.reader)
+	var reader = count.reader
+	if reader.error != "" or count.value < 1 or count.value > MIR_BUNDLE_MAX_PACKAGES
+		return mir_bundle_failure("invalid generic bundle dependency count")
+	let root = MirGeneric.mir_deserialize_generic(root_data.value)
+	if root.error != ""
+		return mir_bundle_failure("invalid bundled root package: " + root.error)
+	var packages = Array[MirBundlePackage]()
+	var last = ""
+	for i in 0..count.value
+		let name = MirWire.mir_wire_string(reader)
+		let contents = MirWire.mir_wire_string(name.reader)
+		reader = contents.reader
+		if reader.error != "" or not ModuleScan.module_scan_path_valid(name.value) or (last != "" and name.value <= last) or name.value == root.module
+			return mir_bundle_failure("invalid generic bundle package index")
+		if contents.value.starts_with(MIR_BUNDLE_MAGIC)
+			return mir_bundle_failure("nested generic bundles are not supported")
+		let loaded = MirGeneric.mir_deserialize_generic(contents.value)
+		if loaded.error != "" or loaded.module != name.value
+			return mir_bundle_failure("invalid bundled dependency: " + name.value)
+		packages = packages.append(MirBundlePackage(name.value, contents.value))
+		last = name.value
+	if reader.at != len(data)
+		return mir_bundle_failure("invalid generic bundle payload")
+	# Do not accept archives with missing or unreferenced dependencies.
+	var seen = [root.module]
+	var pending = [root.module]
+	var all = packages.append(MirBundlePackage(root.module, root_data.value))
+	while len(pending) > 0
+		let current = pending[!len(pending) - 1]
+		var remaining = Array[string]()
+		for i in 0..len(pending) - 1
+			remaining = remaining.append(pending[!i])
+		pending = remaining
+		for entry in all
+			if entry.name != current
+				continue
+			let loaded = MirGeneric.mir_deserialize_generic(entry.contents)
+			for dependency in loaded.dependencies
+				var available = false
+				for candidate in all
+					if candidate.name == dependency.name
+						available = true
+				if not available
+					return mir_bundle_failure("missing bundled dependency: " + dependency.name)
+				var visited = false
+				for name in seen
+					if name == dependency.name
+						visited = true
+				if not visited
+					seen = seen.append(dependency.name)
+					pending = pending.append(dependency.name)
+	if len(seen) != len(all)
+		return mir_bundle_failure("unreferenced generic bundle package")
+	return MirBundleLoad(root_data.value, packages, "")
+
+export def mir_bundle_serialize(contents: string, packages: Array[MirBundlePackage]) -> MirWire.MirWireSave
+	if len(packages) < 1 or len(packages) > MIR_BUNDLE_MAX_PACKAGES
+		return MirWire.MirWireSave("", "invalid generic bundle dependency count")
+	# Canonicalize even if the input was collected in graph traversal order.
+	var sorted = Array[MirBundlePackage]()
+	for package in packages
+		var index = 0
+		while index < len(sorted) and sorted[!index].name < package.name
+			index += 1
+		var next = Array[MirBundlePackage]()
+		for i in 0..index
+			next = next.append(sorted[!i])
+		next = next.append(package)
+		for i in index..len(sorted)
+			next = next.append(sorted[!i])
+		sorted = next
+	var parts = MirWire.mir_wire_str([MIR_BUNDLE_MAGIC], contents)
+	parts = MirWire.mir_wire_num(parts, len(sorted))
+	for package in sorted
+		parts = MirWire.mir_wire_str(parts, package.name)
+		parts = MirWire.mir_wire_str(parts, package.contents)
+	let result = "".join(parts)
+	let checked = mir_bundle_read(result)
+	if checked.error != ""
+		return MirWire.MirWireSave("", checked.error)
+	return MirWire.MirWireSave(result, "")
+
+# Collect only existing .smirg artifacts. Bundling does not implicitly
+# compile a source dependency or choose source in place of package bytes.
+def mir_bundle_collect(root: string, name: string, visiting: Array[string], collected: Array[MirBundlePackage]) -> MirBundleCollected
+	for part in visiting
+		if part == name
+			return MirBundleCollected(collected, "cyclic bundled dependency: " + name)
+	for existing in collected
+		if existing.name == name
+			return MirBundleCollected(collected, "")
+	let path = Module.module_scan_filename(root, name)
+	let file = path.slice(0, len(path) - 7) + ".smirg"
+	let data = read_text(file) or ""
+	if data == ""
+		return MirBundleCollected(collected, "missing generic package dependency: " + name)
+	if data.starts_with(MIR_BUNDLE_MAGIC)
+		return MirBundleCollected(collected, "bundled dependencies must be separate .smirg packages: " + name)
+	let package = MirGeneric.mir_deserialize_generic(data)
+	if package.error != "" or package.module != name
+		return MirBundleCollected(collected, "invalid generic package dependency: " + name)
+	var result = collected.append(MirBundlePackage(name, data))
+	for dependency in package.dependencies
+		let next = mir_bundle_collect(root, dependency.name, visiting.append(name), result)
+		if next.error != ""
+			return next
+		result = next.packages
+	return MirBundleCollected(result, "")
+
+export def mir_bundle_create(contents: string, root: string) -> MirWire.MirWireSave
+	if contents.starts_with(MIR_BUNDLE_MAGIC)
+		return MirWire.MirWireSave("", "root must be an unbundled generic package")
+	let package = MirGeneric.mir_deserialize_generic(contents)
+	if package.error != ""
+		return MirWire.MirWireSave("", package.error)
+	var collected = Array[MirBundlePackage]()
+	for dependency in package.dependencies
+		let next = mir_bundle_collect(root, dependency.name, [package.module], collected)
+		if next.error != ""
+			return MirWire.MirWireSave("", next.error)
+		collected = next.packages
+	return mir_bundle_serialize(contents, collected)

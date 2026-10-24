@@ -1,2 +1,2 @@
 # Shared result of source-to-C compilation; independent of either backend.
-rec CompileResult(code: string, error: string, line: i64)
+export rec CompileResult(code: string, error: string, line: i64)

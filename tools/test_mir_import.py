@@ -6,12 +6,14 @@ import shutil
 import subprocess
 import tempfile
 
+from project_paths import normalize_newlines
 from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES
 
 
 def run(runner: Path, *args: str) -> subprocess.CompletedProcess[bytes]:
-	return subprocess.run([str(runner), *args], capture_output=True, timeout=30)
+	result = subprocess.run([str(runner), *args], capture_output=True, timeout=30)
+	return subprocess.CompletedProcess(result.args, result.returncode,
+		normalize_newlines(result.stdout), normalize_newlines(result.stderr))
 
 
 def emit(runner: Path, directory: Path, name: str, body: str, exports: tuple[str, ...]) -> Path:
@@ -27,7 +29,7 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path)
 	args = parser.parse_args()
-	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		consumer = emit(runner, work, 'consumer',

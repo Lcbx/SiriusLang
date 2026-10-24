@@ -11,7 +11,7 @@ import tempfile
 
 from build_modules import ModuleError, build, symbol
 from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES, ROOT
+from project_paths import ROOT
 
 
 def run(runner: Path, entry: str, library: Path) -> subprocess.CompletedProcess[bytes]:
@@ -19,11 +19,12 @@ def run(runner: Path, entry: str, library: Path) -> subprocess.CompletedProcess[
 
 
 def main() -> None:
-	runner = BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
 		# Use the actual compiler source, not a test reimplementation.
-		shutil.copy2(ROOT / 'src/module.sirius', root / 'module.sirius')
+		for name in ('types', 'module'):
+			shutil.copy2(ROOT / f'src/{name}.sirius', root / f'{name}.sirius')
 		(root / 'Main.sirius').write_text(
 			'import module alias Names\n'
 			'def main() -> i64\n'

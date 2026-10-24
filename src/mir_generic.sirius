@@ -1,17 +1,29 @@
+import hir alias Hir
+import hir_declarations alias HirDeclarations
+import mir alias Mir
+import mir_library alias MirLibrary
+import mir_program alias MirProgram
+import mir_semantic alias MirSemantic
+import mir_wire alias MirWire
+import module alias Module
+import module_scan alias ModuleScan
+import parser alias Parser
+import tokenizer alias Tokenizer
+import types alias Types
 # Portable generic declarations. A package stores verified source-independent
 # syntax/HIR data; concrete MIR is generated only when argument types are known.
 # Version 2 pins the exported interfaces of direct source/package dependencies.
 let MIR_GENERIC_MAGIC = "SIRIUS-MIR-GENERIC/1\n"
-let MIR_GENERIC_IMPORT_MAGIC = "SIRIUS-MIR-GENERIC/2\n"
+let MIR_GENERIC_IMPORT_MAGIC = "SIRIUS-MIR-GENERIC/3\n"
+let MIR_GENERIC_IMPORT_LEGACY_MAGIC = "SIRIUS-MIR-GENERIC/2\n"
 
-rec MirGenericDependency(name: string, signature: string)
-rec MirGenericLoad(module: string, tree: ParseState, declarations: HirModuleDecl, exports: Array[string], error: string)
-	pub dependencies = Array[MirGenericDependency]()
+export rec MirGenericDependency(name: string, signature: string)
+export rec MirGenericLoad(module: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, exports: Array[string], error: string, dependencies: Array[MirGenericDependency], legacy_interfaces: bool)
 
 def mir_generic_failure(message: string) -> MirGenericLoad
-	return MirGenericLoad("", ParseState("", Array[Token]()), hir_declaration_error(Array[HirFunctionDecl](), Array[HirModuleConstant](), message, 0), Array[string](), message)
+	return MirGenericLoad("", Parser.new_parse_state("", Array[Tokenizer.Token]()), HirDeclarations.hir_declaration_error(Array[Hir.HirFunctionDecl](), Array[Hir.HirModuleConstant](), message, 0), Array[string](), message, Array[MirGenericDependency](), false)
 
-def mir_generic_export_valid(declarations: HirModuleDecl, name: string) -> bool
+def mir_generic_export_valid(declarations: Hir.HirModuleDecl, name: string) -> bool
 	var published = false
 	for exported in declarations.exports
 		if exported == name
@@ -28,38 +40,97 @@ def mir_generic_export_valid(declarations: HirModuleDecl, name: string) -> bool
 # Canonical public interface, independent of local TypeIds and source paths.
 # Include immutable constant values so a changed dependency cannot silently
 # change the meaning of an already published generic specialization.
-def mir_generic_constant_signature(values: Array[HirConstantValue], index: i64, parts: Array[string]) -> Array[string]
+def mir_generic_constant_signature(values: Array[Hir.HirConstantValue], index: i64, parts: Array[string]) -> Array[string]
 	let value = values[!index]
-	var output = mir_wire_num(parts, value.bits)
-	output = mir_wire_str(output, value.text)
-	output = mir_wire_num(output, len(value.fields))
+	var output = MirWire.mir_wire_num(parts, value.bits)
+	output = MirWire.mir_wire_str(output, value.text)
+	output = MirWire.mir_wire_num(output, len(value.fields))
 	for field in value.fields
 		output = mir_generic_constant_signature(values, field, output)
 	return output
 
-def mir_generic_interface(unit: ModuleScanUnit) -> string
-	var parts = mir_wire_num(Array[string](), len(unit.exports))
-	for exported in unit.exports
-		parts = mir_wire_str(parts, exported.name)
+# Public interfaces are sets of named declarations. The serialized signature
+# must not depend on source declaration order or local TypeIds.
+def mir_generic_export_order(exports: Array[ModuleScan.ModuleScanExport]) -> Array[i64]
+	var order = Array[i64]()
+	for i in 0..len(exports)
+		var at = 0
+		while at < len(order) and exports[!order[!at]].name < exports[!i].name
+			at += 1
+		var sorted = Array[i64]()
+		for j in 0..at
+			sorted = sorted.append(order[!j])
+		sorted = sorted.append(i)
+		for j in at..len(order)
+			sorted = sorted.append(order[!j])
+		order = sorted
+	return order
+
+def mir_generic_constant_order(constants: Array[Hir.HirModuleConstant]) -> Array[i64]
+	var order = Array[i64]()
+	for i in 0..len(constants)
+		var at = 0
+		while at < len(order) and constants[!order[!at]].name < constants[!i].name
+			at += 1
+		var sorted = Array[i64]()
+		for j in 0..at
+			sorted = sorted.append(order[!j])
+		sorted = sorted.append(i)
+		for j in at..len(order)
+			sorted = sorted.append(order[!j])
+		order = sorted
+	return order
+
+export def mir_generic_interface(unit: ModuleScan.ModuleScanUnit) -> string
+	var parts = MirWire.mir_wire_num(Array[string](), len(unit.exports))
+	for index in mir_generic_export_order(unit.exports)
+		let exported = unit.exports[!index]
+		parts = MirWire.mir_wire_str(parts, exported.name)
 		var flags = 0
 		if exported.constructor
 			flags += 1
 		if exported.generic
 			flags += 2
-		parts = mir_wire_num(parts, flags)
-		parts = mir_wire_num(parts, len(exported.argument_types))
+		parts = MirWire.mir_wire_num(parts, flags)
+		parts = MirWire.mir_wire_num(parts, len(exported.argument_types))
 		for argument in exported.argument_types
-			parts = mir_wire_str(parts, mir_type_signature(unit.types, argument))
-		parts = mir_wire_str(parts, mir_type_signature(unit.types, exported.result_type))
-	parts = mir_wire_num(parts, len(unit.exported_constants))
+			parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, argument))
+		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, exported.result_type))
+		# Named re-exports preserve their target symbol across module boundaries.
+		parts = MirWire.mir_wire_str(parts, exported.origin)
+	parts = MirWire.mir_wire_num(parts, len(unit.exported_constants))
+	for index in mir_generic_constant_order(unit.exported_constants)
+		let constant = unit.exported_constants[!index]
+		parts = MirWire.mir_wire_str(parts, constant.name)
+		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, constant.type_id))
+		parts = mir_generic_constant_signature(unit.exported_values, constant.value, parts)
+	return "".join(parts)
+
+# Version 2 packages pinned declarations in source order. Keep that rule
+# for validating existing dependencies; newly written packages use version 3.
+export def mir_generic_interface_legacy(unit: ModuleScan.ModuleScanUnit) -> string
+	var parts = MirWire.mir_wire_num(Array[string](), len(unit.exports))
+	for exported in unit.exports
+		parts = MirWire.mir_wire_str(parts, exported.name)
+		var flags = 0
+		if exported.constructor
+			flags += 1
+		if exported.generic
+			flags += 2
+		parts = MirWire.mir_wire_num(parts, flags)
+		parts = MirWire.mir_wire_num(parts, len(exported.argument_types))
+		for argument in exported.argument_types
+			parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, argument))
+		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, exported.result_type))
+	parts = MirWire.mir_wire_num(parts, len(unit.exported_constants))
 	for constant in unit.exported_constants
-		parts = mir_wire_str(parts, constant.name)
-		parts = mir_wire_str(parts, mir_type_signature(unit.types, constant.type_id))
+		parts = MirWire.mir_wire_str(parts, constant.name)
+		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, constant.type_id))
 		parts = mir_generic_constant_signature(unit.exported_values, constant.value, parts)
 	return "".join(parts)
 
 # Imports are checked against the typed dependency closure at package creation.
-def mir_generic_dependencies(declarations: HirModuleDecl, units: Array[ModuleScanUnit]) -> Array[MirGenericDependency]
+export def mir_generic_dependencies(declarations: Hir.HirModuleDecl, units: Array[ModuleScan.ModuleScanUnit]) -> Array[MirGenericDependency]
 	var result = Array[MirGenericDependency]()
 	for imported in declarations.imports
 		for unit in units
@@ -67,69 +138,77 @@ def mir_generic_dependencies(declarations: HirModuleDecl, units: Array[ModuleSca
 				result = result.append(MirGenericDependency(unit.name, mir_generic_interface(unit)))
 	return result
 
-def mir_serialize_generic_with_dependencies(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl, dependencies: Array[MirGenericDependency]) -> MirWireSave
-	if not module_scan_path_valid(module)
-		return MirWireSave("", "invalid generic module name")
+def mir_serialize_generic_version(module: string, tree: Parser.ParseState, root: i64, declarations: Hir.HirModuleDecl, dependencies: Array[MirGenericDependency], imported_magic: string) -> MirWire.MirWireSave
+	if not ModuleScan.module_scan_path_valid(module)
+		return MirWire.MirWireSave("", "invalid generic module name")
 	if len(declarations.imports) != len(dependencies)
-		return MirWireSave("", "generic dependency interfaces are required")
+		return MirWire.MirWireSave("", "generic dependency interfaces are required")
 	for i in 0..len(dependencies)
-		if dependencies[!i].name != declarations.imports[!i].path or not module_scan_path_valid(dependencies[!i].name) or dependencies[!i].signature == ""
-			return MirWireSave("", "invalid generic dependency interface")
+		if dependencies[!i].name != declarations.imports[!i].path or not ModuleScan.module_scan_path_valid(dependencies[!i].name) or dependencies[!i].signature == ""
+			return MirWire.MirWireSave("", "invalid generic dependency interface")
 	var exports = Array[string]()
 	for name in declarations.exports
 		if mir_generic_export_valid(declarations, name)
 			exports = exports.append(name)
 	if len(exports) == 0
-		return MirWireSave("", "module has no exported generic functions")
-	let snapshot = mir_serialize_semantic(tree, root, declarations)
+		return MirWire.MirWireSave("", "module has no exported generic functions")
+	let snapshot = MirSemantic.mir_serialize_semantic(tree, root, declarations)
 	if snapshot.error != ""
 		return snapshot
 	var magic = MIR_GENERIC_MAGIC
 	if len(dependencies) > 0
-		magic = MIR_GENERIC_IMPORT_MAGIC
+		magic = imported_magic
 	var parts = [magic]
-	parts = mir_wire_str(parts, module)
-	parts = mir_wire_num(parts, len(exports))
+	parts = MirWire.mir_wire_str(parts, module)
+	parts = MirWire.mir_wire_num(parts, len(exports))
 	for name in exports
-		parts = mir_wire_str(parts, name)
+		parts = MirWire.mir_wire_str(parts, name)
 	if len(dependencies) > 0
-		parts = mir_wire_num(parts, len(dependencies))
+		parts = MirWire.mir_wire_num(parts, len(dependencies))
 		for dependency in dependencies
-			parts = mir_wire_str(parts, dependency.name)
-			parts = mir_wire_str(parts, dependency.signature)
-	parts = mir_wire_str(parts, snapshot.text)
+			parts = MirWire.mir_wire_str(parts, dependency.name)
+			parts = MirWire.mir_wire_str(parts, dependency.signature)
+	parts = MirWire.mir_wire_str(parts, snapshot.text)
 	let result = "".join(parts)
-	if len(result) > MIR_WIRE_MAX_SIZE
-		return MirWireSave("", "generic package exceeds format size limit")
-	return MirWireSave(result, "")
+	if len(result) > MirWire.MIR_WIRE_MAX_SIZE
+		return MirWire.MirWireSave("", "generic package exceeds format size limit")
+	return MirWire.MirWireSave(result, "")
 
-def mir_serialize_generic(module: string, tree: ParseState, root: i64, declarations: HirModuleDecl) -> MirWireSave
+export def mir_serialize_generic_with_dependencies(module: string, tree: Parser.ParseState, root: i64, declarations: Hir.HirModuleDecl, dependencies: Array[MirGenericDependency]) -> MirWire.MirWireSave
+	return mir_serialize_generic_version(module, tree, root, declarations, dependencies, MIR_GENERIC_IMPORT_MAGIC)
+
+export def mir_serialize_generic(module: string, tree: Parser.ParseState, root: i64, declarations: Hir.HirModuleDecl) -> MirWire.MirWireSave
 	return mir_serialize_generic_with_dependencies(module, tree, root, declarations, Array[MirGenericDependency]())
 
-def mir_deserialize_generic(data: string) -> MirGenericLoad
-	if len(data) > MIR_WIRE_MAX_SIZE
+export def mir_deserialize_generic(data: string) -> MirGenericLoad
+	if len(data) > MirWire.MIR_WIRE_MAX_SIZE
 		return mir_generic_failure("unsupported generic package format or size")
 	var imported = false
+	var legacy_interfaces = false
 	var offset = len(MIR_GENERIC_MAGIC)
 	if data.starts_with(MIR_GENERIC_IMPORT_MAGIC)
 		imported = true
 		offset = len(MIR_GENERIC_IMPORT_MAGIC)
+	elif data.starts_with(MIR_GENERIC_IMPORT_LEGACY_MAGIC)
+		imported = true
+		legacy_interfaces = true
+		offset = len(MIR_GENERIC_IMPORT_LEGACY_MAGIC)
 	elif not data.starts_with(MIR_GENERIC_MAGIC)
 		return mir_generic_failure("unsupported generic package format or size")
-	var reader = MirWireReader(data, offset, "")
-	let module = mir_wire_string(reader)
+	var reader = MirWire.MirWireReader(data, offset, "")
+	let module = MirWire.mir_wire_string(reader)
 	reader = module.reader
-	if reader.error != "" or not module_scan_path_valid(module.value)
+	if reader.error != "" or not ModuleScan.module_scan_path_valid(module.value)
 		return mir_generic_failure("invalid generic module name")
-	let count = mir_wire_count(reader)
+	let count = MirWire.mir_wire_count(reader)
 	reader = count.reader
 	if reader.error != "" or count.value == 0 or count.value > 4096
 		return mir_generic_failure("invalid generic export count")
 	var exports = Array[string]()
 	for i in 0..count.value
-		let name = mir_wire_string(reader)
+		let name = MirWire.mir_wire_string(reader)
 		reader = name.reader
-		if reader.error != "" or not mir_library_name_valid(name.value)
+		if reader.error != "" or not MirLibrary.mir_library_name_valid(name.value)
 			return mir_generic_failure("invalid generic export name")
 		for existing in exports
 			if existing == name.value
@@ -137,22 +216,22 @@ def mir_deserialize_generic(data: string) -> MirGenericLoad
 		exports = exports.append(name.value)
 	var dependencies = Array[MirGenericDependency]()
 	if imported
-		let dependency_count = mir_wire_count(reader)
+		let dependency_count = MirWire.mir_wire_count(reader)
 		reader = dependency_count.reader
 		if reader.error != "" or dependency_count.value == 0 or dependency_count.value > 256
 			return mir_generic_failure("invalid generic dependency count")
 		for i in 0..dependency_count.value
-			let name = mir_wire_string(reader)
-			let signature = mir_wire_string(name.reader)
+			let name = MirWire.mir_wire_string(reader)
+			let signature = MirWire.mir_wire_string(name.reader)
 			reader = signature.reader
-			if reader.error != "" or not module_scan_path_valid(name.value) or signature.value == ""
+			if reader.error != "" or not ModuleScan.module_scan_path_valid(name.value) or signature.value == ""
 				return mir_generic_failure("invalid generic dependency interface")
 			dependencies = dependencies.append(MirGenericDependency(name.value, signature.value))
-	let snapshot = mir_wire_string(reader)
+	let snapshot = MirWire.mir_wire_string(reader)
 	reader = snapshot.reader
 	if reader.error != "" or reader.at != len(data)
 		return mir_generic_failure("invalid generic package payload")
-	let restored = mir_deserialize_semantic(snapshot.value)
+	let restored = MirSemantic.mir_deserialize_semantic(snapshot.value)
 	if restored.error != ""
 		return mir_generic_failure(restored.error)
 	if len(restored.declarations.imports) != len(dependencies)
@@ -163,56 +242,57 @@ def mir_deserialize_generic(data: string) -> MirGenericLoad
 	for name in exports
 		if not mir_generic_export_valid(restored.declarations, name)
 			return mir_generic_failure("invalid generic export: " + name)
-	let canonical = mir_serialize_generic_with_dependencies(module.value, restored.tree, restored.root, restored.declarations, dependencies)
+	var magic = MIR_GENERIC_IMPORT_MAGIC
+	if legacy_interfaces
+		magic = MIR_GENERIC_IMPORT_LEGACY_MAGIC
+	let canonical = mir_serialize_generic_version(module.value, restored.tree, restored.root, restored.declarations, dependencies, magic)
 	if canonical.error != "" or canonical.text != data
 		return mir_generic_failure("generic package metadata mismatch")
-	var result = MirGenericLoad(module.value, restored.tree, restored.declarations, exports, "")
-	result.dependencies = dependencies
-	return result
+	return MirGenericLoad(module.value, restored.tree, restored.declarations, exports, "", dependencies, legacy_interfaces)
 
-rec MirGenericType(table: TypeTable, type_id: i64)
-rec MirGenericParsedType(table: TypeTable, type_id: i64, at: i64)
+rec MirGenericType(table: Types.TypeTable, type_id: i64)
+rec MirGenericParsedType(table: Types.TypeTable, type_id: i64, at: i64)
 
 # Decode the same canonical type grammar used by concrete MIR library imports.
 # Full round-trip checking rejects alternate spellings and ambiguous field order.
-def mir_generic_parse_type(table: TypeTable, name: string, start: i64, depth: i64) -> MirGenericParsedType
-	let invalid = MirGenericParsedType(table, TYPE_TAG_INVALID, start)
+def mir_generic_parse_type(table: Types.TypeTable, name: string, start: i64, depth: i64) -> MirGenericParsedType
+	let invalid = MirGenericParsedType(table, Types.TYPE_TAG_INVALID, start)
 	if depth > 32 or start >= len(name)
 		return invalid
 	for primitive in ["i64", "f64", "bool", "string"]
 		if name.slice(start, start + len(primitive)) == primitive
-			var kind = TYPE_TAG_STRING
+			var kind = Types.TYPE_TAG_STRING
 			if primitive == "i64"
-				kind = TYPE_TAG_I64
+				kind = Types.TYPE_TAG_I64
 			elif primitive == "f64"
-				kind = TYPE_TAG_F64
+				kind = Types.TYPE_TAG_F64
 			elif primitive == "bool"
-				kind = TYPE_TAG_BOOL
+				kind = Types.TYPE_TAG_BOOL
 			return MirGenericParsedType(table, kind, start + len(primitive))
 	for container in ["Array[", "Optional[", "Dict["]
 		if name.slice(start, start + len(container)) != container
 			continue
 		let first = mir_generic_parse_type(table, name, start + len(container), depth + 1)
-		if first.type_id == TYPE_TAG_INVALID
+		if first.type_id == Types.TYPE_TAG_INVALID
 			return invalid
 		if container == "Dict["
 			if first.at >= len(name) or name.slice(first.at, first.at + 1) != ","
 				return invalid
 			let second = mir_generic_parse_type(first.table, name, first.at + 1, depth + 1)
-			if second.type_id == TYPE_TAG_INVALID or second.at >= len(name) or name.slice(second.at, second.at + 1) != "]"
+			if second.type_id == Types.TYPE_TAG_INVALID or second.at >= len(name) or name.slice(second.at, second.at + 1) != "]"
 				return invalid
-			let result = intern_dict_type(second.table, first.type_id, second.type_id)
+			let result = Types.intern_dict_type(second.table, first.type_id, second.type_id)
 			return MirGenericParsedType(result.table, result.id, second.at + 1)
 		if first.at >= len(name) or name.slice(first.at, first.at + 1) != "]"
 			return invalid
 		if container == "Array["
-			let result = intern_array_type(first.table, first.type_id)
+			let result = Types.intern_array_type(first.table, first.type_id)
 			return MirGenericParsedType(result.table, result.id, first.at + 1)
-		let result = intern_optional_type(first.table, first.type_id)
+		let result = Types.intern_optional_type(first.table, first.type_id)
 		return MirGenericParsedType(result.table, result.id, first.at + 1)
 	if name.slice(start, start + 7) != "Record{"
 		return invalid
-	var fields = Array[RecordField]()
+	var fields = Array[Types.RecordField]()
 	var current = table
 	var at = start + 7
 	while at < len(name) and name.slice(at, at + 1) != "}"
@@ -237,32 +317,32 @@ def mir_generic_parse_type(table: TypeTable, name: string, start: i64, depth: i6
 		if at >= len(name) or name.slice(at, at + 1) != "="
 			return invalid
 		let value = mir_generic_parse_type(current, name, at + 1, depth + 1)
-		if value.type_id == TYPE_TAG_INVALID or value.at >= len(name) or name.slice(value.at, value.at + 1) != ";"
+		if value.type_id == Types.TYPE_TAG_INVALID or value.at >= len(name) or name.slice(value.at, value.at + 1) != ";"
 			return invalid
 		for existing in fields
 			if existing.name == field_name
 				return invalid
 		current = value.table
-		fields = fields.append(RecordField(field_name, value.type_id))
+		fields = fields.append(Types.RecordField(field_name, value.type_id))
 		at = value.at + 1
 	if at >= len(name) or len(fields) == 0
 		return invalid
-	let result = intern_record_type(current, fields)
+	let result = Types.intern_record_type(current, fields)
 	return MirGenericParsedType(result.table, result.id, at + 1)
 
-def mir_generic_type(table: TypeTable, name: string) -> MirGenericType
+def mir_generic_type(table: Types.TypeTable, name: string) -> MirGenericType
 	let parsed = mir_generic_parse_type(table, name, 0, 0)
-	if parsed.type_id == TYPE_TAG_INVALID or parsed.at != len(name)
-		return MirGenericType(table, TYPE_TAG_INVALID)
-	if mir_type_signature(parsed.table, parsed.type_id) != name
-		return MirGenericType(table, TYPE_TAG_INVALID)
+	if parsed.type_id == Types.TYPE_TAG_INVALID or parsed.at != len(name)
+		return MirGenericType(table, Types.TYPE_TAG_INVALID)
+	if Module.mir_type_signature(parsed.table, parsed.type_id) != name
+		return MirGenericType(table, Types.TYPE_TAG_INVALID)
 	return MirGenericType(parsed.table, parsed.type_id)
 
-def mir_generic_specialize(generic: MirGenericLoad, name: string, type_names: Array[string]) -> ModuleBuildCompiled
+export def mir_generic_specialize(generic: MirGenericLoad, name: string, type_names: Array[string]) -> MirLibrary.ModuleBuildCompiled
 	if generic.error != ""
-		return ModuleBuildCompiled(mir_library_failure(generic.error), generic.error)
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(generic.error), generic.error)
 	if len(generic.dependencies) > 0
-		return ModuleBuildCompiled(mir_library_failure("import-dependent packages need module linking"), "import-dependent packages need --build-modules")
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("import-dependent packages need module linking"), "import-dependent packages need --build-modules")
 	var found = false
 	var arity = -1
 	for exported in generic.exports
@@ -272,23 +352,22 @@ def mir_generic_specialize(generic: MirGenericLoad, name: string, type_names: Ar
 		if function.name == name
 			arity = len(function.parameters)
 	if not found
-		return ModuleBuildCompiled(mir_library_failure("unknown generic export"), "unknown generic export: " + name)
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("unknown generic export"), "unknown generic export: " + name)
 	if arity != len(type_names)
-		return ModuleBuildCompiled(mir_library_failure("wrong generic arity"), "wrong generic arity: " + name)
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("wrong generic arity"), "wrong generic arity: " + name)
 	var declarations = generic.declarations
 	var types = declarations.types
 	var arguments = Array[i64]()
 	for type_name in type_names
 		let converted = mir_generic_type(types, type_name)
-		if converted.type_id == TYPE_TAG_INVALID
-			return ModuleBuildCompiled(mir_library_failure("unsupported specialization type"), "unsupported specialization type: " + type_name)
+		if converted.type_id == Types.TYPE_TAG_INVALID
+			return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("unsupported specialization type"), "unsupported specialization type: " + type_name)
 		types = converted.table
 		arguments = arguments.append(converted.type_id)
 	declarations.types = types
-	let built = mir_build_program_roots(generic.tree, declarations, [name], arguments)
+	let built = MirProgram.mir_build_program_roots(generic.tree, declarations, [name], arguments)
 	if built.error != ""
-		return ModuleBuildCompiled(mir_library_failure(built.error), built.error)
-	let symbol = mir_generic_symbol(hir_module_symbol(generic.module, name), built.program.types, arguments)
-	var library = MirLibraryLoad(built.program, [MirNamedExport(symbol, built.entry)], "")
-	library.imports = built.imports
-	return ModuleBuildCompiled(library, "")
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(built.error), built.error)
+	let symbol = Module.mir_generic_symbol(Module.hir_module_symbol(generic.module, name), built.program.types, arguments)
+	let library = MirLibrary.MirLibraryLoad(built.program, [Mir.MirNamedExport(symbol, built.entry)], "", built.imports)
+	return MirLibrary.ModuleBuildCompiled(library, "")

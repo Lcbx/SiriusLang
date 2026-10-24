@@ -4,19 +4,19 @@ import tempfile
 from pathlib import Path
 
 from build_support import BuildCache, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
+from project_paths import ROOT
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.sirius('mir-opt', MIR_DRIVER_SOURCES + ('tests/mir/opt_driver.sirius',))
+	driver = cache.native_driver('mir-opt', ROOT / 'tests/mir/opt_driver_native.sirius')
 	with tempfile.TemporaryDirectory() as directory:
-		outputs = [Path(directory) / f'case{i}.c' for i in range(3)]
+		outputs = [Path(directory) / f'case{i}.c' for i in range(5)]
 		result = execute([str(driver), *(str(path) for path in outputs)])
 		if result.stdout != 'PASS MIR owned-copy elimination\n':
 			raise AssertionError(result.stdout)
 		for source in outputs:
-			check_native(cache, source, code=3)
+			check_native(cache, source, code=42 if source == outputs[3] else (43 if source == outputs[4] else 3))
 	print('PASS optimized MIR ownership, interpreter and native C')
 
 

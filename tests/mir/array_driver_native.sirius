@@ -1,0 +1,125 @@
+import mir alias Mir
+import mir_emit_c alias MirEmitC
+import mir_interpreter alias MirInterpreter
+import mir_verify alias MirVerify
+import types alias Types
+# Array construction, copy-on-write updates, nested ownership and checked access.
+def array_test_program(invalid: bool) -> Mir.MirProgram
+	let array_type = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_string(0, "old"))
+	code = code.append(Mir.mir_string(1, "x"))
+	code = code.append(Mir.mir_array_new(2, [0, 1]))
+	code = code.append(Mir.mir_op(Mir.MIR_COPY, 3, 2, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 0))
+	code = code.append(Mir.mir_string(5, "new"))
+	code = code.append(Mir.mir_array_set(2, 2, 4, 5))
+	if invalid
+		code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 9))
+	code = code.append(Mir.mir_array_get(6, 3, 4))
+	code = code.append(Mir.mir_array_get(7, 2, 4))
+	code = code.append(Mir.mir_op(Mir.MIR_PRINT, -1, 6, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_PRINT, -1, 7, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 8, 6, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 9, 7, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_ADD_I64, 10, 8, 9, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, array_type.id, array_type.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(10))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = array_type.table
+	return program
+
+def nested_array_program() -> Mir.MirProgram
+	let inner = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let outer = Types.intern_array_type(inner.table, inner.id)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_string(0, "abc"))
+	code = code.append(Mir.mir_array_new(1, [0]))
+	code = code.append(Mir.mir_array_new(2, [1]))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0))
+	code = code.append(Mir.mir_array_get(4, 2, 3))
+	code = code.append(Mir.mir_array_get(5, 4, 3))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 6, 5, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, inner.id, outer.id, Types.TYPE_TAG_I64, inner.id, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(6))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = outer.table
+	return program
+
+def array_transfer_program(invalidate: bool) -> Mir.MirProgram
+	let array_type = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 2))
+	code = code.append(Mir.mir_array_new(1, [0]))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 7))
+	if invalidate
+		code = code.append(Mir.mir_array_set(4, 1, 2, 3))
+		code = code.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 6, 1, -1, 0))
+	else
+		code = code.append(Mir.mir_array_set(1, 1, 2, 3))
+	code = code.append(Mir.mir_array_get(5, 1, 2))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, array_type.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, array_type.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(5))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = array_type.table
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 6
+		return 1
+	let program = array_test_program(false)
+	let verified = MirVerify.mir_verify(program)
+	if verified != ""
+		print(verified)
+		return 2
+	let outcome = MirInterpreter.mir_execute(program, 0, Array[Mir.MirValue](), 100, 10)
+	if outcome.error != "" or outcome.value.bits != 6
+		print(outcome.error)
+		return 3
+	for item in outcome.heap
+		if item.refs != 0
+			return 4
+	let native = MirEmitC.mir_emit_c(program, 0)
+	if native.error != "" or not write_text(args[!1], native.code)
+		print(native.error)
+		return 5
+	let bad = array_test_program(true)
+	let errored = MirInterpreter.mir_execute(bad, 0, Array[Mir.MirValue](), 100, 10)
+	if errored.error != "array index out of bounds"
+		print(errored.error)
+		return 6
+	let bad_native = MirEmitC.mir_emit_c(bad, 0)
+	if bad_native.error != "" or not write_text(args[!2], bad_native.code)
+		return 7
+	let nested = nested_array_program()
+	let value = MirInterpreter.mir_execute(nested, 0, Array[Mir.MirValue](), 100, 10)
+	if value.error != "" or value.value.bits != 3
+		print(value.error)
+		return 8
+	for item in value.heap
+		if item.refs != 0
+			return 9
+	let nested_native = MirEmitC.mir_emit_c(nested, 0)
+	if nested_native.error != "" or not write_text(args[!3], nested_native.code)
+		print(nested_native.error)
+		return 10
+	let unique = array_transfer_program(false)
+	let unique_result = MirInterpreter.mir_execute(unique, 0, Array[Mir.MirValue](), 100, 10)
+	if unique_result.error != "" or unique_result.value.bits != 7 or len(unique_result.heap) != 1
+		print(unique_result.error)
+		return 11
+	for item in unique_result.heap
+		if item.refs != 0
+			return 12
+	let unique_native = MirEmitC.mir_emit_c(unique, 0)
+	if unique_native.error != "" or not write_text(args[!4], unique_native.code)
+		return 13
+	let moved = array_transfer_program(true)
+	let moved_result = MirInterpreter.mir_execute(moved, 0, Array[Mir.MirValue](), 100, 10)
+	if moved_result.error != "uninitialized array"
+		print(moved_result.error)
+		return 14
+	let moved_native = MirEmitC.mir_emit_c(moved, 0)
+	if moved_native.error != "" or not write_text(args[!5], moved_native.code)
+		return 15
+	print("PASS array MIR")
+	return 0

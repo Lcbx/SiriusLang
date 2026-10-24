@@ -1,0 +1,16 @@
+def main() -> i64
+	let initial = [1, 2]
+	let snapshot = initial
+	let extended = initial.append(3)
+	if len(snapshot) != 2 or len(extended) != 3
+		return 1
+	if snapshot[!0] != 1 or snapshot[!1] != 2 or extended[!2] != 3
+		return 2
+	let nested = [[1], [2]]
+	let nested_snapshot = nested
+	let nested_extended = nested.append([3])
+	if len(nested_snapshot) != 2 or len(nested_extended) != 3
+		return 3
+	if nested_extended[!2][!0] != 3
+		return 4
+	return 0

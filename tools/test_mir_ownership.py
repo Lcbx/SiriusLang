@@ -1,15 +1,14 @@
 #!/usr/bin/env python
 """Verify MIR definite initialization and consumption across the CFG."""
 
-from build_support import BuildCache, check_sirius_driver, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
+from build_support import BuildCache, execute, require_cc
+from project_paths import ROOT
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	output = check_sirius_driver(cache, 'mir-ownership', MIR_DRIVER_SOURCES + (
-		'tests/mir/ownership_driver.sirius',
-	), 'PASS MIR forward ownership checks\n')
+	output = execute([str(cache.native_driver('mir-ownership', ROOT / 'tests/mir/ownership_driver_native.sirius'))]).stdout
+	assert output == 'PASS MIR forward ownership checks\n', output
 	print(output, end='')
 
 

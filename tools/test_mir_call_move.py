@@ -5,8 +5,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from build_support import BuildCache, C_FLAGS, LINK_FLAGS, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES, combined_sources
+from build_support import BuildCache, C_FLAGS, link_flags, check_native, execute, require_cc
+from project_paths import executable_path, ROOT
 
 
 def main() -> None:
@@ -17,16 +17,19 @@ def main() -> None:
 	with tempfile.TemporaryDirectory() as directory:
 		work = Path(directory)
 		if args.compiler is None:
-			driver = cache.sirius('mir-call-move', MIR_DRIVER_SOURCES + ('tests/mir/call_move_driver.sirius',))
+			driver = cache.native_driver('mir-call-move', ROOT / 'tests/mir/call_move_driver_native.sirius')
 		else:
-			combined = work / 'driver.sirius'
-			combined.write_bytes(combined_sources(MIR_DRIVER_SOURCES + ('tests/mir/call_move_driver.sirius',)))
+			modules = work / 'modules'
+			modules.mkdir()
+			for source in (ROOT / 'src').glob('*.sirius'):
+				shutil.copyfile(source, modules / source.name)
+			shutil.copyfile(ROOT / 'tests/mir/call_move_driver_native.sirius', modules / 'Main.sirius')
 			generated = work / 'driver.c'
-			execute([str(args.compiler.resolve()), str(combined), str(generated)])
-			driver = work / 'driver'
+			execute([str(args.compiler.resolve()), '--module-root', str(modules), 'Main', str(generated)])
+			driver = executable_path(work / 'driver')
 			cc = shutil.which('clang') or require_cc()
 			flags = ['-Wno-unused-function'] if 'clang' in Path(cc).name else []
-			execute([cc, *C_FLAGS, *flags, *LINK_FLAGS, '-I', str(Path(__file__).resolve().parent.parent / 'runtime'), str(generated), str(cache.runtime()), '-lm', '-o', str(driver)])
+			execute([cc, *C_FLAGS, *flags, '-I', str(Path(__file__).resolve().parent.parent / 'runtime'), str(generated), str(cache.runtime()), *link_flags(cc), '-o', str(driver)])
 		outputs = [work / f'case{i}.c' for i in range(5)]
 		result = execute([str(driver), *(str(path) for path in outputs)])
 		if result.stdout != 'PASS MIR call ownership transfers\n':

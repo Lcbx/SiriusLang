@@ -1,0 +1,171 @@
+import mir alias Mir
+import mir_guard alias MirGuard
+import mir_verify alias MirVerify
+import mir_emit_c alias Emit
+import mir_ownership alias Ownership
+import mir_interpreter alias Interpreter
+import types alias Types
+# Verify the explicit / non-unwinding MIR failure contract.
+def checked_division_program() -> Mir.MirProgram
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 42))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	code = code.append(Mir.mir_op(Mir.MIR_DIV_I64, 2, 0, 1, 0))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(2))], 0)])
+
+def safe_program() -> Mir.MirProgram
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 40))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	code = code.append(Mir.mir_op(Mir.MIR_ADD_I64, 2, 0, 1, 0))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(2))], 0)])
+
+def abort_program() -> Mir.MirProgram
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_string(0, "owned"))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 1, 0, -1, 0))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(1))], 0)])
+
+def shift_program(marked: bool) -> Mir.MirProgram
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 16))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	if marked
+		code = code.append(Mir.MirInstruction(Mir.MIR_SHL_I64, 2, 0, 1, 0, Array[i64](), "__mir_guarded"))
+	else
+		code = code.append(Mir.mir_op(Mir.MIR_SHL_I64, 2, 0, 1, 0))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(2))], 0)])
+
+# A conditional branch to a panic block is insufficient if its predicate
+# checks the wrong register, or another incoming edge bypasses the check.
+def forged_cfg_guard(wrong: bool, bypass: bool) -> Mir.MirProgram
+	var start = Array[Mir.MirInstruction]()
+	start = start.append(Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 16))
+	start = start.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	var checked = 1
+	if wrong
+		checked = 0
+	start = start.append(Mir.mir_op(Mir.MIR_SHIFT_VALID, 3, checked, -1, 0))
+	let guarded = Mir.MirInstruction(Mir.MIR_SHL_I64, 2, 0, 1, 0, Array[i64](), "__mir_guarded")
+	var blocks = [Mir.MirBlock(start, Mir.mir_branch(3, 1, 2)), Mir.MirBlock([guarded], Mir.mir_return(2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_panic("shift count out of range"))]
+	if bypass
+		blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(1)))
+		blocks[!0] = Mir.MirBlock(start, Mir.mir_branch(3, 1, 3))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL], blocks, 0)])
+
+# The ownership pass may insert a release-only block on the successful
+# edge; this still dominates the guarded instruction and must be accepted.
+def guarded_cleanup_path() -> Mir.MirProgram
+	let head = [Mir.mir_string(3, "owned"), Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 16), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2), Mir.mir_op(Mir.MIR_SHIFT_VALID, 4, 1, -1, 0)]
+	let success = [Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0)]
+	let failed = [Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0)]
+	let guarded = Mir.MirInstruction(Mir.MIR_SHL_I64, 2, 0, 1, 0, Array[i64](), "__mir_guarded")
+	let blocks = [Mir.MirBlock(head, Mir.mir_branch(4, 1, 2)), Mir.MirBlock(success, Mir.mir_jump(3)), Mir.MirBlock(failed, Mir.mir_panic("shift count out of range")), Mir.MirBlock([guarded], Mir.mir_return(2))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_BOOL], blocks, 0)])
+
+# In-band outcomes take the ordinary return edge and can carry managed
+# payloads. They do not require exceptional frame unwinding.
+def optional_failure_program() -> Mir.MirProgram
+	let optional = Types.intern_optional_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let callee = Mir.MirFunction(0, optional.id, [optional.id], [Mir.MirBlock([Mir.mir_optional_none(0)], Mir.mir_return(0))], 0)
+	let code = [Mir.mir_string(0, "caller owner"), Mir.mir_call(1, 0, Array[i64]()), Mir.mir_optional_has(2, 1), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0)]
+	let blocks = [Mir.MirBlock(code, Mir.mir_branch(2, 1, 2)), Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 1)], Mir.mir_return(3)), Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0)], Mir.mir_return(3))]
+	let caller = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, optional.id, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], blocks, 0)
+	return Mir.mir_program_with_types([callee, caller], optional.table)
+
+def ieee_failure_program() -> Mir.MirProgram
+	let code = [Mir.MirInstruction(Mir.MIR_CONST_F64, 0, -1, -1, 0, Array[i64](), "0.0"), Mir.MirInstruction(Mir.MIR_CONST_F64, 1, -1, -1, 0, Array[i64](), "0.0"), Mir.mir_op(Mir.MIR_DIV_F64, 2, 0, 1, 0), Mir.mir_op(Mir.MIR_EQ_F64, 3, 2, 2, 0)]
+	let blocks = [Mir.MirBlock(code, Mir.mir_branch(3, 1, 2)), Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 1)], Mir.mir_return(4)), Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 0)], Mir.mir_return(4))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_F64, Types.TYPE_TAG_F64, Types.TYPE_TAG_F64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	if not Mir.mir_failure_info(Mir.MIR_ARRAY_SET).guarded or not Mir.mir_failure_info(Mir.MIR_ARRAY_SET).abort
+		return 1
+	if not Mir.mir_failure_info(Mir.MIR_CALL).abort or not Mir.mir_failure_info(Mir.MIR_PRINT).abort
+		return 2
+	if Mir.mir_failure_info(Mir.MIR_ADD_I64).guarded or Mir.mir_failure_info(Mir.MIR_ADD_I64).abort
+		return 3
+	if not Mir.mir_failure_info(Mir.MIR_SHL_I64).guarded or not Mir.mir_failure_info(Mir.MIR_SHR_I64).guarded
+		return 11
+	let raw = checked_division_program()
+	if MirVerify.mir_audit_failures(raw).error != "unguarded MIR runtime failure"
+		return 4
+	let guarded = MirGuard.mir_insert_guards(raw)
+	if guarded.error != "" or guarded.guards != 2
+		return 5
+	let audit = MirVerify.mir_audit_failures(guarded.program)
+	if audit.error != "" or audit.guarded != 1 or audit.aborts != 0
+		return 6
+	let repeated = MirGuard.mir_insert_guards(guarded.program)
+	if repeated.error != "" or repeated.guards != 0
+		return 7
+	let safe = MirVerify.mir_audit_failures(safe_program())
+	if safe.error != "" or safe.guarded != 0 or safe.aborts != 0
+		return 8
+	let aborts = MirVerify.mir_audit_failures(abort_program())
+	if aborts.error != "" or aborts.aborts != 1
+		return 9
+	let forged = Mir.MirInstruction(Mir.MIR_CONST_I64, 0, -1, -1, 40, Array[i64](), "__mir_guarded")
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(forged)
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2))
+	code = code.append(Mir.mir_op(Mir.MIR_ADD_I64, 2, 0, 1, 0))
+	let bad = Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(2))], 0)])
+	if MirVerify.mir_audit_failures(bad).error != "guard marker on non-fallible MIR instruction"
+		return 10
+	let raw_shift = shift_program(false)
+	if MirVerify.mir_audit_failures(raw_shift).error != "unguarded MIR runtime failure"
+		return 12
+	if Emit.mir_emit_c_reachable_verified(raw_shift, 0).error != "unguarded MIR runtime failure"
+		return 13
+	let forged_shift = shift_program(true)
+	let invalid_guard = "guarded MIR runtime failure lacks matching CFG guard"
+	if MirVerify.mir_audit_failures(forged_shift).error != invalid_guard
+		return 14
+	if Emit.mir_emit_c_reachable_verified(forged_shift, 0).error != invalid_guard
+		return 15
+	if MirVerify.mir_audit_failures(forged_cfg_guard(true, false)).error != invalid_guard
+		return 16
+	if MirVerify.mir_audit_failures(forged_cfg_guard(false, true)).error != invalid_guard
+		return 17
+	if MirVerify.mir_audit_failures(forged_cfg_guard(false, false)).error != ""
+		return 18
+	let guarded_shift = MirGuard.mir_insert_guards(raw_shift)
+	if guarded_shift.error != "" or guarded_shift.guards != 1
+		return 19
+	if MirVerify.mir_audit_failures(guarded_shift.program).error != ""
+		return 20
+	if Emit.mir_emit_c_reachable_verified(guarded_shift.program, 0).error != ""
+		return 21
+	let cleanup_guard = guarded_cleanup_path()
+	if MirVerify.mir_audit_failures(cleanup_guard).error != "" or Ownership.mir_check_balance(cleanup_guard) != ""
+		return 22
+	if Emit.mir_emit_c_reachable_verified(cleanup_guard, 0).error != ""
+		return 23
+	if not Mir.mir_failure_info(Mir.MIR_DIV_F64).in_band or Mir.mir_failure_info(Mir.MIR_DIV_F64).guarded
+		return 24
+	if not Mir.mir_failure_info(Mir.MIR_READ_TEXT).in_band or not Mir.mir_failure_info(Mir.MIR_READ_TEXT).abort
+		return 25
+	if Mir.mir_failure_info(Mir.MIR_DIV_I64).in_band or Mir.mir_failure_info(Mir.MIR_CALL).in_band
+		return 26
+	let optional = optional_failure_program()
+	if Ownership.mir_check_balance(optional) != "" or MirVerify.mir_audit_failures(optional).error != ""
+		return 27
+	let normal = Interpreter.mir_execute(optional, 1, Array[Mir.MirValue](), 100, 10)
+	if normal.error != "" or normal.value.bits != 0 or Interpreter.mir_audit_return_credits(optional.types, normal) != ""
+		return 29
+	let scalar = ieee_failure_program()
+	let nontrapping = MirVerify.mir_audit_failures(scalar)
+	if nontrapping.error != "" or nontrapping.guarded != 0 or nontrapping.aborts != 0 or nontrapping.in_band != 1
+		return 28
+	let floating = Interpreter.mir_execute(scalar, 0, Array[Mir.MirValue](), 100, 10)
+	if floating.error != "" or floating.value.bits != 0 or Emit.mir_emit_c_reachable_verified(scalar, 0).error != ""
+		return 30
+	let args = arguments()
+	if len(args) == 3
+		let optional_c = Emit.mir_emit_c_reachable_verified(optional, 1)
+		let floating_c = Emit.mir_emit_c_reachable_verified(scalar, 0)
+		if optional_c.error != "" or floating_c.error != "" or not write_text(args[!1], optional_c.code) or not write_text(args[!2], floating_c.code)
+			return 31
+	print("PASS MIR failure contract")
+	return 0

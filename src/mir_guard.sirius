@@ -1,73 +1,80 @@
+import types alias Types
+import mir alias Mir
+import mir_verify alias Verify
+import mir_ownership alias Ownership
 # Convert recoverable arithmetic/index/unwrap checks into explicit CFG panic
 # edges before lifetime insertion. Existing backend checks remain as defensive
 # assertions for manually constructed MIR that has not run this pass.
 
-rec MirGuardFunction(function: MirFunction, guards: i64)
-rec MirGuardResult(program: MirProgram, guards: i64, error: string)
+rec MirGuardFunction(function: Mir.MirFunction, guards: i64)
+export rec MirGuardResult(program: Mir.MirProgram, guards: i64, error: string)
 
 # Checked instructions are marked only after a guard edge is inserted.
 # Re-running the pass leaves the already guarded graph unchanged.
-def mir_guard_function(function: MirFunction) -> MirGuardFunction
+def mir_guard_function(function: Mir.MirFunction) -> MirGuardFunction
 	var blocks = function.blocks
 	var registers = function.register_types
 	var count = 0
 	for i in 0..len(function.blocks)
 		let original = function.blocks[!i]
 		var current = i
-		var instructions = Array[MirInstruction]()
+		var instructions = Array[Mir.MirInstruction]()
 		for ins in original.instructions
-			var checks = Array[MirInstruction]()
+			var checks = Array[Mir.MirInstruction]()
 			var messages = Array[string]()
-			if ins.text != "__mir_guarded" and mir_failure_info(ins.op).guarded
-				if ins.op == MIR_DIV_I64 or ins.op == MIR_REM_I64
-					checks = checks.append(mir_op(MIR_NONZERO_I64, -1, ins.second, -1, 0))
+			if ins.text != "__mir_guarded" and Mir.mir_failure_info(ins.op).guarded
+				if ins.op == Mir.MIR_DIV_I64 or ins.op == Mir.MIR_REM_I64
+					checks = checks.append(Mir.mir_op(Mir.MIR_NONZERO_I64, -1, ins.second, -1, 0))
 					messages = messages.append("division by zero")
-					checks = checks.append(mir_op(MIR_DIV_NO_OVERFLOW_I64, -1, ins.first, ins.second, 0))
+					checks = checks.append(Mir.mir_op(Mir.MIR_DIV_NO_OVERFLOW_I64, -1, ins.first, ins.second, 0))
 					messages = messages.append("integer overflow")
-				elif ins.op == MIR_ARRAY_GET or ins.op == MIR_ARRAY_SET
-					checks = checks.append(mir_op(MIR_ARRAY_INDEX_VALID, -1, ins.first, ins.second, 0))
+				elif ins.op == Mir.MIR_SHL_I64 or ins.op == Mir.MIR_SHR_I64
+					checks = checks.append(Mir.mir_op(Mir.MIR_SHIFT_VALID, -1, ins.second, -1, 0))
+					messages = messages.append("shift count out of range")
+				elif ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_SET
+					checks = checks.append(Mir.mir_op(Mir.MIR_ARRAY_INDEX_VALID, -1, ins.first, ins.second, 0))
 					messages = messages.append("array index out of bounds")
-				elif ins.op == MIR_OPTIONAL_UNWRAP
-					checks = checks.append(mir_optional_has(-1, ins.first))
+				elif ins.op == Mir.MIR_OPTIONAL_UNWRAP
+					checks = checks.append(Mir.mir_optional_has(-1, ins.first))
 					messages = messages.append("missing optional value")
 			for j in 0..len(checks)
 				let check = checks[!j]
 				let condition = len(registers)
-				registers = registers.append(TYPE_TAG_BOOL)
-				instructions = instructions.append(MirInstruction(check.op, condition, check.first, check.second, check.immediate, check.inputs, check.text))
+				registers = registers.append(Types.TYPE_TAG_BOOL)
+				instructions = instructions.append(Mir.MirInstruction(check.op, condition, check.first, check.second, check.immediate, check.inputs, check.text))
 				let continuation = len(blocks)
 				let failure = continuation + 1
-				blocks[!current] = MirBlock(instructions, mir_branch(condition, continuation, failure))
-				blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_jump(continuation)))
-				blocks = blocks.append(MirBlock(Array[MirInstruction](), mir_panic(messages[!j])))
+				blocks[!current] = Mir.MirBlock(instructions, Mir.mir_branch(condition, continuation, failure))
+				blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(continuation)))
+				blocks = blocks.append(Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_panic(messages[!j])))
 				current = continuation
-				instructions = Array[MirInstruction]()
+				instructions = Array[Mir.MirInstruction]()
 				count += 1
 			if len(checks) > 0
-				instructions = instructions.append(MirInstruction(ins.op, ins.dst, ins.first, ins.second, ins.immediate, ins.inputs, "__mir_guarded"))
+				instructions = instructions.append(Mir.MirInstruction(ins.op, ins.dst, ins.first, ins.second, ins.immediate, ins.inputs, "__mir_guarded"))
 			else
 				instructions = instructions.append(ins)
-		blocks[!current] = MirBlock(instructions, original.terminator)
-	return MirGuardFunction(MirFunction(function.argument_count, function.return_type, registers, blocks, function.entry), count)
+		blocks[!current] = Mir.MirBlock(instructions, original.terminator)
+	return MirGuardFunction(Mir.MirFunction(function.argument_count, function.return_type, registers, blocks, function.entry), count)
 
 # Internal transformation: callers must verify the input before using it and
 # validate the resulting program before execution or emission.
-def mir_insert_guards_unchecked(program: MirProgram) -> MirGuardResult
-	var functions = Array[MirFunction]()
+export def mir_insert_guards_unchecked(program: Mir.MirProgram) -> MirGuardResult
+	var functions = Array[Mir.MirFunction]()
 	var count = 0
 	for function in program.functions
 		let guarded = mir_guard_function(function)
 		functions = functions.append(guarded.function)
 		count += guarded.guards
-	return MirGuardResult(mir_program_with_types(functions, program.types), count, "")
+	return MirGuardResult(Mir.mir_program_with_types(functions, program.types), count, "")
 
-def mir_insert_guards(program: MirProgram) -> MirGuardResult
-	let error = mir_check_ownership(program)
+export def mir_insert_guards(program: Mir.MirProgram) -> MirGuardResult
+	let error = Ownership.mir_check_ownership(program)
 	if error != ""
 		return MirGuardResult(program, 0, error)
 	let guarded = mir_insert_guards_unchecked(program)
-	let checked = mir_check_ownership(guarded.program)
+	let checked = Ownership.mir_check_ownership(guarded.program)
 	if checked != ""
 		return MirGuardResult(guarded.program, guarded.guards, checked)
-	let audited = mir_audit_failures_unchecked(guarded.program)
+	let audited = Verify.mir_audit_failures_unchecked(guarded.program)
 	return MirGuardResult(guarded.program, guarded.guards, audited.error)

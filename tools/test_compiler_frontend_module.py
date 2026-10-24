@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES, ROOT, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 from build_modules import symbol
 
 
@@ -19,7 +19,7 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path, help='reuse a previously built MIR runner')
 	args = parser.parse_args()
-	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
 	cases = sorted((ROOT / 'tests/parser/fixtures').glob('*.sirius'))
 	assert cases, 'missing parser fixtures'
 	with tempfile.TemporaryDirectory() as directory:

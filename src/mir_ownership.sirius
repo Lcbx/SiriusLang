@@ -1,23 +1,27 @@
+import types alias Types
+import mir alias Mir
+import mir_cfg alias Cfg
+import mir_verify alias Verify
 # Forward CFG analysis of definitely initialized MIR registers.
 # Every reachable predecessor must provide an owned value before a read.
 # This analysis does not transfer ownership at calls or returns: calls borrow
 # arguments (callee receives retained references), returns transfer the result.
 
-rec MirOwnershipBlock(incoming: Array[i64], outgoing: Array[i64])
-rec MirOwnershipAnalysis(must: Array[MirOwnershipBlock], maybe: Array[MirOwnershipBlock])
-rec MirOwnershipEffects(registers: Array[i64], values: Array[i64])
+export rec MirOwnershipBlock(incoming: Array[i64], outgoing: Array[i64])
+export rec MirOwnershipAnalysis(must: Array[MirOwnershipBlock], maybe: Array[MirOwnershipBlock])
+export rec MirOwnershipEffects(registers: Array[i64], values: Array[i64])
 
 # One bit per register; 63 bits per i64 avoids shifting into the sign bit.
 # Bit masks use positive signed integers in both the C and MIR execution paths.
 def mir_ownership_bit(register: i64) -> i64
 	return 1 << (register % 63)
 
-def mir_ownership_get(words: Array[i64], register: i64) -> i64
+export def mir_ownership_get(words: Array[i64], register: i64) -> i64
 	if words[!(register / 63)] & mir_ownership_bit(register) != 0
 		return 1
 	return 0
 
-def mir_ownership_set(words: Array[i64], register: i64, value: i64) -> Array[i64]
+export def mir_ownership_set(words: Array[i64], register: i64, value: i64) -> Array[i64]
 	var result = words
 	let index = register / 63
 	let bit = mir_ownership_bit(register)
@@ -29,7 +33,7 @@ def mir_ownership_set(words: Array[i64], register: i64, value: i64) -> Array[i64
 		result[!index] = previous & (9223372036854775807 - bit)
 	return result
 
-def mir_ownership_top(count: i64) -> Array[i64]
+export def mir_ownership_top(count: i64) -> Array[i64]
 	var words = Array[i64]()
 	var word = 0
 	for i in 0..count
@@ -41,19 +45,19 @@ def mir_ownership_top(count: i64) -> Array[i64]
 		words = words.append(word)
 	return words
 
-def mir_ownership_entry(function: MirFunction) -> Array[i64]
+export def mir_ownership_entry(function: Mir.MirFunction) -> Array[i64]
 	var words = mir_ownership_empty(len(function.register_types))
 	for i in 0..function.argument_count
 		words = mir_ownership_set(words, i, 1)
 	return words
 
-def mir_ownership_empty(count: i64) -> Array[i64]
+export def mir_ownership_empty(count: i64) -> Array[i64]
 	var words = Array[i64]()
 	for i in 0..((count + 62) / 63)
 		words = words.append(0)
 	return words
 
-def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Array[i64]
+export def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Array[i64]
 	var joined = left
 	for i in 0..len(joined)
 		var word = 0
@@ -65,54 +69,81 @@ def mir_ownership_join(left: Array[i64], right: Array[i64], maybe: bool) -> Arra
 			joined[!i] = word
 	return joined
 
-# Transfer effects depend only on instruction writes, not the incoming state.
-# Cache them per block so the worklist applies at most one CoW state copy.
-def mir_ownership_effects(block: MirBlock) -> MirOwnershipEffects
+# Reuse the first reachable predecessor's outgoing snapshot. Further joins
+# update a single CoW accumulator; entry blocks retain their argument state.
+def mir_ownership_join_predecessors(seed: Array[i64], predecessors: Array[i64], reached: Array[i64], states: Array[MirOwnershipBlock], maybe: bool, is_entry: bool) -> Array[i64]
+	var incoming = seed
+	var found = is_entry
+	for j in predecessors
+		if reached[!j] != 0
+			let outgoing = states[!j].outgoing
+			if not found
+				# A single predecessor already is the joined state.
+				incoming = outgoing
+				found = true
+			else
+				for k in 0..len(incoming)
+					var word = incoming[!k]
+					if maybe
+						word = word | outgoing[!k]
+					else
+						word = word & outgoing[!k]
+					if word != incoming[!k]
+						incoming[!k] = word
+	return incoming
+
+# Public transfer-effect helpers remain available for analyses that need a
+# reusable summary. The CFG solver no longer allocates summaries per block.
+export def mir_ownership_effects(block: Mir.MirBlock) -> MirOwnershipEffects
 	var registers = Array[i64]()
 	var values = Array[i64]()
 	for ins in block.instructions
-		if mir_consumes_source(ins)
+		if Cfg.mir_consumes_source(ins)
 			registers = registers.append(ins.first)
 			values = values.append(0)
-		if ins.op == MIR_CALL_MOVE
+		if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 			for i in 0..len(ins.inputs)
-				if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i)
+				if ins.inputs[!i] != ins.first and Mir.mir_input_move_at(ins, i)
 					registers = registers.append(ins.inputs[!i])
 					values = values.append(0)
-		if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
+		if ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 			registers = registers.append(ins.dst)
 			values = values.append(1)
 	return MirOwnershipEffects(registers, values)
 
-def mir_ownership_apply_effects(before: Array[i64], effects: MirOwnershipEffects) -> Array[i64]
+export def mir_ownership_apply_effects(before: Array[i64], effects: MirOwnershipEffects) -> Array[i64]
 	var after = before
 	for i in 0..len(effects.registers)
 		after = mir_ownership_set(after, effects.registers[!i], effects.values[!i])
 	return after
 
-def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
-	if len(left) != len(right)
-		return false
-	for i in 0..len(left)
-		if left[!i] != right[!i]
-			return false
-	return true
-
-def mir_ownership_after(ins: MirInstruction, before: Array[i64]) -> Array[i64]
+# Worklist transfer only needs one pass over a block. Avoid allocating
+# temporary register/value arrays for every block (including unreachable ones).
+# Revisited blocks still apply instructions in order.
+def mir_ownership_apply_block(before: Array[i64], block: Mir.MirBlock) -> Array[i64]
 	var after = before
-	if mir_consumes_source(ins)
+	for ins in block.instructions
+		after = mir_ownership_after(ins, after)
+	return after
+
+export def mir_ownership_equal(left: Array[i64], right: Array[i64]) -> bool
+	return Cfg.mir_cfg_state_equal(left, right)
+
+export def mir_ownership_after(ins: Mir.MirInstruction, before: Array[i64]) -> Array[i64]
+	var after = before
+	if Cfg.mir_consumes_source(ins)
 		after = mir_ownership_set(after, ins.first, 0)
-	if ins.op == MIR_CALL_MOVE
+	if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 		for i in 0..len(ins.inputs)
-			if ins.inputs[!i] != ins.first and mir_call_move_at(ins, i)
+			if ins.inputs[!i] != ins.first and Mir.mir_input_move_at(ins, i)
 				after = mir_ownership_set(after, ins.inputs[!i], 0)
-	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
+	if ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 		after = mir_ownership_set(after, ins.dst, 1)
 	return after
 
 # One forward worklist can propagate both must- and may-initialization.
 # Single-mode callers avoid calculating the state they do not need.
-def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> MirOwnershipAnalysis
+export def mir_ownership_analyze_cfg(function: Mir.MirFunction, check_must: bool, check_maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> MirOwnershipAnalysis
 	let top = mir_ownership_top(len(function.register_types))
 	let bottom = mir_ownership_empty(len(function.register_types))
 	let entry = mir_ownership_entry(function)
@@ -124,9 +155,7 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 	# including when its predecessor happens to retain the initial state.
 	var visited = Array[i64]()
 	var queue = Array[i64]()
-	var effects = Array[MirOwnershipEffects]()
 	for i in 0..len(function.blocks)
-		effects = effects.append(mir_ownership_effects(function.blocks[!i]))
 		if check_must
 			must = must.append(MirOwnershipBlock(top, top))
 		if check_maybe
@@ -147,12 +176,10 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			var incoming = top
 			if i == function.entry
 				incoming = entry
-			for j in predecessors[!i]
-				if reached[!j] != 0
-					incoming = mir_ownership_join(incoming, must[!j].outgoing, false)
-			# Effects are fixed for a block: unchanged input implies unchanged output.
+			incoming = mir_ownership_join_predecessors(incoming, predecessors[!i], reached, must, false, i == function.entry)
+			# Instructions are fixed for a block: unchanged input implies unchanged output.
 			if first_visit or not mir_ownership_equal(incoming, must[!i].incoming)
-				let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
+				let outgoing = mir_ownership_apply_block(incoming, function.blocks[!i])
 				if not mir_ownership_equal(outgoing, must[!i].outgoing)
 					changed = true
 				must[!i] = MirOwnershipBlock(incoming, outgoing)
@@ -160,54 +187,248 @@ def mir_ownership_analyze_cfg(function: MirFunction, check_must: bool, check_may
 			var incoming = bottom
 			if i == function.entry
 				incoming = entry
-			for j in predecessors[!i]
-				if reached[!j] != 0
-					incoming = mir_ownership_join(incoming, maybe[!j].outgoing, true)
+			incoming = mir_ownership_join_predecessors(incoming, predecessors[!i], reached, maybe, true, i == function.entry)
 			if first_visit or not mir_ownership_equal(incoming, maybe[!i].incoming)
-				let outgoing = mir_ownership_apply_effects(incoming, effects[!i])
+				let outgoing = mir_ownership_apply_block(incoming, function.blocks[!i])
 				if not mir_ownership_equal(outgoing, maybe[!i].outgoing)
 					changed = true
 				maybe[!i] = MirOwnershipBlock(incoming, outgoing)
 		if changed or first_visit
 			let term = function.blocks[!i].terminator
-			if term.kind == MIR_JUMP or term.kind == MIR_BRANCH
+			if term.kind == Mir.MIR_JUMP or term.kind == Mir.MIR_BRANCH
 				if queued[!term.target] == 0
 					queued[!term.target] = 1
 					queue = queue.append(term.target)
-			if term.kind == MIR_BRANCH and queued[!term.alternative] == 0
+			if term.kind == Mir.MIR_BRANCH and queued[!term.alternative] == 0
 				queued[!term.alternative] = 1
 				queue = queue.append(term.alternative)
 	return MirOwnershipAnalysis(must, maybe)
 
-def mir_ownership_dataflow_cfg(function: MirFunction, maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> Array[MirOwnershipBlock]
+export def mir_ownership_dataflow_cfg(function: Mir.MirFunction, maybe: bool, reached: Array[i64], predecessors: Array[Array[i64]]) -> Array[MirOwnershipBlock]
 	if maybe
 		return mir_ownership_analyze_cfg(function, false, true, reached, predecessors).maybe
 	return mir_ownership_analyze_cfg(function, true, false, reached, predecessors).must
 
-def mir_ownership_dataflow(function: MirFunction, maybe: bool) -> Array[MirOwnershipBlock]
-	let cfg = mir_cfg_facts(function)
+def mir_ownership_dataflow(function: Mir.MirFunction, maybe: bool) -> Array[MirOwnershipBlock]
+	let cfg = Cfg.mir_cfg_facts(function)
 	return mir_ownership_dataflow_cfg(function, maybe, cfg.reached, cfg.predecessors)
 
-def mir_ownership_states(function: MirFunction) -> Array[MirOwnershipBlock]
+export def mir_ownership_states(function: Mir.MirFunction) -> Array[MirOwnershipBlock]
 	return mir_ownership_dataflow(function, false)
 
 # May-initialized state is the union of incoming paths. Used to establish
 # whether cleanup is required even when a register is only owned on some paths.
-def mir_ownership_maybe_states(function: MirFunction) -> Array[MirOwnershipBlock]
+export def mir_ownership_maybe_states(function: Mir.MirFunction) -> Array[MirOwnershipBlock]
 	return mir_ownership_dataflow(function, true)
+
+# A type-directed, compositional description of heap ownership edges.
+# Fixed children belong to every instance; variable children are counted per
+# array element / optional payload / dictionary entry. An ARC copy of a root
+# changes only its root credit: children belong to the object, not to aliases.
+export rec MirCreditShape(ownership: i64, fixed_children: i64, variable_children: i64, depth: i64)
+
+export def mir_credit_shapes(types: Types.TypeTable) -> Array[MirCreditShape]
+	var shapes = Array[MirCreditShape]()
+	for id in 0..len(types.entries)
+		let desc = types.entries[!id]
+		let ownership = Types.runtime_ownership(types, id)
+		var fixed = 0
+		var variable = 0
+		var depth = 0
+		if desc.tag == Types.TYPE_TAG_RECORD
+			for field in desc.fields
+				if Types.runtime_ownership(types, field.kind) != Types.TYPE_OWNERSHIP_NONE
+					fixed += 1
+				if shapes[!field.kind].depth >= depth
+					depth = shapes[!field.kind].depth + 1
+		elif desc.tag == Types.TYPE_TAG_ARRAY or desc.tag == Types.TYPE_TAG_OPTIONAL
+			if Types.runtime_ownership(types, desc.first) != Types.TYPE_OWNERSHIP_NONE
+				variable = 1
+			depth = shapes[!desc.first].depth + 1
+		elif desc.tag == Types.TYPE_TAG_DICT
+			if Types.runtime_ownership(types, desc.first) != Types.TYPE_OWNERSHIP_NONE
+				variable += 1
+			if Types.runtime_ownership(types, desc.second) != Types.TYPE_OWNERSHIP_NONE
+				variable += 1
+			depth = shapes[!desc.first].depth + 1
+			if shapes[!desc.second].depth >= shapes[!desc.first].depth
+				depth = shapes[!desc.second].depth + 1
+		shapes = shapes.append(MirCreditShape(ownership, fixed, variable, depth))
+	return shapes
+
+# Every callee starts with one credit for each managed parameter. A caller
+# either retains its borrowed argument or transfers its existing credit. This
+# is a whole-program contract: all callees have already passed CFG balance.
+# It does not assume that arguments or nested children refer to distinct heaps.
+def mir_credit_call(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
+	let callee = program.functions[!ins.immediate]
+	for i in 0..len(ins.inputs)
+		let register = ins.inputs[!i]
+		let kind = callee.register_types[!i]
+		if kind != function.register_types[!register]
+			return "call parameter credit type mismatch"
+		if shapes[!kind].ownership == Types.TYPE_OWNERSHIP_NONE
+			continue
+		if mir_ownership_get(before, register) == 0
+			return "call argument has no credit"
+		let moved = Mir.mir_input_move_at(ins, i)
+		if moved and (register == ins.dst or mir_ownership_get(after, register) != 0)
+			return "call transfer did not consume argument credit"
+		if not moved and register != ins.dst and mir_ownership_get(after, register) != mir_ownership_get(before, register)
+			return "borrowed call argument lost its credit"
+	if shapes[!callee.return_type].ownership != Types.TYPE_OWNERSHIP_NONE and mir_ownership_get(after, ins.dst) == 0
+		return "call result has no credit"
+	return ""
+
+# Heap-edge creation and replacement are expressed using the *child* TypeIds,
+# not numeric TypeId ranges. Acquiring a child is either a retain (borrow) or
+# a move; a move invalidates its source. A parent never owns its children's
+# *root* aliases: it owns one edge per populated slot, even for duplicates.
+def mir_credit_children(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
+	let dst_type = function.register_types[!ins.dst]
+	let desc = program.types.entries[!dst_type]
+	if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+		for i in 0..len(ins.inputs)
+			var kind = desc.first
+			if desc.tag == Types.TYPE_TAG_RECORD
+				kind = desc.fields[!i].kind
+			if function.register_types[!ins.inputs[!i]] != kind
+				return "constructor child credit type mismatch"
+			if shapes[!kind].ownership != Types.TYPE_OWNERSHIP_NONE
+				let source = ins.inputs[!i]
+				if mir_ownership_get(before, source) == 0
+					return "constructor source has no child credit"
+				if Mir.mir_input_move_at(ins, i) and mir_ownership_get(after, source) != 0
+					return "constructor child transfer retained a source credit"
+				if not Mir.mir_input_move_at(ins, i) and source != ins.dst and mir_ownership_get(after, source) != mir_ownership_get(before, source)
+					return "constructor borrowed child lost a credit"
+		return ""
+	if ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
+		# The owned parent is consumed by the CoW operation. The resulting
+		# parent replaces an old destination credit or returns to its source.
+		if mir_ownership_get(before, ins.first) == 0 or mir_ownership_get(after, ins.dst) == 0
+			return "CoW parent credit was not transferred"
+		if ins.first != ins.dst and mir_ownership_get(after, ins.first) != 0
+			return "CoW parent retained its consumed credit"
+		var children = Array[i64]()
+		if ins.op == Mir.MIR_DICT_INSERT
+			children = ins.inputs
+		elif ins.op == Mir.MIR_ARRAY_SET
+			children = [ins.immediate]
+		else
+			children = [ins.second]
+		for child in children
+			let kind = function.register_types[!child]
+			if shapes[!kind].ownership != Types.TYPE_OWNERSHIP_NONE and child != ins.dst
+				if mir_ownership_get(after, child) != mir_ownership_get(before, child)
+					return "CoW borrowed child lost its credit"
+	return ""
+
+# Extracting a managed child returns a *new* credit to the destination;
+# the parent retains its own edge. Optional SOME similarly publishes a
+# retained child edge. This check is alias-safe even when dst equals source:
+# the source must be read and retained before its old credit is replaced.
+def mir_credit_projection(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
+	var owner = ins.first
+	var child_type = function.register_types[!ins.dst]
+	if ins.op == Mir.MIR_OPTIONAL_SOME
+		let desc = program.types.entries[!child_type]
+		child_type = desc.first
+	elif ins.op == Mir.MIR_RECORD_GET
+		let desc = program.types.entries[!function.register_types[!owner]]
+		child_type = desc.fields[!ins.immediate].kind
+	elif ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL
+		let desc = program.types.entries[!function.register_types[!owner]]
+		child_type = desc.first
+	elif ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL
+		let desc = program.types.entries[!function.register_types[!owner]]
+		child_type = desc.second
+	elif ins.op == Mir.MIR_OPTIONAL_UNWRAP
+		let desc = program.types.entries[!function.register_types[!owner]]
+		child_type = desc.first
+	else
+		return ""
+	if shapes[!child_type].ownership == Types.TYPE_OWNERSHIP_NONE
+		return ""
+	if mir_ownership_get(before, owner) == 0
+		return "projection has no source credit"
+	if owner != ins.dst and mir_ownership_get(after, owner) != mir_ownership_get(before, owner)
+		return "projection consumed parent/child credit"
+	if mir_ownership_get(after, ins.dst) == 0
+		return "projection did not acquire an owned result"
+	return ""
+
+# Static credit obligations are checked on each reachable instruction for
+# both must-own and may-own states. Paths may alias the same runtime object;
+# we count ownership *edges*, not distinct objects or heap handles.
+def mir_credit_heap_function(program: Mir.MirProgram, function: Mir.MirFunction, reached: Array[i64], states: Array[MirOwnershipBlock], shapes: Array[MirCreditShape]) -> string
+	for block_id in 0..len(function.blocks)
+		if reached[!block_id] != 0
+			var before = states[!block_id].incoming
+			for ins in function.blocks[!block_id].instructions
+				let after = mir_ownership_after(ins, before)
+				var error = ""
+				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+					error = mir_credit_call(program, function, ins, before, after, shapes)
+				elif ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
+					error = mir_credit_children(program, function, ins, before, after, shapes)
+				elif ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL
+					error = mir_credit_projection(program, function, ins, before, after, shapes)
+				if error != ""
+					return error + " in block " + str(block_id)
+				before = after
+	return ""
+
+# Check one-credit ownership conservation at each reachable instruction.
+# This is independent of the forward transfer implementation: borrowed reads
+# retain their credit, moved sources lose it, and a defined destination owns
+# exactly one credit (including replacements and in-place CoW updates).
+# The proof covers register credits; heap children and abnormal unwinding are
+# separate obligations.
+def mir_credit_step(function: Mir.MirFunction, types: Types.TypeTable, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64]) -> string
+	let writes = ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
+	if ins.dst >= 0 and ins.dst < len(function.register_types) and Verify.mir_managed_type(types, function.register_types[!ins.dst])
+		var expected = 0
+		if writes
+			expected = 1
+		if mir_ownership_get(after, ins.dst) != expected
+			return "managed destination credit mismatch in register " + str(ins.dst)
+	for source in Cfg.mir_instruction_reads(ins)
+		if Verify.mir_managed_type(types, function.register_types[!source]) and source != ins.dst
+			var expected = mir_ownership_get(before, source)
+			if Cfg.mir_consumes_source(ins) and source == ins.first or Mir.mir_input_moves_register(ins, source)
+				expected = 0
+			if mir_ownership_get(after, source) != expected
+				return "managed source credit mismatch in register " + str(source)
+	return ""
+
+# Check only reachable operations and both abstract join bounds. In particular,
+# a conditional cleanup may drop a credit on one predecessor but not another.
+def mir_credit_function(types: Types.TypeTable, function: Mir.MirFunction, reached: Array[i64], states: Array[MirOwnershipBlock]) -> string
+	for i in 0..len(function.blocks)
+		if reached[!i] != 0
+			var before = states[!i].incoming
+			for ins in function.blocks[!i].instructions
+				let after = mir_ownership_after(ins, before)
+				let error = mir_credit_step(function, types, ins, before, after)
+				if error != ""
+					return error + " in block " + str(i)
+				before = after
+	return ""
 
 # Verify that every exit has transferred or released all managed registers.
 # This is a proof about explicit CFG exits, not about implicit runtime panics.
-def mir_check_balance(program: MirProgram) -> string
-	let error = mir_verify(program)
+export def mir_check_balance(program: Mir.MirProgram) -> string
+	let error = Verify.mir_verify(program)
 	if error != ""
 		return error
+	let shapes = mir_credit_shapes(program.types)
 	for function_id in 0..len(program.functions)
 		let function = program.functions[!function_id]
-		let cfg = mir_cfg_facts(function)
+		let cfg = Cfg.mir_cfg_facts(function)
 		var managed = Array[i64]()
 		for register in 0..len(function.register_types)
-			if mir_managed_type(program.types, function.register_types[!register])
+			if Verify.mir_managed_type(program.types, function.register_types[!register])
 				managed = managed.append(register)
 		let states = mir_ownership_analyze_cfg(function, true, len(managed) != 0, cfg.reached, cfg.predecessors)
 		let problem = mir_ownership_function_states(function, cfg.reached, states.must)
@@ -215,42 +436,54 @@ def mir_check_balance(program: MirProgram) -> string
 			return "MIR function " + str(function_id) + ": " + problem
 		if len(managed) == 0
 			continue
+		let credit_error = mir_credit_function(program.types, function, cfg.reached, states.must)
+		if credit_error != ""
+			return "MIR function " + str(function_id) + ": " + credit_error
 		let maybe = states.maybe
+		let possible_credit_error = mir_credit_function(program.types, function, cfg.reached, maybe)
+		if possible_credit_error != ""
+			return "MIR function " + str(function_id) + ": " + possible_credit_error
+		let heap_error = mir_credit_heap_function(program, function, cfg.reached, states.must, shapes)
+		if heap_error != ""
+			return "MIR function " + str(function_id) + ": " + heap_error
+		let possible_heap_error = mir_credit_heap_function(program, function, cfg.reached, maybe, shapes)
+		if possible_heap_error != ""
+			return "MIR function " + str(function_id) + ": " + possible_heap_error
 		for block_id in 0..len(function.blocks)
 			if cfg.reached[!block_id] != 0
 				let term = function.blocks[!block_id].terminator
-				if term.kind == MIR_RETURN or term.kind == MIR_PANIC
+				if term.kind == Mir.MIR_RETURN or term.kind == Mir.MIR_PANIC
 					for register in managed
 						if mir_ownership_get(maybe[!block_id].outgoing, register) != 0
-							if term.kind != MIR_RETURN or register != term.operand
+							if term.kind != Mir.MIR_RETURN or register != term.operand
 								return "MIR function " + str(function_id) + ": managed register " + str(register) + " may remain owned at exit block " + str(block_id)
 	return ""
 
 # The public ownership checker and balance checker share the same register
 # read validation; only the latter requires may-ownership at exits.
-def mir_ownership_function_states(function: MirFunction, reached: Array[i64], states: Array[MirOwnershipBlock]) -> string
+def mir_ownership_function_states(function: Mir.MirFunction, reached: Array[i64], states: Array[MirOwnershipBlock]) -> string
 	for i in 0..len(function.blocks)
 		if reached[!i] != 0
 			let block = function.blocks[!i]
 			var available = states[!i].incoming
 			for ins in block.instructions
-				for register in mir_instruction_reads(ins)
+				for register in Cfg.mir_instruction_reads(ins)
 					if register < 0 or register >= len(function.register_types) or mir_ownership_get(available, register) == 0
 						return "MIR read of uninitialized or moved register " + str(register) + " in block " + str(i)
 				available = mir_ownership_after(ins, available)
 			let term = block.terminator
-			if term.kind == MIR_BRANCH or term.kind == MIR_RETURN
+			if term.kind == Mir.MIR_BRANCH or term.kind == Mir.MIR_RETURN
 				if mir_ownership_get(available, term.operand) == 0
 					return "MIR terminator reads uninitialized or moved register " + str(term.operand) + " in block " + str(i)
 	return ""
 
-def mir_ownership_function(function: MirFunction) -> string
-	let cfg = mir_cfg_facts(function)
+def mir_ownership_function(function: Mir.MirFunction) -> string
+	let cfg = Cfg.mir_cfg_facts(function)
 	let states = mir_ownership_dataflow_cfg(function, false, cfg.reached, cfg.predecessors)
 	return mir_ownership_function_states(function, cfg.reached, states)
 
-def mir_check_ownership(program: MirProgram) -> string
-	let error = mir_verify(program)
+export def mir_check_ownership(program: Mir.MirProgram) -> string
+	let error = Verify.mir_verify(program)
 	if error != ""
 		return error
 	for i in 0..len(program.functions)

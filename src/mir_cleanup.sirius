@@ -1,40 +1,45 @@
+import mir alias Mir
+import mir_cfg alias Cfg
+import mir_verify alias Verify
+import mir_ownership alias Ownership
+import mir_lifetime alias Lifetime
 # Path-sensitive cleanup for managed MIR registers.
 # Exit blocks release all definitely owned registers except a returned value;
 # CFG edges release values dead on that particular successor path.
 # Applied after last-use lifetime insertion, before backend execution/emission.
 
-rec MirCleanupFunction(function: MirFunction, releases: i64)
-rec MirCleanupResult(program: MirProgram, releases: i64, error: string)
+rec MirCleanupFunction(function: Mir.MirFunction, releases: i64)
+export rec MirCleanupResult(program: Mir.MirProgram, releases: i64, error: string)
 
 # Conditional releases make it safe to compute all edge cleanups from one
 # ownership snapshot, even when earlier edges have already released a value.
-def mir_cleanup_releases(program: MirProgram, function: MirFunction, possible: Array[i64], live: Array[i64], successor: MirBlock) -> Array[MirInstruction]
-	var releases = Array[MirInstruction]()
+def mir_cleanup_releases(program: Mir.MirProgram, function: Mir.MirFunction, possible: Array[i64], live: Array[i64], successor: Mir.MirBlock) -> Array[Mir.MirInstruction]
+	var releases = Array[Mir.MirInstruction]()
 	for register in 0..len(function.register_types)
-		if mir_ownership_get(possible, register) != 0 and not mir_live_contains(live, register) and mir_managed_type(program.types, function.register_types[!register])
+		if Ownership.mir_ownership_get(possible, register) != 0 and not Lifetime.mir_live_contains(live, register) and Verify.mir_managed_type(program.types, function.register_types[!register])
 			# A second invocation must not add another release before an
 			# existing cleanup-only edge block.
 			var covered = false
 			for instruction in successor.instructions
-				if instruction.op == MIR_RELEASE or instruction.op == MIR_RELEASE_IF_INIT
+				if instruction.op == Mir.MIR_RELEASE or instruction.op == Mir.MIR_RELEASE_IF_INIT
 					if instruction.first == register
 						covered = true
 				else
 					break
 			if not covered
-				releases = releases.append(mir_op(MIR_RELEASE_IF_INIT, register, register, -1, 0))
+				releases = releases.append(Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, register, register, -1, 0))
 	return releases
 
-def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirCleanupFunction
+def mir_cleanup_function(program: Mir.MirProgram, function: Mir.MirFunction) -> MirCleanupFunction
 	var blocks = function.blocks
 	var count = 0
 	# One snapshot suffices: edge releases are conditional when ownership
 	# differs between incoming paths, so incremental global recomputation
 	# after each edge insertion is unnecessary.
-	let cfg = mir_cfg_facts(function)
+	let cfg = Cfg.mir_cfg_facts(function)
 	let reached = cfg.reached
-	let possible = mir_ownership_dataflow_cfg(function, true, cfg.reached, cfg.predecessors)
-	let liveness = mir_lifetime_states_cfg(function, cfg)
+	let possible = Ownership.mir_ownership_dataflow_cfg(function, true, cfg.reached, cfg.predecessors)
+	let liveness = Lifetime.mir_lifetime_states_cfg(function, cfg)
 	for i in 0..len(function.blocks)
 		if reached[!i] != 0
 			let original = blocks[!i]
@@ -42,62 +47,62 @@ def mir_cleanup_function(program: MirProgram, function: MirFunction) -> MirClean
 			let may = possible[!i].outgoing
 			var instructions = original.instructions
 			var next = term
-			if term.kind == MIR_JUMP
+			if term.kind == Mir.MIR_JUMP
 				let releases = mir_cleanup_releases(program, function, may, liveness[!term.target].live_in, blocks[!term.target])
 				for release in releases
 					instructions = instructions.append(release)
 					count += 1
-			elif term.kind == MIR_BRANCH
+			elif term.kind == Mir.MIR_BRANCH
 				var yes = term.target
 				var no = term.alternative
 				let yes_releases = mir_cleanup_releases(program, function, may, liveness[!yes].live_in, blocks[!yes])
 				if len(yes_releases) > 0
 					yes = len(blocks)
-					blocks = blocks.append(MirBlock(yes_releases, mir_jump(term.target)))
+					blocks = blocks.append(Mir.MirBlock(yes_releases, Mir.mir_jump(term.target)))
 					count += len(yes_releases)
 				let no_releases = mir_cleanup_releases(program, function, may, liveness[!no].live_in, blocks[!no])
 				if len(no_releases) > 0
 					no = len(blocks)
-					blocks = blocks.append(MirBlock(no_releases, mir_jump(term.alternative)))
+					blocks = blocks.append(Mir.MirBlock(no_releases, Mir.mir_jump(term.alternative)))
 					count += len(no_releases)
-				next = mir_branch(term.operand, yes, no)
-			blocks[!i] = MirBlock(instructions, next)
-	let edged = MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
+				next = Mir.mir_branch(term.operand, yes, no)
+			blocks[!i] = Mir.MirBlock(instructions, next)
+	let edged = Mir.MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry)
 	# One post-edge may-own analysis determines whether an exit needs a
 	# release. Emit conditional releases: edge drops can make a value
 	# absent on some incoming paths, so a must-own analysis is unnecessary.
-	let exit_cfg = mir_cfg_facts(edged)
+	let exit_cfg = Cfg.mir_cfg_facts(edged)
 	let exit_reached = exit_cfg.reached
-	let exit_maybe = mir_ownership_dataflow_cfg(edged, true, exit_cfg.reached, exit_cfg.predecessors)
+	let exit_maybe = Ownership.mir_ownership_dataflow_cfg(edged, true, exit_cfg.reached, exit_cfg.predecessors)
 	for i in 0..len(blocks)
 		if exit_reached[!i] != 0
 			let block = blocks[!i]
 			let term = block.terminator
-			if term.kind == MIR_RETURN or term.kind == MIR_PANIC
+			if term.kind == Mir.MIR_RETURN or term.kind == Mir.MIR_PANIC
 				var preserved = -1
-				if term.kind == MIR_RETURN
+				if term.kind == Mir.MIR_RETURN
 					preserved = term.operand
 				var instructions = block.instructions
 				for register in 0..len(edged.register_types)
-					if register != preserved and mir_managed_type(program.types, edged.register_types[!register]) and mir_ownership_get(exit_maybe[!i].outgoing, register) != 0
-						instructions = instructions.append(mir_op(MIR_RELEASE_IF_INIT, register, register, -1, 0))
+					if register != preserved and Verify.mir_managed_type(program.types, edged.register_types[!register]) and Ownership.mir_ownership_get(exit_maybe[!i].outgoing, register) != 0
+						instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, register, register, -1, 0))
 						count += 1
-				blocks[!i] = MirBlock(instructions, term)
-	return MirCleanupFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
+				blocks[!i] = Mir.MirBlock(instructions, term)
+	return MirCleanupFunction(Mir.MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
 
 # Internal transformation; the caller verifies ownership after all passes.
-def mir_insert_exit_cleanup_unchecked(program: MirProgram) -> MirCleanupResult
-	var functions = Array[MirFunction]()
+export def mir_insert_exit_cleanup_unchecked(program: Mir.MirProgram) -> MirCleanupResult
+	var functions = Array[Mir.MirFunction]()
 	var count = 0
 	for function in program.functions
 		let cleaned = mir_cleanup_function(program, function)
 		functions = functions.append(cleaned.function)
 		count += cleaned.releases
-	return MirCleanupResult(mir_program_with_types(functions, program.types), count, "")
+	return MirCleanupResult(Mir.mir_program_with_types(functions, program.types), count, "")
 
-def mir_insert_exit_cleanup(program: MirProgram) -> MirCleanupResult
-	let error = mir_check_ownership(program)
+export def mir_insert_exit_cleanup(program: Mir.MirProgram) -> MirCleanupResult
+	let error = Ownership.mir_check_ownership(program)
 	if error != ""
 		return MirCleanupResult(program, 0, error)
 	let cleaned = mir_insert_exit_cleanup_unchecked(program)
-	return MirCleanupResult(cleaned.program, cleaned.releases, mir_check_balance(cleaned.program))
+	return MirCleanupResult(cleaned.program, cleaned.releases, Ownership.mir_check_balance(cleaned.program))

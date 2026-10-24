@@ -1,0 +1,155 @@
+import mir_emit_c alias MirEmitC
+import mir alias Mir
+import mir_interpreter alias MirInterpreter
+import mir_opt alias MirOpt
+import mir_ownership alias MirOwnership
+import mir_verify alias MirVerify
+import types alias Types
+# Call ownership transfer must preserve both native and interpreter semantics.
+def mir_call_move_fixture(mode: i64) -> Mir.MirProgram
+	var caller = Array[Mir.MirInstruction]()
+	caller = caller.append(Mir.mir_string(0, "abc"))
+	var register_types = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64]
+	var result = 3
+	if mode == 1 or mode == 2
+		register_types = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64]
+		caller = caller.append(Mir.mir_op(Mir.MIR_RETAIN, 1, 0, -1, 0))
+		var inputs = [0, 1]
+		if mode == 2
+			inputs = [0, 0]
+		caller = caller.append(Mir.mir_call(2, 1, inputs))
+		caller = caller.append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+		caller = caller.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+		result = 6
+	else
+		caller = caller.append(Mir.mir_call(1, 1, [0]))
+		if mode == 3
+			# A later use prevents transfer across this instruction.
+			register_types = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64]
+			caller = caller.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0))
+			caller = caller.append(Mir.mir_op(Mir.MIR_ADD_I64, 3, 1, 2, 0))
+		caller = caller.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+		if mode == 3
+			result = 6
+	var return_reg = 1
+	if mode == 1 or mode == 2
+		return_reg = 2
+	if mode == 3
+		return_reg = 3
+	let first = Mir.MirFunction(0, Types.TYPE_TAG_I64, register_types, [Mir.MirBlock(caller, Mir.mir_return(return_reg))], 0)
+	var inner = Array[Mir.MirInstruction]()
+	inner = inner.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 1, 0, -1, 0))
+	var inner_types = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64]
+	var inner_return = 1
+	if mode == 1 or mode == 2
+		inner_types = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64]
+		inner = Array[Mir.MirInstruction]()
+		inner = inner.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0))
+		inner = inner.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 1, -1, 0))
+		inner = inner.append(Mir.mir_op(Mir.MIR_ADD_I64, 4, 2, 3, 0))
+		inner_return = 4
+	inner = inner.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+	if mode == 1 or mode == 2
+		inner = inner.append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+	# Explicit argument count: the unary and binary callees both own their arguments.
+	var callee = Mir.MirFunction(1, Types.TYPE_TAG_I64, inner_types, [Mir.MirBlock(inner, Mir.mir_return(inner_return))], 0)
+	if mode == 1 or mode == 2
+		callee = Mir.MirFunction(2, Types.TYPE_TAG_I64, inner_types, [Mir.MirBlock(inner, Mir.mir_return(inner_return))], 0)
+	return Mir.new_mir_program([first, callee])
+
+def main() -> i64
+	let paths = arguments()
+	if len(paths) != 6
+		return 1
+	for mode in 0..4
+		let program = mir_call_move_fixture(mode)
+		if MirOwnership.mir_check_balance(program) != ""
+			return 2
+		let optimized = MirOpt.mir_optimize_unchecked(program)
+		if MirOwnership.mir_check_balance(optimized.program) != ""
+			return 3
+		let instructions = optimized.program.functions[!0].blocks[!0].instructions
+		var moves = 0
+		for ins in instructions
+			if ins.op == Mir.MIR_CALL_MOVE
+				moves += 1
+				if mode == 1 and (not Mir.mir_call_move_at(ins, 0) or not Mir.mir_call_move_at(ins, 1))
+					return 12
+		if moves != 1 and (mode == 0 or mode == 1)
+			return 4
+		if moves != 0 and (mode == 2 or mode == 3)
+			return 5
+		let again = MirOpt.mir_optimize_unchecked(optimized.program)
+		if again.moves != 0
+			return 6
+		let executed = MirInterpreter.mir_execute(optimized.program, 0, Array[Mir.MirValue](), 100, 10)
+		if executed.error != ""
+			return 7
+		if (mode == 0 and executed.value.bits != 3) or (mode != 0 and executed.value.bits != 6)
+			return 7
+		for item in executed.heap
+			if item.refs != 0
+				return 8
+		let emitted = MirEmitC.mir_emit_c(optimized.program, 0)
+		if emitted.error != "" or not write_text(paths[!mode + 1], emitted.code)
+			return 9
+	# Three distinct managed arguments, interleaved with a borrowed scalar.
+	let caller = Mir.MirFunction(0, Types.TYPE_TAG_I64,
+		[Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64],
+		[Mir.MirBlock([Mir.mir_string(0, "ab"), Mir.mir_string(1, "abc"), Mir.mir_string(2, "d"), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 5),
+			Mir.mir_call(4, 1, [0, 3, 1, 2]), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0)], Mir.mir_return(4))], 0)
+	let multi_callee = Mir.MirFunction(4, Types.TYPE_TAG_I64,
+		[Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64],
+		[Mir.MirBlock([Mir.mir_op(Mir.MIR_STRING_LENGTH, 4, 0, -1, 0), Mir.mir_op(Mir.MIR_STRING_LENGTH, 5, 2, -1, 0),
+			Mir.mir_op(Mir.MIR_STRING_LENGTH, 6, 3, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 7, 4, 5, 0),
+			Mir.mir_op(Mir.MIR_ADD_I64, 8, 7, 6, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0)], Mir.mir_return(8))], 0)
+	let triplet = Mir.new_mir_program([caller, multi_callee])
+	if MirOwnership.mir_check_balance(triplet) != ""
+		return 13
+	let optimized_triplet = MirOpt.mir_optimize_unchecked(triplet)
+	if optimized_triplet.moves != 3 or MirOwnership.mir_check_balance(optimized_triplet.program) != ""
+		return 14
+	var triplet_moves = 0
+	for ins in optimized_triplet.program.functions[!0].blocks[!0].instructions
+		if ins.op == Mir.MIR_CALL_MOVE
+			triplet_moves += 1
+			if not Mir.mir_call_move_at(ins, 0) or Mir.mir_call_move_at(ins, 1) or not Mir.mir_call_move_at(ins, 2) or not Mir.mir_call_move_at(ins, 3)
+				return 15
+	if triplet_moves != 1
+		return 15
+	let scalar_transfer = Mir.mir_call_moves(4, 1, [0, 3, 1, 2], [0, 3])
+	if MirVerify.mir_verify_instruction(triplet, caller, scalar_transfer) == ""
+		return 20
+	let duplicate_transfer = Mir.mir_call_moves(4, 1, [0, 3, 1, 1], [0, 1])
+	if MirVerify.mir_verify_instruction(triplet, caller, duplicate_transfer) == ""
+		return 21
+	let invalid_mask = Mir.MirInstruction(Mir.MIR_CALL_MOVE, 4, 0, -1, 1, [0, 3, 1, 2], "")
+	if MirVerify.mir_verify_instruction(triplet, caller, invalid_mask) == ""
+		return 22
+	let outcome = MirInterpreter.mir_execute(optimized_triplet.program, 0, Array[Mir.MirValue](), 100, 10)
+	if outcome.error != "" or outcome.value.bits != 6
+		return 16
+	for item in outcome.heap
+		if item.refs != 0
+			return 17
+	let emitted_triplet = MirEmitC.mir_emit_c(optimized_triplet.program, 0)
+	if emitted_triplet.error != "" or not write_text(paths[!5], emitted_triplet.code)
+		return 18
+	# A transferred argument cannot be used afterwards.
+	let invalid_multi = Mir.MirFunction(0, Types.TYPE_TAG_I64,
+		[Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64],
+		[Mir.MirBlock([Mir.mir_string(0, "abc"), Mir.mir_string(1, "def"),
+			Mir.mir_call_moves(2, 1, [0, 1], [0, 1]), Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 1, -1, 0)], Mir.mir_return(3))], 0)
+	if MirOwnership.mir_check_ownership(Mir.new_mir_program([invalid_multi, mir_call_move_fixture(1).functions[!1]])) == ""
+		return 19
+	let bad = Mir.mir_call_move(1, 1, [0, 0], 0)
+	if MirVerify.mir_verify_instruction(mir_call_move_fixture(2), mir_call_move_fixture(2).functions[!0], bad) == ""
+		return 10
+	let callee = mir_call_move_fixture(0).functions[!1]
+	let invalid = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_string(0, "abc"), Mir.mir_call_move(1, 1, [0], 0), Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0)], Mir.mir_return(2))], 0)
+	if MirOwnership.mir_check_ownership(Mir.new_mir_program([invalid, callee])) == ""
+		return 11
+	print("PASS MIR call ownership transfers")
+	return 0

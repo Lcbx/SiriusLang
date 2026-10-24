@@ -1,20 +1,23 @@
 # First typed HIR operations. Source indexes refer to the syntax AST arena;
 # type_id is always an interned semantic TypeId, never a legacy C kind.
 # Semantic resolution is independent of C syntax and runtime helper names.
+import types alias Types
+import parser alias Ast
+import tokenizer alias Lex
 
-let HIR_FIELD = 1
-let HIR_BINARY = 2
-let HIR_NAME = 3
-let HIR_LITERAL = 4
-let HIR_UNARY = 5
+export let HIR_FIELD = 1
+export let HIR_BINARY = 2
+export let HIR_NAME = 3
+export let HIR_LITERAL = 4
+export let HIR_UNARY = 5
 
-rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)
+export rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)
 
 # Index source AST node IDs to their typed annotations. Multiple operations may
 # annotate one syntax node; chaining keeps lookup local to that node.
-rec HirAnnotationIndex(heads: Dict[i64,i64], previous: Array[i64], source_count: i64)
+export rec HirAnnotationIndex(heads: Dict[i64,i64], previous: Array[i64], source_count: i64)
 
-def hir_annotation_index(nodes: Array[HirNode], source_count: i64) -> HirAnnotationIndex
+export def hir_annotation_index(nodes: Array[HirNode], source_count: i64) -> HirAnnotationIndex
 	var heads = Dict[i64,i64]()
 	var previous = Array[i64]()
 	for node in nodes
@@ -28,7 +31,7 @@ def hir_annotation_index(nodes: Array[HirNode], source_count: i64) -> HirAnnotat
 			heads = heads.insert(source, i)
 	return HirAnnotationIndex(heads, previous, source_count)
 
-def hir_annotation_find(nodes: Array[HirNode], index: HirAnnotationIndex, source: i64, operation: i64) -> i64
+export def hir_annotation_find(nodes: Array[HirNode], index: HirAnnotationIndex, source: i64, operation: i64) -> i64
 	if source < 0 or source >= index.source_count
 		return -1
 	var at = index.heads.get(source) or -1
@@ -38,104 +41,104 @@ def hir_annotation_find(nodes: Array[HirNode], index: HirAnnotationIndex, source
 		at = index.previous[!at]
 	return -1
 
-rec HirResolution(type_id: i64, field_index: i64, error: string)
+export rec HirResolution(type_id: i64, field_index: i64, error: string)
 
 # Bindings belong to semantic resolution; the C backend merely retains their
 # temporary legacy ABI kind until the rest of emission moves to HIR.
-rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
+export rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
 
-def resolve_hir_name(symbols: Array[SymbolInfo], name: string) -> HirResolution
+export def resolve_hir_name(symbols: Array[SymbolInfo], name: string) -> HirResolution
 	for i in 0..len(symbols)
 		let index = len(symbols) - 1 - i
 		let symbol = symbols[!index]
 		if symbol.name == name
 			return HirResolution(symbol.type_id, index, "")
-	return HirResolution(TYPE_TAG_INVALID, -1, "unknown name '" + name + "'")
+	return HirResolution(Types.TYPE_TAG_INVALID, -1, "unknown name '" + name + "'")
 
-def hir_types_equal(left: i64, right: i64) -> bool
-	return left == right and left != TYPE_TAG_INVALID
+export def hir_types_equal(left: i64, right: i64) -> bool
+	return left == right and left != Types.TYPE_TAG_INVALID
 
-def resolve_hir_field(types: TypeTable, owner: i64, name: string) -> HirResolution
+export def resolve_hir_field(types: Types.TypeTable, owner: i64, name: string) -> HirResolution
 	if owner < 0 or owner >= len(types.entries)
-		return HirResolution(TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
+		return HirResolution(Types.TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
 	let descriptor = types.entries[!owner]
-	if descriptor.tag == TYPE_TAG_RECORD
+	if Types.type_has_tag(types, owner, Types.TYPE_TAG_RECORD)
 		for i in 0..len(descriptor.fields)
 			let field = descriptor.fields[!i]
 			if field.name == name
 				return HirResolution(field.kind, i, "")
-	return HirResolution(TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
+	return HirResolution(Types.TYPE_TAG_INVALID, -1, "unknown record field '" + name + "'")
 
 # Binary operations are checked on semantic type identities. The returned
 # type is already canonical, so the C emitter does not reimplement these rules.
-def resolve_hir_binary(types: TypeTable, left: i64, right: i64, op: string) -> HirResolution
+export def resolve_hir_binary(types: Types.TypeTable, left: i64, right: i64, op: string) -> HirResolution
 	if left != right
-		return HirResolution(TYPE_TAG_INVALID, -1, "binary operand types differ")
+		return HirResolution(Types.TYPE_TAG_INVALID, -1, "binary operand types differ")
 	if left < 0 or left >= len(types.entries)
-		return HirResolution(TYPE_TAG_INVALID, -1, "unknown binary operand type")
+		return HirResolution(Types.TYPE_TAG_INVALID, -1, "unknown binary operand type")
 	let tag = types.entries[!left].tag
 	if op == "and" or op == "or"
-		if tag != TYPE_TAG_BOOL
-			return HirResolution(TYPE_TAG_INVALID, -1, "logical operator requires bool")
-		return HirResolution(TYPE_TAG_BOOL, -1, "")
+		if tag != Types.TYPE_TAG_BOOL
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "logical operator requires bool")
+		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
 	if op == "==" or op == "!="
-		return HirResolution(TYPE_TAG_BOOL, -1, "")
+		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
 	if op == "<" or op == "<=" or op == ">" or op == ">="
-		if tag != TYPE_TAG_I64 and tag != TYPE_TAG_F64 and tag != TYPE_TAG_STRING
-			return HirResolution(TYPE_TAG_INVALID, -1, "comparison requires numeric or string operands")
-		return HirResolution(TYPE_TAG_BOOL, -1, "")
+		if tag != Types.TYPE_TAG_I64 and tag != Types.TYPE_TAG_F64 and tag != Types.TYPE_TAG_STRING
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "comparison requires numeric or string operands")
+		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
 	if op == "&" or op == "|" or op == "<<" or op == ">>"
-		if tag != TYPE_TAG_I64
-			return HirResolution(TYPE_TAG_INVALID, -1, "bitwise operator requires i64")
+		if tag != Types.TYPE_TAG_I64
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "bitwise operator requires i64")
 		return HirResolution(left, -1, "")
 	if op == "+" or op == "-" or op == "*" or op == "/" or op == "%"
-		if tag != TYPE_TAG_I64 and tag != TYPE_TAG_F64 and not (op == "+" and tag == TYPE_TAG_STRING)
-			return HirResolution(TYPE_TAG_INVALID, -1, "arithmetic requires numeric operands")
-		if op == "%" and tag != TYPE_TAG_I64
-			return HirResolution(TYPE_TAG_INVALID, -1, "remainder requires i64")
+		if tag != Types.TYPE_TAG_I64 and tag != Types.TYPE_TAG_F64 and not (op == "+" and tag == Types.TYPE_TAG_STRING)
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "arithmetic requires numeric operands")
+		if op == "%" and tag != Types.TYPE_TAG_I64
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "remainder requires i64")
 		return HirResolution(left, -1, "")
-	return HirResolution(TYPE_TAG_INVALID, -1, "unsupported binary operator '" + op + "'")
+	return HirResolution(Types.TYPE_TAG_INVALID, -1, "unsupported binary operator '" + op + "'")
 
 # Literal classification and unary operand validation are compiler semantics,
 # independent of how the eventual backend materializes the value.
-def resolve_hir_literal(node_kind: i64) -> i64
-	if node_kind == NODE_INTEGER
-		return TYPE_TAG_I64
-	if node_kind == NODE_FLOAT
-		return TYPE_TAG_F64
-	if node_kind == NODE_BOOL
-		return TYPE_TAG_BOOL
-	if node_kind == NODE_STRING
-		return TYPE_TAG_STRING
-	return TYPE_TAG_INVALID
+export def resolve_hir_literal(node_kind: i64) -> i64
+	if node_kind == Ast.NODE_INTEGER
+		return Types.TYPE_TAG_I64
+	if node_kind == Ast.NODE_FLOAT
+		return Types.TYPE_TAG_F64
+	if node_kind == Ast.NODE_BOOL
+		return Types.TYPE_TAG_BOOL
+	if node_kind == Ast.NODE_STRING
+		return Types.TYPE_TAG_STRING
+	return Types.TYPE_TAG_INVALID
 
-def resolve_hir_unary(types: TypeTable, operand: i64, op: string) -> HirResolution
+export def resolve_hir_unary(types: Types.TypeTable, operand: i64, op: string) -> HirResolution
 	if operand < 0 or operand >= len(types.entries)
-		return HirResolution(TYPE_TAG_INVALID, -1, "invalid unary operand")
+		return HirResolution(Types.TYPE_TAG_INVALID, -1, "invalid unary operand")
 	let tag = types.entries[!operand].tag
-	if op == "not" and tag == TYPE_TAG_BOOL
-		return HirResolution(TYPE_TAG_BOOL, -1, "")
-	if (op == "-" or op == "+") and (tag == TYPE_TAG_I64 or tag == TYPE_TAG_F64)
+	if op == "not" and tag == Types.TYPE_TAG_BOOL
+		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
+	if (op == "-" or op == "+") and (tag == Types.TYPE_TAG_I64 or tag == Types.TYPE_TAG_F64)
 		return HirResolution(operand, -1, "")
-	return HirResolution(TYPE_TAG_INVALID, -1, "unsupported unary operator '" + op + "'")
+	return HirResolution(Types.TYPE_TAG_INVALID, -1, "unsupported unary operator '" + op + "'")
 
 # A specialization belongs to semantic HIR, not to a particular code emitter.
 # definition is the function declaration's stable AST body ID for this module;
 # future cross-module symbol IDs can replace it without changing the registry.
 # Canonical argument TypeIds are interned in the owning module TypeTable.
-let HIR_SPEC_IN_PROGRESS = 1
-let HIR_SPEC_COMPLETE = 2
+export let HIR_SPEC_IN_PROGRESS = 1
+export let HIR_SPEC_COMPLETE = 2
 
-rec HirSpecialization(definition: i64, arguments: Array[i64], result_type: i64, status: i64)
-rec HirSpecializationRegistry(entries: Array[HirSpecialization])
+export rec HirSpecialization(definition: i64, arguments: Array[i64], result_type: i64, status: i64)
+export rec HirSpecializationRegistry(entries: Array[HirSpecialization])
 # Resolved call targets share these stable IDs with MIR function indices.
-rec HirSpecializedCall(source: i64, specialization: i64)
-rec HirSpecializationStart(registry: HirSpecializationRegistry, index: i64, created: bool)
+export rec HirSpecializedCall(source: i64, specialization: i64)
+export rec HirSpecializationStart(registry: HirSpecializationRegistry, index: i64, created: bool)
 
-def new_hir_specializations() -> HirSpecializationRegistry
+export def new_hir_specializations() -> HirSpecializationRegistry
 	return HirSpecializationRegistry(Array[HirSpecialization]())
 
-def hir_find_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64]) -> i64
+export def hir_find_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64]) -> i64
 	for i in 0..len(registry.entries)
 		let entry = registry.entries[!i]
 		if entry.definition != definition or len(entry.arguments) != len(arguments)
@@ -150,7 +153,7 @@ def hir_find_specialization(registry: HirSpecializationRegistry, definition: i64
 
 # Insert BEFORE analyzing a body. Recursive calls then reuse the in-progress
 # entry rather than triggering another specialization of the same signature.
-def hir_begin_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64], result_type: i64) -> HirSpecializationStart
+export def hir_begin_specialization(registry: HirSpecializationRegistry, definition: i64, arguments: Array[i64], result_type: i64) -> HirSpecializationStart
 	let existing = hir_find_specialization(registry, definition, arguments)
 	if existing >= 0
 		return HirSpecializationStart(registry, existing, false)
@@ -159,7 +162,7 @@ def hir_begin_specialization(registry: HirSpecializationRegistry, definition: i6
 	next.entries = next.entries.append(HirSpecialization(definition, arguments, result_type, HIR_SPEC_IN_PROGRESS))
 	return HirSpecializationStart(next, index, true)
 
-def hir_complete_specialization(registry: HirSpecializationRegistry, index: i64, result_type: i64) -> HirSpecializationRegistry
+export def hir_complete_specialization(registry: HirSpecializationRegistry, index: i64, result_type: i64) -> HirSpecializationRegistry
 	var next = registry
 	let entry = next.entries[!index]
 	next.entries[!index] = HirSpecialization(entry.definition, entry.arguments, result_type, HIR_SPEC_COMPLETE)
@@ -170,24 +173,33 @@ def hir_complete_specialization(registry: HirSpecializationRegistry, index: i64,
 # in source order, and validate declaration syntax before generating any C.
 # Type annotations remain AST references until constructors have been resolved;
 # concrete generic signatures are determined later during specialization.
-rec HirParameterDecl(name: string, source: i64, type_node: i64)
+export rec HirParameterDecl(name: string, source: i64, type_node: i64)
 
-rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl])
-	pub external = false
-	pub argument_types = Array[i64]()
-	pub result_type = TYPE_TAG_INVALID
+export rec HirFunctionDecl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl], external: bool, argument_types: Array[i64], result_type: i64)
+
+export def new_hir_function_decl(name: string, source: i64, body: i64, constructor: bool, result_type_node: i64, parameters: Array[HirParameterDecl]) -> HirFunctionDecl
+	return HirFunctionDecl(name, source, body, constructor, result_type_node, parameters, false, Array[i64](), Types.TYPE_TAG_INVALID)
 
 # Constants are stored in a flat arena. Record fields reference other entries
 # by index, so nested values need no recursive runtime representation.
-rec HirModuleConstant(name: string, value: i64, type_id: i64)
-rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64], text: string)
-rec HirConstantEval(table: TypeTable, values: Array[HirConstantValue], index: i64, valid: bool)
-rec HirConstantField(name: string, value: i64)
-rec HirImport(path: string, alias: string)
-rec HirReexport(alias: string, name: string, public_name: string)
-rec HirExternalAlias(name: string, target: string)
-rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, values: Array[HirConstantValue], error: string, error_line: i64)
-	pub imports = Array[HirImport]()
-	pub exports = Array[string]()
-	pub reexports = Array[HirReexport]()
-	pub external_aliases = Array[HirExternalAlias]()
+export rec HirModuleConstant(name: string, value: i64, type_id: i64)
+export rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64], text: string)
+export rec HirConstantEval(table: Types.TypeTable, values: Array[HirConstantValue], index: i64, valid: bool)
+export rec HirConstantField(name: string, value: i64)
+export rec HirImport(path: string, alias: string)
+export rec HirReexport(alias: string, name: string, public_name: string)
+export rec HirExternalAlias(name: string, target: string)
+export rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: Types.TypeTable, values: Array[HirConstantValue], error: string, error_line: i64, imports: Array[HirImport], exports: Array[string], reexports: Array[HirReexport], external_aliases: Array[HirExternalAlias])
+
+export def new_hir_module_decl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: Types.TypeTable, values: Array[HirConstantValue], error: string, error_line: i64) -> HirModuleDecl
+	return HirModuleDecl(functions, constants, types, values, error, error_line, Array[HirImport](), Array[string](), Array[HirReexport](), Array[HirExternalAlias]())
+
+export def hir_ast_child(tree: Ast.ParseState, id: i64, offset: i64) -> i64
+	let node = tree.nodes[!id]
+	return tree.edges[!node.first + offset]
+
+export def hir_ast_text(tree: Ast.ParseState, id: i64) -> string
+	return Lex.token_text(tree.source, tree.tokens[!tree.nodes[!id].token])
+
+export def hir_ast_line(tree: Ast.ParseState, id: i64) -> i64
+	return tree.tokens[!tree.nodes[!id].token].line

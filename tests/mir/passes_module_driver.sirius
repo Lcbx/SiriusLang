@@ -1,0 +1,80 @@
+# Exercise the full MIR compiler dependency chain with native source imports.
+import types alias Types
+import parser alias Ast
+import hir_declarations alias Decl
+import mir alias Mir
+import mir_ownership alias Ownership
+import mir_guard alias Guard
+import mir_lifetime alias Lifetime
+import mir_cleanup alias Cleanup
+import mir_opt alias Opt
+import mir_program alias Program
+import mir_emit_c alias Emit
+import module alias Module
+
+def main() -> i64
+	let constant = Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 42)
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64], [Mir.MirBlock([constant], Mir.mir_return(0))], 0)
+	let raw = Mir.mir_program_with_types([function], Types.new_type_table())
+	if Ownership.mir_check_ownership(raw) != ""
+		return 1
+	let checked_division = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 10), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2), Mir.mir_op(Mir.MIR_DIV_I64, 2, 0, 1, 0)], Mir.mir_return(2))], 0)
+	let checked = Guard.mir_insert_guards_unchecked(Mir.mir_program_with_types([checked_division], Types.new_type_table()))
+	if checked.error != "" or checked.guards < 1
+		return 10
+	let guarded = Guard.mir_insert_guards_unchecked(raw)
+	if guarded.error != ""
+		return 2
+	let live = Lifetime.mir_insert_lifetimes_unchecked(guarded.program)
+	if live.error != ""
+		return 3
+	let cleaned = Cleanup.mir_insert_exit_cleanup_unchecked(live.program)
+	if cleaned.error != ""
+		return 4
+	let optimized = Opt.mir_optimize_unchecked(cleaned.program)
+	if Ownership.mir_check_balance(optimized.program) != ""
+		return 5
+	let parsed = Ast.parse_module("def main() -> i64\n\treturn 40 + 2\n")
+	if parsed.state.error != ""
+		return 6
+	let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return 7
+	let built = Program.mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	if built.error != "" or built.entry < 0 or len(built.exports) != 1 or len(built.imports) != 0
+		return 8
+	let emitted = Emit.mir_emit_c(built.program, built.entry)
+	if emitted.error != "" or len(emitted.code) < 100
+		return 9
+	if Module.mir_generic_symbol("id", Types.new_type_table(), [Types.TYPE_TAG_I64]) != "id_G_3_i64"
+		return 11
+	# Structural symbols depend on descriptors, not local composite TypeId order.
+	let left = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let left_record = Types.intern_record_type(left.table, [Types.RecordField("items", left.id)])
+	let extra = Types.intern_optional_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	let right = Types.intern_array_type(extra.table, Types.TYPE_TAG_STRING)
+	let right_record = Types.intern_record_type(right.table, [Types.RecordField("items", right.id)])
+	if left_record.id == right_record.id or Module.mir_type_signature(left_record.table, left_record.id) != Module.mir_type_signature(right_record.table, right_record.id)
+		return 12
+	if Module.mir_generic_symbol("wrap", left_record.table, [left_record.id]) != Module.mir_generic_symbol("wrap", right_record.table, [right_record.id])
+		return 13
+	# Malformed primitive and composite descriptors cannot masquerade as a
+	# valid primitive or structural record in exported symbol signatures.
+	var invalid = left_record.table
+	invalid.entries[!Types.TYPE_TAG_STRING] = Types.TypeDescriptor(Types.TYPE_TAG_RECORD, 0, 0, Array[Types.RecordField]())
+	if Module.mir_type_signature(invalid, Types.TYPE_TAG_STRING) != "invalid" or Module.mir_type_signature(invalid, left_record.id) != "invalid"
+		return 14
+	invalid = left_record.table
+	invalid.entries[!left.id] = Types.TypeDescriptor(100, 0, 0, Array[Types.RecordField]())
+	if Module.mir_type_signature(invalid, left.id) != "invalid" or Module.mir_type_signature(invalid, left_record.id) != "invalid"
+		return 15
+	invalid = left_record.table
+	invalid.entries[!left.id] = Types.TypeDescriptor(Types.TYPE_TAG_ARRAY, left_record.id, 0, Array[Types.RecordField]())
+	if Module.mir_type_signature(invalid, left.id) != "invalid"
+		return 16
+	invalid = left_record.table
+	invalid.entries[!left_record.id] = Types.TypeDescriptor(Types.TYPE_TAG_RECORD, 0, 0, [Types.RecordField("items", Types.TYPE_TAG_VOID)])
+	if Module.mir_type_signature(invalid, left_record.id) != "invalid"
+		return 17
+	print("MIR compiler modules OK")
+	return 0

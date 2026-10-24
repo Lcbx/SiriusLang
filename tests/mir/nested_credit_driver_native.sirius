@@ -1,0 +1,127 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import types alias Types
+
+# An aliased record nested in an array passes through a different call frame.
+# Both the borrowing and transferring call contracts must retain every edge.
+def forwarded(moved: bool) -> Mir.MirProgram
+	var types = Types.new_type_table()
+	let strings = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
+	types = strings.table
+	let record = Types.intern_record_type(types, [Types.RecordField("items", strings.id)])
+	types = record.table
+	let nested = Types.intern_array_type(types, record.id)
+	types = nested.table
+	let callee = Mir.MirFunction(1, nested.id, [nested.id], [Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))], 0)
+	var code = [Mir.mir_string(0, "child"), Mir.mir_array_new(1, [0, 0]), Mir.mir_record_new(2, [1]), Mir.mir_array_new(3, [2, 2])]
+	if moved
+		code = code.append(Mir.mir_call_move(4, 0, [3], 3))
+	else
+		code = code.append(Mir.mir_call(4, 0, [3]))
+	for register in 0..3
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, register, register, -1, 0))
+	if not moved
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0))
+	let caller = Mir.MirFunction(0, nested.id, [Types.TYPE_TAG_STRING, strings.id, record.id, nested.id, nested.id], [Mir.MirBlock(code, Mir.mir_return(4))], 0)
+	let top = [Mir.mir_call(0, 1, Array[i64]()), Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)]
+	let main_function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [nested.id, Types.TYPE_TAG_I64], [Mir.MirBlock(top, Mir.mir_return(1))], 0)
+	return Mir.mir_program_with_types([callee, caller, main_function], types)
+
+# Dictionary values and Optional fields each acquire a separate credit on
+# the same nested record before the composite crosses a call boundary.
+def forwarded_dict(moved: bool) -> Mir.MirProgram
+	var types = Types.new_type_table()
+	let strings = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
+	types = strings.table
+	let record = Types.intern_record_type(types, [Types.RecordField("items", strings.id)])
+	types = record.table
+	let optional = Types.intern_optional_type(types, record.id)
+	types = optional.table
+	let dict = Types.intern_dict_type(types, Types.TYPE_TAG_STRING, record.id)
+	types = dict.table
+	let wrapper = Types.intern_record_type(types, [Types.RecordField("d", dict.id), Types.RecordField("o", optional.id)])
+	types = wrapper.table
+	let callee = Mir.MirFunction(1, wrapper.id, [wrapper.id], [Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))], 0)
+	var code = [Mir.mir_string(0, "key"), Mir.mir_array_new(1, [0, 0]), Mir.mir_record_new(2, [1]), Mir.mir_op(Mir.MIR_OPTIONAL_SOME, 3, 2, -1, 0), Mir.mir_dict_new(4)]
+	code = code.append(Mir.mir_dict_insert(4, 4, 0, 2)).append(Mir.mir_record_new(5, [4, 3]))
+	if moved
+		code = code.append(Mir.mir_call_move(6, 0, [5], 5))
+	else
+		code = code.append(Mir.mir_call(6, 0, [5]))
+	for register in 0..5
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, register, register, -1, 0))
+	if not moved
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 5, 5, -1, 0))
+	let caller = Mir.MirFunction(0, wrapper.id, [Types.TYPE_TAG_STRING, strings.id, record.id, optional.id, dict.id, wrapper.id, wrapper.id], [Mir.MirBlock(code, Mir.mir_return(6))], 0)
+	let top = [Mir.mir_call(0, 1, Array[i64]()), Mir.mir_record_get(1, 0, 0), Mir.mir_op(Mir.MIR_DICT_LENGTH, 2, 1, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)]
+	let main_function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [wrapper.id, dict.id, Types.TYPE_TAG_I64], [Mir.MirBlock(top, Mir.mir_return(2))], 0)
+	return Mir.mir_program_with_types([callee, caller, main_function], types)
+
+# One nested argument would be abandoned by the callee without cleanup.
+def callee_leak() -> Mir.MirProgram
+	let inner = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let outer = Types.intern_array_type(inner.table, inner.id)
+	let callee = Mir.MirFunction(2, outer.id, [outer.id, outer.id], [Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))], 0)
+	return Mir.mir_program_with_types([callee], outer.table)
+
+# A moved argument must not be read afterward in its caller frame.
+def caller_use_after_move() -> Mir.MirProgram
+	var program = forwarded(true)
+	var caller = program.functions[!1]
+	var code = caller.blocks[!0].instructions
+	code = code.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 5, 3, -1, 0))
+	caller.register_types = caller.register_types.append(Types.TYPE_TAG_I64)
+	caller.blocks = [Mir.MirBlock(code, Mir.mir_return(4))]
+	program.functions[!1] = caller
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 5
+		return 1
+	let moved = forwarded(true)
+	let string_array = moved.types.entries[!6]
+	let shapes = Ownership.mir_credit_shapes(moved.types)
+	if string_array.tag != Types.TYPE_TAG_ARRAY or shapes[!6].variable_children != 1 or shapes[!7].fixed_children != 1 or shapes[!8].variable_children != 1 or shapes[!8].depth != 3
+		return 2
+	let optional = Types.intern_optional_type(moved.types, 7)
+	let shape_optional = Ownership.mir_credit_shapes(optional.table)
+	if shape_optional[!optional.id].variable_children != 1
+		return 3
+	let dict = Types.intern_dict_type(optional.table, Types.TYPE_TAG_STRING, 7)
+	let shape_dict = Ownership.mir_credit_shapes(dict.table)
+	if shape_dict[!dict.id].variable_children != 2
+		return 4
+	if Ownership.mir_check_balance(callee_leak()) == "" or Ownership.mir_check_balance(caller_use_after_move()) == ""
+		return 5
+	for mode in 0..4
+		var program = forwarded(false)
+		if mode == 1
+			program = moved
+		elif mode == 2
+			program = forwarded_dict(false)
+		elif mode == 3
+			program = forwarded_dict(true)
+		let error = Ownership.mir_check_balance(program)
+		if error != ""
+			print(error)
+			return 6
+		let nested = Interpreter.mir_execute(program, 1, Array[Mir.MirValue](), 500, 10)
+		if nested.error != "" or Interpreter.mir_audit_return_credits(program.types, nested) != ""
+			print(nested.error)
+			return 7
+		let scalar = Interpreter.mir_execute(program, 2, Array[Mir.MirValue](), 500, 10)
+		var expected = 2
+		if mode >= 2
+			expected = 1
+		if scalar.error != "" or scalar.value.bits != expected or Interpreter.mir_audit_return_credits(program.types, scalar) != ""
+			print(scalar.error)
+			return 8
+		let emitted = Emit.mir_emit_c_reachable_verified(program, 2)
+		if emitted.error != "" or not write_text(args[!mode + 1], emitted.code)
+			print(emitted.error)
+			return 9
+	print("PASS nested credit contracts and frame transfers")
+	return 0

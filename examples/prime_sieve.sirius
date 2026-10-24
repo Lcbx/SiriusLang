@@ -1,0 +1,26 @@
+# Sieve of Eratosthenes: homogeneous arrays and checked indexing.
+def primes_up_to(limit: i64) -> Array[i64]
+	var composite = Array[bool]()
+	for _ in 0..(limit + 1)
+		composite = composite.append(false)
+	var prime = 2
+	while prime * prime <= limit
+		if not composite[!prime]
+			var multiple = prime * prime
+			while multiple <= limit
+				composite[!multiple] = true
+				multiple += prime
+		prime += 1
+	var primes = Array[i64]()
+	for value in 2..(limit + 1)
+		if not composite[!value]
+			primes = primes.append(value)
+	return primes
+
+def main() -> i64
+	let primes = primes_up_to(50)
+	var line = "Primes:"
+	for prime in primes
+		line += " " + str(prime)
+	print(line)
+	return 0

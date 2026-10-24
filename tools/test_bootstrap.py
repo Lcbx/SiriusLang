@@ -7,7 +7,7 @@ import tempfile
 from bootstrap_support import check_committed, generate_fixed_point
 from compiler_cases import check_cases
 from build_support import BuildCache, options, require_cc, validate_jobs
-from source_manifest import ROOT
+from project_paths import ROOT
 
 
 def main() -> None:

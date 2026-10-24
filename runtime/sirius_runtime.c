@@ -22,7 +22,165 @@
 #include <sys/stat.h>
 #endif
 
+#ifdef SIRIUS_ARC_AUDIT
+/* Debug-only shadow credits for all ARC-managed native objects. Each owned
+   child edge counts via the real retain/release hooks, not via pointer identity.
+   This also detects objects leaked from unreachable cycles or dropped frames. */
+typedef struct S_ArcAuditNode {
+    const void *object;
+    size_t credits, incoming;
+    S_ArcAuditScan scan;
+    struct S_ArcAuditNode *next;
+} S_ArcAuditNode;
+static S_ArcAuditNode *s_arc_audit_objects;
+static S_ArcAuditFrame *s_arc_audit_frames;
+typedef struct S_ArcAuditGlobalRoot {
+    const void *slot;
+    struct S_ArcAuditGlobalRoot *next;
+} S_ArcAuditGlobalRoot;
+static S_ArcAuditGlobalRoot *s_arc_audit_globals;
+static bool s_arc_audit_started;
+static bool s_arc_audit_terminating;
+static void s_arc_audit_fail(const char *problem) {
+    fprintf(stderr, "Sirius ARC audit: %s\n", problem);
+    fflush(stderr);
+    _Exit(86);
+}
+static S_ArcAuditNode **s_arc_audit_find(const void *object) {
+    S_ArcAuditNode **slot = &s_arc_audit_objects;
+    while (*slot && (*slot)->object != object) slot = &(*slot)->next;
+    return slot;
+}
+static void s_arc_audit_report(void) {
+    /* A fatal process exit has no live caller to return ownership to. */
+    if (s_arc_audit_terminating) return;
+    if (s_arc_audit_frames) s_arc_audit_fail("ARC frames left on normal exit");
+    size_t objects = 0, credits = 0;
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next) {
+        objects++;
+        credits += node->credits;
+    }
+    if (objects) {
+        fprintf(stderr, "Sirius ARC audit: %zu live objects, %zu outstanding credits\n", objects, credits);
+        fflush(stderr);
+        _Exit(86);
+    }
+}
+void s_arc_audit_begin(void) {
+    if (s_arc_audit_started) return;
+    if (atexit(s_arc_audit_report)) s_arc_audit_fail("cannot register final report");
+    s_arc_audit_started = true;
+}
+void s_arc_audit_new(const void *object, size_t actual) {
+    s_arc_audit_begin();
+    if (!object || actual != 1 || *s_arc_audit_find(object)) s_arc_audit_fail("invalid allocation credit");
+    S_ArcAuditNode *node = malloc(sizeof(*node));
+    if (!node) s_arc_audit_fail("out of memory");
+    *node = (S_ArcAuditNode){object, 1, 0, NULL, s_arc_audit_objects};
+    s_arc_audit_objects = node;
+}
+void s_arc_audit_retain(const void *object, size_t actual) {
+    if (!object) return;
+    S_ArcAuditNode *node = *s_arc_audit_find(object);
+    if (!node || node->credits == SIZE_MAX || actual != node->credits + 1) {
+        s_arc_audit_fail("retain credit mismatch");
+    }
+    node->credits++;
+}
+void s_arc_audit_release(const void *object, size_t actual) {
+    if (!object) return;
+    S_ArcAuditNode **slot = s_arc_audit_find(object);
+    S_ArcAuditNode *node = *slot;
+    if (!node || !node->credits || actual != node->credits - 1)
+        s_arc_audit_fail("release credit mismatch");
+    if (actual) node->credits--;
+    else { *slot = node->next; free(node); }
+}
+void s_arc_audit_watch(const void *object, S_ArcAuditScan scan) {
+    S_ArcAuditNode *node = *s_arc_audit_find(object);
+    if (!node || !scan) s_arc_audit_fail("invalid edge scanner");
+    node->scan = scan;
+}
+static void s_arc_audit_visit(const void *child, void *context) {
+    (void)context;
+    if (!child) return;
+    S_ArcAuditNode *node = *s_arc_audit_find(child);
+    if (!node) s_arc_audit_fail("untracked heap child edge");
+    if (node->incoming == SIZE_MAX) s_arc_audit_fail("heap child edge overflow");
+    node->incoming++;
+}
+void s_arc_audit_check_edges(void) {
+    /* Scan a stable heap state; no callbacks may retain/release/allocate. */
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next)
+        node->incoming = 0;
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next)
+        if (node->scan) node->scan(node->object, s_arc_audit_visit, NULL);
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next)
+        if (node->credits < node->incoming) s_arc_audit_fail("heap child credits missing");
+}
+void s_arc_audit_check_roots(const void *const *roots, size_t count) {
+    if (!roots && count) s_arc_audit_fail("invalid root list");
+    s_arc_audit_check_edges();
+    for (size_t i = 0; i < count; ++i) s_arc_audit_visit(roots[i], NULL);
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next)
+        if (node->credits != node->incoming) s_arc_audit_fail("heap root/child credit mismatch");
+}
+void s_arc_audit_frame_enter(S_ArcAuditFrame *frame, const void *const *slots, size_t count) {
+    if (!frame || (!slots && count)) s_arc_audit_fail("invalid ARC frame");
+    frame->previous = s_arc_audit_frames;
+    frame->slots = slots;
+    frame->count = count;
+    s_arc_audit_frames = frame;
+}
+void s_arc_audit_frame_leave(S_ArcAuditFrame *frame) {
+    if (s_arc_audit_frames != frame) s_arc_audit_fail("ARC frame stack mismatch");
+    s_arc_audit_frames = frame->previous;
+}
+void s_arc_audit_global_root(const void *slot) {
+    if (!slot) s_arc_audit_fail("invalid global root");
+    for (S_ArcAuditGlobalRoot *root = s_arc_audit_globals; root; root = root->next)
+        if (root->slot == slot) return;
+    S_ArcAuditGlobalRoot *root = malloc(sizeof(*root));
+    if (!root) s_arc_audit_fail("out of memory");
+    *root = (S_ArcAuditGlobalRoot){slot, s_arc_audit_globals};
+    s_arc_audit_globals = root;
+}
+void s_arc_audit_check_frames(void) {
+    s_arc_audit_check_edges();
+    for (const S_ArcAuditFrame *frame = s_arc_audit_frames; frame; frame = frame->previous) {
+        for (size_t i = 0; i < frame->count; ++i) {
+            /* Slots may contain S_String* or S_MirRecord*. Read their common
+               object-pointer representation without aliasing through void**. */
+            const void *root = NULL;
+            memcpy(&root, frame->slots[i], sizeof(root));
+            s_arc_audit_visit(root, NULL);
+        }
+    }
+    for (const S_ArcAuditGlobalRoot *root = s_arc_audit_globals; root; root = root->next) {
+        const void *object = NULL;
+        memcpy(&object, root->slot, sizeof(object));
+        s_arc_audit_visit(object, NULL);
+    }
+    for (S_ArcAuditNode *node = s_arc_audit_objects; node; node = node->next)
+        if (node->credits != node->incoming) s_arc_audit_fail("heap root/child credit mismatch");
+}
+void s_arc_audit_relocate(uintptr_t previous, const void *object) {
+    S_ArcAuditNode *node = NULL;
+    for (S_ArcAuditNode *entry = s_arc_audit_objects; entry; entry = entry->next)
+        if ((uintptr_t)entry->object == previous) { node = entry; break; }
+    if (!node || !object) s_arc_audit_fail("invalid relocated object");
+    if ((uintptr_t)object != previous && *s_arc_audit_find(object))
+        s_arc_audit_fail("duplicate relocated object");
+    node->object = object;
+}
+#endif
+
 _Noreturn void s_panic(const char *reason) {
+#ifdef SIRIUS_ARC_AUDIT
+    /* Preserve the fatal diagnostic; check credit transitions up to the
+       panic, but do not mistake un-unwound process frames for leaks. */
+    s_arc_audit_terminating = true;
+#endif
     fprintf(stderr, "Sirius panic: %s\n", reason);
     exit(1);
 }
@@ -32,16 +190,17 @@ S_Array_i64 *s_array_i64_make(size_t n, const int64_t *values) {
     S_Array_i64 *a = malloc(sizeof(*a) + n * sizeof(int64_t));
     if (!a) s_panic("out of memory");
     a->refcount = 1;
+    s_arc_audit_new(a, a->refcount);
     a->length = a->capacity = n;
     if (n && values) memcpy(a->data, values, n * sizeof(int64_t));
     return a;
 }
 S_Array_i64 *s_array_i64_retain(S_Array_i64 *a) {
-    if (a) a->refcount++;
+    if (a) { a->refcount++; s_arc_audit_retain(a, a->refcount); }
     return a;
 }
 void s_array_i64_release(S_Array_i64 *a) {
-    if (a && --a->refcount == 0) free(a);
+    if (a) { --a->refcount; s_arc_audit_release(a, a->refcount); if (!a->refcount) free(a); }
 }
 S_Optional_i64 s_array_i64_get(const S_Array_i64 *a, int64_t i) {
     if (!a || i < 0 || (uint64_t)i >= a->length) return (S_Optional_i64){false, 0};
@@ -76,8 +235,10 @@ S_Array_i64 *s_array_i64_append_take(S_Array_i64 *a, int64_t value) {
         while (capacity < n && capacity <= (SIZE_MAX - sizeof(*a)) / sizeof(int64_t) / 2)
             capacity *= 2;
         if (capacity < n) capacity = n;
+        uintptr_t previous = (uintptr_t)a;
         a = realloc(a, sizeof(*a) + capacity * sizeof(int64_t));
         if (!a) s_panic("out of memory");
+        s_arc_audit_relocate(previous, a);
         a->capacity = capacity;
     }
     a->data[a->length++] = value;
@@ -97,11 +258,11 @@ S_String *s_string_from_utf8(const char *str) {
     return s_string_from_bytes(str, strlen(str));
 }
 S_String *s_string_retain(S_String *s) {
-    if (s) s->refcount++;
+    if (s) { s->refcount++; s_arc_audit_retain(s, s->refcount); }
     return s;
 }
 void s_string_release(S_String *s) {
-    if (s && --s->refcount == 0) free(s);
+    if (s) { --s->refcount; s_arc_audit_release(s, s->refcount); if (!s->refcount) free(s); }
 }
 S_String *s_string_concat(const S_String *a, const S_String *b) {
     if (a->length > SIZE_MAX - b->length - sizeof(S_String) - 1) s_panic("string too large");
@@ -109,6 +270,7 @@ S_String *s_string_concat(const S_String *a, const S_String *b) {
     S_String *s = malloc(sizeof(*s) + n + 1);
     if (!s) s_panic("out of memory");
     s->refcount = 1;
+    s_arc_audit_new(s, s->refcount);
     s->length = n;
     memcpy(s->data, a->data, a->length);
     memcpy(s->data + a->length, b->data, b->length);
@@ -165,13 +327,14 @@ S_Dict_i64_i64 *s_dict_i64_i64_new(void) {
     if (!m) s_panic("out of memory");
     m->capacity = 8;
     m->refcount = 1;
+    s_arc_audit_new(m, m->refcount);
     m->entries = calloc(m->capacity, sizeof(*m->entries));
     if (!m->entries) s_panic("out of memory");
     return m;
 }
-S_Dict_i64_i64 *s_dict_i64_i64_retain(S_Dict_i64_i64 *m) { if (m) m->refcount++; return m; }
+S_Dict_i64_i64 *s_dict_i64_i64_retain(S_Dict_i64_i64 *m) { if (m) { m->refcount++; s_arc_audit_retain(m, m->refcount); } return m; }
 void s_dict_i64_i64_release(S_Dict_i64_i64 *m) {
-    if (m && --m->refcount == 0) { free(m->entries); free(m); }
+    if (m) { --m->refcount; s_arc_audit_release(m, m->refcount); if (!m->refcount) { free(m->entries); free(m); } }
 }
 static size_t s_map_slot(const S_Dict_i64_i64 *m, int64_t key) {
     size_t index = (size_t)s_hash_i64(key) & (m->capacity - 1);
@@ -209,6 +372,7 @@ S_Dict_i64_i64 *s_dict_i64_i64_insert(S_Dict_i64_i64 *m, int64_t key, int64_t va
         if (!result) s_panic("out of memory");
         *result = *m;
         result->refcount = 1;
+        s_arc_audit_new(result, result->refcount);
         if (m->capacity > SIZE_MAX / sizeof(*m->entries)) s_panic("map too large");
         result->entries = malloc(m->capacity * sizeof(*m->entries));
         if (!result->entries) s_panic("out of memory");
@@ -231,15 +395,38 @@ S_Optional_i64 s_dict_i64_i64_get(const S_Dict_i64_i64 *m, int64_t key) {
     return (S_Optional_i64){false, 0};
 }
 
+#ifdef _WIN32
+static wchar_t *s_fs_wide(const S_String *path);
+#endif
+/* The Windows CRT uses wide paths for UTF-8 Sirius strings. MSVC warns about
+   fopen/_wfopen; the secure variant is MSVC-specific, not portable C. */
+static FILE *s_fs_open(const S_String *path, bool writing) {
+#ifdef _WIN32
+    wchar_t *wide = s_fs_wide(path);
+    if (!wide) return NULL;
+    FILE *file = NULL;
+#ifdef _MSC_VER
+    if (_wfopen_s(&file, wide, writing ? L"wb" : L"rb") != 0) file = NULL;
+#else
+    file = _wfopen(wide, writing ? L"wb" : L"rb");
+#endif
+    free(wide);
+    return file;
+#else
+    if (memchr(path->data, 0, path->length)) return NULL;
+    return fopen(path->data, writing ? "wb" : "rb");
+#endif
+}
+
 bool s_write_text(const S_String *path, const S_String *text) {
-    FILE *f = fopen(path->data, "wb");
+    FILE *f = s_fs_open(path, true);
     if (!f) return false;
     size_t n = fwrite(text->data, 1, text->length, f);
     int closed = fclose(f);
     return n == text->length && closed == 0;
 }
 S_Optional_string s_read_text(const S_String *path) {
-    FILE *f = fopen(path->data, "rb");
+    FILE *f = s_fs_open(path, false);
     if (!f) return (S_Optional_string){false, NULL};
     if (fseek(f, 0, SEEK_END)) { fclose(f); return (S_Optional_string){false, NULL}; }
     long length = ftell(f);
@@ -248,10 +435,10 @@ S_Optional_string s_read_text(const S_String *path) {
     if (n > SIZE_MAX - sizeof(S_String) - 1) s_panic("file too large");
     S_String *s = malloc(sizeof(*s) + n + 1);
     if (!s) s_panic("out of memory");
-    s->refcount = 1; s->length = n;
+    s->refcount = 1; s_arc_audit_new(s, s->refcount); s->length = n;
     size_t r = fread(s->data, 1, n, f);
     int closed = fclose(f);
-    if (r != n || closed) { free(s); return (S_Optional_string){false, NULL}; }
+    if (r != n || closed) { s_string_release(s); return (S_Optional_string){false, NULL}; }
     s->data[n] = '\0';
     return (S_Optional_string){true, s};
 }
@@ -286,7 +473,7 @@ static void s_elem_temp_free(S_ElementTemp *temp, void *ptr) {
 S_Array *s_array_new(size_t size, S_CopyElem copy, S_DropElem drop) {
     if (!size) s_panic("zero-sized array element");
     S_Array *a = s_alloc(1, sizeof(*a));
-    a->refcount = 1; a->size = size; a->copy = copy; a->drop = drop;
+    a->refcount = 1; s_arc_audit_new(a, a->refcount); a->size = size; a->copy = copy; a->drop = drop;
     return a;
 }
 S_Array *s_array_make(size_t n, const void *values, size_t size, S_CopyElem copy, S_DropElem drop) {
@@ -297,9 +484,11 @@ S_Array *s_array_make(size_t n, const void *values, size_t size, S_CopyElem copy
         s_elem_copy(copy, (char*)a->data+i*size, (const char*)values+i*size, size);
     return a;
 }
-S_Array *s_array_retain(S_Array *a) { if (a) a->refcount++; return a; }
+S_Array *s_array_retain(S_Array *a) { if (a) { a->refcount++; s_arc_audit_retain(a, a->refcount); } return a; }
 void s_array_release(S_Array *a) {
-    if (!a || --a->refcount) return;
+    if (!a) return;
+    --a->refcount; s_arc_audit_release(a, a->refcount);
+    if (a->refcount) return;
     if (a->drop) for (size_t i=0; i<a->length; i++) a->drop((char*)a->data+i*a->size);
     free(a->data); free(a);
 }
@@ -388,7 +577,27 @@ struct S_Dict {
     S_HashKey hash;
     S_EqualKey eq;
     S_GEntry *entries;
+#ifdef SIRIUS_ARC_AUDIT
+    bool audit_key_managed, audit_value_managed;
+#endif
 };
+#ifdef SIRIUS_ARC_AUDIT
+static void s_dict_arc_audit_scan(const void *object, S_ArcAuditVisit visit, void *context) {
+    const S_Dict *dict = object;
+    for (size_t i = 0; i < dict->capacity; ++i) {
+        const S_GEntry *entry = &dict->entries[i];
+        if (!entry->used) continue;
+        if (dict->audit_key_managed) visit(*(void *const *)entry->key, context);
+        if (dict->audit_value_managed) visit(*(void *const *)entry->value, context);
+    }
+}
+void s_dict_arc_audit_fields(S_Dict *dict, bool key_managed, bool value_managed) {
+    if (!dict) s_arc_audit_fail("invalid dictionary edge scanner");
+    dict->audit_key_managed = key_managed;
+    dict->audit_value_managed = value_managed;
+    s_arc_audit_watch(dict, s_dict_arc_audit_scan);
+}
+#endif
 static void s_dict_rehash(S_Dict *d, size_t cap) {
     S_GEntry *old = d->entries;
     size_t previous = d->capacity;
@@ -414,15 +623,17 @@ S_Dict *s_dict_new(size_t ksize, size_t vsize, S_CopyElem kcopy, S_DropElem kdro
     size_t offset = ((ksize + alignment - 1) / alignment) * alignment;
     if (vsize > SIZE_MAX - offset) s_panic("dictionary element too large");
     S_Dict *d = s_alloc(1, sizeof(*d));
-    d->refcount=1; d->ksize=ksize; d->vsize=vsize; d->value_offset=offset;
+    d->refcount=1; s_arc_audit_new(d, d->refcount); d->ksize=ksize; d->vsize=vsize; d->value_offset=offset;
     d->kcopy=kcopy; d->kdrop=kdrop; d->vcopy=vcopy; d->vdrop=vdrop;
     d->hash=hash; d->eq=eq;
     s_dict_rehash(d, 8);
     return d;
 }
-S_Dict *s_dict_retain(S_Dict *d) { if (d) d->refcount++; return d; }
+S_Dict *s_dict_retain(S_Dict *d) { if (d) { d->refcount++; s_arc_audit_retain(d, d->refcount); } return d; }
 void s_dict_release(S_Dict *d) {
-    if (!d || --d->refcount) return;
+    if (!d) return;
+    --d->refcount; s_arc_audit_release(d, d->refcount);
+    if (d->refcount) return;
     DICT_PROFILE(if (!d->length) s_dict_profile.empty_releases++);
     DICT_PROFILE(if (d->length <= 5) s_dict_profile.size_le5++;
         else if (d->length <= 11) s_dict_profile.size_le11++;
@@ -461,6 +672,13 @@ static S_Dict *s_dict_clone(S_Dict *d) {
     S_Dict *copy = s_alloc(1, sizeof(*copy));
     *copy = *d;
     copy->refcount = 1;
+    s_arc_audit_new(copy, copy->refcount);
+#ifdef SIRIUS_ARC_AUDIT
+    copy->audit_key_managed = d->audit_key_managed;
+    copy->audit_value_managed = d->audit_value_managed;
+    if (d->audit_key_managed || d->audit_value_managed)
+        s_arc_audit_watch(copy, s_dict_arc_audit_scan);
+#endif
     copy->entries = s_alloc(d->capacity, sizeof(*copy->entries));
     for (size_t i=0;i<d->capacity;i++) if (d->entries[i].used) {
         S_GEntry *slot = &copy->entries[i];
@@ -545,7 +763,7 @@ S_Optional_i64 s_string_byte_at(const S_String *s,int64_t i) {
 S_String *s_string_from_bytes(const char *bytes,size_t n) {
     if (n > SIZE_MAX-sizeof(S_String)-1) s_panic("string too long");
     S_String *s=s_alloc(1,sizeof(*s)+n+1);
-    s->refcount=1; s->length=n;
+    s->refcount=1; s_arc_audit_new(s, s->refcount); s->length=n;
     if (n) memcpy(s->data,bytes,n);
     s->data[n]='\0';
     return s;
@@ -583,7 +801,7 @@ S_String *s_string_join(const S_String *sep,const S_Array *parts) {
         if (i) total+=sep->length;
     }
     S_String *out=s_alloc(1,sizeof(*out)+total+1);
-    out->refcount=1;out->length=total;
+    out->refcount=1;s_arc_audit_new(out, out->refcount);out->length=total;
     size_t offset=0;
     for (size_t i=0;i<parts->length;i++) {
         if (i) { memcpy(out->data+offset,sep->data,sep->length);offset+=sep->length; }
@@ -593,6 +811,16 @@ S_String *s_string_join(const S_String *sep,const S_Array *parts) {
     out->data[total]='\0'; return out;
 }
 static S_Array *s_cli_args=NULL;
+#ifdef SIRIUS_ARC_AUDIT
+static void s_cli_arc_scan(const void *object, S_ArcAuditVisit visit, void *context) {
+    const S_Array *array = object;
+    for (size_t i = 0; i < array->length; ++i) {
+        S_String *value = NULL;
+        memcpy(&value, (const char *)array->data + i * array->size, sizeof(value));
+        visit(value, context);
+    }
+}
+#endif
 static bool s_cli_cleanup_registered=false;
 static void s_cli_cleanup(void) { s_array_release(s_cli_args); s_cli_args=NULL; }
 static void s_copy_arg(void *dst,const void *src) {
@@ -696,12 +924,19 @@ S_Array *s_list_dir(const S_String *path) {
 #endif
 
 void s_set_arguments(int argc,char **argv) {
+    s_arc_audit_begin();
     if (!s_cli_cleanup_registered) {
+#ifdef SIRIUS_ARC_AUDIT
+        s_arc_audit_global_root(&s_cli_args);
+#endif
         if (atexit(s_cli_cleanup)) s_panic("cannot register argument cleanup");
         s_cli_cleanup_registered=true;
     }
     if (s_cli_args) s_array_release(s_cli_args);
     s_cli_args=s_array_new(sizeof(S_String *),s_copy_arg,s_drop_arg);
+#ifdef SIRIUS_ARC_AUDIT
+    s_arc_audit_watch(s_cli_args, s_cli_arc_scan);
+#endif
     for (int i=0;i<argc;i++) {
         S_String *s=s_string_from_utf8(argv[i]);
         s_cli_args=s_array_append(s_cli_args,&s);

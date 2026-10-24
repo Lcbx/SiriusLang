@@ -1,15 +1,14 @@
-# Directory traversal built from the platform filesystem intrinsics.
-# Directory symlinks are not traversed by is_dir; unreadable subdirectories
-# are skipped. Paths use '/' as separator, accepted by the supported hosts.
+# Breadth-first directory walk, without following directory symlinks.
 export def walk_files(root: string) -> Array[string]
 	var files = Array[string]()
-	var pending = [root]
-	var head = 0
-	while head < len(pending)
-		let directory = pending[!head]
-		head += 1
-		let entries = list_dir(directory) or Array[string]()
-		for name in entries
+	var pending = Array[string]()
+	pending = pending.append(root)
+	var i = 0
+	while i < len(pending)
+		let directory = pending[!i]
+		i += 1
+		let names = list_dir(directory) or Array[string]()
+		for name in names
 			let path = directory + "/" + name
 			if is_dir(path)
 				pending = pending.append(path)

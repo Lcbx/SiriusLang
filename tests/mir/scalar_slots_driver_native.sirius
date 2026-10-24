@@ -1,0 +1,72 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import types alias Types
+
+# Loop-carried values must not reuse interfering scalar slots. The counter
+# and limit appear on multiple CFG blocks, while per-iteration temporaries
+# can reuse storage after their last use.
+def loop_fixture() -> Mir.MirProgram
+	let entry = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 5), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 0)]
+	let body = [Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 1), Mir.mir_op(Mir.MIR_ADD_I64, 1, 1, 2, 0), Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 9), Mir.mir_op(Mir.MIR_ADD_I64, 4, 4, 1, 0), Mir.mir_op(Mir.MIR_LT_I64, 3, 1, 0, 0)]
+	let blocks = [Mir.MirBlock(entry, Mir.mir_jump(1)), Mir.MirBlock(body, Mir.mir_branch(3, 1, 2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(1))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], blocks, 0)])
+
+# Branch-local scalar temporaries can share storage across mutually exclusive
+# blocks. The join result must not overlap still-live inputs.
+def branch_fixture() -> Mir.MirProgram
+	let head = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 1), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 41), Mir.mir_op(Mir.MIR_ADD_I64, 2, 0, 1, 0), Mir.mir_op(Mir.MIR_CONST_BOOL, 3, -1, -1, 1)]
+	let then_block = [Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 8, 2, 4, 0)]
+	let else_block = [Mir.mir_op(Mir.MIR_CONST_I64, 6, -1, -1, 1), Mir.mir_op(Mir.MIR_ADD_I64, 8, 2, 6, 0)]
+	let blocks = [Mir.MirBlock(head, Mir.mir_branch(3, 1, 2)), Mir.MirBlock(then_block, Mir.mir_jump(3)), Mir.MirBlock(else_block, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(8))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], blocks, 0)])
+
+# A scalar produced in one block and consumed in the next may reuse a slot
+# with a later cross-block value, but not with either input to its definition.
+def cross_block_fixture() -> Mir.MirProgram
+	let start = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 40), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 2), Mir.mir_op(Mir.MIR_ADD_I64, 2, 0, 1, 0)]
+	let middle = [Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 6, 2, 3, 0)]
+	let last = [Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 5), Mir.mir_op(Mir.MIR_ADD_I64, 5, 6, 4, 0)]
+	let blocks = [Mir.MirBlock(start, Mir.mir_jump(1)), Mir.MirBlock(middle, Mir.mir_jump(2)), Mir.MirBlock(last, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(5))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	let cases = [loop_fixture(), branch_fixture(), cross_block_fixture()]
+	for i in 0..len(cases)
+		let program = cases[!i]
+		if Ownership.mir_check_balance(program) != ""
+			return 2
+		let interpreted = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 200, 10)
+		var expected = 5
+		if i == 1
+			expected = 42
+		elif i == 2
+			expected = 47
+		if interpreted.error != "" or interpreted.value.bits != expected
+			return 3
+		let verified = Emit.mir_emit_c_reachable_verified(program, 0)
+		let defensive = Emit.mir_emit_c(program, 0)
+		if verified.error != "" or defensive.error != ""
+			return 4
+		# The lifetime of r2 ends before r4 is defined in the loop body;
+		# both map to one slot, but the loop-carried values remain distinct.
+		if i == 0
+			if (verified.code.find("int64_t r4 = 0;") or (-1)) != -1
+				return 5
+			if (defensive.code.find("int64_t r4 = 0;") or (-1)) == -1
+				return 6
+		# r5 spans blocks 2 and 3. It was ineligible for the old local
+		# allocator, but has no overlapping lifetime with earlier scalars.
+		if i == 2
+			if (verified.code.find("int64_t r5 = 0;") or (-1)) != -1
+				return 8
+			if (defensive.code.find("int64_t r5 = 0;") or (-1)) == -1
+				return 9
+		if not write_text(args[!i + 1], verified.code)
+			return 7
+	print("PASS scalar MIR slot reuse")
+	return 0

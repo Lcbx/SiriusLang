@@ -7,12 +7,13 @@ current sources. Build times and execution times are reported separately.
 import argparse
 from pathlib import Path
 import statistics
+import shutil
 import subprocess
 import tempfile
 from time import perf_counter
 
 from build_support import BuildCache, compile_c, require_cc
-from source_manifest import MIR_ONLY_COMPILER_SOURCES, ROOT, normalize_newlines
+from project_paths import ROOT
 
 
 def timed_run(command: list[str], timeout: int) -> float:
@@ -21,30 +22,23 @@ def timed_run(command: list[str], timeout: int) -> float:
 	return perf_counter() - start
 
 
-def build_source(ownership: bytes) -> bytes:
-	parts = []
-	for name in MIR_ONLY_COMPILER_SOURCES:
-		if name == 'src/mir_ownership.sirius':
-			parts.append(normalize_newlines(ownership))
-		else:
-			parts.append(normalize_newlines((ROOT / name).read_bytes()))
-	return b''.join(parts)
-
-
 def benchmark(label: str, ownership: bytes, work: Path, seed: Path, cache: BuildCache,
 		repeats: int, timeout: int) -> tuple[float, ...]:
-	source = work / f'{label}.sirius'
+	root = work / f'{label}-modules'
+	root.mkdir()
+	for path in (ROOT / 'src').glob('*.sirius'):
+		shutil.copy2(path, root / path.name)
+	(root / 'mir_ownership.sirius').write_bytes(ownership)
 	generated = work / f'{label}.c'
 	binary = work / f'{label}.exe'
-	source.write_bytes(build_source(ownership))
-	generation = timed_run([str(seed), str(source), str(generated)], timeout)
+	generation = timed_run([str(seed), '--module-root', str(root), 'modular_cli', str(generated)], timeout)
 	start = perf_counter()
 	compile_c(cache.cc, generated, binary, cache.runtime())
 	native = perf_counter() - start
 	times = []
 	for repeat in range(repeats):
 		output = work / f'{label}-{repeat}.c'
-		times.append(timed_run([str(binary), str(source), str(output)], timeout))
+		times.append(timed_run([str(binary), '--module-root', str(root), 'modular_cli', str(output)], timeout))
 		if output.read_bytes() != generated.read_bytes():
 			raise RuntimeError(f'{label}: self-compilation output differs from the compiled source')
 	print(f'{label}: generate={generation:.3f}s native={native:.3f}s '

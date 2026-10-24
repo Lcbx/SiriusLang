@@ -21,6 +21,69 @@ export rec TypeTable(entries: Array[TypeDescriptor], lookup: Dict[string,i64])
 
 export rec InternedType(table: TypeTable, id: i64)
 
+# Target-neutral runtime representation. C uses a tagged-by-static-TypeId
+# S_MirField union for composite payloads; its byte size/alignment are fixed
+# by the target ABI, not by TypeId or by this descriptor.
+export let TYPE_STORAGE_INVALID = 0
+export let TYPE_STORAGE_VOID = 1
+export let TYPE_STORAGE_I64 = 2
+export let TYPE_STORAGE_F64 = 3
+export let TYPE_STORAGE_BOOL = 4
+export let TYPE_STORAGE_STRING = 5
+export let TYPE_STORAGE_OBJECT = 6
+
+export let TYPE_OWNERSHIP_INVALID = -1
+export let TYPE_OWNERSHIP_NONE = 0
+export let TYPE_OWNERSHIP_STRING = 1
+export let TYPE_OWNERSHIP_OBJECT = 2
+
+# fixed_slots counts S_MirField payload slots in a composite object.
+# variable_slots means that length determines the remaining slot count:
+# arrays have 0..n slots, optionals have 0..1. Dictionaries have a single
+# slot holding the runtime dictionary pointer; record field offsets are the
+# indices of lexicographically sorted descriptor fields.
+export rec RuntimeLayout(storage: i64, ownership: i64, fixed_slots: i64, variable_slots: bool)
+
+# These queries deliberately do not derive ownership from the TypeId value.
+# The type table is canonical after interning or MIR artifact verification.
+export def runtime_storage(types: TypeTable, id: i64) -> i64
+	let tag = type_tag(types, id)
+	if tag == TYPE_TAG_I64
+		return TYPE_STORAGE_I64
+	if tag == TYPE_TAG_F64
+		return TYPE_STORAGE_F64
+	if tag == TYPE_TAG_BOOL
+		return TYPE_STORAGE_BOOL
+	if tag == TYPE_TAG_STRING
+		return TYPE_STORAGE_STRING
+	if tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
+		return TYPE_STORAGE_OBJECT
+	if tag == TYPE_TAG_VOID
+		return TYPE_STORAGE_VOID
+	return TYPE_STORAGE_INVALID
+
+export def runtime_ownership(types: TypeTable, id: i64) -> i64
+	let storage = runtime_storage(types, id)
+	if storage == TYPE_STORAGE_INVALID
+		return TYPE_OWNERSHIP_INVALID
+	if storage == TYPE_STORAGE_STRING
+		return TYPE_OWNERSHIP_STRING
+	if storage == TYPE_STORAGE_OBJECT
+		return TYPE_OWNERSHIP_OBJECT
+	return TYPE_OWNERSHIP_NONE
+
+export def runtime_layout(types: TypeTable, id: i64) -> RuntimeLayout
+	let storage = runtime_storage(types, id)
+	let ownership = runtime_ownership(types, id)
+	if storage != TYPE_STORAGE_OBJECT
+		return RuntimeLayout(storage, ownership, 0, false)
+	let desc = types.entries[!id]
+	if desc.tag == TYPE_TAG_RECORD
+		return RuntimeLayout(storage, ownership, len(desc.fields), false)
+	if desc.tag == TYPE_TAG_DICT
+		return RuntimeLayout(storage, ownership, 1, false)
+	return RuntimeLayout(storage, ownership, 0, true)
+
 # Interned type keys are based on canonical child TypeIds and sorted fields.
 # Identifier names cannot contain the separators, so the encoding is unique.
 def type_descriptor_key(tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> string
@@ -38,18 +101,67 @@ export def new_type_table() -> TypeTable
 		lookup = lookup.insert(type_descriptor_key(tag, 0, 0, Array[RecordField]()), tag)
 	return TypeTable(entries, lookup)
 
-# Canonical fields are sorted by the caller. A repeated descriptor reuses its
-# existing TypeId; fresh IDs retain the same deterministic insertion order.
+# Check a prospective descriptor before inserting it. Child TypeIds must
+# already exist, so successful interning preserves an acyclic type table.
+def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> bool
+	if id <= TYPE_TAG_VOID
+		return tag == id and first == 0 and second == 0 and len(fields) == 0
+	if tag == TYPE_TAG_RECORD
+		if first != 0 or second != 0
+			return false
+		for i in 0..len(fields)
+			let field = fields[!i]
+			if field.kind <= TYPE_TAG_INVALID or field.kind == TYPE_TAG_VOID or field.kind >= id
+				return false
+			if i > 0 and fields[!i - 1].name >= field.name
+				return false
+		return true
+	if len(fields) != 0 or first <= TYPE_TAG_INVALID or first == TYPE_TAG_VOID or first >= id
+		return false
+	if tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_OPTIONAL
+		return second == 0
+	if tag == TYPE_TAG_DICT
+		return second > TYPE_TAG_INVALID and second != TYPE_TAG_VOID and second < id
+	return false
+
+# Canonical fields are sorted by the caller. Invalid construction leaves the
+# table unchanged and returns the existing invalid TypeId (0).
 export def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
+	let id = len(table.entries)
+	if tag <= TYPE_TAG_VOID
+		if tag < TYPE_TAG_INVALID or not type_descriptor_parts_canonical(tag, tag, first, second, fields)
+			return InternedType(table, TYPE_TAG_INVALID)
+		return InternedType(table, tag)
+	if not type_descriptor_parts_canonical(id, tag, first, second, fields)
+		return InternedType(table, TYPE_TAG_INVALID)
 	let key = type_descriptor_key(tag, first, second, fields)
 	let existing = table.lookup.get(key) or -1
 	if existing >= 0
 		return InternedType(table, existing)
 	var next = table
-	let id = len(next.entries)
 	next.entries = next.entries.append(TypeDescriptor(tag, first, second, fields))
 	next.lookup = next.lookup.insert(key, id)
 	return InternedType(next, id)
+
+# Validate a single descriptor against the canonical, acyclic TypeId table.
+# This checks representation, not whether a type is supported by a particular
+# MIR instruction (for example, whether a dictionary key is hashable).
+export def type_descriptor_canonical(types: TypeTable, id: i64) -> bool
+	if id < 0 or id >= len(types.entries)
+		return false
+	let desc = types.entries[!id]
+	return type_descriptor_parts_canonical(id, desc.tag, desc.first, desc.second, desc.fields)
+
+# TypeId is an opaque table index. Query the descriptor before branching on
+# the kind; an absent ID must never be mistaken for a composite type.
+# Primitive TypeIds 0..5 are reserved, but all kind queries use the table.
+export def type_tag(types: TypeTable, id: i64) -> i64
+	if id < 0 or id >= len(types.entries)
+		return TYPE_TAG_INVALID
+	return types.entries[!id].tag
+
+export def type_has_tag(types: TypeTable, id: i64, tag: i64) -> bool
+	return tag != TYPE_TAG_INVALID and type_tag(types, id) == tag
 
 export def intern_array_type(table: TypeTable, element: i64) -> InternedType
 	return intern_type(table, TYPE_TAG_ARRAY, element, 0, Array[RecordField]())

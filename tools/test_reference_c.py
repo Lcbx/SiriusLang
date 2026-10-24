@@ -8,7 +8,7 @@ import subprocess
 import sys
 import tempfile
 
-from source_manifest import ROOT
+from project_paths import ROOT
 from build_support import BuildCache, compile_c, options, require_cc, validate_jobs
 
 

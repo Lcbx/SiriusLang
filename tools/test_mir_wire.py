@@ -8,7 +8,7 @@ import tempfile
 
 from build_support import BuildCache, require_cc, options
 from compiler_cases import REFERENCE
-from source_manifest import MIR_RUNNER_SOURCES, ROOT, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 from test_mir_run import CASES, FAILURE_CASES
 
 
@@ -25,7 +25,7 @@ def main() -> None:
 	parser.add_argument('--all-fixtures', action='store_true', help='check all 91 shared executable fixtures')
 	args = parser.parse_args()
 	cache = BuildCache(shutil.which('clang') or require_cc(), rebuild=args.rebuild)
-	runner = args.runner.resolve() if args.runner else cache.sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
 		(work / 'file.txt').write_text('hello from a file\n')

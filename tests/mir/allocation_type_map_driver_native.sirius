@@ -1,0 +1,16 @@
+import module_build alias Build
+import module alias Module
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		eprint("usage: allocation-type-map source-root entry.module")
+		return 2
+	let built = Build.module_build_link(args[!1], args[!2])
+	if built.error != ""
+		eprint(built.error)
+		return 1
+	let types = built.library.program.types
+	for i in 0..len(types.entries)
+		print(str(i) + "\t" + Module.mir_type_signature(types, i))
+	return 0

@@ -1,30 +1,35 @@
+import hir alias Hir
+import hir_declarations alias HirDeclarations
+import module alias Module
+import parser alias Parser
+import tokenizer alias Tokenizer
 # Resolve module-qualified calls against typed external declarations.
 # Module namespaces are compile-time only; MIR sees ordinary named calls.
-rec HirModuleResolution(tree: ParseState, error: string, line: i64)
+rec HirModuleResolution(tree: Parser.ParseState, error: string, line: i64)
 
-def hir_module_export_target(declarations: HirModuleDecl, name: string) -> string
+def hir_module_export_target(declarations: Hir.HirModuleDecl, name: string) -> string
 	for alias in declarations.external_aliases
 		if alias.name == name
 			return alias.target
 	return name
 
-def hir_module_replace_name(tree: ParseState, node: i64, target: string, line: i64) -> ParseState
+def hir_module_replace_name(tree: Parser.ParseState, node: i64, target: string, line: i64) -> Parser.ParseState
 	var next = tree
 	let start = len(next.source)
 	next.source += target
 	let token_id = len(next.tokens)
-	next.tokens = next.tokens.append(Token(TOKEN_NAME, start, len(next.source), line, 0))
-	next.nodes[!node] = Node(NODE_NAME, token_id, 0, 0)
+	next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, start, len(next.source), line, 0))
+	next.nodes[!node] = Parser.Node(Parser.NODE_NAME, token_id, 0, 0)
 	return next
 
-def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> HirModuleResolution
+export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.HirModuleDecl) -> HirModuleResolution
 	var next = tree
 	# Qualified type nodes retain the module alias until imports are resolved.
 	for i in 0..len(tree.nodes)
 		let node = next.nodes[!i]
-		if node.kind != NODE_TYPE
+		if node.kind != Parser.NODE_TYPE
 			continue
-		let name = hir_ast_text(next, i)
+		let name = Hir.hir_ast_text(next, i)
 		var matched = false
 		for imported in declarations.imports
 			let prefix = imported.alias + "."
@@ -32,69 +37,74 @@ def hir_resolve_module_calls(tree: ParseState, declarations: HirModuleDecl) -> H
 				continue
 			matched = true
 			let member = name.slice(len(prefix), len(name))
-			let target = hir_module_export_target(declarations, hir_module_symbol(imported.path, member))
+			let target = hir_module_export_target(declarations, Module.hir_module_symbol(imported.path, member))
 			var found = false
 			for function in declarations.functions
 				if function.name == target and function.constructor and function.external
 					found = true
 			if not found
-				return HirModuleResolution(tree, "type " + name + " is not exported", hir_ast_line(next, i))
+				return HirModuleResolution(tree, "type " + name + " is not exported", Hir.hir_ast_line(next, i))
 			let position = len(next.source)
 			next.source += target
 			let token = len(next.tokens)
-			next.tokens = next.tokens.append(Token(TOKEN_NAME, position, len(next.source), hir_ast_line(next, i), 0))
-			next.nodes[!i] = Node(NODE_TYPE, token, node.first, node.count)
+			next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, position, len(next.source), Hir.hir_ast_line(next, i), 0))
+			next.nodes[!i] = Parser.Node(Parser.NODE_TYPE, token, node.first, node.count)
 			break
 		if not matched
 			for j in 0..len(name)
 				if (name.byte_at(j) or 0) == 46
-					return HirModuleResolution(tree, "unknown module alias in type " + name, hir_ast_line(next, i))
+					return HirModuleResolution(tree, "unknown module alias in type " + name, Hir.hir_ast_line(next, i))
 	for i in 0..len(tree.nodes)
 		let call = tree.nodes[!i]
-		if call.kind != NODE_CALL or call.count == 0
+		if call.kind != Parser.NODE_CALL or call.count == 0
 			continue
-		let callee_id = hir_ast_child(tree, i, 0)
+		let callee_id = Hir.hir_ast_child(tree, i, 0)
 		let callee = tree.nodes[!callee_id]
-		if callee.kind != NODE_ATTR or callee.count != 1
+		if callee.kind != Parser.NODE_ATTR or callee.count != 1
 			continue
-		let receiver_id = hir_ast_child(tree, callee_id, 0)
-		if tree.nodes[!receiver_id].kind != NODE_NAME
+		let receiver_id = Hir.hir_ast_child(tree, callee_id, 0)
+		if tree.nodes[!receiver_id].kind != Parser.NODE_NAME
 			continue
-		let receiver = hir_ast_text(tree, receiver_id)
+		let receiver = Hir.hir_ast_text(tree, receiver_id)
 		for imported in declarations.imports
 			if imported.alias == receiver
-				let name = hir_ast_text(tree, callee_id)
-				let target = hir_module_export_target(declarations, hir_module_symbol(imported.path, name))
+				let name = Hir.hir_ast_text(tree, callee_id)
+				let target = hir_module_export_target(declarations, Module.hir_module_symbol(imported.path, name))
 				var found = false
 				for declaration in declarations.functions
-					if declaration.name == target and hir_function_external(tree, declaration)
+					if declaration.name == target and HirDeclarations.hir_function_external(tree, declaration)
 						found = true
 				if not found
-					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", hir_ast_line(tree, callee_id))
-				next = hir_module_replace_name(next, callee_id, target, hir_ast_line(tree, callee_id))
+					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", Hir.hir_ast_line(tree, callee_id))
+				next = hir_module_replace_name(next, callee_id, target, Hir.hir_ast_line(tree, callee_id))
 				break
 	# Imported constants are namespace-qualified at the source level but use
 	# ordinary HIR module constants after resolution. This also handles nested
 	# projections (for example, Settings.CONFIG.width).
 	for i in 0..len(tree.nodes)
 		let attribute = next.nodes[!i]
-		if attribute.kind != NODE_ATTR or attribute.count != 1
+		if attribute.kind != Parser.NODE_ATTR or attribute.count != 1
 			continue
-		let receiver_id = hir_ast_child(next, i, 0)
-		if next.nodes[!receiver_id].kind != NODE_NAME
+		let receiver_id = Hir.hir_ast_child(next, i, 0)
+		if next.nodes[!receiver_id].kind != Parser.NODE_NAME
 			continue
-		let receiver = hir_ast_text(next, receiver_id)
+		let receiver = Hir.hir_ast_text(next, receiver_id)
 		for imported in declarations.imports
 			if imported.alias != receiver
 				continue
-			let name = hir_ast_text(next, i)
-			let target = hir_module_symbol(imported.path, name)
+			let name = Hir.hir_ast_text(next, i)
+			let target = hir_module_export_target(declarations, Module.hir_module_symbol(imported.path, name))
 			var found = false
 			for constant in declarations.constants
 				if constant.name == target
 					found = true
+			# A qualified constructor is also a type value in expressions such as
+			# Array[Types.RecordField](). Resolve it like a named type.
+			for function in declarations.functions
+				if function.name == target and function.constructor and function.external
+					found = true
 			if not found
-				return HirModuleResolution(tree, "constant " + receiver + "." + name + " is not exported", hir_ast_line(next, i))
-			next = hir_module_replace_name(next, i, target, hir_ast_line(next, i))
+				return HirModuleResolution(tree, "constant " + receiver + "." + name + " is not exported", Hir.hir_ast_line(next, i))
+			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i))
 			break
 	return HirModuleResolution(next, "", 0)

@@ -1,48 +1,57 @@
+import types alias Types
+import parser alias Ast
+import hir alias Hir
+import hir_resolve alias Resolve
+import hir_analyze alias Analyze
+import hir_declarations alias Decl
+
 # HIR owns concrete specialization analysis, independent of the MIR and C
 # backends. A worklist slot is a stable specialization ID; recursion and
 # duplicate signatures reuse existing IN_PROGRESS entries.
 
-rec HirConcreteBody(nodes: Array[HirNode], requests: Array[HirSpecializationRequest], types: TypeTable, return_type: i64, error: string, error_line: i64)
+export rec HirConcreteBody(nodes: Array[Hir.HirNode], requests: Array[Analyze.HirSpecializationRequest], types: Types.TypeTable, return_type: i64, error: string, error_line: i64)
 # Bodies are in specialization-ID order; the array index is the ID.
-rec HirSpecializedFunction(nodes: Array[HirNode], calls: Array[HirSpecializedCall], return_type: i64)
-rec HirSpecializedRoot(name: string, function_id: i64)
-rec HirSpecializedProgram(registry: HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: TypeTable, entry: i64, error: string)
-	pub roots = Array[HirSpecializedRoot]()
+export rec HirSpecializedFunction(nodes: Array[Hir.HirNode], calls: Array[Hir.HirSpecializedCall], return_type: i64)
+export rec HirSpecializedRoot(name: string, function_id: i64)
+export rec HirSpecializedProgram(registry: Hir.HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: Types.TypeTable, entry: i64, error: string, roots: Array[HirSpecializedRoot])
 
-def hir_concrete_body(tree: ParseState, header: HirFunctionDecl, functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: TypeTable, arguments: Array[i64]) -> HirConcreteBody
+export def new_hir_specialized_program(registry: Hir.HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: Types.TypeTable, entry: i64, error: string) -> HirSpecializedProgram
+	return HirSpecializedProgram(registry, bodies, types, entry, error, Array[HirSpecializedRoot]())
+
+export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], types: Types.TypeTable, arguments: Array[i64]) -> HirConcreteBody
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)
-	var state = HirBodyState(tree, names, Array[string](), types)
+	var state = Analyze.new_hir_body_state(tree, names, Array[string](), types)
 	state.functions = functions
 	state.module_constants = constants
 	state.active_functions = [header.name]
 	state.collect_calls = true
 	if len(arguments) != len(header.parameters)
-		return HirConcreteBody(state.nodes, state.requests, state.types, TYPE_TAG_INVALID, "specialization argument count mismatch", hir_ast_line(tree, header.source))
+		return HirConcreteBody(state.nodes, state.requests, state.types, Types.TYPE_TAG_INVALID, "specialization argument count mismatch", Hir.hir_ast_line(tree, header.source))
 	for i in 0..len(arguments)
 		let parameter = header.parameters[!i]
 		if parameter.type_node >= 0
-			let annotation = hir_module_type_reference_with_constants(state.types, tree, parameter.type_node, functions, constants)
+			let annotation = Analyze.hir_module_type_reference_with_constants(state.types, tree, parameter.type_node, functions, constants)
 			state.types = annotation.table
-			if annotation.type_id != TYPE_TAG_INVALID and annotation.type_id != arguments[!i]
-				state = hir_body_error(state, parameter.source, "specialization argument type mismatch")
+			if annotation.type_id != Types.TYPE_TAG_INVALID and annotation.type_id != arguments[!i]
+				state = Analyze.hir_body_error(state, parameter.source, "specialization argument type mismatch")
 		if state.error != ""
 			break
-		state = hir_body_binding(state, parameter.source, parameter.name, arguments[!i], false)
+		state = Analyze.hir_body_binding(state, parameter.source, parameter.name, arguments[!i], false)
 	if state.error == ""
-		state = hir_body_block(state, header.body)
+		state = Analyze.hir_body_block(state, header.body)
 	var result_type = state.inferred_return
 	if state.error == "" and header.result_type_node >= 0
-		let declared = hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants)
+		let declared = Analyze.hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants)
 		state.types = declared.table
-		if declared.type_id != TYPE_TAG_INVALID
-			if result_type != TYPE_TAG_INVALID and result_type != declared.type_id
-				state = hir_body_error(state, header.source, "expected " + hir_type_name(state.types, declared.type_id) + ", found " + hir_type_name(state.types, result_type))
+		if declared.type_id != Types.TYPE_TAG_INVALID
+			if result_type != Types.TYPE_TAG_INVALID and result_type != declared.type_id
+				state = Analyze.hir_body_error(state, header.source, "expected " + Resolve.hir_type_name(state.types, declared.type_id) + ", found " + Resolve.hir_type_name(state.types, result_type))
 			result_type = declared.type_id
 	return HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
 
-def hir_definition(functions: Array[HirFunctionDecl], definition: i64) -> i64
+export def hir_definition(functions: Array[Hir.HirFunctionDecl], definition: i64) -> i64
 	for i in 0..len(functions)
 		if functions[!i].body == definition
 			return i
@@ -50,8 +59,8 @@ def hir_definition(functions: Array[HirFunctionDecl], definition: i64) -> i64
 
 # Body analysis runs once per canonical signature; no recursive traversal
 # of other function bodies is performed by the worklist.
-def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, names: Array[string], arguments: Array[i64]) -> HirSpecializedProgram
-	var registry = new_hir_specializations()
+export def hir_specialize_program_roots(tree: Ast.ParseState, declarations: Hir.HirModuleDecl, names: Array[string], arguments: Array[i64]) -> HirSpecializedProgram
+	var registry = Hir.new_hir_specializations()
 	var bodies = Array[HirSpecializedFunction]()
 	var types = declarations.types
 	var entry = -1
@@ -65,91 +74,91 @@ def hir_specialize_program_roots(tree: ParseState, declarations: HirModuleDecl, 
 					concrete = Array[i64]()
 					for parameter in declaration.parameters
 						if parameter.type_node < 0
-							return HirSpecializedProgram(registry, bodies, types, entry, "exported function parameters require annotations")
-						let annotated = hir_module_type_reference_with_constants(types, tree, parameter.type_node, declarations.functions, declarations.constants)
+							return new_hir_specialized_program(registry, bodies, types, entry, "exported function parameters require annotations")
+						let annotated = Analyze.hir_module_type_reference_with_constants(types, tree, parameter.type_node, declarations.functions, declarations.constants)
 						types = annotated.table
-						if annotated.type_id == TYPE_TAG_INVALID
-							return HirSpecializedProgram(registry, bodies, types, entry, "unsupported exported parameter type")
+						if annotated.type_id == Types.TYPE_TAG_INVALID
+							return new_hir_specialized_program(registry, bodies, types, entry, "unsupported exported parameter type")
 						concrete = concrete.append(annotated.type_id)
-				let started = hir_begin_specialization(registry, declaration.body, concrete, TYPE_TAG_INVALID)
+				let started = Hir.hir_begin_specialization(registry, declaration.body, concrete, Types.TYPE_TAG_INVALID)
 				registry = started.registry
 				roots = roots.append(HirSpecializedRoot(name, started.index))
 				if entry < 0
 					entry = started.index
 				found = true
 		if not found
-			return HirSpecializedProgram(registry, bodies, types, -1, "unknown HIR entry function '" + name + "'")
+			return new_hir_specialized_program(registry, bodies, types, -1, "unknown HIR entry function '" + name + "'")
 	var cursor = 0
 	while cursor < len(registry.entries)
 		let spec = registry.entries[!cursor]
 		let definition = hir_definition(declarations.functions, spec.definition)
 		if definition < 0
-			return HirSpecializedProgram(registry, bodies, types, entry, "missing specialization declaration")
+			return new_hir_specialized_program(registry, bodies, types, entry, "missing specialization declaration")
 		let header = declarations.functions[!definition]
 		if header.constructor
-			return HirSpecializedProgram(registry, bodies, types, entry, "constructor specialization not supported yet")
-		var typed = HirConcreteBody(Array[HirNode](), Array[HirSpecializationRequest](), types, TYPE_TAG_INVALID, "", 0)
-		if hir_function_external(tree, header)
+			return new_hir_specialized_program(registry, bodies, types, entry, "constructor specialization not supported yet")
+		var typed = HirConcreteBody(Array[Hir.HirNode](), Array[Analyze.HirSpecializationRequest](), types, Types.TYPE_TAG_INVALID, "", 0)
+		if Decl.hir_function_external(tree, header)
 			if len(header.parameters) != len(spec.arguments)
-				return HirSpecializedProgram(registry, bodies, types, entry, "external specialization arity mismatch")
+				return new_hir_specialized_program(registry, bodies, types, entry, "external specialization arity mismatch")
 			if header.external
 				for i in 0..len(spec.arguments)
-					if header.argument_types[!i] != TYPE_TAG_INVALID and header.argument_types[!i] != spec.arguments[!i]
-						return HirSpecializedProgram(registry, bodies, types, entry, "external specialization type mismatch")
+					if header.argument_types[!i] != Types.TYPE_TAG_INVALID and header.argument_types[!i] != spec.arguments[!i]
+						return new_hir_specialized_program(registry, bodies, types, entry, "external specialization type mismatch")
 				typed.return_type = header.result_type
 			else
 				for i in 0..len(header.parameters)
-					let declared = hir_module_type_reference_with_constants(typed.types, tree, header.parameters[!i].type_node, declarations.functions, declarations.constants)
+					let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.parameters[!i].type_node, declarations.functions, declarations.constants)
 					typed.types = declared.table
-					if declared.type_id == TYPE_TAG_INVALID or declared.type_id != spec.arguments[!i]
-						return HirSpecializedProgram(registry, bodies, types, entry, "external specialization type mismatch")
-				let declared = hir_module_type_reference_with_constants(typed.types, tree, header.result_type_node, declarations.functions, declarations.constants)
+					if declared.type_id == Types.TYPE_TAG_INVALID or declared.type_id != spec.arguments[!i]
+						return new_hir_specialized_program(registry, bodies, types, entry, "external specialization type mismatch")
+				let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.result_type_node, declarations.functions, declarations.constants)
 				typed.types = declared.table
 				typed.return_type = declared.type_id
 		else
 			typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments)
 		types = typed.types
 		if typed.error != ""
-			return HirSpecializedProgram(registry, bodies, types, entry, typed.error)
-		if typed.return_type == TYPE_TAG_INVALID
-			return HirSpecializedProgram(registry, bodies, types, entry, "cannot infer specialized function return type")
-		var calls = Array[HirSpecializedCall]()
+			return new_hir_specialized_program(registry, bodies, types, entry, typed.error)
+		if typed.return_type == Types.TYPE_TAG_INVALID
+			return new_hir_specialized_program(registry, bodies, types, entry, "cannot infer specialized function return type")
+		var calls = Array[Hir.HirSpecializedCall]()
 		for request in typed.requests
 			let called = hir_definition(declarations.functions, request.definition)
 			if called < 0
-				return HirSpecializedProgram(registry, bodies, types, entry, "unknown specialized callee")
+				return new_hir_specialized_program(registry, bodies, types, entry, "unknown specialized callee")
 			let callee = declarations.functions[!called]
-			var result_type = TYPE_TAG_INVALID
+			var result_type = Types.TYPE_TAG_INVALID
 			var recursive = false
 			if callee.external
 				result_type = callee.result_type
 			elif callee.result_type_node >= 0
-				let declared = hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
+				let declared = Analyze.hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
 				types = declared.table
 				result_type = declared.type_id
 			else
 				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments)
 				types = inferred.types
 				if inferred.error != ""
-					return HirSpecializedProgram(registry, bodies, types, entry, inferred.error)
+					return new_hir_specialized_program(registry, bodies, types, entry, inferred.error)
 				result_type = inferred.return_type
 				for nested in inferred.requests
 					if nested.definition == callee.body
 						recursive = true
-			if result_type == TYPE_TAG_INVALID
+			if result_type == Types.TYPE_TAG_INVALID
 				if recursive
-					return HirSpecializedProgram(registry, bodies, types, entry, "recursive generic call requires an explicit return type")
-				return HirSpecializedProgram(registry, bodies, types, entry, "cannot infer function return type")
-			let started = hir_begin_specialization(registry, request.definition, request.arguments, result_type)
+					return new_hir_specialized_program(registry, bodies, types, entry, "recursive generic call requires an explicit return type")
+				return new_hir_specialized_program(registry, bodies, types, entry, "cannot infer function return type")
+			let started = Hir.hir_begin_specialization(registry, request.definition, request.arguments, result_type)
 			registry = started.registry
-			calls = calls.append(HirSpecializedCall(request.source, started.index))
+			calls = calls.append(Hir.HirSpecializedCall(request.source, started.index))
 		bodies = bodies.append(HirSpecializedFunction(typed.nodes, calls, typed.return_type))
-		registry = hir_complete_specialization(registry, cursor, typed.return_type)
+		registry = Hir.hir_complete_specialization(registry, cursor, typed.return_type)
 		cursor += 1
-	var result = HirSpecializedProgram(registry, bodies, types, entry, "")
+	var result = new_hir_specialized_program(registry, bodies, types, entry, "")
 	result.roots = roots
 	return result
 
 # Preserve the existing single-entry API for typed specialization tests.
-def hir_specialize_program(tree: ParseState, declarations: HirModuleDecl, name: string, arguments: Array[i64]) -> HirSpecializedProgram
+export def hir_specialize_program(tree: Ast.ParseState, declarations: Hir.HirModuleDecl, name: string, arguments: Array[i64]) -> HirSpecializedProgram
 	return hir_specialize_program_roots(tree, declarations, [name], arguments)

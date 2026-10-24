@@ -3,13 +3,13 @@
 import tempfile
 from pathlib import Path
 
+from project_paths import ROOT
 from build_support import BuildCache, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.sirius('mir-array', MIR_DRIVER_SOURCES + ('tests/mir/array_driver.sirius',))
+	driver = cache.native_driver('mir-arrays', ROOT / 'tests/mir/array_driver_native.sirius')
 	with tempfile.TemporaryDirectory() as directory:
 		work = Path(directory)
 		generated = [work / f'{name}.c' for name in ('cow', 'bounds', 'nested', 'unique', 'move')]

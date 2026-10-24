@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Compile the Sirius parser using the C bootstrap; check AST cases."""
+"""Run parser golden and syntax smoke tests through native imports."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tempfile
 
-from source_manifest import ROOT, PARSER_SOURCES, COMPILER_SOURCES, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 from build_support import BuildCache, options, require_cc, validate_jobs
 
 
@@ -15,12 +15,12 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	binary = cache.sirius('parser', PARSER_SOURCES + ('tests/parser/driver.sirius',))
+	binary = cache.native_driver('parser', ROOT / 'tests/parser/module_driver.sirius')
 	cases = sorted((ROOT / 'tests/parser/fixtures').glob('*.sirius'))
 	if not cases:
 		raise SystemExit('No parser test fixtures found')
 	programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
-	programs += [ROOT / name for name in COMPILER_SOURCES]
+	programs += sorted((ROOT / 'src').glob('*.sirius'))
 
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)

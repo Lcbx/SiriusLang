@@ -1,0 +1,25 @@
+# Independently linked MIR structures, CFG and type-directed verifier.
+import types alias Types
+import mir alias Mir
+import mir_cfg alias Cfg
+import mir_verify alias Verify
+import mir_common alias Common
+
+def main() -> i64
+	let instruction = Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 42)
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64], [Mir.MirBlock([instruction], Mir.mir_return(0))], 0)
+	let program = Mir.mir_program_with_types([function], Types.new_type_table())
+	if Verify.mir_verify(program) != "" or Common.mir_common_entry_error(program, 0) != ""
+		return 1
+	let cfg = Cfg.mir_cfg_facts(function)
+	if len(cfg.reached) != 1 or cfg.reached[!0] != 1
+		return 2
+	if len(cfg.predecessors) != 1 or len(cfg.predecessors[!0]) != 0
+		return 3
+	if not Common.mir_common_managed(program.types, Types.TYPE_TAG_STRING)
+		return 4
+	let copy = Mir.mir_call_move(0, 2, [0], 0)
+	if not Mir.mir_call_move_at(copy, 0)
+		return 5
+	print("MIR core modules OK")
+	return 0

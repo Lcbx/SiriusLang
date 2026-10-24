@@ -3,15 +3,13 @@
 import tempfile
 from pathlib import Path
 
+from project_paths import ROOT
 from build_support import BuildCache, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.sirius('mir-balance', MIR_DRIVER_SOURCES + (
-		'tests/mir/balance_driver.sirius',
-	))
+	driver = cache.native_driver('mir-balance', ROOT / 'tests/mir/balance_driver_native.sirius')
 	with tempfile.TemporaryDirectory() as directory:
 		outputs = [Path(directory) / f'case{i}.c' for i in range(6)]
 		result = execute([str(driver), *(str(path) for path in outputs)])

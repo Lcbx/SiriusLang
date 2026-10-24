@@ -1,0 +1,47 @@
+import mir alias Mir
+import mir_emit_c alias MirEmitC
+import mir_interpreter alias MirInterpreter
+import mir_ownership alias MirOwnership
+import mir_verify alias MirVerify
+import types alias Types
+# Fused record-field append must preserve a shared record and its nested array.
+def main() -> i64
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	let layout = Types.intern_record_type(array.table, [Types.RecordField("items", array.id)])
+	var instructions = Array[Mir.MirInstruction]()
+	instructions = instructions.append(Mir.mir_array_new(0, Array[i64]()))
+	instructions = instructions.append(Mir.mir_record_new(1, [0]))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_COPY, 2, 1, -1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 7))
+	instructions = instructions.append(Mir.mir_record_array_append(1, 1, 0, 3))
+	instructions = instructions.append(Mir.mir_record_get(4, 2, 0))
+	instructions = instructions.append(Mir.mir_record_get(5, 1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 6, 4, -1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 7, 5, -1, 0))
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_ADD_I64, 8, 6, 7, 0))
+	for register in [0, 1, 2, 4, 5]
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, register, register, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [array.id, layout.id, layout.id, Types.TYPE_TAG_I64, array.id, array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(8))], 0)
+	let program = Mir.mir_program_with_types([function], layout.table)
+	let error = MirOwnership.mir_check_balance(program)
+	if error != ""
+		print(error)
+		return 1
+	let result = MirInterpreter.mir_execute(program, 0, Array[Mir.MirValue](), 100, 10)
+	if result.error != "" or result.value.bits != 1
+		print(result.error)
+		return 2
+	for item in result.heap
+		if item.refs != 0
+			return 3
+	let invalid = Mir.mir_program_with_types([Mir.MirFunction(0, Types.TYPE_TAG_I64, function.register_types, [Mir.MirBlock([Mir.mir_record_array_append(1, 1, 0, 2)], Mir.mir_return(3))], 0)], layout.table)
+	if MirVerify.mir_verify(invalid) != "record array append type mismatch"
+		return 4
+	let args = arguments()
+	if len(args) != 2
+		return 5
+	let native = MirEmitC.mir_emit_c(program, 0)
+	if native.error != "" or not write_text(args[!1], native.code)
+		return 6
+	print("PASS MIR fused record array append")
+	return 0

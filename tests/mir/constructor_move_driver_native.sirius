@@ -1,0 +1,131 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_guard alias Guard
+import mir_cleanup alias Cleanup
+import mir_interpreter alias Interpreter
+import mir_opt alias Opt
+import mir_ownership alias Ownership
+import mir_verify alias Verify
+import types alias Types
+
+# Record/array field transfers must preserve ownership and nested CoW.
+def fixture(mode: i64) -> Mir.MirProgram
+	var types = Types.new_type_table()
+	let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
+	types = array.table
+	let record = Types.intern_record_type(types, [Types.RecordField("a", Types.TYPE_TAG_STRING), Types.RecordField("b", Types.TYPE_TAG_STRING)])
+	types = record.table
+	let nested = Types.intern_array_type(types, record.id)
+	types = nested.table
+	var instructions = [Mir.mir_string(0, "alpha"), Mir.mir_string(1, "bb")]
+	var registers = [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING]
+	var answer = 5
+	if mode == 0
+		answer = 4
+		registers = registers.append(record.id).append(Types.TYPE_TAG_STRING).append(Types.TYPE_TAG_I64)
+		instructions = instructions.append(Mir.mir_record_new(2, [0, 1]))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+		instructions = instructions.append(Mir.mir_record_get(3, 2, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 4, 3, -1, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0))
+	elif mode == 4
+		registers = registers.append(record.id).append(nested.id).append(Types.TYPE_TAG_I64).append(record.id).append(Types.TYPE_TAG_STRING).append(Types.TYPE_TAG_I64)
+		instructions = instructions.append(Mir.mir_record_new(2, [0, 1]))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+		instructions = instructions.append(Mir.mir_array_new(3, [2]))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 0))
+		instructions = instructions.append(Mir.mir_array_get(5, 3, 4))
+		instructions = instructions.append(Mir.mir_record_get(6, 5, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 7, 6, -1, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 6, 6, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 5, 5, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0))
+		answer = 7
+	else
+		registers = registers.append(array.id).append(Types.TYPE_TAG_I64).append(Types.TYPE_TAG_STRING).append(Types.TYPE_TAG_I64)
+		var elements = [0, 1]
+		if mode == 2
+			elements = [0, 0]
+		instructions = instructions.append(Mir.mir_array_new(2, elements))
+		if mode == 3
+			instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+			instructions = instructions.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 5, 0, -1, 0))
+			instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+		else
+			instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+		var index = 1
+		if mode == 3
+			index = 0
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, index))
+		instructions = instructions.append(Mir.mir_array_get(4, 2, 3))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 5, 4, -1, 0))
+		instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, 4, 4, -1, 0)).append(Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0))
+		if mode == 1
+			answer = 5
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, registers, [Mir.MirBlock(instructions, Mir.mir_return(answer))], 0)
+	return Mir.mir_program_with_types([function], types)
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 11
+		return 1
+	for mode in 0..5
+		let program = fixture(mode)
+		let balance = Ownership.mir_check_balance(program)
+		if balance != ""
+			print(str(mode) + ": " + balance)
+			return 2
+		let optimized = Opt.mir_optimize_unchecked(program)
+		if Ownership.mir_check_balance(optimized.program) != ""
+			return 3
+		var found = 0
+		for ins in optimized.program.functions[!0].blocks[!0].instructions
+			if ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+				found += 1
+				if mode == 2 or (mode != 4 and not Mir.mir_input_move_at(ins, 1)) or (mode == 4 and not Mir.mir_input_move_at(ins, 0))
+					return 4
+		var expected = 1
+		if mode == 2
+			expected = 0
+		elif mode == 4
+			expected = 2
+		if found != expected
+			return 5
+		if Opt.mir_optimize_unchecked(optimized.program).moves != 0
+			return 6
+		let executed = Interpreter.mir_execute(optimized.program, 0, Array[Mir.MirValue](), 200, 10)
+		var value = 5
+		if mode == 1
+			value = 2
+		if executed.error != "" or executed.value.bits != value
+			return 7
+		for item in executed.heap
+			if item.refs != 0
+				return 8
+		let emitted = Emit.mir_emit_c(optimized.program, 0)
+		# Verified emission requires explicit guards and CFG exit cleanup.
+		# Hand-written fixtures deliberately omit guards for their array reads.
+		let guarded = Guard.mir_insert_guards(optimized.program)
+		if guarded.error != ""
+			return 9
+		let cleaned = Cleanup.mir_insert_exit_cleanup(guarded.program)
+		if cleaned.error != ""
+			return 9
+		let verified = Emit.mir_emit_c_reachable_verified(cleaned.program, 0)
+		if emitted.error != "" or verified.error != "" or not write_text(args[!mode + 1], emitted.code) or not write_text(args[!mode + 6], verified.code)
+			return 9
+	# A moved source cannot be read; repeated arguments and invalid masks are rejected.
+	let program = fixture(0)
+	let function = program.functions[!0]
+	let duplicate = Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, 2, [0, 0], [0])
+	if Verify.mir_verify_instruction(program, function, duplicate) == ""
+		return 10
+	let invalid_mask = Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, 2, [0, 1], [0, 1])
+	if Verify.mir_verify_instruction(program, function, Mir.MirInstruction(invalid_mask.op, invalid_mask.dst, 0, 1, invalid_mask.immediate, [0, 1], "")) == ""
+		return 11
+	let invalid = Mir.MirFunction(0, Types.TYPE_TAG_I64, function.register_types,
+		[Mir.MirBlock([Mir.mir_string(0, "alpha"), Mir.mir_string(1, "bb"), Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, 2, [0, 1], [0, 1]),
+			Mir.mir_op(Mir.MIR_STRING_LENGTH, 4, 0, -1, 0)], Mir.mir_return(4))], 0)
+	if Ownership.mir_check_ownership(Mir.mir_program_with_types([invalid], program.types)) == ""
+		return 12
+	print("PASS MIR constructor transfers")
+	return 0

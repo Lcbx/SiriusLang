@@ -155,16 +155,14 @@ export def node_kind_name(kind: i64) -> string
 		return "while"
 	return "unknown"
 
-rec Node(kind: i64, token: i64, first: i64, count: i64)
+export rec Node(kind: i64, token: i64, first: i64, count: i64)
 
-rec ParseState(source: string, tokens: Array[Lex.Token])
-	pub nodes = Array[Node]()
-	pub edges = Array[i64]()
-	pub index = 0
-	pub error = ""
-	pub error_line = 0
+export rec ParseState(source: string, tokens: Array[Lex.Token], nodes: Array[Node], edges: Array[i64], index: i64, error: string, error_line: i64)
 
-rec ParseResult(state: ParseState, node: i64)
+export def new_parse_state(source: string, tokens: Array[Lex.Token]) -> ParseState
+	return ParseState(source, tokens, Array[Node](), Array[i64](), 0, "", 0)
+
+export rec ParseResult(state: ParseState, node: i64)
 
 def current(p: ParseState) -> Lex.Token
 	return p.tokens[!p.index]
@@ -825,7 +823,7 @@ def parse_statement(p: ParseState) -> ParseResult
 
 export def parse_module(source: string) -> ParseResult
 	let tokens = Lex.tokenize(source)
-	var p = ParseState(source, tokens)
+	var p = new_parse_state(source, tokens)
 	for token in tokens
 		if token.kind < 0
 			p.error = Lex.token_kind_name(token.kind)

@@ -1,0 +1,26 @@
+# Copy-on-write: sorting this value leaves the caller's snapshot intact.
+def sorted(values: Array[i64]) -> Array[i64]
+	var result = values
+	for i in 1..len(result)
+		let key = result[!i]
+		var j = i
+		while j > 0 and result[!(j - 1)] > key
+			result[!j] = result[!(j - 1)]
+			j -= 1
+		result[!j] = key
+	return result
+
+def format_numbers(values: Array[i64]) -> string
+	var text = ""
+	for value in values
+		if len(text) > 0
+			text += ", "
+		text += str(value)
+	return text
+
+def main() -> i64
+	let input = [9, 3, 7, 1, 5, 3]
+	let result = sorted(input)
+	print("input:  " + format_numbers(input))
+	print("sorted: " + format_numbers(result))
+	return 0

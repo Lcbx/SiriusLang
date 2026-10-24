@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Compile the Sirius tokenizer using the C bootstrap; check golden tokens."""
+"""Run tokenizer golden fixtures against the native-import test driver."""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 import subprocess
 import tempfile
 
-from source_manifest import ROOT, TOKENIZER_SOURCES, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 from build_support import BuildCache, options, require_cc, validate_jobs
 
 
@@ -25,7 +25,7 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	binary = cache.sirius('tokenizer', TOKENIZER_SOURCES + ('tests/tokenizer/driver.sirius',))
+	binary = cache.native_driver('tokenizer', ROOT / 'tests/tokenizer/module_driver.sirius')
 	cases = sorted((ROOT / 'tests/tokenizer/fixtures').glob('*.sirius'))
 	if not cases:
 		raise SystemExit('No tokenizer test cases found')

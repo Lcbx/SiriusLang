@@ -8,7 +8,7 @@ import tempfile
 
 from build_support import BuildCache, compile_native, execute, options, require_cc
 from compiler_cases import REFERENCE
-from source_manifest import MIR_RUNNER_SOURCES, ROOT, normalize_newlines
+from project_paths import ROOT, normalize_newlines
 
 
 # Output and exit status are independently specified, not just compared.
@@ -51,7 +51,7 @@ def main() -> None:
 	parser.add_argument('--all-fixtures', action='store_true', help='check dynamic output against all supported compiler fixtures')
 	args = parser.parse_args()
 	cache = BuildCache(shutil.which('clang') or require_cc(), rebuild=args.rebuild)
-	runner = args.runner.resolve() if args.runner else cache.sirius('mir-runner', MIR_RUNNER_SOURCES)
+	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
 	compiler = args.compiler.resolve() if args.compiler else cache.seed()
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
@@ -88,7 +88,7 @@ def main() -> None:
 		c_path = work / 'invalid.c'
 		native_error = subprocess.run([str(compiler), str(bad), str(c_path)], capture_output=True)
 		dynamic_error = subprocess.run([str(runner), str(bad)], capture_output=True)
-		if native_error.returncode != 1 or dynamic_error.returncode != 1 or native_error.stdout != dynamic_error.stdout:
+		if native_error.returncode != 1 or dynamic_error.returncode != 1 or normalize_newlines(native_error.stdout) != normalize_newlines(dynamic_error.stdout):
 			raise AssertionError(f'compile-error mismatch: {native_error!r} vs {dynamic_error!r}')
 		print('PASS MIR run diagnostic parity')
 		# Runtime failures must preserve stdout and report the same panic on stderr.
@@ -129,7 +129,7 @@ def main() -> None:
 				raise AssertionError(f'execution limit {flags}: {result!r}')
 		print('PASS MIR run execution limits')
 		argument_test = subprocess.run([str(runner), '--max-steps', '100000', str(work / 'arguments.sirius'), 'provided'], capture_output=True)
-		if argument_test.returncode != 2 or argument_test.stdout != b'provided\n' or argument_test.stderr:
+		if argument_test.returncode != 2 or normalize_newlines(argument_test.stdout) != b'provided\n' or argument_test.stderr:
 			raise AssertionError(f'options must not enter program argv: {argument_test!r}')
 		print('PASS MIR run option argument separation')
 		if args.all_fixtures:

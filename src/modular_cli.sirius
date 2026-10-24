@@ -1,0 +1,51 @@
+import mir_emit_c alias Emit
+import module_build alias Build
+import module alias Module
+import types alias Types
+
+# Native compiler entry point. Source modules are built and linked in memory;
+# the historical positional single-file invocation remains supported.
+def compile_module_root(root: string, entry: string, output: string) -> i64
+	let built = Build.module_build_link(root, entry)
+	if built.error != ""
+		eprint("module error: " + built.error)
+		return 1
+	let library = built.library
+	let name = Module.hir_module_symbol(entry, "main")
+	var id = -1
+	for exported in library.exports
+		if exported.name == name
+			id = exported.function_id
+	if id < 0
+		eprint("module error: entry function not found: " + name)
+		return 1
+	let function = library.program.functions[!id]
+	if function.argument_count != 0 or function.return_type != Types.TYPE_TAG_I64
+		eprint("module error: entry main() must return i64 and take no arguments")
+		return 1
+	let result = Emit.mir_emit_c_reachable_verified(library.program, id)
+	if result.error != ""
+		eprint("module error: " + result.error)
+		return 1
+	if not write_text(output, result.code)
+		eprint("cannot write output: " + output)
+		return 2
+	return 0
+
+def main() -> i64
+	let args = arguments()
+	if len(args) == 5 and args[!1] == "--module-root"
+		return compile_module_root(args[!2], args[!3], args[!4])
+	if len(args) != 3
+		eprint("usage: sirius input.sirius output.c")
+		eprint("   or: sirius --module-root source-root entry.module output.c")
+		return 2
+	let source = read_text(args[!1]) or ""
+	let result = Emit.compile_c_mir(source)
+	if result.error != ""
+		print("ERROR " + str(result.line) + ": " + result.error)
+		return 1
+	if not write_text(args[!2], result.code)
+		eprint("cannot write output")
+		return 2
+	return 0

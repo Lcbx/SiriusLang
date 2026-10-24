@@ -1,0 +1,95 @@
+import hir alias Hir
+import hir_analyze alias HirAnalyze
+import hir_declarations alias HirDeclarations
+import mir alias Mir
+import mir_interpreter alias MirInterpreter
+import mir_ownership alias MirOwnership
+import mir_program alias MirProgram
+import mir_verify alias MirVerify
+import parser alias Parser
+import types alias Types
+# HIR-owned concrete specialization worklist -> MIR -> execution.
+def check(source: string, expected: i64, count: i64) -> bool
+	let parsed = Parser.parse_module(source)
+	if parsed.state.error != ""
+		print(parsed.state.error)
+		return false
+	let declarations = HirDeclarations.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		print(declarations.error)
+		return false
+	let result = MirProgram.mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	if result.error != ""
+		print(result.error)
+		return false
+	if MirOwnership.mir_check_balance(result.program) != "" or MirVerify.mir_audit_failures(result.program).error != ""
+		return false
+	if len(result.program.functions) != count
+		return false
+	let executed = MirInterpreter.mir_execute(result.program, result.entry, Array[Mir.MirValue](), 50000, 30)
+	if executed.error != "" or executed.value.bits != expected
+		print(executed.error)
+		return false
+	return true
+
+# Annotation lookup is per source node, not a scan over another function's HIR.
+def check_annotation_index() -> bool
+	var nodes = Array[Hir.HirNode]()
+	nodes = nodes.append(Hir.HirNode(3, Hir.HIR_NAME, Types.TYPE_TAG_I64, -1))
+	nodes = nodes.append(Hir.HirNode(7, Hir.HIR_FIELD, Types.TYPE_TAG_STRING, 2))
+	nodes = nodes.append(Hir.HirNode(3, Hir.HIR_FIELD, Types.TYPE_TAG_BOOL, 1))
+	nodes = nodes.append(Hir.HirNode(3, Hir.HIR_NAME, Types.TYPE_TAG_F64, -1))
+	let index = Hir.hir_annotation_index(nodes, 9)
+	if Hir.hir_annotation_find(nodes, index, 3, Hir.HIR_NAME) != 0
+		return false
+	if Hir.hir_annotation_find(nodes, index, 3, Hir.HIR_FIELD) != 2
+		return false
+	if Hir.hir_annotation_find(nodes, index, 7, Hir.HIR_FIELD) != 1
+		return false
+	if Hir.hir_annotation_find(nodes, index, 3, HirAnalyze.HIR_ARRAY) != -1
+		return false
+	if Hir.hir_annotation_find(nodes, index, 8, Hir.HIR_NAME) != -1
+		return false
+	return Hir.hir_annotation_find(nodes, index, -1, Hir.HIR_NAME) == -1
+
+def main() -> i64
+	if not check_annotation_index()
+		return 13
+	let repeat = "def sum(a: i64, b: i64) -> i64\n\treturn a + b\ndef main() -> i64\n\treturn sum(20, 1) + sum(20, 1)\n"
+	if not check(repeat, 42, 2)
+		return 1
+	let recursive = "def factorial(n: i64) -> i64\n\tif n <= 1\n\t\treturn 1\n\treturn n * factorial(n - 1)\ndef main() -> i64\n\treturn factorial(5)\n"
+	if not check(recursive, 120, 2)
+		return 2
+	let mutual = "def even(n: i64) -> bool\n\tif n == 0\n\t\treturn true\n\treturn odd(n - 1)\ndef odd(n: i64) -> bool\n\tif n == 0\n\t\treturn false\n\treturn even(n - 1)\ndef main() -> i64\n\tif even(6)\n\t\treturn 42\n\treturn 0\n"
+	if not check(mutual, 42, 3)
+		return 3
+	let multitype = "def discard(x) -> i64\n\treturn 1\ndef main() -> i64\n\treturn discard(0) + discard(true)\n"
+	if not check(multitype, 2, 3)
+		return 4
+	let nested = "def inc(n: i64) -> i64\n\treturn n + 1\ndef twice(n: i64) -> i64\n\treturn inc(inc(n))\ndef main() -> i64\n\treturn twice(40)\n"
+	if not check(nested, 42, 3)
+		return 5
+	# Nonrecursive unannotated return types are inferred during specialization.
+	if not check("def ident(x)\n\treturn x\ndef main() -> i64\n\treturn ident(42)\n", 42, 2)
+		return 6
+	let named = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef size(p: Point) -> i64\n\treturn p.x + p.y\ndef main() -> i64\n\treturn size({x = 20, y = 22})\n"
+	if not check(named, 42, 2)
+		return 7
+	let constructed = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef size(p: Point) -> i64\n\treturn p.x + p.y\ndef main() -> i64\n\treturn size(Point(20, 22))\n"
+	if not check(constructed, 42, 2)
+		return 8
+	let nested_type = "rec Point(x: i64, y: i64)\n\tpub x\n\tpub y\ndef first(items: Array[Point]) -> i64\n\treturn items[!0].x\ndef main() -> i64\n\treturn first([Point(42, 1)])\n"
+	if not check(nested_type, 42, 2)
+		return 9
+	let loop = "def main() -> i64\n\tvar result = 0\n\tfor x in [10, 20, 12]\n\t\tresult = result + x\n\treturn result\n"
+	if not check(loop, 42, 1)
+		return 10
+	let append = "def main() -> i64\n\tlet a = Array[i64]()\n\tlet b = a.append(42)\n\treturn len(a) + b[!0]\n"
+	if not check(append, 42, 1)
+		return 11
+	let loop_control = "def main() -> i64\n\tvar total = 0\n\tfor i in 0..10\n\t\tif i == 2\n\t\t\tcontinue\n\t\tif i == 5\n\t\t\tbreak\n\t\ttotal = total + i\n\treturn total + 34\n"
+	if not check(loop_control, 42, 1)
+		return 12
+	print("PASS HIR specialization worklist and MIR calls")
+	return 0

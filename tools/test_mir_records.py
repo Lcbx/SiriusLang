@@ -3,13 +3,13 @@
 import tempfile
 from pathlib import Path
 
+from project_paths import ROOT
 from build_support import BuildCache, check_native, execute, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.sirius('mir-record', MIR_DRIVER_SOURCES + ('tests/mir/record_driver.sirius',))
+	driver = cache.native_driver('mir-records', ROOT / 'tests/mir/record_driver_native.sirius')
 	with tempfile.TemporaryDirectory() as directory:
 		folder = Path(directory)
 		generated = [folder / 'records.c', folder / 'invalid.c', folder / 'returned.c']

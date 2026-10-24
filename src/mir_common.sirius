@@ -1,14 +1,18 @@
+import types alias Types
+import mir alias Mir
+import mir_verify alias Verify
+
 # Semantics shared by the MIR interpreter and the native C backend.
 
-# The canonical type table reserves TypeIds 0..5 for primitive types.
-# All other valid TypeIds are managed collections; strings are managed too.
-def mir_common_managed(type_id: i64) -> bool
-	return type_id == TYPE_TAG_STRING or type_id >= TYPE_TAG_RECORD
+# Managed storage is determined by the interned descriptor, never by
+# the numeric position of a TypeId in the table.
+export def mir_common_managed(types: Types.TypeTable, type_id: i64) -> bool
+	return Verify.mir_managed_type(types, type_id)
 
 # Both execution backends reject malformed MIR and invalid entry indices
 # before interpreting or generating any code.
-def mir_common_entry_error(program: MirProgram, entry: i64) -> string
-	let error = mir_verify(program)
+export def mir_common_entry_error(program: Mir.MirProgram, entry: i64) -> string
+	let error = Verify.mir_verify(program)
 	if error != ""
 		return error
 	if entry < 0 or entry >= len(program.functions)

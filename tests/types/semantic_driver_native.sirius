@@ -1,0 +1,46 @@
+# Canonical descriptor checks apply to source-free semantic snapshots as well.
+import parser alias Ast
+import hir_declarations alias Decl
+import hir alias Hir
+import mir_semantic alias Semantic
+import types alias Types
+
+# Return true only when an otherwise valid snapshot is rejected for its types.
+def rejected(tree: Ast.ParseState, root: i64, original: Hir.HirModuleDecl, types: Types.TypeTable) -> bool
+	var declarations = original
+	declarations.types = types
+	let saved = Semantic.mir_serialize_semantic(tree, root, declarations)
+	if saved.error != ""
+		return false
+	return Semantic.mir_deserialize_semantic(saved.text).error == "noncanonical generic declaration types"
+
+def main() -> i64
+	let parsed = Ast.parse_module("def main() -> i64\n\treturn 42\n")
+	if parsed.state.error != ""
+		return 1
+	let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return 2
+	let valid = Semantic.mir_serialize_semantic(parsed.state, parsed.node, declarations)
+	if valid.error != "" or Semantic.mir_deserialize_semantic(valid.text).error != ""
+		return 3
+	let array = Types.intern_array_type(declarations.types, Types.TYPE_TAG_STRING)
+	var bad = array.table
+	bad.entries[!array.id] = Types.TypeDescriptor(100, Types.TYPE_TAG_STRING, 0, Array[Types.RecordField]())
+	if not rejected(parsed.state, parsed.node, declarations, bad)
+		return 4
+	bad = array.table
+	bad.entries[!array.id] = Types.TypeDescriptor(Types.TYPE_TAG_ARRAY, array.id, 0, Array[Types.RecordField]())
+	if not rejected(parsed.state, parsed.node, declarations, bad)
+		return 5
+	bad = array.table
+	bad.entries[!array.id] = Types.TypeDescriptor(Types.TYPE_TAG_ARRAY, Types.TYPE_TAG_STRING, 0, [Types.RecordField("x", Types.TYPE_TAG_I64)])
+	if not rejected(parsed.state, parsed.node, declarations, bad)
+		return 6
+	let record = Types.intern_record_type(array.table, [Types.RecordField("a", Types.TYPE_TAG_I64), Types.RecordField("b", Types.TYPE_TAG_STRING)])
+	bad = record.table
+	bad.entries[!record.id] = Types.TypeDescriptor(Types.TYPE_TAG_RECORD, 0, 0, [Types.RecordField("b", Types.TYPE_TAG_STRING), Types.RecordField("a", Types.TYPE_TAG_I64)])
+	if not rejected(parsed.state, parsed.node, declarations, bad)
+		return 7
+	print("PASS canonical semantic snapshots")
+	return 0

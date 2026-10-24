@@ -1,0 +1,49 @@
+import compile_common alias CompileCommon
+import mir alias Mir
+import mir_common alias MirCommon
+import mir_verify alias Verify
+import types alias Types
+# Both the interpreter and C backend must agree on entry validation and
+# ownership classification of canonical primitive/managed TypeIds.
+def main() -> i64
+	let compilation = CompileCommon.CompileResult("ok", "", 0)
+	if compilation.code != "ok" or compilation.error != ""
+		return 5
+	let empty = Mir.new_mir_program(Array[Mir.MirFunction]())
+	if MirCommon.mir_common_entry_error(empty, 0) != "invalid entry function"
+		return 1
+	let table = Types.new_type_table()
+	if MirCommon.mir_common_managed(table, Types.TYPE_TAG_I64) or MirCommon.mir_common_managed(table, Types.TYPE_TAG_BOOL)
+		return 2
+	if not MirCommon.mir_common_managed(table, Types.TYPE_TAG_STRING) or MirCommon.mir_common_managed(table, Types.TYPE_TAG_RECORD)
+		return 3
+	let record = Types.intern_record_type(Types.new_type_table(), Array[Types.RecordField]())
+	if not MirCommon.mir_common_managed(record.table, record.id)
+		return 4
+	if MirCommon.mir_common_managed(table, -1) or MirCommon.mir_common_managed(table, 9999)
+		return 6
+	let optional = Types.intern_optional_type(record.table, Types.TYPE_TAG_I64)
+	if not MirCommon.mir_common_managed(optional.table, optional.id)
+		return 7
+	# A hand-built MIR table must not rebind reserved primitive TypeIds or
+	# smuggle a primitive descriptor into the managed composite range.
+	var invalid_primitive = Types.new_type_table()
+	invalid_primitive.entries[!Types.TYPE_TAG_I64] = Types.TypeDescriptor(Types.TYPE_TAG_STRING, 0, 0, Array[Types.RecordField]())
+	if Verify.mir_verify(Mir.mir_program_with_types(Array[Mir.MirFunction](), invalid_primitive)) != "noncanonical primitive type descriptor"
+		return 8
+	var invalid_composite = Types.new_type_table()
+	invalid_composite.entries = invalid_composite.entries.append(Types.TypeDescriptor(Types.TYPE_TAG_STRING, 0, 0, Array[Types.RecordField]()))
+	if Verify.mir_verify(Mir.mir_program_with_types(Array[Mir.MirFunction](), invalid_composite)) != "noncanonical composite type descriptor"
+		return 9
+	var invalid_array = Types.new_type_table()
+	invalid_array.entries = invalid_array.entries.append(Types.TypeDescriptor(Types.TYPE_TAG_ARRAY, Types.TYPE_TAG_I64, 1, Array[Types.RecordField]()))
+	if Verify.mir_verify(Mir.mir_program_with_types(Array[Mir.MirFunction](), invalid_array)) != "noncanonical container type descriptor"
+		return 10
+	if Types.runtime_ownership(record.table, record.id) != Types.TYPE_OWNERSHIP_OBJECT
+		return 11
+	if Types.runtime_ownership(table, Types.TYPE_TAG_STRING) != Types.TYPE_OWNERSHIP_STRING
+		return 12
+	if Types.runtime_ownership(table, Types.TYPE_TAG_F64) != Types.TYPE_OWNERSHIP_NONE
+		return 13
+	print("PASS MIR backend common semantics")
+	return 0

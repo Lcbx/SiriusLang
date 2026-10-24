@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Instrument MIR-generated C and report self-compilation phase timings.
+"""Profile generated MIR functions while the modular compiler self-compiles.
 
-Profiles the standalone self-hosted compiler. Phase IDs below describe the
-current specialization order, verified against compile_c_mir and mir_build_program.
-This is a diagnostic tool: it never modifies compiler sources or committed C.
+IDs are generated and unstable; do not interpret them as named compiler phases.
+The instrumented C is temporary; compiler sources and committed C are unchanged.
 """
 import argparse
 from pathlib import Path
@@ -13,28 +12,17 @@ import subprocess
 import tempfile
 from time import perf_counter
 
-from build_support import BuildCache, C_FLAGS, require_cc
-from source_manifest import MIR_ONLY_COMPILER_SOURCES, ROOT, combined_sources
+from build_support import BuildCache, C_FLAGS, require_cc, link_flags
+from project_paths import ROOT
 
-# These IDs are checked against the committed bootstrap's top-level
-# specialization calls. Deeper IDs are deliberately not named here: they
-# change when source ordering or specialization changes, and stale mappings
-# previously produced misleading timings (e.g. "HIR specialization" with 168
-# calls, despite being a once-per-compilation stage).
-PHASES = {
-	1: 'compile_c_mir',
-	2: 'parse_module',
-	3: 'hir_module_declarations',
-	4: 'mir_build_program',
-	5: 'mir_emit_c_verified',
-}
-
+# Generated MIR function IDs are unstable across module-root builds.
+# Collect IDs dynamically instead of guessing a mapping to compiler phases.
 HOOKS = r'''
 #define _POSIX_C_SOURCE 200809L
 #include <time.h>
 #include <stdio.h>
 #include <stdint.h>
-#define PROFILE_MAX 256
+#define PROFILE_MAX 4096
 static uint64_t p_inclusive[PROFILE_MAX], p_exclusive[PROFILE_MAX], p_calls[PROFILE_MAX];
 static struct { int id; uint64_t started, child; } p_stack[128];
 static int p_depth;
@@ -70,22 +58,31 @@ static void p_report(void) {
 
 
 def instrument(source: str) -> str:
-	"""Insert profiling only at known specialized-function boundaries."""
-	source = HOOKS + source
-	for index, name in PHASES.items():
-		pattern = rf'(^static [^\n]+\bs_mir_f{index}\([^\n;]*\)\n\{{)(.*?)(?=\nstatic [^\n]+\bs_mir_f\d+\([^\n;]*\)\n\{{|\nint main\()'
-		found = list(re.finditer(pattern, source, re.M | re.S))
-		if len(found) != 1:
-			raise ValueError(f'Cannot locate the {name} specialization f{index}; profile IDs may have changed')
-		match = found[0]
-		body = match.group(2)
+	"""Instrument generated functions by their actual IDs; never assume stable IDs."""
+	pattern = r'^static [^\n]+\bs_mir_f(\d+)\([^\n;]*\)\n\{'
+	matches = list(re.finditer(pattern, source, re.M))
+	if not matches:
+		raise ValueError('No generated MIR functions found')
+	if max(int(m.group(1)) for m in matches) >= 4096:
+		raise ValueError('Too many generated MIR functions for profiler')
+	for match in reversed(matches):
+		index = int(match.group(1))
+		start = match.end()
+		ending = source.find('\n}', start)
+		if ending < 0:
+			raise ValueError(f'Unclosed generated function {index}')
+		body = source[start:ending]
 		if body.count('return returned;') != 1:
-			raise ValueError(f'Unexpected exit layout for {name}')
+			continue
 		body = body.replace('return returned;', f'p_leave({index});\n\treturn returned;')
-		source = source[:match.start()] + match.group(1) + f'\n\tp_enter({index});' + body + source[match.end():]
-	source = source.replace('int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)s_mir_f0(); }',
-		'int main(int argc, char **argv) { s_set_arguments(argc, argv); int result = (int)s_mir_f0(); p_report(); return result; }')
-	return source
+		source = source[:start] + f'\n\tp_enter({index});' + body + source[ending:]
+	main = re.search(r'int main\(int argc, char \*\*argv\) \{ s_set_arguments\(argc, argv\); return \(int\)(s_mir_f\d+\(\)); \}', source)
+	if main is None:
+		raise ValueError('Unknown generated MIR main() layout')
+	source = source[:main.start()] + (
+		'int main(int argc, char **argv) { s_set_arguments(argc, argv); '
+		+ 'int result = (int)' + main.group(1) + '; p_report(); return result; }') + source[main.end():]
+	return HOOKS + source
 
 
 def run(args: list[str], timeout: int) -> subprocess.CompletedProcess[str]:
@@ -108,38 +105,36 @@ def main() -> None:
 		args.keep_dir.mkdir(parents=True, exist_ok=True)
 	with tempfile.TemporaryDirectory() as tmp:
 		work = args.keep_dir or Path(tmp)
-		compiler_source = work / 'mir_compiler.sirius'
-		compiler_source.write_bytes(combined_sources(MIR_ONLY_COMPILER_SOURCES, separator=b''))
 		generated = args.generated_c or work / 'compiler.c'
 		if not args.generated_c:
-			stage1 = args.stage1 or BuildCache(require_cc()).sirius('mir-only-profile-stage1', MIR_ONLY_COMPILER_SOURCES, separator=b'')
-			run([str(stage1), str(compiler_source), str(generated)], args.timeout)
+			stage1 = args.stage1 or BuildCache(require_cc()).seed()
+			run([str(stage1), '--module-root', str(ROOT / 'src'), 'modular_cli', str(generated)], args.timeout)
 		print(f'Generated compiler C: {generated.stat().st_size:,} bytes', flush=True)
 		modified = work / 'compiler.profile.c'
 		modified.write_text(instrument(generated.read_text()))
 		binary = work / 'compiler.profile'
 		c_flags = [f'-O{args.opt}' if flag == '-O0' else flag for flag in C_FLAGS]
 		compile_cmd = [args.cc, *c_flags, '-Wno-unused-function', '-I', str(ROOT / 'runtime'), str(modified),
-			str(ROOT / 'runtime' / 'sirius_runtime.c'), '-lm', '-o', str(binary)]
+			str(ROOT / 'runtime' / 'sirius_runtime.c'), *link_flags(args.cc), '-o', str(binary)]
 		run(compile_cmd, args.timeout)
 		out = work / 'next.c'
 		start = perf_counter()
-		result = run([str(binary), str(compiler_source), str(out)], args.timeout)
+		result = run([str(binary), '--module-root', str(ROOT / 'src'), 'modular_cli', str(out)], args.timeout)
 		wall = perf_counter() - start
 		if out.read_bytes() != generated.read_bytes():
 			raise RuntimeError('Profiled compiler changed its C output')
 		print(f'Native MIR self-compile (-O{args.opt}): {wall:.3f}s; output matches')
-		print('Phase,calls,inclusive_ms,exclusive_ms')
-		observed = set()
+		print('function_id,calls,inclusive_ms,exclusive_ms')
+		rows = []
 		for line in result.stderr.splitlines():
 			if line.startswith('PROFILE ') and not line.startswith('PROFILE id,'):
 				index, calls, inclusive, exclusive = line.split(' ', 1)[1].split(',')
-				if int(calls) != 1:
-					raise RuntimeError(f'Stale profiler mapping for {PHASES[int(index)]}: expected one call, got {calls}')
-				observed.add(int(index))
-				print(f'{PHASES[int(index)]},{calls},{inclusive},{exclusive}')
-		if observed != set(PHASES):
-			raise RuntimeError(f'Missing profiler phases: {set(PHASES) - observed}')
+				rows.append((int(index), int(calls), float(inclusive), float(exclusive)))
+		if not rows:
+			raise RuntimeError('No generated MIR function samples; profiler layout changed')
+		for index, calls, inclusive, exclusive in sorted(rows, key=lambda item: -item[3])[:30]:
+			print(f's_mir_f{index},{calls},{inclusive:.3f},{exclusive:.3f}')
+		print('Function IDs are generated and unstable; no semantic phase names are inferred.')
 
 
 if __name__ == '__main__':

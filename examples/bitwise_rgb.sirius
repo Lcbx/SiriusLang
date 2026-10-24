@@ -1,0 +1,11 @@
+# i64 shifts and bitwise operators can pack small integer fields.
+def pack_rgb(red: i64, green: i64, blue: i64) -> i64
+	return (red << 16) | (green << 8) | blue
+
+def main() -> i64
+	let pixel = pack_rgb(18, 52, 86)
+	print(pixel)
+	print((pixel >> 16) & 255)
+	print((pixel >> 8) & 255)
+	print(pixel & 255)
+	return 0

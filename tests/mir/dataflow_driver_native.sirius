@@ -1,0 +1,63 @@
+import mir alias Mir
+import mir_cfg alias MirCfg
+import mir_lifetime alias MirLifetime
+import mir_ownership alias MirOwnership
+import types alias Types
+# Exercise dense register sets and both forward/backward worklists on a long CFG.
+def dataflow_program() -> Mir.MirProgram
+	var blocks = Array[Mir.MirBlock]()
+	var init = Array[Mir.MirInstruction]()
+	init = init.append(Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, 1))
+	init = init.append(Mir.mir_string(1, "alive"))
+	blocks = blocks.append(Mir.MirBlock(init, Mir.mir_jump(1)))
+	for i in 1..120
+		let code = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 1, -1, 0))
+		var term = Mir.mir_jump(i + 1)
+		if i == 119
+			term = Mir.mir_return(2)
+		elif i == 75
+			term = Mir.mir_branch(0, 30, i + 1)
+		elif i % 5 == 0 and i < 118
+			term = Mir.mir_branch(0, i + 1, i + 2)
+		blocks = blocks.append(Mir.MirBlock(code, term))
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
+
+def main() -> i64
+	let function = dataflow_program().functions[!0]
+	let cfg = MirCfg.mir_cfg_facts(function)
+	let reachable = MirCfg.mir_ownership_reachable(function)
+	let must = MirOwnership.mir_ownership_states(function)
+	let maybe = MirOwnership.mir_ownership_maybe_states(function)
+	let live = MirLifetime.mir_lifetime_states(function)
+	let live_cfg = MirLifetime.mir_lifetime_states_cfg(function, cfg)
+	let maybe_cfg = MirOwnership.mir_ownership_dataflow_cfg(function, true, cfg.reached, cfg.predecessors)
+	if len(must) != 120 or len(live) != 120
+		return 1
+	if reached_check(reachable) == false
+		return 2
+	if MirOwnership.mir_ownership_get(must[!119].incoming, 1) != 1 or MirOwnership.mir_ownership_get(maybe[!119].outgoing, 1) != 1
+		return 3
+	if live[!0].live_in[!1] != 0 or live[!0].live_out[!1] != 1
+		return 4
+	if live[!30].live_in[!1] != 1 or live[!119].live_in[!1] != 1
+		return 5
+	# Shared CFG facts agree with standalone forward and backward analyses,
+	# including the loop backedge and branch fan-in.
+	if not MirOwnership.mir_ownership_equal(cfg.reached, reachable) or len(cfg.predecessors[!30]) < 2
+		return 6
+	if not MirLifetime.mir_live_equal(live_cfg[!30].live_in, live[!30].live_in) or not MirLifetime.mir_live_equal(live_cfg[!119].live_out, live[!119].live_out)
+		return 7
+	if not MirOwnership.mir_ownership_equal(maybe_cfg[!119].outgoing, maybe[!119].outgoing)
+		return 8
+	# Exit state must remain empty even when other blocks derive live values
+	# from the same initially empty CoW array.
+	if live[!119].live_out[!1] != 0 or live[!118].live_out[!1] != 1
+		return 9
+	print("PASS MIR dense worklist CFG")
+	return 0
+
+def reached_check(reached: Array[i64]) -> bool
+	for i in 0..len(reached)
+		if reached[!i] != 1
+			return false
+	return true

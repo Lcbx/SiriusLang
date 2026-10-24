@@ -1,142 +1,165 @@
+import types alias Types
+
 # Executable typed CFG MIR. Registers are mutable slots within each call frame.
 # Scalar values, owned strings, immutable structural records, arrays and dictionaries. Every initialized string register owns one
 # reference; copy/retain duplicates, move transfers, release invalidates.
 
-let MIR_CONST_I64 = 1
-let MIR_CONST_BOOL = 2
-let MIR_COPY = 3
-let MIR_ADD_I64 = 4
-let MIR_SUB_I64 = 5
-let MIR_MUL_I64 = 6
-let MIR_DIV_I64 = 7
-let MIR_REM_I64 = 8
-let MIR_EQ_I64 = 9
-let MIR_LT_I64 = 10
-let MIR_LE_I64 = 11
-let MIR_NOT_BOOL = 12
-let MIR_EQ_BOOL = 13
-let MIR_NEG_I64 = 14
-let MIR_CALL = 15
-let MIR_PRINT = 16
-let MIR_CONST_STRING = 17
-let MIR_RETAIN = 18
-let MIR_MOVE = 19
-let MIR_RELEASE = 20
-let MIR_STRING_LENGTH = 21
-let MIR_STRING_CONCAT = 22
-let MIR_RECORD_NEW = 23
-let MIR_RECORD_GET = 24
-let MIR_ARRAY_NEW = 25
-let MIR_ARRAY_GET = 26
-let MIR_ARRAY_LENGTH = 27
-let MIR_ARRAY_SET = 28
-let MIR_DICT_NEW = 29
-let MIR_DICT_INSERT = 30
-let MIR_DICT_GET_OR = 31
-let MIR_DICT_LENGTH = 32
-let MIR_OPTIONAL_NONE = 33
-let MIR_OPTIONAL_SOME = 34
-let MIR_OPTIONAL_HAS = 35
-let MIR_OPTIONAL_UNWRAP = 36
-let MIR_ARRAY_GET_OPTIONAL = 37
-let MIR_DICT_GET_OPTIONAL = 38
-let MIR_RELEASE_IF_INIT = 39
-let MIR_NONZERO_I64 = 40
-let MIR_DIV_NO_OVERFLOW_I64 = 41
-let MIR_ARRAY_INDEX_VALID = 42
-let MIR_ARGUMENTS = 43
-let MIR_READ_TEXT = 44
-let MIR_WRITE_TEXT = 45
-let MIR_STR_I64 = 46
-let MIR_ARRAY_APPEND = 47
-let MIR_STRING_SLICE = 48
-let MIR_STRING_FIND = 49
-let MIR_STRING_BYTE_AT = 50
-let MIR_STRING_STARTS_WITH = 51
-let MIR_STRING_ENDS_WITH = 52
-let MIR_STRING_JOIN = 53
-let MIR_EQ_STRING = 54
-let MIR_LT_STRING = 55
-let MIR_LE_STRING = 56
-let MIR_CONST_F64 = 57
-let MIR_ADD_F64 = 58
-let MIR_SUB_F64 = 59
-let MIR_MUL_F64 = 60
-let MIR_DIV_F64 = 61
-let MIR_EQ_F64 = 62
-let MIR_LT_F64 = 63
-let MIR_LE_F64 = 64
-let MIR_BIT_AND_I64 = 80
-let MIR_BIT_OR_I64 = 81
-let MIR_SHL_I64 = 82
-let MIR_SHR_I64 = 83
-let MIR_NEG_F64 = 65
-let MIR_SQRT_F64 = 66
-let MIR_RECORD_SET = 67
-let MIR_RECORD_ARRAY_APPEND = 68
-let MIR_CALL_MOVE = 69
-let MIR_EPRINT = 70
-let MIR_LIST_DIR = 71
-let MIR_IS_DIR = 72
+export let MIR_CONST_I64 = 1
+export let MIR_CONST_BOOL = 2
+export let MIR_COPY = 3
+export let MIR_ADD_I64 = 4
+export let MIR_SUB_I64 = 5
+export let MIR_MUL_I64 = 6
+export let MIR_DIV_I64 = 7
+export let MIR_REM_I64 = 8
+export let MIR_EQ_I64 = 9
+export let MIR_LT_I64 = 10
+export let MIR_LE_I64 = 11
+export let MIR_NOT_BOOL = 12
+export let MIR_EQ_BOOL = 13
+export let MIR_NEG_I64 = 14
+export let MIR_CALL = 15
+export let MIR_PRINT = 16
+export let MIR_CONST_STRING = 17
+export let MIR_RETAIN = 18
+export let MIR_MOVE = 19
+export let MIR_RELEASE = 20
+export let MIR_STRING_LENGTH = 21
+export let MIR_STRING_CONCAT = 22
+export let MIR_RECORD_NEW = 23
+export let MIR_RECORD_GET = 24
+export let MIR_ARRAY_NEW = 25
+export let MIR_ARRAY_GET = 26
+export let MIR_ARRAY_LENGTH = 27
+export let MIR_ARRAY_SET = 28
+export let MIR_DICT_NEW = 29
+export let MIR_DICT_INSERT = 30
+export let MIR_DICT_GET_OR = 31
+export let MIR_DICT_LENGTH = 32
+export let MIR_OPTIONAL_NONE = 33
+export let MIR_OPTIONAL_SOME = 34
+export let MIR_OPTIONAL_HAS = 35
+export let MIR_OPTIONAL_UNWRAP = 36
+export let MIR_ARRAY_GET_OPTIONAL = 37
+export let MIR_DICT_GET_OPTIONAL = 38
+export let MIR_RELEASE_IF_INIT = 39
+export let MIR_NONZERO_I64 = 40
+export let MIR_DIV_NO_OVERFLOW_I64 = 41
+export let MIR_ARRAY_INDEX_VALID = 42
+export let MIR_ARGUMENTS = 43
+export let MIR_READ_TEXT = 44
+export let MIR_WRITE_TEXT = 45
+export let MIR_STR_I64 = 46
+export let MIR_ARRAY_APPEND = 47
+export let MIR_STRING_SLICE = 48
+export let MIR_STRING_FIND = 49
+export let MIR_STRING_BYTE_AT = 50
+export let MIR_STRING_STARTS_WITH = 51
+export let MIR_STRING_ENDS_WITH = 52
+export let MIR_STRING_JOIN = 53
+export let MIR_EQ_STRING = 54
+export let MIR_LT_STRING = 55
+export let MIR_LE_STRING = 56
+export let MIR_CONST_F64 = 57
+export let MIR_ADD_F64 = 58
+export let MIR_SUB_F64 = 59
+export let MIR_MUL_F64 = 60
+export let MIR_DIV_F64 = 61
+export let MIR_EQ_F64 = 62
+export let MIR_LT_F64 = 63
+export let MIR_LE_F64 = 64
+export let MIR_BIT_AND_I64 = 80
+export let MIR_BIT_OR_I64 = 81
+export let MIR_SHL_I64 = 82
+export let MIR_SHR_I64 = 83
+export let MIR_NEG_F64 = 65
+export let MIR_SQRT_F64 = 66
+export let MIR_RECORD_SET = 67
+export let MIR_RECORD_ARRAY_APPEND = 68
+export let MIR_CALL_MOVE = 69
+export let MIR_EPRINT = 70
+export let MIR_LIST_DIR = 71
+export let MIR_IS_DIR = 72
+export let MIR_RECORD_NEW_MOVE = 73
+export let MIR_ARRAY_NEW_MOVE = 74
+export let MIR_SHIFT_VALID = 75
 
-let MIR_JUMP = 1
-let MIR_BRANCH = 2
-let MIR_RETURN = 3
-let MIR_PANIC = 4
+export let MIR_JUMP = 1
+export let MIR_BRANCH = 2
+export let MIR_RETURN = 3
+export let MIR_PANIC = 4
 
-# Runtime failure contract. Some operations have a recoverable, explicit
-# CFG trap (GUARDED); managed allocations may still terminate in the runtime
-# without unwinding (ABORT). An instruction can have both properties.
-rec MirFailureInfo(guarded: bool, abort: bool)
-rec MirFailureAudit(error: string, guarded: i64, aborts: i64)
+# Failure classes are not exclusive: an operation can return a recoverable
+# status/value on one path and abort on an allocation/runtime failure.
+# guarded: an invalid operation branches to an explicit fatal MIR_PANIC edge.
+# abort: native runtime may terminate without unwinding (for example OOM).
+# in_band: some unsuccessful operations return a normal value (Optional,
+# bool or IEEE-754 result). Future Result unions use this same normal-return
+# ownership contract, with exhaustive matching checked at the HIR level.
+export rec MirFailureInfo(guarded: bool, abort: bool, in_band: bool)
+export rec MirFailureAudit(error: string, guarded: i64, aborts: i64, in_band: i64)
 
-def mir_failure_info(op: i64) -> MirFailureInfo
-	if op == MIR_DIV_I64 or op == MIR_REM_I64 or op == MIR_ARRAY_GET or op == MIR_OPTIONAL_UNWRAP
-		return MirFailureInfo(true, false)
+export def mir_failure_info(op: i64) -> MirFailureInfo
+	if op == MIR_DIV_I64 or op == MIR_REM_I64 or op == MIR_SHL_I64 or op == MIR_SHR_I64 or op == MIR_ARRAY_GET or op == MIR_OPTIONAL_UNWRAP
+		return MirFailureInfo(true, false, false)
 	if op == MIR_ARRAY_SET
-		return MirFailureInfo(true, true)
-	if op == MIR_ARGUMENTS or op == MIR_READ_TEXT or op == MIR_WRITE_TEXT or op == MIR_LIST_DIR or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_ARRAY_NEW or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
-		return MirFailureInfo(false, true)
-	return MirFailureInfo(false, false)
+		return MirFailureInfo(true, true, false)
+	# In-band failures are regular values and do not introduce an exceptional
+	# control-flow edge. Allocation failures are still process-fatal.
+	if op == MIR_READ_TEXT or op == MIR_LIST_DIR or op == MIR_WRITE_TEXT or op == MIR_ARRAY_GET_OPTIONAL or op == MIR_DICT_GET_OPTIONAL
+		return MirFailureInfo(false, true, true)
+	if op == MIR_STRING_FIND or op == MIR_STRING_BYTE_AT or op == MIR_IS_DIR
+		return MirFailureInfo(false, true, true)
+	if op == MIR_DIV_F64 or op == MIR_SQRT_F64
+		return MirFailureInfo(false, false, true)
+	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME
+		return MirFailureInfo(false, true, false)
+	return MirFailureInfo(false, false, false)
 
 # immediate carries literal bits or a function index. A call uses inputs to
 # identify argument registers, in evaluation order. All other operands are
 # register indices. Unused operands are -1.
-rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64], text: string)
-rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
-rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
-rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
-rec MirNamedExport(name: string, function_id: i64)
-rec MirNamedImport(name: string, function_id: i64)
-rec MirProgram(functions: Array[MirFunction])
-	pub types = new_type_table()
+export rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64], text: string)
+export rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
+export rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
+export rec MirFunction(argument_count: i64, return_type: i64, register_types: Array[i64], blocks: Array[MirBlock], entry: i64)
+export rec MirNamedExport(name: string, function_id: i64)
+export rec MirNamedImport(name: string, function_id: i64)
+export rec MirProgram(functions: Array[MirFunction], types: Types.TypeTable)
 
-def mir_program_with_types(functions: Array[MirFunction], types: TypeTable) -> MirProgram
-	var program = MirProgram(functions)
+export def new_mir_program(functions: Array[MirFunction]) -> MirProgram
+	return MirProgram(functions, Types.new_type_table())
+
+export def mir_program_with_types(functions: Array[MirFunction], types: Types.TypeTable) -> MirProgram
+	var program = new_mir_program(functions)
 	program.types = types
 	return program
 
 # Integer/boolean payloads use bits, f64 uses real, and strings use text.
 # type_id 0 represents an uninitialized register.
-rec MirValue(type_id: i64, bits: i64, text: string)
-	pub real = 0.0
-rec MirHeapRecord(type_id: i64, fields: Array[MirValue], refs: i64)
-rec MirOutcome(value: MirValue, error: string, steps: i64)
-	pub heap = Array[MirHeapRecord]()
+export rec MirValue(type_id: i64, bits: i64, text: string, real: f64)
 
-def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
+export def new_mir_value(type_id: i64, bits: i64, text: string) -> MirValue
+	return MirValue(type_id, bits, text, 0.0)
+export rec MirHeapRecord(type_id: i64, fields: Array[MirValue], refs: i64)
+export rec MirOutcome(value: MirValue, error: string, steps: i64, heap: Array[MirHeapRecord])
+
+export def new_mir_outcome(value: MirValue, error: string, steps: i64) -> MirOutcome
+	return MirOutcome(value, error, steps, Array[MirHeapRecord]())
+
+export def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
 	return MirInstruction(op, dst, first, second, immediate, Array[i64](), "")
 
-def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
+export def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
 	return MirInstruction(MIR_CALL, dst, -1, -1, function_id, inputs, "")
 
 # Like MIR_CALL, but transfers first and any additional managed inputs
 # selected by the bitmask in second. The mask indexes argument positions,
 # not registers, and supports positions 0..61 (i64 without sign overflow).
-def mir_call_move(dst: i64, function_id: i64, inputs: Array[i64], source: i64) -> MirInstruction
+export def mir_call_move(dst: i64, function_id: i64, inputs: Array[i64], source: i64) -> MirInstruction
 	return MirInstruction(MIR_CALL_MOVE, dst, source, 0, function_id, inputs, "")
 
-def mir_call_moves(dst: i64, function_id: i64, inputs: Array[i64], sources: Array[i64]) -> MirInstruction
+export def mir_call_moves(dst: i64, function_id: i64, inputs: Array[i64], sources: Array[i64]) -> MirInstruction
 	var mask = 0
 	var bit = 1
 	for i in 0..len(inputs)
@@ -148,7 +171,34 @@ def mir_call_moves(dst: i64, function_id: i64, inputs: Array[i64], sources: Arra
 			bit *= 2
 	return MirInstruction(MIR_CALL_MOVE, dst, sources[!0], mask, function_id, inputs, "")
 
-def mir_call_move_at(ins: MirInstruction, position: i64) -> bool
+# Constructor move uses the same argument-position encoding as CALL_MOVE.
+# Only distinct, last-use managed inputs may be transferred; scalar and
+# repeated arguments remain borrowed.
+export def mir_constructor_moves(op: i64, dst: i64, inputs: Array[i64], sources: Array[i64]) -> MirInstruction
+	let call = mir_call_moves(dst, 0, inputs, sources)
+	return MirInstruction(op, dst, call.first, call.second, 0, inputs, "")
+
+export def mir_input_move_at(ins: MirInstruction, position: i64) -> bool
+	if ins.op != MIR_CALL_MOVE and ins.op != MIR_RECORD_NEW_MOVE and ins.op != MIR_ARRAY_NEW_MOVE
+		return false
+	if ins.inputs[!position] == ins.first
+		return true
+	if ins.second <= 0
+		return false
+	var mask = ins.second
+	for i in 0..position
+		mask = mask / 2
+	return mask % 2 == 1
+
+export def mir_input_moves_register(ins: MirInstruction, register: i64) -> bool
+	if len(ins.inputs) > 0 and register == ins.first and mir_input_move_at(ins, 0)
+		return true
+	for i in 0..len(ins.inputs)
+		if ins.inputs[!i] == register and mir_input_move_at(ins, i)
+			return true
+	return false
+
+export def mir_call_move_at(ins: MirInstruction, position: i64) -> bool
 	if ins.op != MIR_CALL_MOVE
 		return false
 	if ins.inputs[!position] == ins.first
@@ -160,7 +210,7 @@ def mir_call_move_at(ins: MirInstruction, position: i64) -> bool
 		mask = mask / 2
 	return mask % 2 == 1
 
-def mir_call_moves_register(ins: MirInstruction, register: i64) -> bool
+export def mir_call_moves_register(ins: MirInstruction, register: i64) -> bool
 	if ins.op != MIR_CALL_MOVE
 		return false
 	if register == ins.first
@@ -170,79 +220,79 @@ def mir_call_moves_register(ins: MirInstruction, register: i64) -> bool
 			return true
 	return false
 
-def mir_string(dst: i64, value: string) -> MirInstruction
+export def mir_string(dst: i64, value: string) -> MirInstruction
 	return MirInstruction(MIR_CONST_STRING, dst, -1, -1, 0, Array[i64](), value)
 
-def mir_record_new(dst: i64, fields: Array[i64]) -> MirInstruction
+export def mir_record_new(dst: i64, fields: Array[i64]) -> MirInstruction
 	return MirInstruction(MIR_RECORD_NEW, dst, -1, -1, 0, fields, "")
 
-def mir_record_get(dst: i64, owner: i64, field: i64) -> MirInstruction
+export def mir_record_get(dst: i64, owner: i64, field: i64) -> MirInstruction
 	return mir_op(MIR_RECORD_GET, dst, owner, -1, field)
 
 # Consumes owner and returns the updated record, cloning only when shared.
-def mir_record_set(dst: i64, owner: i64, field: i64, value: i64) -> MirInstruction
+export def mir_record_set(dst: i64, owner: i64, field: i64, value: i64) -> MirInstruction
 	return mir_op(MIR_RECORD_SET, dst, owner, value, field)
 
 # Consumes a record and appends into its array field without retaining
 # the old array merely to replace that same field.
-def mir_record_array_append(dst: i64, owner: i64, field: i64, value: i64) -> MirInstruction
+export def mir_record_array_append(dst: i64, owner: i64, field: i64, value: i64) -> MirInstruction
 	return mir_op(MIR_RECORD_ARRAY_APPEND, dst, owner, value, field)
 
-def mir_array_new(dst: i64, elements: Array[i64]) -> MirInstruction
+export def mir_array_new(dst: i64, elements: Array[i64]) -> MirInstruction
 	return MirInstruction(MIR_ARRAY_NEW, dst, -1, -1, 0, elements, "")
 
-def mir_array_get(dst: i64, owner: i64, index: i64) -> MirInstruction
+export def mir_array_get(dst: i64, owner: i64, index: i64) -> MirInstruction
 	return mir_op(MIR_ARRAY_GET, dst, owner, index, 0)
 
 # Consumes owner: transfers its owned reference to dst (which may equal owner).
 # Shared arrays are copied before mutation; uniquely owned arrays mutate in place.
-def mir_array_append(dst: i64, owner: i64, value: i64) -> MirInstruction
+export def mir_array_append(dst: i64, owner: i64, value: i64) -> MirInstruction
 	return mir_op(MIR_ARRAY_APPEND, dst, owner, value, 0)
 
-def mir_array_set(dst: i64, owner: i64, index: i64, value: i64) -> MirInstruction
+export def mir_array_set(dst: i64, owner: i64, index: i64, value: i64) -> MirInstruction
 	return MirInstruction(MIR_ARRAY_SET, dst, owner, index, value, Array[i64](), "")
 
 # The C backend stores dictionary entries in S_Dict through an owned wrapper;
 # the interpreter uses its own list representation. GET_OR eagerly evaluates
 # its fallback; source `get(...) or fallback` lowers through Optional CFG.
-def mir_dict_new(dst: i64) -> MirInstruction
+export def mir_dict_new(dst: i64) -> MirInstruction
 	return mir_op(MIR_DICT_NEW, dst, -1, -1, 0)
 
-def mir_dict_insert(dst: i64, owner: i64, key: i64, value: i64) -> MirInstruction
+export def mir_dict_insert(dst: i64, owner: i64, key: i64, value: i64) -> MirInstruction
 	return MirInstruction(MIR_DICT_INSERT, dst, owner, -1, 0, [key, value], "")
 
-def mir_dict_get_or(dst: i64, owner: i64, key: i64, fallback: i64) -> MirInstruction
+export def mir_dict_get_or(dst: i64, owner: i64, key: i64, fallback: i64) -> MirInstruction
 	return mir_op(MIR_DICT_GET_OR, dst, owner, key, fallback)
 
-def mir_dict_length(dst: i64, owner: i64) -> MirInstruction
+export def mir_dict_length(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_DICT_LENGTH, dst, owner, -1, 0)
 
-def mir_optional_none(dst: i64) -> MirInstruction
+export def mir_optional_none(dst: i64) -> MirInstruction
 	return mir_op(MIR_OPTIONAL_NONE, dst, -1, -1, 0)
 
-def mir_optional_some(dst: i64, value: i64) -> MirInstruction
+export def mir_optional_some(dst: i64, value: i64) -> MirInstruction
 	return mir_op(MIR_OPTIONAL_SOME, dst, value, -1, 0)
 
-def mir_optional_has(dst: i64, owner: i64) -> MirInstruction
+export def mir_optional_has(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_OPTIONAL_HAS, dst, owner, -1, 0)
 
-def mir_optional_unwrap(dst: i64, owner: i64) -> MirInstruction
+export def mir_optional_unwrap(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_OPTIONAL_UNWRAP, dst, owner, -1, 0)
 
-def mir_array_get_optional(dst: i64, owner: i64, index: i64) -> MirInstruction
+export def mir_array_get_optional(dst: i64, owner: i64, index: i64) -> MirInstruction
 	return mir_op(MIR_ARRAY_GET_OPTIONAL, dst, owner, index, 0)
 
-def mir_dict_get_optional(dst: i64, owner: i64, key: i64) -> MirInstruction
+export def mir_dict_get_optional(dst: i64, owner: i64, key: i64) -> MirInstruction
 	return mir_op(MIR_DICT_GET_OPTIONAL, dst, owner, key, 0)
 
-def mir_jump(target: i64) -> MirTerminator
+export def mir_jump(target: i64) -> MirTerminator
 	return MirTerminator(MIR_JUMP, -1, target, -1, "")
 
-def mir_branch(condition: i64, yes: i64, no: i64) -> MirTerminator
+export def mir_branch(condition: i64, yes: i64, no: i64) -> MirTerminator
 	return MirTerminator(MIR_BRANCH, condition, yes, no, "")
 
-def mir_return(source: i64) -> MirTerminator
+export def mir_return(source: i64) -> MirTerminator
 	return MirTerminator(MIR_RETURN, source, -1, -1, "")
 
-def mir_panic(message: string) -> MirTerminator
+export def mir_panic(message: string) -> MirTerminator
 	return MirTerminator(MIR_PANIC, -1, -1, -1, message)

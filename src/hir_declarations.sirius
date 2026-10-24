@@ -1,39 +1,34 @@
-def hir_ast_child(tree: ParseState, id: i64, offset: i64) -> i64
-	let node = tree.nodes[!id]
-	return tree.edges[!node.first + offset]
+import types alias Types
+import parser alias Ast
+import hir alias Hir
+import hir_constants alias Constants
 
-def hir_ast_text(tree: ParseState, id: i64) -> string
-	return token_text(tree.source, tree.tokens[!tree.nodes[!id].token])
+export def hir_declaration_error(functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], message: string, line: i64) -> Hir.HirModuleDecl
+	return Hir.new_hir_module_decl(functions, constants, Types.new_type_table(), Array[Hir.HirConstantValue](), message, line)
 
-def hir_ast_line(tree: ParseState, id: i64) -> i64
-	return tree.tokens[!tree.nodes[!id].token].line
-
-def hir_declaration_error(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], message: string, line: i64) -> HirModuleDecl
-	return HirModuleDecl(functions, constants, new_type_table(), Array[HirConstantValue](), message, line)
-
-def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
-	var functions = Array[HirFunctionDecl]()
+export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirModuleDecl
+	var functions = Array[Hir.HirFunctionDecl]()
 	var names = Array[string]()
-	var constants = Array[HirModuleConstant]()
-	var types = new_type_table()
-	var values = Array[HirConstantValue]()
+	var constants = Array[Hir.HirModuleConstant]()
+	var types = Types.new_type_table()
+	var values = Array[Hir.HirConstantValue]()
 	let module = tree.nodes[!root]
-	var imports = Array[HirImport]()
+	var imports = Array[Hir.HirImport]()
 	var exports = Array[string]()
-	var reexports = Array[HirReexport]()
+	var reexports = Array[Hir.HirReexport]()
 	for i in 0..module.count
-		var id = hir_ast_child(tree, root, i)
+		var id = Hir.hir_ast_child(tree, root, i)
 		var entry = tree.nodes[!id]
-		if entry.kind == NODE_IMPORT
+		if entry.kind == Ast.NODE_IMPORT
 			var path = ""
 			var alias = ""
 			for j in 0..entry.count
-				let child = hir_ast_child(tree, id, j)
+				let child = Hir.hir_ast_child(tree, id, j)
 				let item = tree.nodes[!child]
-				if item.kind == NODE_BINDING
-					alias = hir_ast_text(tree, child)
+				if item.kind == Ast.NODE_BINDING
+					alias = Hir.hir_ast_text(tree, child)
 				else
-					let segment = hir_ast_text(tree, child)
+					let segment = Hir.hir_ast_text(tree, child)
 					if path != ""
 						path += "."
 					path += segment
@@ -41,109 +36,109 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 						alias = segment
 			for previous in imports
 				if previous.alias == alias
-					return hir_declaration_error(functions, constants, "duplicate import alias '" + alias + "'", hir_ast_line(tree, id))
-			imports = imports.append(HirImport(path, alias))
+					return hir_declaration_error(functions, constants, "duplicate import alias '" + alias + "'", Hir.hir_ast_line(tree, id))
+			imports = imports.append(Hir.HirImport(path, alias))
 			continue
-		if entry.kind == NODE_EXPORT
+		if entry.kind == Ast.NODE_EXPORT
 			let exported = id
-			id = hir_ast_child(tree, id, 0)
+			id = Hir.hir_ast_child(tree, id, 0)
 			entry = tree.nodes[!id]
-			if entry.kind == NODE_REEXPORT
-				let owner = hir_ast_child(tree, id, 0)
-				var public_name = hir_ast_text(tree, id)
+			if entry.kind == Ast.NODE_REEXPORT
+				let owner = Hir.hir_ast_child(tree, id, 0)
+				var public_name = Hir.hir_ast_text(tree, id)
 				if tree.nodes[!exported].count == 2
-					public_name = hir_ast_text(tree, hir_ast_child(tree, exported, 1))
-				reexports = reexports.append(HirReexport(hir_ast_text(tree, owner), hir_ast_text(tree, id), public_name))
+					public_name = Hir.hir_ast_text(tree, Hir.hir_ast_child(tree, exported, 1))
+				reexports = reexports.append(Hir.HirReexport(Hir.hir_ast_text(tree, owner), Hir.hir_ast_text(tree, id), public_name))
 				continue
-			if entry.kind != NODE_DEF and entry.kind != NODE_LET and entry.kind != NODE_REC
-				return hir_declaration_error(functions, constants, "export requires def, rec or let", hir_ast_line(tree, id))
-			if entry.kind == NODE_DEF and entry.count < 2
-				return hir_declaration_error(functions, constants, "export requires an explicit return type", hir_ast_line(tree, id))
+			if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_REC
+				return hir_declaration_error(functions, constants, "export requires def, rec or let", Hir.hir_ast_line(tree, id))
+			if entry.kind == Ast.NODE_DEF and entry.count < 2
+				return hir_declaration_error(functions, constants, "export requires an explicit return type", Hir.hir_ast_line(tree, id))
 			var has_return = false
 			for j in 0..entry.count - 1
-				if tree.nodes[!hir_ast_child(tree, id, j)].kind == NODE_TYPE
+				if tree.nodes[!Hir.hir_ast_child(tree, id, j)].kind == Ast.NODE_TYPE
 					has_return = true
-			if entry.kind == NODE_DEF and not has_return
-				return hir_declaration_error(functions, constants, "exported function requires a return type", hir_ast_line(tree, id))
-			exports = exports.append(hir_ast_text(tree, id))
-		let name = hir_ast_text(tree, id)
+			if entry.kind == Ast.NODE_DEF and not has_return
+				return hir_declaration_error(functions, constants, "exported function requires a return type", Hir.hir_ast_line(tree, id))
+			exports = exports.append(Hir.hir_ast_text(tree, id))
+		let name = Hir.hir_ast_text(tree, id)
 		for imported in imports
 			if imported.alias == name
-				return hir_declaration_error(functions, constants, "declaration shadows module alias '" + name + "'", hir_ast_line(tree, id))
-		if entry.kind != NODE_DEF and entry.kind != NODE_REC and entry.kind != NODE_LET and entry.kind != NODE_EXTERN_DEF
-			return hir_declaration_error(functions, constants, "unsupported module statement", hir_ast_line(tree, id))
-		if (name == "print" or name == "eprint") and (entry.kind == NODE_DEF or entry.kind == NODE_REC or entry.kind == NODE_EXTERN_DEF)
-			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+				return hir_declaration_error(functions, constants, "declaration shadows module alias '" + name + "'", Hir.hir_ast_line(tree, id))
+		if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_REC and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_EXTERN_DEF
+			return hir_declaration_error(functions, constants, "unsupported module statement", Hir.hir_ast_line(tree, id))
+		if (name == "print" or name == "eprint") and (entry.kind == Ast.NODE_DEF or entry.kind == Ast.NODE_REC or entry.kind == Ast.NODE_EXTERN_DEF)
+			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", Hir.hir_ast_line(tree, id))
 		for seen in names
 			if seen == name
-				if entry.kind == NODE_LET
-					return hir_declaration_error(functions, constants, "duplicate module name", hir_ast_line(tree, id))
-				return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", hir_ast_line(tree, id))
+				if entry.kind == Ast.NODE_LET
+					return hir_declaration_error(functions, constants, "duplicate module name", Hir.hir_ast_line(tree, id))
+				return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", Hir.hir_ast_line(tree, id))
 		names = names.append(name)
-		if entry.kind == NODE_LET
+		if entry.kind == Ast.NODE_LET
 			if entry.count == 0
-				return hir_declaration_error(functions, constants, "module constant requires initializer", hir_ast_line(tree, id))
-			let initializer = hir_ast_child(tree, id, entry.count - 1)
-			let evaluated = hir_eval_constant(types, values, tree, initializer, constants)
+				return hir_declaration_error(functions, constants, "module constant requires initializer", Hir.hir_ast_line(tree, id))
+			let initializer = Hir.hir_ast_child(tree, id, entry.count - 1)
+			let evaluated = Constants.hir_eval_constant(types, values, tree, initializer, constants)
 			if not evaluated.valid
-				return hir_declaration_error(functions, constants, "unsupported module constant initializer", hir_ast_line(tree, id))
+				return hir_declaration_error(functions, constants, "unsupported module constant initializer", Hir.hir_ast_line(tree, id))
 			types = evaluated.table
 			values = evaluated.values
 			let type_id = values[!evaluated.index].type_id
 			if entry.count > 1
-				let annotation = hir_ast_child(tree, id, 0)
-				if tree.nodes[!annotation].kind == NODE_TYPE
-					let annotated = hir_ast_text(tree, annotation)
-					if (annotated != "i64" or type_id != TYPE_TAG_I64) and (annotated != "bool" or type_id != TYPE_TAG_BOOL) and (annotated != "string" or type_id != TYPE_TAG_STRING)
-						return hir_declaration_error(functions, constants, "module constant type mismatch", hir_ast_line(tree, id))
-			constants = constants.append(HirModuleConstant(name, evaluated.index, type_id))
+				let annotation = Hir.hir_ast_child(tree, id, 0)
+				if tree.nodes[!annotation].kind == Ast.NODE_TYPE
+					let annotated = Hir.hir_ast_text(tree, annotation)
+					if (annotated != "i64" or type_id != Types.TYPE_TAG_I64) and (annotated != "bool" or type_id != Types.TYPE_TAG_BOOL) and (annotated != "string" or type_id != Types.TYPE_TAG_STRING)
+						return hir_declaration_error(functions, constants, "module constant type mismatch", Hir.hir_ast_line(tree, id))
+			constants = constants.append(Hir.HirModuleConstant(name, evaluated.index, type_id))
 			continue
-		var parameters = Array[HirParameterDecl]()
+		var parameters = Array[Hir.HirParameterDecl]()
 		var return_type = -1
 		for j in 0..entry.count - 1
-			let part = hir_ast_child(tree, id, j)
+			let part = Hir.hir_ast_child(tree, id, j)
 			let info = tree.nodes[!part]
-			if info.kind == NODE_PARAM
+			if info.kind == Ast.NODE_PARAM
 				var annotation = -1
 				if info.count > 0
-					annotation = hir_ast_child(tree, part, 0)
-					if info.count != 1 or tree.nodes[!annotation].kind != NODE_TYPE
-						return hir_declaration_error(functions, constants, "parameter defaults are not supported yet", hir_ast_line(tree, part))
-				let pname = hir_ast_text(tree, part)
+					annotation = Hir.hir_ast_child(tree, part, 0)
+					if info.count != 1 or tree.nodes[!annotation].kind != Ast.NODE_TYPE
+						return hir_declaration_error(functions, constants, "parameter defaults are not supported yet", Hir.hir_ast_line(tree, part))
+				let pname = Hir.hir_ast_text(tree, part)
 				for previous in parameters
 					if previous.name == pname
-						return hir_declaration_error(functions, constants, "duplicate parameter '" + pname + "'", hir_ast_line(tree, part))
-				parameters = parameters.append(HirParameterDecl(pname, part, annotation))
-			elif info.kind == NODE_TYPE
+						return hir_declaration_error(functions, constants, "duplicate parameter '" + pname + "'", Hir.hir_ast_line(tree, part))
+				parameters = parameters.append(Hir.HirParameterDecl(pname, part, annotation))
+			elif info.kind == Ast.NODE_TYPE
 				return_type = part
-		let body_id = hir_ast_child(tree, id, entry.count - 1)
-		if entry.kind == NODE_REC
+		let body_id = Hir.hir_ast_child(tree, id, entry.count - 1)
+		if entry.kind == Ast.NODE_REC
 			var published = Array[string]()
 			let body = tree.nodes[!body_id]
 			for j in 0..body.count
-				let pub_id = hir_ast_child(tree, body_id, j)
-				if tree.nodes[!pub_id].kind == NODE_PUB
-					var field_name = hir_ast_text(tree, pub_id)
+				let pub_id = Hir.hir_ast_child(tree, body_id, j)
+				if tree.nodes[!pub_id].kind == Ast.NODE_PUB
+					var field_name = Hir.hir_ast_text(tree, pub_id)
 					if tree.nodes[!pub_id].count > 0
-						let value_id = hir_ast_child(tree, pub_id, 0)
-						if tree.nodes[!value_id].kind == NODE_ATTR
-							field_name = hir_ast_text(tree, value_id)
+						let value_id = Hir.hir_ast_child(tree, pub_id, 0)
+						if tree.nodes[!value_id].kind == Ast.NODE_ATTR
+							field_name = Hir.hir_ast_text(tree, value_id)
 					for seen in published
 						if seen == field_name
-							return hir_declaration_error(functions, constants, "constructor field overrides are not supported yet", hir_ast_line(tree, pub_id))
+							return hir_declaration_error(functions, constants, "constructor field overrides are not supported yet", Hir.hir_ast_line(tree, pub_id))
 					published = published.append(field_name)
-		if entry.kind == NODE_EXTERN_DEF
+		if entry.kind == Ast.NODE_EXTERN_DEF
 			if return_type < 0
-				return hir_declaration_error(functions, constants, "extern function requires a return type", hir_ast_line(tree, id))
+				return hir_declaration_error(functions, constants, "extern function requires a return type", Hir.hir_ast_line(tree, id))
 			for parameter in parameters
 				if parameter.type_node < 0
-					return hir_declaration_error(functions, constants, "extern parameter requires a type", hir_ast_line(tree, id))
-		if entry.kind == NODE_DEF
+					return hir_declaration_error(functions, constants, "extern parameter requires a type", Hir.hir_ast_line(tree, id))
+		if entry.kind == Ast.NODE_DEF
 			let body = tree.nodes[!body_id]
 			for j in 0..body.count
-				if tree.nodes[!hir_ast_child(tree, body_id, j)].kind == NODE_PUB
-					return hir_declaration_error(functions, constants, "def constructors are no longer supported; use rec", hir_ast_line(tree, id))
-		functions = functions.append(HirFunctionDecl(name, id, body_id, entry.kind == NODE_REC, return_type, parameters))
+				if tree.nodes[!Hir.hir_ast_child(tree, body_id, j)].kind == Ast.NODE_PUB
+					return hir_declaration_error(functions, constants, "def constructors are no longer supported; use rec", Hir.hir_ast_line(tree, id))
+		functions = functions.append(Hir.new_hir_function_decl(name, id, body_id, entry.kind == Ast.NODE_REC, return_type, parameters))
 	for imported in imports
 		for name in names
 			if imported.alias == name
@@ -163,7 +158,7 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 		for name in names
 			if name == reexport.public_name
 				return hir_declaration_error(functions, constants, "duplicate exported name: " + name, 1)
-	var result = HirModuleDecl(functions, constants, types, values, "", 0)
+	var result = Hir.new_hir_module_decl(functions, constants, types, values, "", 0)
 	result.imports = imports
 	result.exports = exports
 	result.reexports = reexports
@@ -172,5 +167,5 @@ def hir_module_declarations(tree: ParseState, root: i64) -> HirModuleDecl
 
 # Native module imports carry canonical TypeIds and have no source AST nodes.
 # Source-written extern declarations continue to use their AST annotations.
-def hir_function_external(tree: ParseState, function: HirFunctionDecl) -> bool
-	return function.external or (function.source >= 0 and tree.nodes[!function.source].kind == NODE_EXTERN_DEF)
+export def hir_function_external(tree: Ast.ParseState, function: Hir.HirFunctionDecl) -> bool
+	return function.external or (function.source >= 0 and tree.nodes[!function.source].kind == Ast.NODE_EXTERN_DEF)

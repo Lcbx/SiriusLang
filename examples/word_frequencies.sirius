@@ -1,0 +1,16 @@
+# Count already-tokenized words using a copy-on-write dictionary.
+# String splitting/tokenization is deliberately outside this example.
+def frequencies(words: Array[string]) -> Dict[string, i64]
+	var counts = Dict[string, i64]()
+	for word in words
+		counts = counts.insert(word, (counts.get(word) or 0) + 1)
+	return counts
+
+def main() -> i64
+	let words = ["red", "blue", "red", "green", "blue", "red"]
+	let counts = frequencies(words)
+	print("red: " + str(counts.get("red") or 0))
+	print("blue: " + str(counts.get("blue") or 0))
+	print("green: " + str(counts.get("green") or 0))
+	print("missing: " + str(counts.get("missing") or 0))
+	return 0

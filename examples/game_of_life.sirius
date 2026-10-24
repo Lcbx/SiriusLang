@@ -1,0 +1,53 @@
+# Conway's Game of Life on a fixed 5x5 board, with dead outer boundary.
+# Each generation is a new Array[Array[bool]]; old grids remain valid.
+def neighbor_count(grid: Array[Array[bool]], x: i64, y: i64) -> i64
+	var count = 0
+	for dy in 0..3
+		for dx in 0..3
+			if dx != 1 or dy != 1
+				let nx = x + dx - 1
+				let ny = y + dy - 1
+				if nx >= 0 and ny >= 0 and ny < len(grid) and nx < len(grid[!ny])
+					if grid[!ny][!nx]
+						count += 1
+	return count
+
+def evolve(grid: Array[Array[bool]]) -> Array[Array[bool]]
+	var next = Array[Array[bool]]()
+	for y in 0..len(grid)
+		var row = Array[bool]()
+		for x in 0..len(grid[!y])
+			let neighbors = neighbor_count(grid, x, y)
+			let alive = grid[!y][!x]
+			row = row.append(neighbors == 3 or (alive and neighbors == 2))
+		next = next.append(row)
+	return next
+
+def show(grid: Array[Array[bool]]) -> i64
+	for row in grid
+		var line = ""
+		for alive in row
+			if alive
+				line += "#"
+			else
+				line += "."
+		print(line)
+	return 0
+
+def main() -> i64
+	let initial = [
+		[false, false, false, false, false],
+		[false, false, true, false, false],
+		[false, false, true, false, false],
+		[false, false, true, false, false],
+		[false, false, false, false, false]
+	]
+	print("Generation 0")
+	show(initial)
+	let first = evolve(initial)
+	print("Generation 1")
+	show(first)
+	let second = evolve(first)
+	print("Generation 2")
+	show(second)
+	return 0

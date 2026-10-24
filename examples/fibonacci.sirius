@@ -1,0 +1,14 @@
+# Iterative Fibonacci, using only local mutable state.
+def fibonacci(n: i64) -> i64
+	var previous = 0
+	var current = 1
+	for _ in 0..n
+		let next = previous + current
+		previous = current
+		current = next
+	return previous
+
+def main() -> i64
+	for n in 0..11
+		print(fibonacci(n))
+	return 0

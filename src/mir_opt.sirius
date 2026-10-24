@@ -1,28 +1,32 @@
+import types alias Types
+import mir alias Mir
+import mir_verify alias Verify
 # Post-cleanup MIR peephole optimizations. Ownership-aware transformations
 # operate on explicit registers rather than generated C text.
 
-rec MirOptimizedFunction(function: MirFunction, moves: i64)
-rec MirOptimizeResult(program: MirProgram, moves: i64)
+rec MirOptimizedFunction(function: Mir.MirFunction, moves: i64)
+rec MirOptimizeResult(program: Mir.MirProgram, moves: i64)
 
-# Fuse last-use ownership transfers inside a basic block. Calls normally
-# retain each managed argument; a following release allows a direct move.
+# Fuse last-use ownership transfers inside a basic block. Calls and
+# constructors normally retain managed inputs; a following release allows
+# a direct move.
 # No CFG edge enters the middle of a basic block.
-def mir_optimize_function(types: TypeTable, function: MirFunction) -> MirOptimizedFunction
-	var blocks = Array[MirBlock]()
+def mir_optimize_function(types: Types.TypeTable, function: Mir.MirFunction) -> MirOptimizedFunction
+	var blocks = Array[Mir.MirBlock]()
 	var moves = 0
 	for block in function.blocks
-		var instructions = Array[MirInstruction]()
+		var instructions = Array[Mir.MirInstruction]()
 		var i = 0
 		while i < len(block.instructions)
 			let ins = block.instructions[!i]
-			# Lifetime releases immediately following a call allow ownership to
-			# pass to the callee. Capture every eligible distinct managed input
+			# Lifetime releases immediately following a call or constructor allow
+			# direct ownership transfer. Capture every eligible distinct managed input
 			# before consuming those releases; retain all other arguments.
-			if ins.op == MIR_CALL and i + 1 < len(block.instructions)
+			if (ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_ARRAY_NEW) and i + 1 < len(block.instructions)
 				var sources = Array[i64]()
-				var remaining = Array[MirInstruction]()
+				var remaining = Array[Mir.MirInstruction]()
 				var j = i + 1
-				while j < len(block.instructions) and block.instructions[!j].op == MIR_RELEASE
+				while j < len(block.instructions) and block.instructions[!j].op == Mir.MIR_RELEASE
 					let release = block.instructions[!j]
 					var occurrences = 0
 					var position = -1
@@ -34,35 +38,151 @@ def mir_optimize_function(types: TypeTable, function: MirFunction) -> MirOptimiz
 					for source in sources
 						if source == release.first
 							already = true
-					if not already and occurrences == 1 and position < 62 and release.first != ins.dst and mir_managed_type(types, function.register_types[!release.first])
+					if not already and occurrences == 1 and position < 62 and release.first != ins.dst and Verify.mir_managed_type(types, function.register_types[!release.first])
 						sources = sources.append(release.first)
 					else
 						remaining = remaining.append(release)
 					j += 1
 				if len(sources) > 0
-					instructions = instructions.append(mir_call_moves(ins.dst, ins.immediate, ins.inputs, sources))
+					if ins.op == Mir.MIR_CALL
+						instructions = instructions.append(Mir.mir_call_moves(ins.dst, ins.immediate, ins.inputs, sources))
+					elif ins.op == Mir.MIR_RECORD_NEW
+						instructions = instructions.append(Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, ins.dst, ins.inputs, sources))
+					else
+						instructions = instructions.append(Mir.mir_constructor_moves(Mir.MIR_ARRAY_NEW_MOVE, ins.dst, ins.inputs, sources))
 					for release in remaining
 						instructions = instructions.append(release)
 					moves += len(sources)
 					i = j
 					continue
-			if i + 1 < len(block.instructions) and (ins.op == MIR_COPY or ins.op == MIR_RETAIN) and ins.dst != ins.first and mir_managed_type(types, function.register_types[!ins.dst])
+			if i + 1 < len(block.instructions) and (ins.op == Mir.MIR_COPY or ins.op == Mir.MIR_RETAIN) and ins.dst != ins.first and Verify.mir_managed_type(types, function.register_types[!ins.dst])
 				let next = block.instructions[!i + 1]
-				if next.op == MIR_RELEASE and next.first == ins.first
-					instructions = instructions.append(mir_op(MIR_MOVE, ins.dst, ins.first, -1, 0))
+				if next.op == Mir.MIR_RELEASE and next.first == ins.first
+					instructions = instructions.append(Mir.mir_op(Mir.MIR_MOVE, ins.dst, ins.first, -1, 0))
 					i += 2
 					moves += 1
 					continue
 			instructions = instructions.append(ins)
 			i += 1
-		blocks = blocks.append(MirBlock(instructions, block.terminator))
-	return MirOptimizedFunction(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), moves)
+		blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))
+	return MirOptimizedFunction(Mir.MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), moves)
 
-def mir_optimize_unchecked(program: MirProgram) -> MirOptimizeResult
-	var functions = Array[MirFunction]()
+# Collapse equivalent cleanup blocks after lifetime insertion. MIR has no phi
+# nodes: a block's instructions and terminator fully describe its behavior.
+# Keep all register numbers unchanged; rewriting frame slots requires a
+# separate interference/liveness proof, including path-sensitive ownership.
+def mir_blocks_equal(left: Mir.MirBlock, right: Mir.MirBlock) -> bool
+	let a = left.terminator
+	let b = right.terminator
+	if a.kind != b.kind or a.operand != b.operand or a.target != b.target or a.alternative != b.alternative or a.message != b.message or len(left.instructions) != len(right.instructions)
+		return false
+	for i in 0..len(left.instructions)
+		let x = left.instructions[!i]
+		let y = right.instructions[!i]
+		if x.op != y.op or x.dst != y.dst or x.first != y.first or x.second != y.second or x.immediate != y.immediate or x.text != y.text or len(x.inputs) != len(y.inputs)
+			return false
+		for j in 0..len(x.inputs)
+			if x.inputs[!j] != y.inputs[!j]
+				return false
+	return true
+
+def mir_redirect_term(term: Mir.MirTerminator, redirect: Array[i64]) -> Mir.MirTerminator
+	var target = term.target
+	var alternative = term.alternative
+	if term.kind == Mir.MIR_JUMP or term.kind == Mir.MIR_BRANCH
+		target = redirect[!target]
+	if term.kind == Mir.MIR_BRANCH
+		alternative = redirect[!alternative]
+	return Mir.MirTerminator(term.kind, term.operand, target, alternative, term.message)
+
+# The return value is already ownership-checked by the enclosing pipeline.
+# Reuse only blocks whose complete instruction streams are equal, without
+# changing a single instruction or the identity of any register.
+def mir_compact_cfg(function: Mir.MirFunction) -> Mir.MirFunction
+	let count = len(function.blocks)
+	var forward = Array[i64]()
+	for i in 0..count
+		var target = i
+		var steps = 0
+		while steps < count
+			let block = function.blocks[!target]
+			if len(block.instructions) != 0 or block.terminator.kind != Mir.MIR_JUMP or block.terminator.target == target
+				break
+			target = block.terminator.target
+			steps += 1
+		# A jump-only cycle is already an infinite loop; do not bypass it.
+		if steps == count
+			target = i
+		forward = forward.append(target)
+
+	var normalized = Array[Mir.MirBlock]()
+	for block in function.blocks
+		normalized = normalized.append(Mir.MirBlock(block.instructions, mir_redirect_term(block.terminator, forward)))
+
+	var canonical = Array[i64]()
+	for i in 0..count
+		var selected = forward[!i]
+		if selected == i
+			# Only the small cleanup/branch blocks have substantial repeated
+			# bodies; skip quadratic comparisons for large instruction streams.
+			if len(normalized[!i].instructions) <= 2
+				for j in 0..i
+					if canonical[!j] == j and len(normalized[!j].instructions) <= 2 and mir_blocks_equal(normalized[!i], normalized[!j])
+						selected = j
+						break
+		canonical = canonical.append(selected)
+	# Resolve earlier forwarding aliases to the representative they ultimately
+	# use, including aliases that were selected only after a later block.
+	for i in 0..count
+		var target = canonical[!i]
+		var steps = 0
+		while canonical[!target] != target and steps < count
+			target = canonical[!target]
+			steps += 1
+		canonical[!i] = target
+
+	var seen = Array[bool]()
+	for i in 0..count
+		seen = seen.append(false)
+	var pending = [canonical[!function.entry]]
+	var at = 0
+	while at < len(pending)
+		let current = pending[!at]
+		at += 1
+		if seen[!current]
+			continue
+		seen[!current] = true
+		let term = normalized[!current].terminator
+		if term.kind == Mir.MIR_JUMP or term.kind == Mir.MIR_BRANCH
+			pending = pending.append(canonical[!term.target])
+		if term.kind == Mir.MIR_BRANCH
+			pending = pending.append(canonical[!term.alternative])
+
+	var numbering = Array[i64]()
+	var blocks = Array[Mir.MirBlock]()
+	for i in 0..count
+		var number = -1
+		if seen[!i] and canonical[!i] == i
+			number = len(blocks)
+			blocks = blocks.append(normalized[!i])
+		numbering = numbering.append(number)
+	var relocated = Array[Mir.MirBlock]()
+	for block in blocks
+		let term = block.terminator
+		var target = term.target
+		var alternative = term.alternative
+		if term.kind == Mir.MIR_JUMP or term.kind == Mir.MIR_BRANCH
+			target = numbering[!canonical[!target]]
+		if term.kind == Mir.MIR_BRANCH
+			alternative = numbering[!canonical[!alternative]]
+		relocated = relocated.append(Mir.MirBlock(block.instructions, Mir.MirTerminator(term.kind, term.operand, target, alternative, term.message)))
+	return Mir.MirFunction(function.argument_count, function.return_type, function.register_types, relocated, numbering[!canonical[!function.entry]])
+
+export def mir_optimize_unchecked(program: Mir.MirProgram) -> MirOptimizeResult
+	var functions = Array[Mir.MirFunction]()
 	var moves = 0
 	for function in program.functions
 		let optimized = mir_optimize_function(program.types, function)
-		functions = functions.append(optimized.function)
+		functions = functions.append(mir_compact_cfg(optimized.function))
 		moves += optimized.moves
-	return MirOptimizeResult(mir_program_with_types(functions, program.types), moves)
+	return MirOptimizeResult(Mir.mir_program_with_types(functions, program.types), moves)

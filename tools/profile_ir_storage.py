@@ -7,12 +7,14 @@ Does not count realloc, retained allocations, or peak memory.
 Type IDs are specific to the bootstrap.
 """
 import argparse
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 
-from source_manifest import COMPILER_SOURCES, ROOT, combined_sources
+from build_support import link_flags
+from project_paths import ROOT
 
 
 COUNTERS = '''
@@ -48,9 +50,10 @@ def instrument(source: str) -> str:
     ir_cow_bytes[record->type_id] += sizeof(S_MirRecord) + record->length * sizeof(S_MirField);
   }
   ''' + needle, 1)
-	needle = 'return (int)s_mir_f0(); }'
-	assert source.count(needle) == 1
-	source = source.replace(needle, 'int result = (int)s_mir_f0(); ir_report(); return result; }', 1)
+	entry = re.search(r'return \(int\)(s_mir_f\d+\(\)); }', source)
+	if entry is None:
+		raise ValueError('Cannot identify generated compiler entry point')
+	source = source[:entry.start()] + 'int result = (int)' + entry.group(1) + '; ir_report(); return result; }' + source[entry.end():]
 	return source
 
 
@@ -67,14 +70,14 @@ def main() -> None:
 		c_file.write_text(instrument(args.compiler_c.read_text()))
 		binary = work / 'compiler'
 		subprocess.run([args.cc, '-std=c11', f'-O{args.opt}', '-I', str(ROOT / 'runtime'),
-			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), '-lm', '-o', str(binary)], check=True)
-		source = args.source or work / 'compiler.sirius'
-		if args.source is None:
-			source.write_bytes(combined_sources(COMPILER_SOURCES, separator=b''))
+			str(c_file), str(ROOT / 'runtime/sirius_runtime.c'), *link_flags(args.cc), '-o', str(binary)], check=True)
+		source = args.source
 		output = work / 'out.c'
-		result = subprocess.run([str(binary), str(source), str(output)],
+		command = ([str(binary), str(source), str(output)] if source else
+			[str(binary), '--module-root', str(ROOT / 'src'), 'modular_cli', str(output)])
+		result = subprocess.run(command,
 			capture_output=True, text=True, check=True)
-		if args.source is None and output.read_bytes() != args.compiler_c.read_bytes():
+		if source is None and output.read_bytes() != args.compiler_c.read_bytes():
 			raise RuntimeError('Instrumented compiler changed its self-hosted C output')
 		rows = []
 		for line in result.stderr.splitlines():

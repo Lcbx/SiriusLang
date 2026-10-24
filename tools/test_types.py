@@ -3,7 +3,7 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 
-from source_manifest import ROOT
+from project_paths import ROOT
 from build_support import BuildCache, execute, options, require_cc, validate_jobs
 
 
@@ -13,14 +13,16 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	cases = (
-		('canonical', ('src/types.sirius', 'tests/types/driver.sirius'), 'PASS canonical type descriptors\n'),
-		('hir', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/hir_resolve.sirius', 'src/hir_constants.sirius', 'src/hir_declarations.sirius', 'src/hir_analyze.sirius', 'tests/types/hir_driver.sirius'), 'PASS typed HIR resolution\n'),
-		('specializations', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/hir_resolve.sirius', 'src/hir_constants.sirius', 'src/hir_declarations.sirius', 'src/hir_analyze.sirius', 'tests/types/specialization_driver.sirius'), 'PASS HIR specialization registry\n'),
-		('worklist', ('src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius', 'src/hir.sirius', 'src/hir_resolve.sirius', 'src/hir_constants.sirius', 'src/hir_declarations.sirius', 'src/hir_analyze.sirius', 'src/hir_specialize.sirius', 'tests/types/worklist_driver.sirius'), 'PASS HIR worklist without backend\n'),
+		('canonical', 'native_driver.sirius', 'PASS canonical type descriptors\n'),
+		('hir', 'hir_driver_native.sirius', 'PASS typed HIR resolution\n'),
+		('specializations', 'specialization_driver_native.sirius', 'PASS HIR specialization registry\n'),
+		('worklist', 'worklist_driver_native.sirius', 'PASS HIR worklist without backend\n'),
+		('semantic', 'semantic_driver_native.sirius', 'PASS canonical semantic snapshots\n'),
 	)
-	def check(case: tuple[str, tuple[str, ...], str]) -> str:
-		name, sources, expected = case
-		binary = cache.sirius('type-' + name, sources)
+
+	def check(case: tuple[str, str, str]) -> str:
+		name, source, expected = case
+		binary = cache.native_driver('type-' + name, ROOT / 'tests/types' / source)
 		output = execute([str(binary)]).stdout
 		if output != expected:
 			raise AssertionError(f'Unexpected {name} output: {output!r}')
@@ -30,6 +32,8 @@ def main() -> None:
 			return 'PASS HIR specialization registry'
 		if name == 'worklist':
 			return 'PASS HIR worklist without backend'
+		if name == 'semantic':
+			return 'PASS canonical semantic snapshots'
 		return f'PASS {name} type table'
 
 	with ThreadPoolExecutor(max_workers=validate_jobs(args.jobs)) as pool:

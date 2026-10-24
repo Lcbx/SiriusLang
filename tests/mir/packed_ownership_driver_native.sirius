@@ -1,0 +1,53 @@
+import mir_ownership alias MirOwnership
+# Verify packed ownership around 63-register word boundaries.
+def main() -> i64
+	let count = 130
+	let empty = MirOwnership.mir_ownership_empty(count)
+	let top = MirOwnership.mir_ownership_top(count)
+	if len(empty) != 3 or len(top) != 3
+		return 1
+	for i in 0..count
+		if MirOwnership.mir_ownership_get(empty, i) != 0 or MirOwnership.mir_ownership_get(top, i) != 1
+			return 2
+	var partial = empty
+	for i in [0, 62, 63, 64, 125, 126, 129]
+		partial = MirOwnership.mir_ownership_set(partial, i, 1)
+	for i in [0, 62, 63, 64, 125, 126, 129]
+		if MirOwnership.mir_ownership_get(partial, i) != 1
+			return 3
+	let removed = MirOwnership.mir_ownership_set(partial, 63, 0)
+	if MirOwnership.mir_ownership_get(removed, 63) != 0 or MirOwnership.mir_ownership_get(partial, 63) != 1
+		return 4
+	let intersection = MirOwnership.mir_ownership_join(partial, removed, false)
+	let union = MirOwnership.mir_ownership_join(partial, removed, true)
+	if MirOwnership.mir_ownership_get(intersection, 63) != 0 or MirOwnership.mir_ownership_get(union, 63) != 1
+		return 5
+	if (13 & 11) != 9 or (13 | 2) != 15 or (3 << 4) != 48 or (48 >> 4) != 3
+		return 6
+	# Empty and exact-word states must not allocate extra words.
+	if len(MirOwnership.mir_ownership_empty(0)) != 0 or len(MirOwnership.mir_ownership_top(0)) != 0
+		return 7
+	if len(MirOwnership.mir_ownership_empty(63)) != 1 or len(MirOwnership.mir_ownership_top(126)) != 2
+		return 8
+	# Verify every bit across multiple words and preserve CoW snapshots.
+	let large_count = 1000
+	let large_top = MirOwnership.mir_ownership_top(large_count)
+	if len(large_top) != 16
+		return 9
+	var large_clear = large_top
+	for i in 0..large_count
+		large_clear = MirOwnership.mir_ownership_set(large_clear, i, 0)
+	for i in 0..large_count
+		if MirOwnership.mir_ownership_get(large_clear, i) != 0 or MirOwnership.mir_ownership_get(large_top, i) != 1
+			return 10
+	let large_union = MirOwnership.mir_ownership_join(large_clear, large_top, true)
+	let large_intersection = MirOwnership.mir_ownership_join(large_clear, large_top, false)
+	for i in 0..large_count
+		if MirOwnership.mir_ownership_get(large_union, i) != 1 or MirOwnership.mir_ownership_get(large_intersection, i) != 0
+			return 11
+	# Idempotent updates must not modify the source snapshot.
+	let unchanged = MirOwnership.mir_ownership_set(large_union, 999, 1)
+	if not MirOwnership.mir_ownership_equal(large_union, unchanged)
+		return 12
+	print("PASS packed MIR ownership")
+	return 0

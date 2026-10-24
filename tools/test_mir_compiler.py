@@ -7,7 +7,6 @@ import subprocess
 
 from build_support import BuildCache, assert_native, execute, options, require_cc, run_native, validate_jobs
 from compiler_cases import check_cases
-from source_manifest import MIR_ONLY_COMPILER_SOURCES
 
 
 # Two legacy negative fixtures require only backend limitations, not
@@ -21,7 +20,7 @@ def main() -> None:
 	parser.add_argument('--compiler', type=Path, help='Use a prebuilt MIR compiler (skip rebuilding the compiler driver)')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	compiler = args.compiler.resolve() if args.compiler else cache.sirius('mir-only-regression', MIR_ONLY_COMPILER_SOURCES, separator=b'')
+	compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
 	with tempfile.TemporaryDirectory() as temporary:
 		work = Path(temporary)
 		check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),

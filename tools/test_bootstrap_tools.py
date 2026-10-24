@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """Unit checks for the shared fixed-point algorithm and tool command dispatch."""
 from pathlib import Path
+from types import SimpleNamespace
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 import subprocess
@@ -9,7 +10,6 @@ import sys
 import bootstrap_support
 import generate_bootstrap
 import test_bootstrap
-from source_manifest import COMPILER_SOURCES
 
 
 class FakeCache:
@@ -23,9 +23,6 @@ class FakeCache:
 
 
 def main() -> None:
-	assert 'src/emit_c.sirius' not in COMPILER_SOURCES
-	assert COMPILER_SOURCES[-1] == 'src/cli.sirius'
-	assert len(COMPILER_SOURCES) == len(set(COMPILER_SOURCES))
 	with TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		calls = []
@@ -39,23 +36,26 @@ def main() -> None:
 		def compile_c(cc, source, output, runtime):
 			output.write_bytes(b'executable')
 
-		with patch.object(bootstrap_support, 'execute', execute), \
-			 patch.object(bootstrap_support, 'compile_c', compile_c), \
-			 patch.object(bootstrap_support, 'combined_sources', return_value=b'source'):
-			generated, binary = bootstrap_support.generate_fixed_point(FakeCache(), work)
-			assert generated == b'generated\n' and binary.name == 'generation_1'
-			assert len(calls) == 2
-			try:
-				bootstrap_support.check_committed(work / 'generation_1.c', b'other\n')
-			except AssertionError as e:
-				assert 'differs' in str(e)
-			else:
-				raise AssertionError('Stale bootstrap accepted')
+		# The generated C must match across platforms; only the binary suffix varies.
+		for platform, suffix in (('linux', ''), ('win32', '.exe')):
+			calls.clear()
+			with patch.object(bootstrap_support, 'sys', SimpleNamespace(platform=platform)), \
+				 patch.object(bootstrap_support, 'execute', execute), \
+				 patch.object(bootstrap_support, 'compile_c', compile_c):
+				generated, binary = bootstrap_support.generate_fixed_point(FakeCache(), work)
+				assert generated == b'generated\n'
+				assert binary == work / f'generation_1{suffix}'
+				assert len(calls) == 2
+				try:
+					bootstrap_support.check_committed(work / 'generation_1.c', b'other\n')
+				except AssertionError as e:
+					assert 'differs' in str(e)
+				else:
+					raise AssertionError('Stale bootstrap accepted')
 
 		with patch.object(bootstrap_support, 'execute', side_effect=lambda command: Path(command[-1]).write_bytes(
 				f'{len(calls)}\n'.encode())), \
-			 patch.object(bootstrap_support, 'compile_c', compile_c), \
-			 patch.object(bootstrap_support, 'combined_sources', return_value=b'source'):
+			 patch.object(bootstrap_support, 'compile_c', compile_c):
 			# Simulate successive changing generations.
 			count = [0]
 			def different(command):

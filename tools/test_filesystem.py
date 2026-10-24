@@ -6,12 +6,12 @@ import shutil
 import subprocess
 import tempfile
 
-from build_support import BuildCache, compile_native, require_cc
-from source_manifest import ROOT, MIR_RUNNER_SOURCES
+from build_support import BuildCache, compile_c, compile_native, require_cc
+from project_paths import ROOT, normalize_newlines
 
 
-def execute(args: list[str], *, code: int = 0) -> subprocess.CompletedProcess[bytes]:
-	result = subprocess.run(args, capture_output=True, timeout=60)
+def execute(args: list[str], *, code: int = 0, cwd: Path | None = None) -> subprocess.CompletedProcess[bytes]:
+	result = subprocess.run(args, capture_output=True, timeout=60, cwd=cwd)
 	assert result.returncode == code, (args, result)
 	return result
 
@@ -31,6 +31,11 @@ def main() -> None:
 		(root / 'hello.txt').write_text('hello', encoding='utf-8')
 		(root / 'a' / 'français.txt').write_text('unicode', encoding='utf-8')
 		(root / 'B' / 'zeta.txt').write_text('z', encoding='utf-8')
+		io_test = work / 'filesystem_io.exe'
+		compile_c(cache.cc, ROOT / 'tests/runtime/filesystem_io.c', io_test, cache.runtime())
+		result = execute([str(io_test)], cwd=work)
+		assert result.stdout.decode('utf-8').startswith('PASS filesystem I/O:'), result
+		print(result.stdout.decode('utf-8'), end='')
 		(root / 'empty').mkdir()
 		# A symlink to a directory must not cause recursive cycles.
 		try:
@@ -43,18 +48,18 @@ def main() -> None:
 		binary = compile_native(cache, c_file)
 		for directory in (root, root / 'empty'):
 			native = execute([str(binary), str(directory)])
-			entries = sorted(path.name for path in directory.iterdir())
+			entries = sorted((path.name for path in directory.iterdir()), key=lambda name: name.encode('utf-8'))
 			files = []
 			pending = [directory]
 			for folder in pending:
-				for child in sorted(folder.iterdir()):
+				for child in sorted(folder.iterdir(), key=lambda path: path.name.encode('utf-8')):
 					if child.is_dir() and not child.is_symlink():
 						pending.append(child)
 					else:
 						files.append(child)
 			expected = ''.join(f'{entry}\n' for entry in entries)
-			expected += ''.join(f'file: {item.as_posix()}\n' for item in files)
-			assert native.stdout.decode('utf-8') == expected, (native.stdout, expected)
+			expected += ''.join(f'file: {directory}/{item.relative_to(directory).as_posix()}\n' for item in files)
+			assert normalize_newlines(native.stdout).decode('utf-8') == expected, (native.stdout, expected)
 			if args.runner:
 				dynamic = execute([str(args.runner.resolve()), str(binary_source), str(directory)])
 				assert (dynamic.stdout, dynamic.stderr, dynamic.returncode) == (native.stdout, native.stderr, native.returncode)

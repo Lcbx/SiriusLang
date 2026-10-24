@@ -2,7 +2,8 @@
 """Lower checked HIR into scalar MIR and execute it with the Sirius interpreter."""
 import argparse
 
-from build_support import BuildCache, check_sirius_driver, options, require_cc
+from project_paths import ROOT
+from build_support import BuildCache, execute, options, require_cc
 
 
 def main() -> None:
@@ -10,11 +11,8 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	output = check_sirius_driver(cache, 'mir-lower', (
-		'src/tokenizer.sirius', 'src/parser.sirius', 'src/types.sirius',
-		'src/hir.sirius', 'src/hir_resolve.sirius', 'src/hir_constants.sirius', 'src/hir_declarations.sirius', 'src/hir_analyze.sirius', 'src/mir.sirius', 'src/mir_cfg.sirius', 'src/mir_verify.sirius', 'src/mir_common.sirius', 'src/mir_interpreter.sirius',
-		'src/mir_lower.sirius', 'tests/mir/lowering_driver.sirius',
-	), 'PASS typed HIR scalar CFG lowering\n')
+	output = execute([str(cache.native_driver('mir-lower', ROOT / 'tests/mir/lowering_driver_native.sirius'))]).stdout
+	assert output == 'PASS typed HIR scalar CFG lowering' + '\n', output
 	print(output, end='')
 
 

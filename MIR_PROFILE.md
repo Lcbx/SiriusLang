@@ -1,4 +1,18 @@
-# MIR self-compilation profile (2026-10-14)
+# MIR self-compilation and code-generation profiles
+
+**Historical measured baseline (2026-10-24):** An earlier modular compiler
+emitted 4,232,563 bytes of C after backward-liveness snapshot sharing and
+direct ownership-block transfer. These timings and sizes are historical:
+subsequent verified managed-slot reuse across CFG blocks, ownership auditing,
+and native ARC instrumentation changed generated code. In particular, managed
+owners crossing basic-block boundaries are no longer necessarily assigned
+dedicated slots. The current committed output is `bootstrap/compiler.c`;
+measure and compare it directly rather than treating the earlier byte count
+as the active baseline. All figures below are dated observations, not promises
+about the current build.
+
+
+## Historical MIR self-compilation profile (2026-10-14)
 
 The standalone MIR-generated compiler compiles the concatenated MIR-only Sirius
 compiler source (~240 KiB; 194 specialized functions) into ~3.45 MB of C.
@@ -318,3 +332,318 @@ arena may still have live snapshots. These copies preserve value semantics.
 Cumulative requested bytes do **not** measure peak resident memory, lifetime,
 or time spent allocating. No compact encoding or shared mutable parser arena
 was adopted without a broader ownership/ABI design.
+
+## Modular C output size (2026-10-24)
+
+The native module-root compiler previously routed ownership-checked and
+balanced linked MIR through the *defensive* C emitter. That produced a
+10,621,160-byte bootstrap containing repeated `initN` flags, read guards, and
+managed-slot state updates in thousands of generated blocks.
+
+The modular CLI now uses `mir_emit_c_reachable_verified`: it checks
+`mir_check_balance` before emitting with no redundant C-side init tracking.
+The direct/externally supplied MIR emitter remains defensive.
+
+| Metric | Before | After |
+| --- | ---: | ---: |
+| Committed generated C | 10,621,160 bytes | 5,175,457 bytes |
+| Reduction | — | 51.3% |
+| Clang `-O0` native executable | 4,676,808 bytes | 2,546,976 bytes |
+| Clang `-O0` C compile/link median, 3 runs | 3.74 s | 1.91 s |
+
+The native build comparison used the same local Clang compiler and runtime,
+compiling the two committed C snapshots with `-std=c11 -O0`. These timings
+exclude Sirius-to-C generation and are not a cross-platform benchmark.
+
+Both variants contain 280 generated function definitions; the improvement does
+not come from removing compiler capabilities. `tools/profile_generated_c.py`
+reports the largest generated definitions by C-text size; generated function
+IDs are unstable across compiler changes. Tests cover the separate checked
+and verified emission APIs and the modular self-hosting fixed point.
+
+## MIR CFG and nullable-release optimization (2026-10-24)
+
+The previous 5,175,457-byte C bootstrap had 280 generated functions. Its
+largest generated function had **1,169 register declarations** and **1,215
+basic blocks** (467,028 C bytes); these are total slots/blocks, **not** a peak
+live-register measurement. The checked-in source uses many edge-specific
+`MIR_RELEASE_IF_INIT` instructions. About 35,302 generated `if (rN)` release
+guards accounted for a large share of its C text.
+
+Two independent optimizations were combined:
+
+1. After MIR lifetime/exit cleanup, bypass instruction-free jump chains,
+   merge short blocks with identical instructions and terminators, and prune
+   unreachable blocks. Compare full operands including call input vectors;
+   **do not** remap/register-reuse values. Empty jump cycles are preserved.
+2. On the *verified* C path only, emit an unconditional release followed by
+   `rN = NULL` for `MIR_RELEASE_IF_INIT`. Both `s_string_release(NULL)` and
+   `s_mir_record_release(NULL)` are no-ops. The defensive direct-MIR path
+   retains `initN` checks and conditionals.
+
+| Measure | Before | After both changes |
+| --- | ---: | ---: |
+| Bootstrap C bytes | 5,175,457 | 4,679,289 |
+| Change | — | -9.6% |
+| Largest C function | 467,028 | 403,687 bytes |
+| Largest function's emitted CFG blocks | 1,215 | 1,142 |
+| Largest function's register declarations | 1,169 | 1,169 |
+
+Isolating the CFG compaction alone (with the prior emitter) gave 5,152,357
+C bytes, only about 23 KB smaller; most of the combined saving is from
+nullable release emission. Numeric generated-function IDs are unstable and
+should not be treated as function names. This is primarily a C-text reduction;
+compiler throughput and peak register pressure require separate measurements.
+`tools/profile_generated_c.py` now reports per-function declarations, block
+counts and guarded releases as *emitted C metrics*. `tools/test_mir_opt.py`
+checks duplicate cleanup, unreachable blocks, idempotence and interpreted/native
+execution, including verified versus defensive release handling and a
+conditional release on a path where the register remains uninitialized.
+
+## Conservative scalar register-slot reuse (2026-10-24)
+
+Verified MIR-to-C emission now compacts `i64`, `bool`, and `f64` frame slots
+using block-local intervals. Registers are eligible only when their first
+mention is a definition, all mentions occur in one basic block, and they are
+not function arguments. Reuse requires equal types and non-overlapping
+intervals; slot pools can be reused across blocks. The remapping is applied
+to a temporary emission-only MIR function. The original MIR register IDs,
+managed slots, checked direct-MIR emitter, and interpreter are unchanged.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Modular bootstrap C bytes | 4,679,289 | 4,388,950 |
+| Difference | — | -6.2% |
+| Largest emitted function register declarations | 1,169 | 178 |
+| Clang `-O0` native executable | 2,248,072 bytes | 2,129,496 bytes |
+
+The executable sizes are from one local Clang build of each committed C
+variant; they are not performance measurements.
+
+This is a conservative subset of CFG-wide interference allocation, not a
+full liveness graph coloring pass. It avoids touching loop-carried registers
+and values used across joins. Managed registers remain excluded because
+releases and ownership transitions require additional safeguards.
+`tools/test_mir_scalar_slots.py` checks interpreter/native execution through
+a loop and a branch join, plus preserved defensive emission. The full
+`python tools/test_all.py` run passes all 64 scripts, including 96 generated-C
+executions, 50 expected diagnostics, and MIR generations 2–4 at the same
+4,388,950-byte fixed point.
+
+## CFG-wide scalar interference allocation (2026-10-24)
+
+Verified C emission now uses existing backward MIR liveness (`mir_lifetime_states`)
+to build a **packed symmetric interference graph**. Edges cover simultaneously
+live registers at block entry/exit, each definition versus live-out registers,
+and read/definition hazards within a single instruction. A deterministic greedy
+allocator assigns same-type scalars to slots only if they have no conflicting
+previous occupants. This extends reuse to values crossing multiple CFG blocks,
+including loops and joins, without changing MIR or the interpreter.
+
+| Measure | Previous | CFG-wide allocation |
+| --- | ---: | ---: |
+| Modular bootstrap C bytes | 4,388,950 | 4,334,410 |
+| Difference | — | -1.2% |
+| Largest emitted function's C register declarations | 178 | 16 |
+| Largest emitted function's CFG blocks | 1,142 | 1,142 |
+
+The largest function's register declarations measure emitted storage, not
+simultaneous MIR liveness. Code size savings are smaller than declaration-count
+savings because the C body still contains the same instructions. The allocator
+keeps managed values and arguments in dedicated slots; direct defensive C
+emission retains logical register IDs. The scalar-slot regression exercises
+sequential cross-block values, joins, loops, and interpreted/native parity.
+The regenerated C bootstrap reaches a byte-identical fixed point through
+multiple self-hosted generations. Runtime performance is not inferred from
+these code-size measurements.
+
+## Conservative managed-slot reuse (2026-10-24)
+
+The verified C emitter now also shares physical `S_String *` or `S_MirRecord *`
+slots for **same-TypeId** managed registers with disjoint ownership intervals.
+Eligibility is stricter than for scalars: all references must occur in one
+basic block, the first reference must define the register, and its final
+reference must be an unconditional `MIR_RELEASE`. The release clears the slot
+at the block boundary, including loop backedges. Arguments, owners referenced
+across blocks, conditional `MIR_RELEASE_IF_INIT`, move/transfer endings, and
+simultaneously live owners remain dedicated. This excludes hazards that
+ordinary backward liveness cannot detect. The original MIR and defensive C
+emission are unchanged.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Modular bootstrap C bytes | 4,334,410 | 4,250,979 |
+| Difference | — | -1.9% |
+| Emitted `S_String *` register declarations | 4,626 | 1,845 |
+| Emitted `S_MirRecord *` register declarations | 6,622 | 5,957 |
+
+The reduced declaration count is not a measurement of peak live owners or a
+runtime speedup. `tools/test_mir_managed_slots.py` tests sequential, disjoint
+blocks, overlapping values, conditional cleanup, cross-block owners and loops
+through interpreter/native parity. The compiler reaches byte-identical MIR
+self-hosting generations 2–4. Further cross-block managed reuse would require
+a path-sensitive may-ownership interference proof; it is not assumed safe.
+
+## MIR record-type allocation attribution (2026-10-24)
+
+`python tools/profile_mir_allocations.py --runs 3 --opt 1 --type-names`
+instruments a disposable copy of the committed C bootstrap and, optionally,
+uses a native Sirius module driver to map generated TypeIds to canonical
+structural signatures. New per-type counters include initial allocation
+requests, empty allocations, CoW clones and requested bytes. The instrumented
+self-compilation output must be byte-identical to the committed bootstrap.
+
+In a single `-O1` self-compilation after removing unused temporary arrays from
+`mir_instruction_reads`:
+
+| Type | Allocations | CoW clones | Cumulative requested bytes |
+| --- | ---: | ---: | ---: |
+| `Array[i64]` | 3,225,125 | 1,949,722 | 1,256,693,664 |
+| `Optional[i64]` | 1,039,772 | 0 | 41,258,192 |
+| MIR ownership block (`incoming`, `outgoing`) | 856,428 | 0 | 41,108,544 |
+| MIR instruction record | 402,302 | 0 | 35,402,576 |
+
+The prior snapshot requested 9,042,739 generated record/collection allocations;
+this change requests 8,423,359 (−6.8%), mostly by avoiding an unnecessary
+`Array[i64]` allocation in `mir_instruction_reads`. Allocated bytes include
+CoW clones and exclude `realloc`, nested runtime allocations and peak RSS.
+
+The next substantial target is `Array[i64]` CoW copying in CFG analysis, not
+another container-wide optimization. The previous generation's 1,911,091
+`Array[i64]` allocations inside its generic CoW helper demonstrate that the
+remaining problem is broader than creating empty read lists. Avoid changing
+the ownership-state representation again without measuring full cost.
+
+## Ownership predecessor snapshots (2026-10-24)
+
+A sampled stack trace of `Array[i64]` CoW clones localized most writes to
+`mir_ownership_join`. Previously each block's forward analysis started from
+its lattice identity (`top` for must, `bottom` for may), and joining even a
+single predecessor forced an unnecessary array copy. Non-entry blocks now
+start from the first reachable predecessor's outgoing state; only subsequent
+predecessors require bitwise merging. Entry blocks still combine the entry
+argument state with loop predecessors. Value semantics and the packed 63-bit
+word representation are unchanged. The public two-array join remains intact.
+
+| Counter, one instrumented modular self-compilation (`-O0`) | Before | After |
+| --- | ---: | ---: |
+| Generated record/collection allocations | 8,423,359 | 7,437,274 |
+| `Array[i64]` allocations | 3,225,125 | 2,241,612 |
+| `Array[i64]` CoW clones | 1,949,722 | 966,353 |
+| All CoW clones | 2,165,674 | 1,182,481 |
+| Array element writes | 17,230,225 | 8,449,972 |
+
+Both runs compiled the module-root compiler from their respective Sirius
+source versions, so the workloads differ slightly. These counts demonstrate
+removed intermediate clones, **not** a controlled timing result or a memory
+footprint measurement. The ownership-combined native test verifies that a
+single-predecessor state shares an immutable snapshot without mutating its
+predecessor after a later write. CFG joins, backedges and exit balance are
+covered by the existing ownership regressions.
+
+## Backward-liveness successor snapshots (2026-10-24)
+
+`mir_lifetime_states_cfg` previously built each block's `live_out` by
+unioning a shared all-zero array with the first successor's `live_in`. This
+copied the dense `Array[i64]` on CoW even for blocks with only one successor.
+Now jump/branch blocks start from that successor's existing snapshot, and
+only union the distinct alternative successor of a branch. The backward
+instruction transfer still uses CoW; it cannot mutate stored successor state.
+
+| Counter, instrumented native `-O0` modular self-compilation | Before | After |
+| --- | ---: | ---: |
+| Generated record/collection allocations | 7,437,326 | 7,343,095 |
+| `Array[i64]` allocations | 2,241,612 | 2,146,435 |
+| `Array[i64]` CoW clones | 966,353 | 870,856 |
+| All CoW clones | 1,182,481 | 1,087,011 |
+| Array element writes | 8,449,972 | 7,602,197 |
+| Generated bootstrap C bytes | 4,250,979 | 4,243,409 |
+
+The ~9.9% reduction in `Array[i64]` CoW clones and ~1.3% reduction in
+all generated record allocations are **operation counts**, not wall-clock
+performance measurements. The two instrumented compilers use slightly
+different self-hosting sources. A two-run post-change profile produced
+identical counters. The lifetime regression checks shared successor snapshots,
+loops, branch joins and native/interpreted execution; MIR self-hosting reaches
+a byte-identical generations 2–4 fixed point.
+
+## Direct forward-ownership block transfer (2026-10-24)
+
+The CFG ownership worklist used to allocate two `Array[i64]` effect lists for
+*every* MIR block and replay their entries on each visit. Applying the same
+instruction effects directly on visited blocks removes temporary lists and
+array appends. The public `mir_ownership_effects` and
+`mir_ownership_apply_effects` helpers remain available and equivalent.
+Both must/may propagation and entry/backedge handling are unchanged.
+
+| Instrumented `-O0` modular self-compilation | Before | After |
+| --- | ---: | ---: |
+| All MIR record/collection allocations | 7,343,095 | 7,016,214 |
+| `Array[i64]` allocations | 2,146,435 | 1,930,998 |
+| Empty generated containers | 1,516,745 | 1,298,267 |
+| All CoW clones | 1,087,011 | 1,086,594 |
+| Capacity growth calls | 1,332,853 | 1,016,352 |
+| Bootstrap C bytes | 4,243,409 | 4,232,563 |
+
+The totals are from separate, slightly different compiler source versions;
+cloning is essentially unchanged. A two-run profile of the new compiler was
+deterministic. These operation counts do **not** demonstrate a build-time
+speedup: worklist revisits now traverse instructions instead of cached effects.
+The ownership/CFG regression compares direct transfer with the public effect
+summaries across reachable joins, loops, repeated writes, and call moves.
+
+## Constructor ownership transfers (2026-10-24)
+
+The post-cleanup peephole optimizer now transfers distinct, last-use managed
+inputs of `MIR_RECORD_NEW` and `MIR_ARRAY_NEW` rather than emitting redundant
+retain/release pairs. The new move opcodes use the call-transfer position mask
+and are validated by MIR definite ownership, backward liveness, interpreter,
+and C emitter. Duplicate inputs and sources read later remain borrowed.
+
+The native modular bootstrap reached a byte-identical fixed point at
+4,258,464 C bytes (previous seed: 4,232,563 bytes). This is a code-size
+*increase*, not a claim of faster self-compilation. The focused constructor
+tests cover mixed owned/borrowed fields, nested records and arrays, duplicates,
+invalid moves, interpreter heap balance and both C emitter modes. Actual
+runtime benefit remains to be profiled; CFG-aware managed-slot reuse is
+documented below.
+
+## CFG-aware managed register slots (2026-10-24)
+
+Verified C emission extends the previous block-local managed-slot allocation
+with a packed interference graph built from forward **may-ownership** states.
+At every reachable block entry and relevant ownership change, every pair of
+potentially owned managed values interferes. A managed destination also
+interferes with any other owner present before writing or releasing it and
+with its managed instruction inputs. This last rule is required for moves and
+for `MIR_RELEASE_IF_INIT` on a path where its logical register is absent but
+a different owner is present in the proposed physical slot.
+
+Greedy slot reuse requires identical TypeIds and excludes arguments. The
+may-ownership union at joins conservatively treats branch-exclusive owners
+as potentially overlapping; it is a **safe overapproximation**, not an exact
+path-sensitive ownership proof. Only the verified C frame is compacted:
+original MIR, interpreted execution and checked defensive C remain unchanged.
+
+| Measure | Before | After |
+| --- | ---: | ---: |
+| Modular bootstrap C bytes | 4,258,464 | 4,012,418 |
+| `S_String *` register declarations | 2,049 | 516 |
+| `S_MirRecord *` register declarations | 6,098 | 2,379 |
+
+The new bootstrap reaches a byte-identical C fixed point (generation 2 from
+the previous regenerated seed). The full bootstrap suite passes 96 native
+programs and 50 expected diagnostics. Tests in
+`tools/test_mir_managed_slots.py` exercise sequential and cross-block reuse,
+join and loop interference, conditional cleanup before/after allocation,
+cleanup of an absent owner on the opposite branch, moves, call transfers,
+and interpreter/native parity. Counts are from slightly different compiler
+source versions (the allocator adds routines); none are peak live-pressure
+measurements.
+
+An **exploratory** comparison using the checked-in C compilers, the same
+Clang `-O0` flags, and three native self-compilation runs per version gave
+14.15 s median before versus 11.80 s after. C build time in that run was
+4.68 s versus 3.31 s. Other test processes were active concurrently, so
+these are not controlled performance measurements; no repeatable runtime
+speedup is claimed. Re-run with an idle host before drawing that conclusion.

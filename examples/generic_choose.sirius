@@ -1,0 +1,12 @@
+# One function specializes for i64, string, and structural record values.
+def choose(first: bool, a, b)
+	if first
+		return a
+	return b
+
+def main() -> i64
+	print(choose(true, 42, 13))
+	print(choose(false, "left", "right"))
+	let point = choose(true, {x = 3, y = 4}, {x = 5, y = 6})
+	print(point.x + point.y)
+	return 0

@@ -1,0 +1,100 @@
+import mir_cleanup alias MirCleanup
+import mir_ownership alias MirOwnership
+import mir alias Mir
+import mir_emit_c alias MirEmitC
+import mir_interpreter alias MirInterpreter
+import mir_lifetime alias MirLifetime
+import types alias Types
+# Path-sensitive cleanup: outgoing CFG edges, returns, calls and loop backedges.
+
+def cleanup_branch_program(take: i64) -> Mir.MirProgram
+	var first = Array[Mir.MirInstruction]()
+	first = first.append(Mir.mir_string(0, "abc"))
+	first = first.append(Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, take))
+	let yes = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0))
+	let no = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 9))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(first, Mir.mir_branch(1, 1, 2)), Mir.MirBlock(yes, Mir.mir_return(2)), Mir.MirBlock(no, Mir.mir_return(3))], 0)
+	return Mir.new_mir_program([function])
+
+def cleanup_arguments_program() -> Mir.MirProgram
+	var main = Array[Mir.MirInstruction]()
+	main = main.append(Mir.mir_string(0, "unused"))
+	main = main.append(Mir.mir_string(1, "keep"))
+	main = main.append(Mir.mir_call(2, 1, [0, 1]))
+	main = main.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 2, -1, 0))
+	let callee = Array[Mir.MirInstruction]()
+	let function0 = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], [Mir.MirBlock(main, Mir.mir_return(3))], 0)
+	let function1 = Mir.MirFunction(2, Types.TYPE_TAG_STRING, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING], [Mir.MirBlock(callee, Mir.mir_return(1))], 0)
+	return Mir.new_mir_program([function0, function1])
+
+def cleanup_loop_program() -> Mir.MirProgram
+	var entry = Array[Mir.MirInstruction]()
+	entry = entry.append(Mir.mir_string(0, "persist"))
+	entry = entry.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 0))
+	entry = entry.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 3))
+	entry = entry.append(Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 1))
+	let check = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_LT_I64, 3, 1, 2, 0))
+	var body = Array[Mir.MirInstruction]()
+	body = body.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 5, 0, -1, 0))
+	body = body.append(Mir.mir_op(Mir.MIR_ADD_I64, 1, 1, 4, 0))
+	let done = Array[Mir.MirInstruction]().append(Mir.mir_op(Mir.MIR_CONST_I64, 6, -1, -1, 7))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(entry, Mir.mir_jump(1)), Mir.MirBlock(check, Mir.mir_branch(3, 2, 3)), Mir.MirBlock(body, Mir.mir_jump(1)), Mir.MirBlock(done, Mir.mir_return(6))], 0)
+	return Mir.new_mir_program([function])
+
+def cleanup_panic_program() -> Mir.MirProgram
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING], [Mir.MirBlock([Mir.mir_string(0, "panic")], Mir.mir_panic("expected"))], 0)
+	return Mir.new_mir_program([function])
+
+def cleanup_has_release(block: Mir.MirBlock, register: i64) -> bool
+	for instruction in block.instructions
+		if (instruction.op == Mir.MIR_RELEASE or instruction.op == Mir.MIR_RELEASE_IF_INIT) and instruction.dst == register
+			return true
+	return false
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 5
+		return 1
+	var programs = Array[Mir.MirProgram]()
+	programs = programs.append(cleanup_branch_program(1))
+	programs = programs.append(cleanup_branch_program(0))
+	programs = programs.append(cleanup_arguments_program())
+	programs = programs.append(cleanup_loop_program())
+	var expected = [3, 9, 4, 7]
+	for i in 0..len(programs)
+		let lifetime = MirLifetime.mir_insert_lifetimes(programs[!i])
+		if lifetime.error != ""
+			print(lifetime.error)
+			return 2
+		let cleaned = MirCleanup.mir_insert_exit_cleanup(lifetime.program)
+		if cleaned.error != "" or cleaned.releases == 0
+			print(cleaned.error)
+			return 3
+		let again = MirCleanup.mir_insert_exit_cleanup(cleaned.program)
+		if again.error != "" or again.releases != 0
+			return 4
+		let outcome = MirInterpreter.mir_execute(cleaned.program, 0, Array[Mir.MirValue](), 1000, 10)
+		if outcome.error != "" or outcome.value.bits != expected[!i]
+			print(outcome.error)
+			return 5
+		for cell in outcome.heap
+			if cell.refs != 0
+				return 6
+		let emitted = MirEmitC.mir_emit_c(cleaned.program, 0)
+		if emitted.error != "" or not write_text(args[!i + 1], emitted.code)
+			print(emitted.error)
+			return 7
+		if i < 2
+			let first = cleaned.program.functions[!0].blocks[!0]
+			if first.terminator.alternative == 2
+				return 8
+			if not cleanup_has_release(cleaned.program.functions[!0].blocks[!first.terminator.alternative], 0)
+				return 9
+		if i == 2
+			if not cleanup_has_release(cleaned.program.functions[!1].blocks[!0], 0)
+				return 10
+	let panic = MirCleanup.mir_insert_exit_cleanup(cleanup_panic_program())
+	if panic.error != "" or not cleanup_has_release(panic.program.functions[!0].blocks[!0], 0)
+		return 11
+	print("PASS MIR path-sensitive exit cleanup")
+	return 0

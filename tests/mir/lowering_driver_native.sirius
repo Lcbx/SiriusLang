@@ -1,0 +1,53 @@
+import hir_analyze alias HirAnalyze
+import hir_declarations alias HirDeclarations
+import mir alias Mir
+import mir_interpreter alias MirInterpreter
+import mir_lower alias MirLower
+import parser alias Parser
+import types alias Types
+# Source -> typed HIR -> scalar MIR -> interpreter, without generating C.
+def check(source: string, arguments: Array[Mir.MirValue], expected: i64) -> bool
+	let parsed = Parser.parse_module(source)
+	if parsed.state.error != ""
+		print(parsed.state.error)
+		return false
+	let declarations = HirDeclarations.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		print(declarations.error)
+		return false
+	let typed = HirAnalyze.hir_analyze_module_body(parsed.state, declarations.functions[!0], declarations.functions, Array[string]())
+	if typed.error != ""
+		print(typed.error)
+		return false
+	var types = Array[i64]()
+	for value in arguments
+		types = types.append(value.type_id)
+	let lowered = MirLower.mir_lower_function(parsed.state, declarations.functions[!0], typed.nodes, types, Types.TYPE_TAG_I64)
+	if lowered.error != ""
+		print(lowered.error)
+		return false
+	let program = Mir.new_mir_program([lowered.function])
+	let outcome = MirInterpreter.mir_execute(program, 0, arguments, 10000, 10)
+	if outcome.error != "" or outcome.value.bits != expected
+		print(outcome.error)
+		return false
+	return true
+
+def main() -> i64
+	let loop_case = "def main() -> i64\n\tvar n = 0\n\tvar total = 0\n\twhile n < 5\n\t\tif n == 3\n\t\t\ttotal = total + 10\n\t\telse\n\t\t\ttotal = total + n\n\t\tn = n + 1\n\treturn total\n"
+	if not check(loop_case, Array[Mir.MirValue](), 17)
+		return 1
+	let shortcut = "def main() -> i64\n\tif false and (1 / 0 > 0)\n\t\treturn 1\n\tif true or (1 / 0 > 0)\n\t\treturn 42\n\treturn 0\n"
+	if not check(shortcut, Array[Mir.MirValue](), 42)
+		return 2
+	let branching = "def main() -> i64\n\tlet n = 2\n\tif n == 1\n\t\treturn 3\n\telif n == 2\n\t\treturn 5\n\telse\n\t\treturn 7\n"
+	if not check(branching, Array[Mir.MirValue](), 5)
+		return 3
+	let arguments = "def add(a: i64, b: i64) -> i64\n\treturn a + b\n"
+	if not check(arguments, [Mir.new_mir_value(Types.TYPE_TAG_I64, 3, ""), Mir.new_mir_value(Types.TYPE_TAG_I64, 6, "")], 9)
+		return 4
+	let shadow = "def main() -> i64\n\tvar x = 7\n\tif true\n\t\tlet x = 1\n\treturn x\n"
+	if not check(shadow, Array[Mir.MirValue](), 7)
+		return 5
+	print("PASS typed HIR scalar CFG lowering")
+	return 0

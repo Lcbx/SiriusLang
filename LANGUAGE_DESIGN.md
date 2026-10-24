@@ -226,6 +226,26 @@ def unwrap(result: Result) -> i64
 
 **Current design choice:** Constructors produce structurally typed records. Union alternatives must therefore have distinct canonical record types; constructors with identical result shapes are not distinguishable alternatives. Nominal variant identity is not currently specified.
 
+### Errors and fatal failures
+
+* Recoverable errors are ordinary returned values, normally constructor-based
+  `Result` unions. `match` on a union must cover every alternative; missing
+  cases are a compile-time error. There is no exception-unwinding mechanism for
+  recoverable errors.
+* `Optional` remains suitable for simple absence, while status values or
+  documented numeric sentinels avoid mandatory wrapping of routine operations.
+  Default IEEE-754 arithmetic may produce `NaN` (`0.0 / 0.0`, negative `sqrt`)
+  or infinity (nonzero finite value divided by zero), without a runtime error.
+  Integer division has no NaN representation; zero divisors and signed
+  overflow currently cause an explicit fatal trap.
+* A fatal trap terminates the process rather than returning an error union.
+  Process exit may discard live ARC frames; no language-level cleanup or
+  destructors are promised after a fatal trap. Invalid MIR, out-of-memory
+  and fatal programmer assertions follow this policy unless reclassified.
+* `Result` unions and exhaustive `match` are **planned**, not yet implemented.
+  Today the supported in-band cases include `Optional`, booleans and IEEE-754
+  results. The exact future error set of each standard-library API remains open.
+
 ## 6. Operators
 
 Operators resolve statically to functions, including generic implementations.
@@ -420,7 +440,8 @@ export def process(data)
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported direct-publication constructors and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, but not portable generic MIR libraries; see [README.md](README.md) for status.
+See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported direct-publication constructors and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, and source-independent generic specialization from portable `.smirg` HIR
+packages (not generic executable MIR libraries); see [README.md](README.md) for status.
 
 ## 12. Compiler
 

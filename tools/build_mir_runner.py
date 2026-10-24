@@ -5,8 +5,7 @@ from pathlib import Path
 import shutil
 import sys
 
-from build_support import BuildCache, require_cc
-from source_manifest import MIR_RUNNER_SOURCES
+from build_support import BuildCache, copy_binary, require_cc
 
 
 def main() -> None:
@@ -15,10 +14,8 @@ def main() -> None:
 	parser.add_argument('--cc', default=shutil.which('clang') or require_cc(), help='C11 compiler; Clang is preferred for the large generated translation unit')
 	parser.add_argument('--rebuild', action='store_true')
 	args = parser.parse_args()
-	binary = BuildCache(shutil.which(args.cc) or args.cc, rebuild=args.rebuild).sirius('mir-runner', MIR_RUNNER_SOURCES)
-	args.output.parent.mkdir(parents=True, exist_ok=True)
-	if binary.resolve() != args.output.resolve():
-		shutil.copy2(binary, args.output)
+	binary = BuildCache(shutil.which(args.cc) or args.cc, rebuild=args.rebuild).native_tool('run_cli')
+	copy_binary(binary, args.output)
 	print(f'Built {args.output} (dynamic MIR source runner)')
 
 

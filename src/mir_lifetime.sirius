@@ -1,10 +1,15 @@
+import types alias Types
+import mir alias Mir
+import mir_cfg alias Cfg
+import mir_verify alias Verify
+import mir_ownership alias Ownership
 # Conservative CFG liveness for MIR register ownership.
 # Releases managed values immediately after their last use on a path.
 # Existing return cleanup remains responsible for values not definitely used.
 
-rec MirLifetimeBlock(live_in: Array[i64], live_out: Array[i64])
-rec MirLifetimeResult(program: MirProgram, releases: i64, error: string)
-rec MirLowerLifetime(function: MirFunction, releases: i64)
+export rec MirLifetimeBlock(live_in: Array[i64], live_out: Array[i64])
+rec MirLifetimeResult(program: Mir.MirProgram, releases: i64, error: string)
+rec MirLowerLifetime(function: Mir.MirFunction, releases: i64)
 
 def mir_live_empty(count: i64) -> Array[i64]
 	var values = Array[i64]()
@@ -12,7 +17,7 @@ def mir_live_empty(count: i64) -> Array[i64]
 		values = values.append(0)
 	return values
 
-def mir_live_contains(registers: Array[i64], register: i64) -> bool
+export def mir_live_contains(registers: Array[i64], register: i64) -> bool
 	return register >= 0 and register < len(registers) and registers[!register] != 0
 
 def mir_live_add(registers: Array[i64], register: i64) -> Array[i64]
@@ -34,30 +39,25 @@ def mir_live_union(left: Array[i64], right: Array[i64]) -> Array[i64]
 			next[!i] = 1
 	return next
 
-def mir_live_equal(left: Array[i64], right: Array[i64]) -> bool
-	if len(left) != len(right)
-		return false
-	for i in 0..len(left)
-		if left[!i] != right[!i]
-			return false
-	return true
+export def mir_live_equal(left: Array[i64], right: Array[i64]) -> bool
+	return Cfg.mir_cfg_state_equal(left, right)
 
-def mir_live_before(ins: MirInstruction, after: Array[i64]) -> Array[i64]
+def mir_live_before(ins: Mir.MirInstruction, after: Array[i64]) -> Array[i64]
 	var before = after
-	if ins.op != MIR_PRINT and ins.op != MIR_EPRINT
+	if ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT
 		before = mir_live_remove(before, ins.dst)
-	if mir_consumes_source(ins)
+	if Cfg.mir_consumes_source(ins)
 		before = mir_live_remove(before, ins.first)
-	if ins.op == MIR_CALL_MOVE
+	if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 		for i in 0..len(ins.inputs)
-			if mir_call_move_at(ins, i)
+			if Mir.mir_input_move_at(ins, i)
 				before = mir_live_remove(before, ins.inputs[!i])
-	for register in mir_instruction_reads(ins)
+	for register in Cfg.mir_instruction_reads(ins)
 		before = mir_live_add(before, register)
 	return before
 
-def mir_live_term(term: MirTerminator, after: Array[i64]) -> Array[i64]
-	if term.kind == MIR_BRANCH or term.kind == MIR_RETURN
+def mir_live_term(term: Mir.MirTerminator, after: Array[i64]) -> Array[i64]
+	if term.kind == Mir.MIR_BRANCH or term.kind == Mir.MIR_RETURN
 		return mir_live_add(after, term.operand)
 	return after
 
@@ -68,13 +68,13 @@ def mir_lifetime_drop_add(registers: Array[i64], register: i64) -> Array[i64]
 			return registers
 	return registers.append(register)
 
-def mir_lifetime_managed(types: TypeTable, function: MirFunction, register: i64) -> bool
+def mir_lifetime_managed(types: Types.TypeTable, function: Mir.MirFunction, register: i64) -> bool
 	if register < 0 or register >= len(function.register_types)
 		return false
-	return mir_managed_type(types, function.register_types[!register])
+	return Verify.mir_managed_type(types, function.register_types[!register])
 
 # Callers that also analyze ownership can reuse a single CFG snapshot.
-def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[MirLifetimeBlock]
+export def mir_lifetime_states_cfg(function: Mir.MirFunction, cfg: Cfg.MirCfgFacts) -> Array[MirLifetimeBlock]
 	let count = len(function.register_types)
 	let predecessors = cfg.predecessors
 	let reached = cfg.reached
@@ -98,9 +98,11 @@ def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[Mi
 		queued[!i] = 0
 		let block = function.blocks[!i]
 		var outgoing = empty
-		if block.terminator.kind == MIR_JUMP or block.terminator.kind == MIR_BRANCH
-			outgoing = mir_live_union(outgoing, state[!block.terminator.target].live_in)
-		if block.terminator.kind == MIR_BRANCH
+		if block.terminator.kind == Mir.MIR_JUMP or block.terminator.kind == Mir.MIR_BRANCH
+			# A single successor's live-in state is already the union.
+			# Further unions use CoW, preserving its stored snapshot.
+			outgoing = state[!block.terminator.target].live_in
+		if block.terminator.kind == Mir.MIR_BRANCH and block.terminator.alternative != block.terminator.target
 			outgoing = mir_live_union(outgoing, state[!block.terminator.alternative].live_in)
 		var incoming = mir_live_term(block.terminator, outgoing)
 		for position in 0..len(block.instructions)
@@ -114,12 +116,12 @@ def mir_lifetime_states_cfg(function: MirFunction, cfg: MirCfgFacts) -> Array[Mi
 					queue = queue.append(pred)
 	return state
 
-def mir_lifetime_states(function: MirFunction) -> Array[MirLifetimeBlock]
-	return mir_lifetime_states_cfg(function, mir_cfg_facts(function))
+export def mir_lifetime_states(function: Mir.MirFunction) -> Array[MirLifetimeBlock]
+	return mir_lifetime_states_cfg(function, Cfg.mir_cfg_facts(function))
 
-def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLifetime
+def mir_lifetime_function(types: Types.TypeTable, function: Mir.MirFunction) -> MirLowerLifetime
 	let state = mir_lifetime_states(function)
-	var blocks = Array[MirBlock]()
+	var blocks = Array[Mir.MirBlock]()
 	var count = 0
 	for i in 0..len(function.blocks)
 		let block = function.blocks[!i]
@@ -128,38 +130,38 @@ def mir_lifetime_function(types: TypeTable, function: MirFunction) -> MirLowerLi
 		for position in 0..len(block.instructions)
 			let ins = block.instructions[!len(block.instructions) - 1 - position]
 			var dropping = Array[i64]()
-			if ins.op != MIR_RELEASE and ins.op != MIR_RELEASE_IF_INIT
-				if ins.op != MIR_PRINT and ins.op != MIR_EPRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
+			if ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
+				if ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and not mir_live_contains(live, ins.dst) and mir_lifetime_managed(types, function, ins.dst)
 					dropping = mir_lifetime_drop_add(dropping, ins.dst)
-				for register in mir_instruction_reads(ins)
-					if register != ins.dst and not (mir_consumes_source(ins) and register == ins.first) and not mir_call_moves_register(ins, register) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)
+				for register in Cfg.mir_instruction_reads(ins)
+					if register != ins.dst and not (Cfg.mir_consumes_source(ins) and register == ins.first) and not Mir.mir_input_moves_register(ins, register) and not mir_live_contains(live, register) and mir_lifetime_managed(types, function, register)
 						dropping = mir_lifetime_drop_add(dropping, register)
 			releases = releases.append(dropping)
 			live = mir_live_before(ins, live)
-		var instructions = Array[MirInstruction]()
+		var instructions = Array[Mir.MirInstruction]()
 		for position in 0..len(block.instructions)
 			instructions = instructions.append(block.instructions[!position])
 			let dropping = releases[!len(block.instructions) - 1 - position]
 			for register in dropping
-				instructions = instructions.append(mir_op(MIR_RELEASE, register, register, -1, 0))
+				instructions = instructions.append(Mir.mir_op(Mir.MIR_RELEASE, register, register, -1, 0))
 				count += 1
-		blocks = blocks.append(MirBlock(instructions, block.terminator))
-	return MirLowerLifetime(MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
+		blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))
+	return MirLowerLifetime(Mir.MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry), count)
 
 
 # Internal transformation, used when the surrounding pipeline owns validation.
-def mir_insert_lifetimes_unchecked(program: MirProgram) -> MirLifetimeResult
-	var functions = Array[MirFunction]()
+export def mir_insert_lifetimes_unchecked(program: Mir.MirProgram) -> MirLifetimeResult
+	var functions = Array[Mir.MirFunction]()
 	var count = 0
 	for function in program.functions
 		let lowered = mir_lifetime_function(program.types, function)
 		functions = functions.append(lowered.function)
 		count += lowered.releases
-	return MirLifetimeResult(mir_program_with_types(functions, program.types), count, "")
+	return MirLifetimeResult(Mir.mir_program_with_types(functions, program.types), count, "")
 
-def mir_insert_lifetimes(program: MirProgram) -> MirLifetimeResult
-	let error = mir_check_ownership(program)
+export def mir_insert_lifetimes(program: Mir.MirProgram) -> MirLifetimeResult
+	let error = Ownership.mir_check_ownership(program)
 	if error != ""
 		return MirLifetimeResult(program, 0, error)
 	let lowered = mir_insert_lifetimes_unchecked(program)
-	return MirLifetimeResult(lowered.program, lowered.releases, mir_check_ownership(lowered.program))
+	return MirLifetimeResult(lowered.program, lowered.releases, Ownership.mir_check_ownership(lowered.program))

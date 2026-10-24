@@ -9,8 +9,8 @@ import sys
 import tempfile
 from time import perf_counter
 
-from build_support import BuildCache, C_FLAGS, LINK_FLAGS, require_cc
-from source_manifest import MIR_ONLY_COMPILER_SOURCES, ROOT, combined_sources
+from build_support import BuildCache, C_FLAGS, link_flags, require_cc
+from project_paths import ROOT
 
 
 SMOKE = {
@@ -42,20 +42,18 @@ def native_build(cc: str, runtime: Path, source: Path, target: Path, timeout: fl
 	# The generated runtime has some specialized helpers that a given program
 	# does not call; Clang diagnoses unused static inline helpers under -Werror.
 	warnings = ['-Wno-unused-function'] if 'clang' in Path(cc).name.lower() else []
-	run([cc, *C_FLAGS, *warnings, *LINK_FLAGS, '-I', str(ROOT / 'runtime'),
-		str(source), str(runtime), '-lm', '-o', str(target)], timeout)
+	run([cc, *C_FLAGS, *warnings, '-I', str(ROOT / 'runtime'),
+		str(source), str(runtime), *link_flags(cc), '-o', str(target)], timeout)
 
 
 def verify(work: Path, native_cc: str, timeout: float, rebuild: bool) -> None:
 	cache = BuildCache(require_cc(), rebuild=rebuild)
-	source = work / 'mir_compiler.sirius'
-	source.write_bytes(combined_sources(MIR_ONLY_COMPILER_SOURCES, separator=b''))
-	stage1 = cache.sirius('mir-only-selfhost-stage1', MIR_ONLY_COMPILER_SOURCES, separator=b'')
+	stage1 = cache.native_tool('modular_cli')
 	runtime = cache.runtime()
 	previous = None
 	for generation in (2, 3, 4):
 		c_source = work / f'generation_{generation}.c'
-		run([str(stage1), str(source), str(c_source)], timeout)
+		run([str(stage1), '--module-root', str(ROOT / 'src'), 'modular_cli', str(c_source)], timeout)
 		print(f'Generation {generation}: {c_source.stat().st_size:,} C bytes', flush=True)
 		if previous is not None and c_source.read_bytes() != previous:
 			raise AssertionError(f'MIR C differs between generations {generation - 1} and {generation}')

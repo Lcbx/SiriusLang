@@ -2,7 +2,8 @@
 """Compile and run the MIR interpreter written in Sirius against hand-built MIR."""
 import argparse
 
-from build_support import BuildCache, check_sirius_driver, options, require_cc
+from project_paths import ROOT
+from build_support import BuildCache, execute, options, require_cc
 
 
 def main() -> None:
@@ -10,12 +11,8 @@ def main() -> None:
 	options(parser)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
-	output = check_sirius_driver(cache, 'mir', (
-		'src/types.sirius',
-		'src/mir.sirius', 'src/mir_cfg.sirius', 'src/mir_verify.sirius', 'src/mir_common.sirius',
-		'src/mir_interpreter.sirius',
-		'tests/mir/driver.sirius',
-	), '42\nPASS Sirius MIR interpreter\n')
+	output = execute([str(cache.native_driver('mir', ROOT / 'tests/mir/driver_native.sirius'))]).stdout
+	assert output == '42\nPASS Sirius MIR interpreter' + '\n', output
 	print(output, end='')
 
 

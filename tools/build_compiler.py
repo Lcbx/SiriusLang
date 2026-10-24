@@ -2,10 +2,9 @@
 """Build an executable Sirius compiler from committed bootstrap/compiler.c."""
 import argparse
 from pathlib import Path
-import shutil
 import sys
 
-from build_support import BuildCache, require_cc
+from build_support import BuildCache, copy_binary, require_cc
 
 
 def main() -> None:
@@ -15,9 +14,7 @@ def main() -> None:
 	parser.add_argument('--rebuild', action='store_true', help='clear cached native builds')
 	args = parser.parse_args()
 	compiler = BuildCache(require_cc(), rebuild=args.rebuild).seed()
-	args.output.parent.mkdir(parents=True, exist_ok=True)
-	if compiler.resolve() != args.output.resolve():
-		shutil.copy2(compiler, args.output)
+	copy_binary(compiler, args.output)
 	print(f'Built {args.output} from committed bootstrap/compiler.c')
 
 

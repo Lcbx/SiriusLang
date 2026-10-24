@@ -1,14 +1,13 @@
 #!/usr/bin/env python
 """Compare joint must/may propagation with the standalone ownership solvers."""
-from build_support import BuildCache, check_sirius_driver, require_cc
-from source_manifest import MIR_DRIVER_SOURCES
+from project_paths import ROOT
+from build_support import BuildCache, execute, require_cc
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	output = check_sirius_driver(cache, 'mir-ownership-combined', MIR_DRIVER_SOURCES + (
-		'tests/mir/ownership_combined_driver.sirius',
-	), 'PASS MIR combined forward ownership\n')
+	output = execute([str(cache.native_driver('mir-ownership-combined', ROOT / 'tests/mir/ownership_combined_driver_native.sirius'))]).stdout
+	assert output == 'PASS MIR combined forward ownership\n', output
 	print(output, end='')
 
 

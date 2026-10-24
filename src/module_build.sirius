@@ -1,45 +1,56 @@
+import hir alias Hir
+import mir alias Mir
+import mir_bundle alias MirBundle
+import mir_generic alias MirGeneric
+import mir_library alias MirLibrary
+import mir_link alias MirLink
+import mir_program alias MirProgram
+import module alias Module
+import module_interface alias ModuleInterface
+import module_resolve alias ModuleResolve
+import module_scan alias ModuleScan
+import parser alias Parser
+import types alias Types
 # Compile scanned source modules, specializing imported generics on demand.
 # Concrete MIR libraries are linked only after all referenced specializations
 # have been emitted from their defining module.
 rec ModuleBuildResult(entry: string, error: string)
-rec ModuleBuildCompiled(library: MirLibraryLoad, error: string)
 
-def module_build_compile(unit: ModuleScanUnit, units: Array[ModuleScanUnit], roots: Array[string], arguments: Array[i64], generic: bool, caller_types: TypeTable) -> ModuleBuildCompiled
-	let imported = module_scan_import_declarations(unit.declarations, units)
+def module_build_compile(unit: ModuleScan.ModuleScanUnit, units: Array[ModuleScan.ModuleScanUnit], roots: Array[string], arguments: Array[i64], generic: bool, caller_types: Types.TypeTable) -> MirLibrary.ModuleBuildCompiled
+	let imported = ModuleScan.module_scan_import_declarations(unit.declarations, units)
 	if imported.error != ""
-		return ModuleBuildCompiled(mir_library_failure(imported.error), imported.error)
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(imported.error), imported.error)
 	var declarations = imported.declarations
 	var concrete = arguments
 	if generic
 		concrete = Array[i64]()
 		var types = declarations.types
 		for argument in arguments
-			let mapped = module_import_type(types, caller_types, argument)
-			if mapped.id == TYPE_TAG_INVALID
-				return ModuleBuildCompiled(mir_library_failure("unsupported generic argument type"), "unsupported generic argument type")
+			let mapped = ModuleInterface.module_import_type(types, caller_types, argument)
+			if mapped.id == Types.TYPE_TAG_INVALID
+				return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("unsupported generic argument type"), "unsupported generic argument type")
 			types = mapped.table
 			concrete = concrete.append(mapped.id)
 		declarations.types = types
-	let resolved = hir_resolve_module_calls(unit.tree, declarations)
+	let resolved = ModuleResolve.hir_resolve_module_calls(unit.tree, declarations)
 	if resolved.error != ""
 		let message = str(resolved.line) + ": " + resolved.error
-		return ModuleBuildCompiled(mir_library_failure(message), message)
-	let lowered = mir_build_program_roots(resolved.tree, declarations, roots, concrete)
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(message), message)
+	let lowered = MirProgram.mir_build_program_roots(resolved.tree, declarations, roots, concrete)
 	if lowered.error != ""
-		return ModuleBuildCompiled(mir_library_failure(lowered.error), lowered.error)
-	var exports = Array[MirNamedExport]()
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(lowered.error), lowered.error)
+	var exports = Array[Mir.MirNamedExport]()
 	for exported in lowered.exports
-		var symbol = hir_module_symbol(unit.name, exported.name)
+		var symbol = Module.hir_module_symbol(unit.name, exported.name)
 		if generic
-			symbol = mir_generic_symbol(symbol, lowered.program.types, concrete)
-		exports = exports.append(MirNamedExport(symbol, exported.function_id))
-	var library = MirLibraryLoad(lowered.program, exports, "")
-	library.imports = lowered.imports
-	return ModuleBuildCompiled(library, "")
+			symbol = Module.mir_generic_symbol(symbol, lowered.program.types, concrete)
+		exports = exports.append(Mir.MirNamedExport(symbol, exported.function_id))
+	let library = MirLibrary.MirLibraryLoad(lowered.program, exports, "", lowered.imports)
+	return MirLibrary.ModuleBuildCompiled(library, "")
 
 # Find a generic definition matching the import's canonical type signature.
 # Each distinct concrete signature is compiled once, even if many modules use it.
-def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibraryLoad, imported: MirNamedImport) -> ModuleBuildCompiled
+def module_build_specialization(units: Array[ModuleScan.ModuleScanUnit], library: MirLibrary.MirLibraryLoad, imported: Mir.MirNamedImport) -> MirLibrary.ModuleBuildCompiled
 	let function = library.program.functions[!imported.function_id]
 	var arguments = Array[i64]()
 	for i in 0..function.argument_count
@@ -48,21 +59,21 @@ def module_build_specialization(units: Array[ModuleScanUnit], library: MirLibrar
 		for exported in unit.exports
 			if exported.origin != "" or not exported.generic
 				continue
-			let name = hir_module_symbol(unit.name, exported.name)
-			if mir_generic_symbol(name, library.program.types, arguments) != imported.name
+			let name = Module.hir_module_symbol(unit.name, exported.name)
+			if Module.mir_generic_symbol(name, library.program.types, arguments) != imported.name
 				continue
 			return module_build_compile(unit, units, [exported.name], arguments, true, library.program.types)
-	return ModuleBuildCompiled(mir_library_failure(""), "")
+	return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(""), "")
 
 # Finish a module after all its imports. Dependency order and public interface
 # validation are shared by source modules and serialized generic packages.
-def module_build_visit_imports(root: string, name: string, path: string, tree: ParseState, declarations: HirModuleDecl, requirements: Array[MirGenericDependency], packaged: bool, visiting: Array[string], state: ModuleScanCached) -> ModuleScanCached
+def module_build_visit_imports(root: string, name: string, path: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, requirements: Array[MirGeneric.MirGenericDependency], packaged: bool, legacy_interfaces: bool, visiting: Array[string], state: ModuleScan.ModuleScanCached, bundles: Array[MirBundle.MirBundlePackage]) -> ModuleScan.ModuleScanCached
 	var current = state
 	let stack = visiting.append(name)
 	for imported in declarations.imports
-		if module_scan_reserved(imported.alias)
-			return ModuleScanCached(ModuleScanResult(current.result.visited, name + ": invalid import alias: " + imported.alias, current.result.units), current.cache)
-		current = module_build_visit(root, imported.path, stack, current)
+		if ModuleScan.module_scan_reserved(imported.alias)
+			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(current.result.visited, name + ": invalid import alias: " + imported.alias, current.result.units), current.cache)
+		current = module_build_visit(root, imported.path, stack, current, bundles)
 		if current.result.error != ""
 			return current
 	if packaged
@@ -70,20 +81,23 @@ def module_build_visit_imports(root: string, name: string, path: string, tree: P
 			var verified = false
 			for unit in current.result.units
 				if unit.name == requirement.name
-					if mir_generic_interface(unit) != requirement.signature
-						return ModuleScanCached(ModuleScanResult(current.result.visited, "generic package dependency interface mismatch: " + name + " -> " + requirement.name, current.result.units), current.cache)
+					var actual = MirGeneric.mir_generic_interface(unit)
+					if legacy_interfaces
+						actual = MirGeneric.mir_generic_interface_legacy(unit)
+					if actual != requirement.signature
+						return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(current.result.visited, "generic package dependency interface mismatch: " + name + " -> " + requirement.name, current.result.units), current.cache)
 					verified = true
 			if not verified
-				return ModuleScanCached(ModuleScanResult(current.result.visited, "missing generic package dependency: " + requirement.name, current.result.units), current.cache)
-	let resolved = module_scan_complete(name, path, tree, declarations, current.result.visited, current.result.units)
-	return ModuleScanCached(resolved, current.cache)
+				return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(current.result.visited, "missing generic package dependency: " + requirement.name, current.result.units), current.cache)
+	let resolved = ModuleScan.module_scan_complete(name, path, tree, declarations, current.result.visited, current.result.units)
+	return ModuleScan.ModuleScanCached(resolved, current.cache)
 
 # Walk the dependency graph once. Source takes precedence over packages, and
 # visiting detects cycles including source/package combinations.
-def module_build_visit(root: string, name: string, visiting: Array[string], state: ModuleScanCached) -> ModuleScanCached
+def module_build_visit(root: string, name: string, visiting: Array[string], state: ModuleScan.ModuleScanCached, bundles: Array[MirBundle.MirBundlePackage]) -> ModuleScan.ModuleScanCached
 	let previous = state.result
-	if not module_scan_path_valid(name)
-		return ModuleScanCached(ModuleScanResult(previous.visited, "invalid module path: " + name, previous.units), state.cache)
+	if not ModuleScan.module_scan_path_valid(name)
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "invalid module path: " + name, previous.units), state.cache)
 	for current in visiting
 		if current == name
 			var chain = ""
@@ -91,41 +105,51 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 				if chain != ""
 					chain += " -> "
 				chain += part
-			return ModuleScanCached(ModuleScanResult(previous.visited, "cyclic module imports: " + chain + " -> " + name, previous.units), state.cache)
+			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "cyclic module imports: " + chain + " -> " + name, previous.units), state.cache)
 	for completed in previous.visited
 		if completed == name
 			return state
-	let source_path = module_scan_filename(root, name)
-	let parsed = module_scan_parse_cached(root, name, state.cache)
+	let source_path = Module.module_scan_filename(root, name)
+	let parsed = ModuleScan.module_scan_parse_cached(root, name, state.cache)
 	if not parsed.missing
 		if parsed.error != ""
-			return ModuleScanCached(ModuleScanResult(previous.visited, parsed.error, previous.units), parsed.cache)
+			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, parsed.error, previous.units), parsed.cache)
 		let source = parsed.cache.sources[!parsed.index]
-		return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGenericDependency](), false, visiting, ModuleScanCached(previous, parsed.cache))
+		return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGeneric.MirGenericDependency](), false, false, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), bundles)
 	let package_path = source_path.slice(0, len(source_path) - 7) + ".smirg"
-	let serialized = read_text(package_path) or ""
+	var serialized = read_text(package_path) or ""
 	if serialized == ""
-		return ModuleScanCached(ModuleScanResult(previous.visited, parsed.error, previous.units), parsed.cache)
-	let loaded = mir_deserialize_generic(serialized)
+		for bundle in bundles
+			if bundle.name == name
+				serialized = bundle.contents
+	if serialized == ""
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, parsed.error, previous.units), parsed.cache)
+	let archive = MirBundle.mir_bundle_read(serialized)
+	if archive.error != ""
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "invalid generic bundle " + name + ": " + archive.error, previous.units), parsed.cache)
+	let loaded = MirGeneric.mir_deserialize_generic(archive.contents)
 	if loaded.error != ""
-		return ModuleScanCached(ModuleScanResult(previous.visited, "invalid generic package " + name + ": " + loaded.error, previous.units), parsed.cache)
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "invalid generic package " + name + ": " + loaded.error, previous.units), parsed.cache)
 	if loaded.module != name
-		return ModuleScanCached(ModuleScanResult(previous.visited, "generic package module mismatch: " + name, previous.units), parsed.cache)
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "generic package module mismatch: " + name, previous.units), parsed.cache)
 	var declarations = loaded.declarations
 	declarations.exports = loaded.exports
-	return module_build_visit_imports(root, name, package_path, loaded.tree, declarations, loaded.dependencies, true, visiting, ModuleScanCached(previous, parsed.cache))
+	var available = bundles
+	for package in archive.packages
+		available = available.append(package)
+	return module_build_visit_imports(root, name, package_path, loaded.tree, declarations, loaded.dependencies, true, loaded.legacy_interfaces, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), available)
 
 # A single build-local visit replaces repeated full-root scans and package
 # preparation retries. Each module is completed only after its dependencies.
-def module_build_scan(root: string, entry: string) -> ModuleScanResult
-	let initial = ModuleScanCached(ModuleScanResult(Array[string](), "", Array[ModuleScanUnit]()), module_scan_empty_cache())
-	return module_build_visit(root, entry, Array[string](), initial).result
+export def module_build_scan(root: string, entry: string) -> ModuleScan.ModuleScanResult
+	let initial = ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(Array[string](), "", Array[ModuleScan.ModuleScanUnit]()), ModuleScan.module_scan_empty_cache())
+	return module_build_visit(root, entry, Array[string](), initial, Array[MirBundle.MirBundlePackage]()).result
 
-def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
+export def module_build_link(root: string, entry: string) -> MirLibrary.ModuleBuildCompiled
 	let scanned = module_build_scan(root, entry)
 	if scanned.error != ""
-		return ModuleBuildResult("", scanned.error)
-	var libraries = Array[MirLibraryLoad]()
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(scanned.error), scanned.error)
+	var libraries = Array[MirLibrary.MirLibraryLoad]()
 	for unit in scanned.units
 		var roots = Array[string]()
 		for function in unit.exports
@@ -133,7 +157,7 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 				roots = roots.append(function.name)
 		if unit.name == entry
 			if not unit.has_main
-				return ModuleBuildResult("", "entry module has no main() function: " + entry)
+				return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("entry module has no main() function: " + entry), "entry module has no main() function: " + entry)
 			var main_exported = false
 			for name in roots
 				if name == "main"
@@ -143,10 +167,10 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 		if len(roots) == 0
 			if len(unit.exported_constants) > 0 or len(unit.exports) > 0
 				continue
-			return ModuleBuildResult("", "module has no exported declarations: " + unit.name)
+			return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("module has no exported declarations: " + unit.name), "module has no exported declarations: " + unit.name)
 		let compiled = module_build_compile(unit, scanned.units, roots, Array[i64](), false, unit.types)
 		if compiled.error != ""
-			return ModuleBuildResult("", unit.name + ": " + compiled.error)
+			return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(unit.name + ": " + compiled.error), unit.name + ": " + compiled.error)
 		libraries = libraries.append(compiled.library)
 	# Scan newly emitted imports too: specializations can call other generics.
 	var cursor = 0
@@ -161,16 +185,23 @@ def module_build(root: string, entry: string, output: string) -> ModuleBuildResu
 			if not resolved
 				let compiled = module_build_specialization(scanned.units, library, imported)
 				if compiled.error != ""
-					return ModuleBuildResult("", compiled.error)
+					return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(compiled.error), compiled.error)
 				if len(compiled.library.exports) > 0
 					libraries = libraries.append(compiled.library)
 		cursor += 1
-	let linked = mir_link_libraries(libraries)
+	let linked = MirLink.mir_link_libraries(libraries)
 	if linked.error != ""
-		return ModuleBuildResult("", linked.error)
-	let saved = mir_serialize_library(linked.program, linked.exports, Array[MirNamedImport]())
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(linked.error), linked.error)
+	return MirLibrary.ModuleBuildCompiled(MirLibrary.MirLibraryLoad(linked.program, linked.exports, "", Array[Mir.MirNamedImport]()), "")
+
+export def module_build(root: string, entry: string, output: string) -> ModuleBuildResult
+	let compiled = module_build_link(root, entry)
+	if compiled.error != ""
+		return ModuleBuildResult("", compiled.error)
+	let linked = compiled.library
+	let saved = MirLibrary.mir_serialize_library(linked.program, linked.exports, linked.imports)
 	if saved.error != ""
 		return ModuleBuildResult("", saved.error)
 	if not write_text(output, saved.text)
 		return ModuleBuildResult("", "cannot write MIR library: " + output)
-	return ModuleBuildResult(hir_module_symbol(entry, "main"), "")
+	return ModuleBuildResult(Module.hir_module_symbol(entry, "main"), "")

@@ -1,0 +1,94 @@
+import mir alias Mir
+import mir_guard alias Guard
+import mir_cleanup alias Cleanup
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import types alias Types
+
+# A normal Optional return transports a shared nested heap graph across two
+# frames. Both the Some/None paths must release their abandoned roots, while
+# retaining each duplicate child edge independently.
+def inband_program(present: bool, moved: bool) -> Mir.MirProgram
+	var types = Types.new_type_table()
+	let texts = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
+	types = texts.table
+	let item = Types.intern_record_type(types, [Types.RecordField("texts", texts.id)])
+	types = item.table
+	let items = Types.intern_array_type(types, item.id)
+	types = items.table
+	let optional = Types.intern_optional_type(types, items.id)
+	types = optional.table
+	var callee_entry = [Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, 0)]
+	if present
+		callee_entry = [Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, 1)]
+	let callee = Mir.MirFunction(1, optional.id, [items.id, Types.TYPE_TAG_BOOL, optional.id], [
+		Mir.MirBlock(callee_entry, Mir.mir_branch(1, 1, 2)),
+		Mir.MirBlock([Mir.mir_optional_some(2, 0)], Mir.mir_return(2)),
+		Mir.MirBlock([Mir.mir_optional_none(2)], Mir.mir_return(2))
+	], 0)
+	var create = [Mir.mir_string(0, "child"), Mir.mir_array_new(1, [0, 0]), Mir.mir_record_new(2, [1]), Mir.mir_array_new(3, [2, 2])]
+	if moved
+		create = create.append(Mir.mir_call_move(4, 0, [3], 3))
+	else
+		create = create.append(Mir.mir_call(4, 0, [3]))
+	create = create.append(Mir.mir_optional_has(5, 4))
+	let yes = [Mir.mir_optional_unwrap(6, 4), Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 7, 6, -1, 0)]
+	let no = [Mir.mir_op(Mir.MIR_CONST_I64, 7, -1, -1, 0)]
+	let caller = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, texts.id, item.id, items.id, optional.id, Types.TYPE_TAG_BOOL, items.id, Types.TYPE_TAG_I64], [
+		Mir.MirBlock(create, Mir.mir_branch(5, 1, 2)),
+		Mir.MirBlock(yes, Mir.mir_return(7)),
+		Mir.MirBlock(no, Mir.mir_return(7))
+	], 0)
+	return Mir.mir_program_with_types([callee, caller], types)
+
+# The checker must reject early exits that abandon a frame owner, and a
+# caller attempting to use an argument after transferring it to the callee.
+def invalid_move_read() -> Mir.MirProgram
+	var program = inband_program(true, true)
+	var caller = program.functions[!1]
+	var blocks = caller.blocks
+	var instructions = blocks[!0].instructions
+	instructions = instructions.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 7, 3, -1, 0))
+	blocks[!0] = Mir.MirBlock(instructions, blocks[!0].terminator)
+	caller.blocks = blocks
+	program.functions[!1] = caller
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 5
+		return 1
+	if Ownership.mir_check_balance(invalid_move_read()) == ""
+		return 6
+	for variant in 0..4
+		let original = inband_program(variant % 2 == 0, variant >= 2)
+		# Callee parameters need cleanup on every success alternative.
+		if Ownership.mir_check_balance(original) == ""
+			return 7
+	for variant in 0..4
+		let present = variant % 2 == 0
+		let moved = variant >= 2
+		let original = inband_program(present, moved)
+		let guarded = Guard.mir_insert_guards(original)
+		if guarded.error != ""
+			print(guarded.error)
+			return 2
+		let cleaned = Cleanup.mir_insert_exit_cleanup(guarded.program)
+		if cleaned.error != "" or Ownership.mir_check_balance(cleaned.program) != ""
+			print(cleaned.error)
+			return 3
+		let outcome = Interpreter.mir_execute(cleaned.program, 1, Array[Mir.MirValue](), 300, 10)
+		var expected = 0
+		if present
+			expected = 2
+		let credits = Interpreter.mir_audit_return_credits(cleaned.program.types, outcome)
+		if outcome.error != "" or outcome.value.bits != expected or credits != ""
+			print(outcome.error + credits)
+			return 4
+		let emitted = Emit.mir_emit_c_reachable_verified(cleaned.program, 1)
+		if emitted.error != "" or not write_text(args[!variant + 1], emitted.code)
+			print(emitted.error)
+			return 5
+	print("PASS in-band nested ownership transfers")
+	return 0

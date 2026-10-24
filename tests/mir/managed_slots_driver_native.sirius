@@ -1,0 +1,150 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import types alias Types
+
+# Both string owners finish in this block; sequential intervals can share a slot.
+def sequential_fixture() -> Mir.MirProgram
+	let instructions = [Mir.mir_string(0, "ab"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0), Mir.mir_string(2, "xyz"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 4, 1, 3, 0)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(4))], 0)
+	return Mir.new_mir_program([function])
+
+# Independent basic blocks reuse slots after their owners are released.
+def separate_blocks_fixture() -> Mir.MirProgram
+	let first = [Mir.mir_string(0, "ab"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0)]
+	let second = [Mir.mir_string(2, "abc"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 4, 1, 3, 0)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(first, Mir.mir_jump(1)), Mir.MirBlock(second, Mir.mir_return(4))], 0)
+	return Mir.new_mir_program([function])
+
+# Conditional cleanup may share storage with an owner created after it.
+def conditional_fixture() -> Mir.MirProgram
+	let head = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, 1)]
+	let yes = [Mir.mir_string(1, "owned")]
+	let tail = [Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0), Mir.mir_string(2, "local"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 7)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], [Mir.MirBlock(head, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(yes, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(3)), Mir.MirBlock(tail, Mir.mir_return(3))], 0)
+	return Mir.new_mir_program([function])
+
+# Two overlapping owners must retain separate slots even if both are later
+# released within the same block.
+def overlap_fixture() -> Mir.MirProgram
+	let instructions = [Mir.mir_string(0, "ab"), Mir.mir_string(1, "xyz"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0), Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 1, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 4, 2, 3, 0)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(4))], 0)
+	return Mir.new_mir_program([function])
+
+# A cross-block owner can share a slot with an owner created after release.
+def cross_block_owner_fixture() -> Mir.MirProgram
+	let start = [Mir.mir_string(0, "ab")]
+	let finish = [Mir.mir_op(Mir.MIR_STRING_LENGTH, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0), Mir.mir_string(2, "local"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING], [Mir.MirBlock(start, Mir.mir_jump(1)), Mir.MirBlock(finish, Mir.mir_return(1))], 0)
+	return Mir.new_mir_program([function])
+
+# A block can run more than once; unconditional releases must clear the
+# physical register before the next iteration reuses it.
+def loop_fixture() -> Mir.MirProgram
+	let start = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 4), Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 1)]
+	let body = [Mir.mir_string(2, "first"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_string(3, "second"), Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 0, 0, 4, 0), Mir.mir_op(Mir.MIR_LT_I64, 5, 0, 1, 0)]
+	let blocks = [Mir.MirBlock(start, Mir.mir_jump(1)), Mir.MirBlock(body, Mir.mir_branch(5, 1, 2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_BOOL], blocks, 0)
+	return Mir.new_mir_program([function])
+
+# Across a join, r1 may still be owned when r2 is created. Their slots
+# interfere even if only one branch produces r1.
+def join_overlap_fixture(yes: bool) -> Mir.MirProgram
+	var branch = 0
+	if yes
+		branch = 1
+	let head = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, branch)]
+	let left = [Mir.mir_string(1, "branch")]
+	let tail = [Mir.mir_string(2, "later"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 9)]
+	let blocks = [Mir.MirBlock(head, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(left, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(3)), Mir.MirBlock(tail, Mir.mir_return(3))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
+
+# r1 is never owned on the else branch, but RELEASE_IF_INIT still reads its
+# physical pointer there. Reusing the live r2 slot would incorrectly free r2.
+def absent_cleanup_fixture(yes: bool) -> Mir.MirProgram
+	var branch = 0
+	if yes
+		branch = 1
+	let head = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, branch)]
+	let left = [Mir.mir_string(1, "branch"), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0)]
+	let right = [Mir.mir_string(2, "else"), Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0), Mir.mir_op(Mir.MIR_STRING_LENGTH, 3, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0)]
+	let end = [Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 6)]
+	let blocks = [Mir.MirBlock(head, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(left, Mir.mir_jump(3)), Mir.MirBlock(right, Mir.mir_jump(3)), Mir.MirBlock(end, Mir.mir_return(4))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], blocks, 0)])
+
+# A move must not alias its own input and destination, while a later disjoint
+# owner can reuse the first slot.
+def move_fixture() -> Mir.MirProgram
+	let instructions = [Mir.mir_string(0, "first"), Mir.mir_op(Mir.MIR_MOVE, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0), Mir.mir_string(2, "second"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 3)]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(3))], 0)])
+
+# Call-transfer C emission stores the result before clearing the source;
+# aliasing these registers would silently erase the returned owner.
+def call_move_fixture() -> Mir.MirProgram
+	let callee = Mir.MirFunction(1, Types.TYPE_TAG_STRING, [Types.TYPE_TAG_STRING], [Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))], 0)
+	let instructions = [Mir.mir_string(0, "abc"), Mir.mir_call_move(1, 1, [0], 0), Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 1, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0), Mir.mir_string(3, "four"), Mir.mir_op(Mir.MIR_STRING_LENGTH, 4, 3, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0), Mir.mir_op(Mir.MIR_ADD_I64, 5, 2, 4, 0)]
+	let caller = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(5))], 0)
+	return Mir.new_mir_program([caller, callee])
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 13
+		return 1
+	let cases = [sequential_fixture(), separate_blocks_fixture(), conditional_fixture(), overlap_fixture(), cross_block_owner_fixture(), loop_fixture(), join_overlap_fixture(true), join_overlap_fixture(false), absent_cleanup_fixture(true), absent_cleanup_fixture(false), move_fixture(), call_move_fixture()]
+	for i in 0..len(cases)
+		let program = cases[!i]
+		if Ownership.mir_check_balance(program) != ""
+			return 2
+		let interpreted = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 200, 10)
+		var expected = 5
+		if i == 2
+			expected = 7
+		elif i == 4
+			expected = 2
+		elif i == 5
+			expected = 4
+		elif i == 6 or i == 7
+			expected = 9
+		elif i == 8 or i == 9
+			expected = 6
+		elif i == 10
+			expected = 3
+		elif i == 11
+			expected = 7
+		if interpreted.error != "" or interpreted.value.bits != expected
+			return 3
+		let verified = Emit.mir_emit_c_reachable_verified(program, 0)
+		let defensive = Emit.mir_emit_c(program, 0)
+		if verified.error != "" or defensive.error != ""
+			return 4
+		if i < 2
+			if (verified.code.find("S_String * r2 = NULL;") or (-1)) != -1
+				return 5
+			if (defensive.code.find("S_String * r2 = NULL;") or (-1)) == -1
+				return 6
+		elif i == 2
+			if (verified.code.find("S_String * r2 = NULL;") or (-1)) != -1
+				return 8
+		elif i == 3
+			if (verified.code.find("S_String * r1 = NULL;") or (-1)) == -1
+				return 9
+		elif i == 4
+			if (verified.code.find("S_String * r2 = NULL;") or (-1)) != -1
+				return 10
+		elif i == 5
+			if (verified.code.find("S_String * r3 = NULL;") or (-1)) != -1
+				return 11
+		elif i < 10
+			if (verified.code.find("S_String * r1 = NULL;") or (-1)) == -1 or (verified.code.find("S_String * r2 = NULL;") or (-1)) == -1
+				return 12
+		elif i == 10
+			if (verified.code.find("S_String * r1 = NULL;") or (-1)) == -1 or (verified.code.find("S_String * r2 = NULL;") or (-1)) != -1
+				return 13
+		else
+			if (verified.code.find("S_String * r1 = NULL;") or (-1)) == -1 or (verified.code.find("S_String * r3 = NULL;") or (-1)) != -1
+				return 14
+		if not write_text(args[!i + 1], verified.code)
+			return 7
+	print("PASS managed MIR slot reuse")
+	return 0

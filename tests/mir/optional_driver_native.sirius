@@ -1,0 +1,90 @@
+import mir alias Mir
+import mir_emit_c alias MirEmitC
+import mir_interpreter alias MirInterpreter
+import types alias Types
+# Hand-built MIR optionals: present/missing values, managed payloads and panic.
+def optional_string_program() -> Mir.MirProgram
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let optional = Types.intern_optional_type(array.table, Types.TYPE_TAG_STRING)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_string(0, "hello"))
+	code = code.append(Mir.mir_array_new(1, [0]))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0))
+	code = code.append(Mir.mir_array_get_optional(3, 1, 2))
+	code = code.append(Mir.mir_optional_has(4, 3))
+	code = code.append(Mir.mir_optional_unwrap(5, 3))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 6, 5, -1, 0))
+	code = code.append(Mir.mir_optional_none(7))
+	code = code.append(Mir.mir_optional_has(8, 7))
+	code = code.append(Mir.mir_optional_some(9, 0))
+	code = code.append(Mir.mir_optional_unwrap(10, 9))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 11, 10, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_ADD_I64, 12, 6, 11, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, array.id, Types.TYPE_TAG_I64, optional.id, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, optional.id, Types.TYPE_TAG_BOOL, optional.id, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(12))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = optional.table
+	return program
+
+def optional_missing_program() -> Mir.MirProgram
+	let optional = Types.intern_optional_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	var instructions = Array[Mir.MirInstruction]()
+	instructions = instructions.append(Mir.mir_optional_none(0))
+	instructions = instructions.append(Mir.mir_optional_unwrap(1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [optional.id, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(1))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = optional.table
+	return program
+
+def optional_dict_program() -> Mir.MirProgram
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_STRING)
+	let dict = Types.intern_dict_type(array.table, Types.TYPE_TAG_I64, array.id)
+	let optional = Types.intern_optional_type(dict.table, array.id)
+	var code = Array[Mir.MirInstruction]()
+	code = code.append(Mir.mir_dict_new(0))
+	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 7))
+	code = code.append(Mir.mir_string(2, "hello"))
+	code = code.append(Mir.mir_array_new(3, [2]))
+	code = code.append(Mir.mir_dict_insert(0, 0, 1, 3))
+	code = code.append(Mir.mir_dict_get_optional(4, 0, 1))
+	code = code.append(Mir.mir_optional_unwrap(5, 4))
+	code = code.append(Mir.mir_op(Mir.MIR_ARRAY_LENGTH, 6, 5, -1, 0))
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [dict.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, array.id, optional.id, array.id, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(6))], 0)
+	var program = Mir.new_mir_program([function])
+	program.types = optional.table
+	return program
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	let present = optional_string_program()
+	let outcome = MirInterpreter.mir_execute(present, 0, Array[Mir.MirValue](), 100, 10)
+	if outcome.error != "" or outcome.value.bits != 10
+		print(outcome.error)
+		return 2
+	for record in outcome.heap
+		if record.refs != 0
+			return 3
+	let generated = MirEmitC.mir_emit_c(present, 0)
+	if generated.error != "" or not write_text(args[!1], generated.code)
+		return 4
+	let missing = optional_missing_program()
+	let missing_outcome = MirInterpreter.mir_execute(missing, 0, Array[Mir.MirValue](), 100, 10)
+	if missing_outcome.error != "missing optional value"
+		return 5
+	let missing_c = MirEmitC.mir_emit_c(missing, 0)
+	if missing_c.error != "" or not write_text(args[!2], missing_c.code)
+		return 6
+	let nested = optional_dict_program()
+	let nested_outcome = MirInterpreter.mir_execute(nested, 0, Array[Mir.MirValue](), 100, 10)
+	if nested_outcome.error != "" or nested_outcome.value.bits != 1
+		print(nested_outcome.error)
+		return 7
+	for record in nested_outcome.heap
+		if record.refs != 0
+			return 8
+	let nested_c = MirEmitC.mir_emit_c(nested, 0)
+	if nested_c.error != "" or not write_text(args[!3], nested_c.code)
+		return 9
+	print("PASS optional MIR")
+	return 0
