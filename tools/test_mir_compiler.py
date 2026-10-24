@@ -112,20 +112,25 @@ def main() -> None:
 			'def main() -> i64\n'
 			'\tlet a = [10, 20, 30][1]\n'
 			'\tlet b = [[1, 2], [3, 4]][0][1]\n'
-			'\tprint(a + b)\n'
+			'\tlet c = [10, 20, 30][(1 + 2) - 1]\n'
+			'\tlet d = [[10, 20], [30, 40]][2 * 1 - 1][1 + 0]\n'
+			'\tprint(a + b + c + d)\n'
 			'\treturn 0\n')
 		static_c = work / 'static_literal_index.c'
 		execute([str(compiler), str(static_case), str(static_c)])
-		assert_native(run_native(cache, static_c), stdout=b'22\n')
+		assert_native(run_native(cache, static_c), stdout=b'92\n')
 		for suffix, expression in (('out_of_range', '[1, 2][2]'),
-			('unproven', 'items[0]'), ('negative', '[1, 2][-1]')):
+			('unproven', 'items[0]'), ('negative', '[1, 2][-1]'),
+			('arithmetic_out_of_range', '[1, 2][1 + 1]'),
+			('arithmetic_overflow', '[1, 2][9223372036854775807 + 1]'),
+			('arithmetic_nonconstant', '[1, 2][items[!0]]')):
 			negative = work / (suffix + '.sirius')
 			negative.write_text('def main() -> i64\n\tlet items = [1, 2]\n\tprint(' + expression + ')\n\treturn 0\n')
 			failed = work / (suffix + '.c')
 			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
 			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
 				raise AssertionError(f'Expected static bounds rejection for {expression}: {result.stdout!r}')
-		print('PASS static literal bounds proof and rejection of unproven plain indices')
+		print('PASS constant-arithmetic bounds proof and rejection of unsafe plain indices')
 		elif_case = work / 'optional_elif.sirius'
 		elif_case.write_text('def main() -> i64\n\tlet table = Dict[i64, i64]()\n\tif false\n\t\tprint(1)\n\telif (table.get(1) or 0) == 0\n\t\tprint(2)\n\treturn 0\n')
 		output = work / 'optional_elif.c'

@@ -151,8 +151,7 @@ initializers, arbitrary function calls and general `comptime` remain deferred.
 String module constants permit explicit `: string` annotations; array type
 annotations are not yet accepted at module level.
 
-Plain `a[i]` indexing currently proves only nonnegative integer literals applied
-  to array literals (including nested literal chains). For other reads use
+Plain `a[i]` indexing currently proves nonnegative constant arithmetic (`+`, `-`, `*`) within array literals (including nested literal chains). For other reads use
   `a[?i]` or `a[!i]`; no general length/range inference is implemented yet.
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
@@ -499,7 +498,7 @@ fixed point:** generations 2, 3 and 4 emit byte-identical C with no legacy
 emitter in their sources. Arrays use CoW for consuming updates and amortized
 in-place append for unique owners; string join allocates once. The MIR C emitter
 shares managed-value cleanup across return paths to reduce generated C size.
-The native and interpreted paths pass their differential execution and runtime-failure cases, as well as all 91 shared positive output fixtures. The serialized MIR runner also passes 91 source-versus-loaded comparisons. Exact decimal-to-`f64` rounding for every literal and complete abnormal-exit unwinding remain open.
+The native and interpreted paths pass their differential execution and runtime-failure cases, as well as all 91 shared positive output fixtures. The serialized MIR runner also passes 91 source-versus-loaded comparisons. Exact decimal-to-`f64` rounding for every literal remains open. Process-fatal failures deliberately do not unwind caller frames; normal returns and future recoverable `Result` values must preserve ARC credits.
 
 Native/FFI registration and cross-boundary calls, multidimensional arrays,
 broadcasting, full effect/purity checking, universal runtime type descriptors

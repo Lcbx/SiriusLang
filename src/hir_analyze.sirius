@@ -25,10 +25,34 @@ export def new_hir_body_state(tree: Ast.ParseState, names: Array[string], consta
 export rec HirBodyAnalysis(nodes: Array[Hir.HirNode], error: string, error_line: i64)
 
 # A conservative static bounds proof for array literals and chains of
-# literal array indexing. Unknown lengths and nonconstant indices remain
-# unproven, so callers must use [?] or [!].
-export def hir_literal_index(tree: Ast.ParseState, id: i64, count: i64) -> i64
-	if tree.nodes[!id].kind != Ast.NODE_INTEGER
+# literal array indexing. Constant nonnegative integer arithmetic is accepted;
+# unknown lengths, variable indices and negative indexing remain unproven.
+export def hir_nonnegative_constant(tree: Ast.ParseState, id: i64) -> i64
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_UNARY
+		if Hir.hir_ast_text(tree, id) == "+"
+			return hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 0))
+		return -1
+	if node.kind == Ast.NODE_BINARY and node.count == 2
+		let op = Hir.hir_ast_text(tree, id)
+		if op != "+" and op != "-" and op != "*"
+			return -1
+		let left = hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 0))
+		let right = hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 1))
+		if left < 0 or right < 0
+			return -1
+		if op == "+"
+			if left > 9223372036854775807 - right
+				return -1
+			return left + right
+		if op == "-"
+			if left < right
+				return -1
+			return left - right
+		if right > 0 and left > 9223372036854775807 / right
+			return -1
+		return left * right
+	if node.kind != Ast.NODE_INTEGER
 		return -1
 	let digits = Hir.hir_ast_text(tree, id)
 	if len(digits) == 0
@@ -38,12 +62,15 @@ export def hir_literal_index(tree: Ast.ParseState, id: i64, count: i64) -> i64
 		let digit = (digits.byte_at(i) or 0) - 48
 		if digit < 0 or digit > 9
 			return -1
-		# Avoid integer overflow: stop as soon as the prefix exceeds length.
-		if value >= count or digit >= count
+		if value > (9223372036854775807 - digit) / 10
 			return -1
 		value = value * 10 + digit
-		if value >= count
-			return -1
+	return value
+
+export def hir_literal_index(tree: Ast.ParseState, id: i64, count: i64) -> i64
+	let value = hir_nonnegative_constant(tree, id)
+	if value < 0 or value >= count
+		return -1
 	return value
 
 export def hir_static_array_literal(tree: Ast.ParseState, id: i64) -> i64

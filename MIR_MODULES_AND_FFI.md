@@ -47,11 +47,11 @@ values, and direct-publication `export rec` constructors with qualified type nam
 are supported. Imported constructors are lowered inline; no runtime import is
 needed for them. Exported concrete signatures and direct-publication constructors
 can reference imported public record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, bundled standalone dependency closures, namespace-wide re-exports,
+Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, namespace-wide re-exports,
 and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
 compile through native module imports. The generated modular compiler C is the
 checked-in bootstrap, and no ordered source concatenation is required for
-production builds. Flat source assembly remains for older internal test drivers.
+production builds. The test-only flat source adapter has also been retired; internal test drivers use native imports.
 Tests: `tools/test_module_scanner.py`,
 `tools/test_module_builder.py`, and `tools/test_source_modules.py`.
 
