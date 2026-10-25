@@ -24,7 +24,7 @@ export Stats.DEFAULT_LIMIT
 A consumer imports these as `Facade.average(...)` and `Facade.DEFAULT_LIMIT`.
 Only exported members can be re-exported. Re-exported calls resolve to the
 original definition (including on-demand generic specialization); re-exported
-constants and direct-publication constructors retain their typed interfaces.
+constants and constructors retain their typed interfaces, including computed publications.
 Namespace-wide `export import` remains a proposal, not implemented syntax.
 
 Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
@@ -43,12 +43,19 @@ and in-memory linking, invoked by `sirius-run --build-modules`. Python is an opt
 imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
 structured external function declarations. Length-prefixed module names prevent export collisions.
 Concrete function imports, structural record signatures, exported constant
-values, and direct-publication `export rec` constructors with qualified type names
-are supported. Imported constructors are lowered inline; no runtime import is
-needed for them. Exported concrete signatures and direct-publication constructors
-can reference imported public record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Computed constructor publications, namespace-wide re-exports,
-and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
+values, and `export rec` constructors with qualified type names are supported.
+Imported constructors are lowered inline; no runtime import is needed for them.
+Computed fields and final fixed-type conditional overrides are transported as
+constructor AST subtrees through source imports and `.smirg` packages; their
+canonical result types and normalized bodies are pinned in public interfaces.
+Transported expressions can reference defining-module constants and local
+helper functions, including transitive calls. Their private owner-qualified
+bindings prevent capture by importer names. Referenced constants and helper
+bodies contribute to public dependency fingerprints; general closure capture
+and externally defined helper functions remain unsupported.
+Exported concrete signatures and constructors can reference imported public
+record types, including nested collection types.
+Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Namespace-wide re-exports and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
 compile through native module imports. The generated modular compiler C is the
 checked-in bootstrap, and no ordered source concatenation is required for
 production builds. The test-only flat source adapter has also been retired; internal test drivers use native imports.

@@ -395,6 +395,50 @@ S_Optional_i64 s_dict_i64_i64_get(const S_Dict_i64_i64 *m, int64_t key) {
     return (S_Optional_i64){false, 0};
 }
 
+/* Stable portable categories: 0=ok, 1=not found, 2=permission denied,
+   3=not a directory, 4=is a directory, 5=invalid path, 6=other I/O. */
+#ifdef _MSC_VER
+#define S_FS_TLS __declspec(thread)
+#else
+#define S_FS_TLS _Thread_local
+#endif
+static S_FS_TLS int64_t s_fs_last_kind;
+static S_FS_TLS int64_t s_fs_last_code;
+int64_t s_filesystem_error_kind(void) { return s_fs_last_kind; }
+int64_t s_filesystem_error_code(void) { return s_fs_last_code; }
+static void s_fs_success(void) { s_fs_last_kind = 0; s_fs_last_code = 0; }
+static void s_fs_errno(int code) {
+    if (!code) code = EIO;
+    s_fs_last_code = code;
+    switch (code) {
+        case ENOENT: s_fs_last_kind = 1; break;
+        case EACCES: case EPERM: s_fs_last_kind = 2; break;
+#ifdef ENOTDIR
+        case ENOTDIR: s_fs_last_kind = 3; break;
+#endif
+#ifdef EISDIR
+        case EISDIR: s_fs_last_kind = 4; break;
+#endif
+        case EINVAL: s_fs_last_kind = 5; break;
+#ifdef ENAMETOOLONG
+        case ENAMETOOLONG: s_fs_last_kind = 5; break;
+#endif
+        default: s_fs_last_kind = 6; break;
+    }
+}
+#ifdef _WIN32
+static void s_fs_win32(DWORD code) {
+    s_fs_last_code = code ? (int64_t)code : ERROR_GEN_FAILURE;
+    switch (code) {
+        case ERROR_FILE_NOT_FOUND: case ERROR_PATH_NOT_FOUND: s_fs_last_kind = 1; break;
+        case ERROR_ACCESS_DENIED: case ERROR_SHARING_VIOLATION: s_fs_last_kind = 2; break;
+        case ERROR_DIRECTORY: s_fs_last_kind = 3; break;
+        case ERROR_INVALID_NAME: case ERROR_BAD_PATHNAME: s_fs_last_kind = 5; break;
+        default: s_fs_last_kind = 6; break;
+    }
+}
+#endif
+
 #ifdef _WIN32
 static wchar_t *s_fs_wide(const S_String *path);
 #endif
@@ -406,40 +450,58 @@ static FILE *s_fs_open(const S_String *path, bool writing) {
     if (!wide) return NULL;
     FILE *file = NULL;
 #ifdef _MSC_VER
-    if (_wfopen_s(&file, wide, writing ? L"wb" : L"rb") != 0) file = NULL;
+    int status = _wfopen_s(&file, wide, writing ? L"wb" : L"rb");
+    if (status) { errno = status; file = NULL; }
 #else
     file = _wfopen(wide, writing ? L"wb" : L"rb");
 #endif
     free(wide);
     return file;
 #else
-    if (memchr(path->data, 0, path->length)) return NULL;
+    if (memchr(path->data, 0, path->length)) { errno = EINVAL; return NULL; }
     return fopen(path->data, writing ? "wb" : "rb");
 #endif
 }
 
 bool s_write_text(const S_String *path, const S_String *text) {
     FILE *f = s_fs_open(path, true);
-    if (!f) return false;
+    if (!f) { s_fs_errno(errno); return false; }
+    errno = 0;
     size_t n = fwrite(text->data, 1, text->length, f);
+    int write_error = n == text->length ? 0 : (errno ? errno : EIO);
     int closed = fclose(f);
-    return n == text->length && closed == 0;
+    if (write_error || closed) { s_fs_errno(write_error ? write_error : errno); return false; }
+    s_fs_success();
+    return true;
 }
 S_Optional_string s_read_text(const S_String *path) {
     FILE *f = s_fs_open(path, false);
-    if (!f) return (S_Optional_string){false, NULL};
-    if (fseek(f, 0, SEEK_END)) { fclose(f); return (S_Optional_string){false, NULL}; }
+    if (!f) { s_fs_errno(errno); return (S_Optional_string){false, NULL}; }
+    if (fseek(f, 0, SEEK_END)) {
+        int code = errno; fclose(f); s_fs_errno(code);
+        return (S_Optional_string){false, NULL};
+    }
     long length = ftell(f);
-    if (length < 0 || fseek(f, 0, SEEK_SET)) { fclose(f); return (S_Optional_string){false, NULL}; }
+    if (length < 0 || fseek(f, 0, SEEK_SET)) {
+        int code = errno; fclose(f); s_fs_errno(code);
+        return (S_Optional_string){false, NULL};
+    }
     size_t n = (size_t)length;
     if (n > SIZE_MAX - sizeof(S_String) - 1) s_panic("file too large");
     S_String *s = malloc(sizeof(*s) + n + 1);
     if (!s) s_panic("out of memory");
     s->refcount = 1; s_arc_audit_new(s, s->refcount); s->length = n;
+    errno = 0;
     size_t r = fread(s->data, 1, n, f);
+    int read_error = r == n ? 0 : (errno ? errno : EIO);
     int closed = fclose(f);
-    if (r != n || closed) { s_string_release(s); return (S_Optional_string){false, NULL}; }
+    if (read_error || closed) {
+        s_string_release(s);
+        s_fs_errno(read_error ? read_error : errno);
+        return (S_Optional_string){false, NULL};
+    }
     s->data[n] = '\0';
+    s_fs_success();
     return (S_Optional_string){true, s};
 }
 
@@ -846,15 +908,28 @@ static S_Array *s_fs_add_name(S_Array *names, const char *bytes, size_t length) 
 }
 #ifdef _WIN32
 static wchar_t *s_fs_wide(const S_String *path) {
-    if (memchr(path->data, 0, path->length) || path->length > INT_MAX) return NULL;
+    if (memchr(path->data, 0, path->length) || path->length > INT_MAX) { errno = EINVAL; return NULL; }
     int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->data,
                                     (int)path->length, NULL, 0);
-    if (!count) return NULL;
+    if (!count) { errno = EINVAL; return NULL; }
     wchar_t *wide = calloc((size_t)count + 1, sizeof(wchar_t));
     if (!wide) s_panic("out of memory");
     if (!MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path->data,
-                              (int)path->length, wide, count)) { free(wide); return NULL; }
+                              (int)path->length, wide, count)) { free(wide); errno = EINVAL; return NULL; }
     return wide;
+}
+int64_t s_path_kind(const S_String *path) {
+    wchar_t *wide = s_fs_wide(path);
+    if (!wide) { s_fs_errno(errno); return 0; }
+    DWORD attr = GetFileAttributesW(wide);
+    if (attr == INVALID_FILE_ATTRIBUTES) {
+        DWORD code = GetLastError();
+        free(wide); s_fs_win32(code); return 0;
+    }
+    free(wide);
+    s_fs_success();
+    if (attr & FILE_ATTRIBUTE_REPARSE_POINT) return 3;
+    return (attr & FILE_ATTRIBUTE_DIRECTORY) ? 2 : 1;
 }
 bool s_is_dir(const S_String *path) {
     wchar_t *wide = s_fs_wide(path);
@@ -866,7 +941,7 @@ bool s_is_dir(const S_String *path) {
 }
 S_Array *s_list_dir(const S_String *path) {
     wchar_t *wide = s_fs_wide(path);
-    if (!wide) return NULL;
+    if (!wide) { s_fs_errno(errno); return NULL; }
     size_t n = wcslen(wide);
     wchar_t *pattern = realloc(wide, (n + 3) * sizeof(wchar_t));
     if (!pattern) { free(wide); s_panic("out of memory"); }
@@ -875,39 +950,53 @@ S_Array *s_list_dir(const S_String *path) {
     HANDLE handle = FindFirstFileW(pattern, &item);
     free(pattern);
     if (handle == INVALID_HANDLE_VALUE) {
-        if (GetLastError() == ERROR_FILE_NOT_FOUND && s_is_dir(path))
+        DWORD code = GetLastError();
+        if (code == ERROR_FILE_NOT_FOUND && s_is_dir(path)) {
+            s_fs_success();
             return s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
+        }
+        s_fs_win32(code);
         return NULL;
     }
     S_Array *names = s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
     do {
         const wchar_t *name = item.cFileName;
         int bytes = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, name, -1, NULL, 0, NULL, NULL);
-        if (bytes <= 0) { s_array_release(names); FindClose(handle); return NULL; }
+        if (bytes <= 0) { DWORD code = GetLastError(); s_array_release(names); FindClose(handle); s_fs_win32(code); return NULL; }
         char *utf8 = malloc((size_t)bytes);
         if (!utf8) s_panic("out of memory");
         if (!WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, name, -1, utf8, bytes, NULL, NULL)) {
-            free(utf8); s_array_release(names); FindClose(handle); return NULL;
+            DWORD code = GetLastError(); free(utf8); s_array_release(names); FindClose(handle); s_fs_win32(code); return NULL;
         }
         names = s_fs_add_name(names, utf8, (size_t)bytes - 1);
         free(utf8);
     } while (FindNextFileW(handle, &item));
     DWORD status = GetLastError();
     FindClose(handle);
-    if (status != ERROR_NO_MORE_FILES) { s_array_release(names); return NULL; }
+    if (status != ERROR_NO_MORE_FILES) { s_array_release(names); s_fs_win32(status); return NULL; }
+    s_fs_success();
     qsort(names->data, names->length, sizeof(S_String *), s_fs_compare_name);
     return names;
 }
 #else
+int64_t s_path_kind(const S_String *path) {
+    if (memchr(path->data, 0, path->length)) { s_fs_errno(EINVAL); return 0; }
+    struct stat info;
+    if (lstat(path->data, &info)) { s_fs_errno(errno); return 0; }
+    s_fs_success();
+    if (S_ISREG(info.st_mode)) return 1;
+    if (S_ISDIR(info.st_mode)) return 2;
+    return 3;
+}
 bool s_is_dir(const S_String *path) {
     if (memchr(path->data, 0, path->length)) return false;
     struct stat info;
     return lstat(path->data, &info) == 0 && S_ISDIR(info.st_mode);
 }
 S_Array *s_list_dir(const S_String *path) {
-    if (memchr(path->data, 0, path->length)) return NULL;
+    if (memchr(path->data, 0, path->length)) { s_fs_errno(EINVAL); return NULL; }
     DIR *dir = opendir(path->data);
-    if (!dir) return NULL;
+    if (!dir) { s_fs_errno(errno); return NULL; }
     S_Array *names = s_array_new(sizeof(S_String *), s_fs_copy_name, s_fs_drop_name);
     struct dirent *item;
     errno = 0;
@@ -915,9 +1004,13 @@ S_Array *s_list_dir(const S_String *path) {
         names = s_fs_add_name(names, item->d_name, strlen(item->d_name));
         errno = 0;
     }
-    int failed = errno != 0;
+    int read_error = errno;
     int status = closedir(dir);
-    if (status || failed) { s_array_release(names); return NULL; }
+    if (status || read_error) {
+        int code = read_error ? read_error : errno;
+        s_array_release(names); s_fs_errno(code); return NULL;
+    }
+    s_fs_success();
     qsort(names->data, names->length, sizeof(S_String *), s_fs_compare_name);
     return names;
 }

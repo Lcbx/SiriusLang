@@ -392,7 +392,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, types: Types.TypeTable, checked: bool) -> string
 	let op = instruction.op
 	var result = ""
-	if checked and op != Mir.MIR_CONST_I64 and op != Mir.MIR_CONST_BOOL and op != Mir.MIR_CONST_STRING and op != Mir.MIR_CONST_F64 and op != Mir.MIR_ARGUMENTS and op != Mir.MIR_RELEASE_IF_INIT
+	if checked and op != Mir.MIR_CONST_I64 and op != Mir.MIR_CONST_BOOL and op != Mir.MIR_CONST_STRING and op != Mir.MIR_CONST_F64 and op != Mir.MIR_ARGUMENTS and op != Mir.MIR_FILESYSTEM_ERROR_KIND and op != Mir.MIR_FILESYSTEM_ERROR_CODE and op != Mir.MIR_RELEASE_IF_INIT
 		if op == Mir.MIR_CALL or op == Mir.MIR_CALL_MOVE or op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_ARRAY_NEW or op == Mir.MIR_ARRAY_NEW_MOVE or op == Mir.MIR_DICT_NEW or op == Mir.MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg, checked)
@@ -418,6 +418,10 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_arguments(" + str(dst_type) + ")", checked)
 	if op == Mir.MIR_STR_I64
 		return result + mir_c_store_owned(types, instruction.dst, dst_type, "s_string_from_i64(" + first + ")", checked)
+	if op == Mir.MIR_FILESYSTEM_ERROR_KIND
+		return result + "\t" + dst + " = s_filesystem_error_kind()" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_FILESYSTEM_ERROR_CODE
+		return result + "\t" + dst + " = s_filesystem_error_code()" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_READ_TEXT
 		var code = result + "\t{ S_Optional_string value = s_read_text(" + first + ");\n"
 		code = code + "\t\tS_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", value.has_value ? 1 : 0);\n"
@@ -435,6 +439,8 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return code + mir_c_store_owned(types, instruction.dst, dst_type, "optional", checked) + "\t}\n"
 	if op == Mir.MIR_IS_DIR
 		return result + "\t" + dst + " = s_is_dir(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_PATH_KIND
+		return result + "\t" + dst + " = s_path_kind(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_WRITE_TEXT
 		return result + "\t" + dst + " = s_write_text(" + first + ", " + second + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_CONST_STRING

@@ -15,3 +15,89 @@ export def walk_files(root: string) -> Array[string]
 			else
 				files = files.append(path)
 	return files
+
+# Portable categories; code stores native errno (POSIX/CRT) or Win32 status.
+# The builtins keep a thread-local snapshot of the last filesystem operation.
+# Wrappers capture both fields immediately, before another filesystem call.
+export let FS_ERROR_NOT_FOUND = 1
+export let FS_ERROR_PERMISSION = 2
+export let FS_ERROR_NOT_DIRECTORY = 3
+export let FS_ERROR_IS_DIRECTORY = 4
+export let FS_ERROR_INVALID_PATH = 5
+export let FS_ERROR_OTHER = 6
+
+# path_kind uses lstat-style semantics: symbolic links are OTHER and are
+# never traversed. Zero indicates a failed metadata lookup.
+export let FS_PATH_ERROR = 0
+export let FS_PATH_FILE = 1
+export let FS_PATH_DIRECTORY = 2
+export let FS_PATH_OTHER = 3
+export rec ReadSuccess(content: string)
+	pub content
+
+export rec WriteSuccess(bytes: i64)
+	pub bytes
+
+export rec ListSuccess(entries: Array[string])
+	pub entries
+
+export rec FilesystemFailure(operation: string, path: string, kind: i64, code: i64)
+	pub operation
+	pub path
+	pub kind
+	pub code
+
+export let ReadResult = ReadSuccess | FilesystemFailure
+export let WriteResult = WriteSuccess | FilesystemFailure
+export let ListResult = ListSuccess | FilesystemFailure
+
+export rec PathKindSuccess(kind: i64)
+	pub kind
+
+export let PathKindResult = PathKindSuccess | FilesystemFailure
+
+export def path_kind_result(path: string) -> PathKindResult
+	let kind = path_kind(path)
+	if kind == FS_PATH_ERROR
+		return FilesystemFailure("path_kind", path, filesystem_error_kind(), filesystem_error_code())
+	return PathKindSuccess(kind)
+
+export def read_text_result(path: string) -> ReadResult
+	let content = read_text(path) else return FilesystemFailure("read_text", path, filesystem_error_kind(), filesystem_error_code())
+	return ReadSuccess(content)
+
+export def write_text_result(path: string, content: string) -> WriteResult
+	if write_text(path, content)
+		return WriteSuccess(len(content))
+	return FilesystemFailure("write_text", path, filesystem_error_kind(), filesystem_error_code())
+
+export def list_dir_result(path: string) -> ListResult
+	let entries = list_dir(path) else return FilesystemFailure("list_dir", path, filesystem_error_kind(), filesystem_error_code())
+	return ListSuccess(entries)
+
+# Checked breadth-first traversal: unlike walk_files, this reports directory
+# enumeration failures instead of treating them as empty directories.
+export rec WalkSuccess(files: Array[string])
+	pub files
+
+export let WalkResult = WalkSuccess | FilesystemFailure
+
+export def walk_files_result(root: string) -> WalkResult
+	var files = Array[string]()
+	var pending = Array[string]()
+	pending = pending.append(root)
+	var i = 0
+	while i < len(pending)
+		let directory = pending[!i]
+		i += 1
+		let names = list_dir(directory) else return FilesystemFailure("list_dir", directory, filesystem_error_kind(), filesystem_error_code())
+		for name in names
+			let path = directory + "/" + name
+			let kind = path_kind(path)
+			if kind == FS_PATH_ERROR
+				return FilesystemFailure("path_kind", path, filesystem_error_kind(), filesystem_error_code())
+			if kind == FS_PATH_DIRECTORY
+				pending = pending.append(path)
+			else
+				files = files.append(path)
+	return WalkSuccess(files)

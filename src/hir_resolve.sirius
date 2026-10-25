@@ -46,12 +46,14 @@ export def hir_call_arguments(types: Types.TypeTable, actual: Array[i64], expect
 	return HirCallCheck(types, result, "")
 
 export def hir_is_builtin(name: string) -> bool
-	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt"
+	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "path_kind" or name == "filesystem_error_kind" or name == "filesystem_error_code" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt"
 
 export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: Array[i64]) -> HirCallCheck
 	if name == "arguments"
 		let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
 		return hir_call_arguments(array.table, args, Array[i64](), array.id, "arguments expects no arguments")
+	if name == "filesystem_error_kind" or name == "filesystem_error_code"
+		return hir_call_arguments(types, args, Array[i64](), Types.TYPE_TAG_I64, "filesystem error builtin expects no arguments")
 	if name == "read_text"
 		let optional = Types.intern_optional_type(types, Types.TYPE_TAG_STRING)
 		return hir_call_arguments(optional.table, args, [Types.TYPE_TAG_STRING], optional.id, "read_text expects one string argument")
@@ -63,6 +65,8 @@ export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: 
 		return hir_call_arguments(optional.table, args, [Types.TYPE_TAG_STRING], optional.id, "list_dir expects one string argument")
 	if name == "is_dir"
 		return hir_call_arguments(types, args, [Types.TYPE_TAG_STRING], Types.TYPE_TAG_BOOL, "is_dir expects one string argument")
+	if name == "path_kind"
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_STRING], Types.TYPE_TAG_I64, "path_kind expects one string argument")
 	if name == "str"
 		if len(args) != 1 or args[!0] != Types.TYPE_TAG_I64
 			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "str expects one i64 argument")
@@ -196,9 +200,27 @@ export def resolve_hir_record(types: Types.TypeTable, fields: Array[Types.Record
 	return HirCallCheck(interned.table, interned.id, "")
 
 export def hir_constructor_publish(fields: Array[Types.RecordField], name: string, type_id: i64) -> HirRecordEdit
-	if hir_record_field(fields, name) >= 0
-		return HirRecordEdit(fields, -1, "constructor field overrides are not supported yet")
 	return hir_record_put(fields, name, type_id)
+
+# Positional match bindings follow constructor parameters first. Additional
+# published fields follow in canonical (lexicographic) record-field order.
+export def hir_match_field_index(fields: Array[Types.RecordField], parameters: Array[Hir.HirParameterDecl], position: i64) -> i64
+	if position < len(parameters)
+		for i in 0..len(fields)
+			if fields[!i].name == parameters[!position].name
+				return i
+		return -1
+	var extra = len(parameters)
+	for i in 0..len(fields)
+		var parameter = false
+		for item in parameters
+			if item.name == fields[!i].name
+				parameter = true
+		if not parameter
+			if extra == position
+				return i
+			extra += 1
+	return -1
 
 
 # Semantic matching operates on structural record alternatives, without

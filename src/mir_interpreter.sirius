@@ -141,6 +141,12 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					return mir_failure("str expects i64", steps)
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_STRING, 0, str(value.bits))
 				continue
+			if ins.op == Mir.MIR_FILESYSTEM_ERROR_KIND or ins.op == Mir.MIR_FILESYSTEM_ERROR_CODE
+				var error = filesystem_error_kind()
+				if ins.op == Mir.MIR_FILESYSTEM_ERROR_CODE
+					error = filesystem_error_code()
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, error, "")
+				continue
 			if ins.op == Mir.MIR_READ_TEXT
 				let path = registers[!ins.first]
 				if path.type_id != Types.TYPE_TAG_STRING
@@ -172,6 +178,12 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				if is_dir(path.text)
 					value = 1
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, value, "")
+				continue
+			if ins.op == Mir.MIR_PATH_KIND
+				let path = registers[!ins.first]
+				if path.type_id != Types.TYPE_TAG_STRING
+					return mir_failure("path_kind expects a string", steps)
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, path_kind(path.text), "")
 				continue
 			if ins.op == Mir.MIR_WRITE_TEXT
 				let path = registers[!ins.first]

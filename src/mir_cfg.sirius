@@ -73,7 +73,7 @@ export def mir_read_add(reads: Array[i64], register: i64) -> Array[i64]
 	return reads.append(register)
 
 export def mir_instruction_reads(ins: Mir.MirInstruction) -> Array[i64]
-	if ins.op == Mir.MIR_CONST_I64 or ins.op == Mir.MIR_CONST_BOOL or ins.op == Mir.MIR_CONST_STRING or ins.op == Mir.MIR_CONST_F64 or ins.op == Mir.MIR_DICT_NEW or ins.op == Mir.MIR_OPTIONAL_NONE or ins.op == Mir.MIR_ARGUMENTS or ins.op == Mir.MIR_RELEASE_IF_INIT
+	if ins.op == Mir.MIR_CONST_I64 or ins.op == Mir.MIR_CONST_BOOL or ins.op == Mir.MIR_CONST_STRING or ins.op == Mir.MIR_CONST_F64 or ins.op == Mir.MIR_DICT_NEW or ins.op == Mir.MIR_OPTIONAL_NONE or ins.op == Mir.MIR_ARGUMENTS or ins.op == Mir.MIR_FILESYSTEM_ERROR_KIND or ins.op == Mir.MIR_FILESYSTEM_ERROR_CODE or ins.op == Mir.MIR_RELEASE_IF_INIT
 		# Reuse the instruction's empty input array rather than allocating a
 		# new empty Array[i64] on every liveness/ownership query.
 		if len(ins.inputs) == 0

@@ -359,7 +359,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 		# Unannotated callees need a concrete result type for their caller's
 		# expressions. Infer it without recursively registering specializations.
 		# The worklist still owns emission and deduplication of these calls.
-	if function.external
+	if function.external and (not function.constructor or function.body < 0)
 		result.last_type = function.result_type
 		return result
 	if function.constructor
@@ -377,8 +377,39 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 		for i in 0..block.count
 			let pub_id = Hir.hir_ast_child(state.tree, function.body, i)
 			let pub = state.tree.nodes[!pub_id]
+			if pub.kind == Ast.NODE_IF and i == block.count - 1
+				for j in 0..pub.count
+					let arm_id = Hir.hir_ast_child(state.tree, pub_id, j)
+					let arm = state.tree.nodes[!arm_id]
+					var branch_id = Hir.hir_ast_child(state.tree, arm_id, 0)
+					if arm.kind != Ast.NODE_ELSE
+						nested = hir_body_expression(nested, branch_id)
+						if nested.error != "" or nested.last_type != Types.TYPE_TAG_BOOL
+							return hir_body_error(result, arm_id, "constructor branch requires bool condition")
+						branch_id = Hir.hir_ast_child(state.tree, arm_id, 1)
+					let branch = state.tree.nodes[!branch_id]
+					for k in 0..branch.count
+						let override_id = Hir.hir_ast_child(state.tree, branch_id, k)
+						let override = state.tree.nodes[!override_id]
+						if override.kind != Ast.NODE_PUB
+							return hir_body_error(result, override_id, "constructor branches may only override published fields")
+						var override_name = Hir.hir_ast_text(state.tree, override_id)
+						var override_type = Types.TYPE_TAG_INVALID
+						if override.count == 0
+							let resolved = Hir.resolve_hir_name(nested.symbols, override_name)
+							override_type = resolved.type_id
+						else
+							let expression = Hir.hir_ast_child(state.tree, override_id, 0)
+							if state.tree.nodes[!expression].kind == Ast.NODE_ATTR
+								override_name = Hir.hir_ast_text(state.tree, expression)
+							nested = hir_body_expression(nested, expression)
+							override_type = nested.last_type
+						let index = Resolve.hir_record_field(fields, override_name)
+						if nested.error != "" or index < 0 or override_type != fields[!index].kind
+							return hir_body_error(result, override_id, "constructor branch must override an existing field with the same type")
+				continue
 			if pub.kind != Ast.NODE_PUB
-				return result
+				return hir_body_error(result, pub_id, "constructor requires publications followed by an optional conditional override")
 			var field_name = Hir.hir_ast_text(state.tree, pub_id)
 			var field_type = Types.TYPE_TAG_INVALID
 			if pub.count == 0
@@ -396,6 +427,9 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 			if edit.error != ""
 				return hir_body_error(result, pub_id, edit.error)
 			fields = edit.fields
+			# Publications are visible to later publications, including overrides.
+			nested.symbols = nested.symbols.append(Hir.SymbolInfo(field_name, field_type, field_type, false, nested.depth + 1))
+			nested.facts = nested.facts.append(HirStaticFact(-1, hir_unknown_range(), Array[i64]()))
 		for typed_node in nested.nodes
 			if typed_node.operation != HIR_BINDING
 				result.nodes = result.nodes.append(typed_node)
@@ -722,29 +756,25 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 				return hir_body_error(result, arm_id, "match arm is not a union alternative")
 			alternatives = alternatives.append(case_type.type_id)
 			result.nodes = result.nodes.append(Hir.HirNode(arm_id, Hir.HIR_MATCH_CASE, case_type.type_id, Types.union_alternative_index(result.types, union_id, case_type.type_id)))
-			# Binding names are positional constructor parameters, not canonical
-			# record-field order. For now, require full parameter-backed records.
+			# Existing positional parameters precede optional computed fields.
 			var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
 			for function in result.functions
 				if function.name == Hir.hir_ast_text(state.tree, arm_id) and function.constructor
 					constructor = function
 			let fields = result.types.entries[!case_type.type_id].fields
-			if len(constructor.parameters) != len(fields) or result.tree.nodes[!arm_id].count != len(fields) + 1
-				return hir_body_error(result, arm_id, "match pattern requires every constructor parameter")
+			let bound = result.tree.nodes[!arm_id].count - 1
+			if bound < len(constructor.parameters) or bound > len(fields)
+				return hir_body_error(result, arm_id, "match pattern requires constructor parameters, followed by optional published fields")
 			let previous = len(result.symbols)
 			result.depth += 1
-			for j in 0..len(constructor.parameters)
-				let param = constructor.parameters[!j]
-				var field_type = Types.TYPE_TAG_INVALID
-				for field in fields
-					if field.name == param.name
-						field_type = field.kind
-				if field_type == Types.TYPE_TAG_INVALID
-					return hir_body_error(result, arm_id, "match pattern requires parameter-backed fields")
+			for j in 0..bound
+				let field_index = Resolve.hir_match_field_index(fields, constructor.parameters, j)
+				if field_index < 0
+					return hir_body_error(result, arm_id, "match pattern field is missing")
 				let binding = Hir.hir_ast_child(state.tree, arm_id, j)
-				result = hir_body_binding(result, binding, Hir.hir_ast_text(state.tree, binding), field_type, false)
+				result = hir_body_binding(result, binding, Hir.hir_ast_text(state.tree, binding), fields[!field_index].kind, false)
 				result.error == "" else return result
-			result = hir_body_block(result, Hir.hir_ast_child(state.tree, arm_id, len(constructor.parameters)))
+			result = hir_body_block(result, Hir.hir_ast_child(state.tree, arm_id, bound))
 			result.error == "" else return result
 			var scoped = Array[Hir.SymbolInfo]()
 			var scoped_facts = Array[HirStaticFact]()

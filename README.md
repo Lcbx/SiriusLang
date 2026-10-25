@@ -174,7 +174,13 @@ Canonical union descriptors contain at least two distinct structural record
 alternatives with stable tag ordering across modules. Source-level
 `let Result = Success | Failure` aliases (including forward constructor names)
 are resolved in HIR; exhaustive `match` rejects missing, duplicate or invalid
-constructor arms, and binds fields in constructor parameter order.
+constructor arms. Patterns bind all constructor parameters in declaration
+order, optionally followed by computed published fields in lexicographic
+field-name order. The MIR compiler also supports repeated unconditional `pub`
+(overrides use the last value), sequential publication dependencies, and a
+final `if`/`elif`/`else` that overrides existing fields without changing types
+or adding new fields. These behaviors are checked with
+`python tools/test_constructor_publications.py`.
 
 Constructor records inject into an expected union in annotated local bindings,
 function call arguments, and returns. Executable MIR uses `MIR_UNION_NEW`,
@@ -190,10 +196,19 @@ Qualified names such as `Types.Result`, `Types.Success(...)` and exhaustive
 interfaces with publicly exported constructors and aliases. `.smirg` still
 only ships executable bodies for generic specializations; ordinary concrete
 functions are not automatically exported from such packages. Test with
-`python tools/test_module_unions.py`. Patterns with additional published fields
-and nested implicit conversions through containers remain deferred. The
-standard library
-has not yet adopted `Result` for its recoverable errors.
+`python tools/test_module_unions.py` and
+`python tools/test_module_computed_constructors.py`. Exported constructors can
+publish computed fields and fixed-type conditional overrides, including in
+source-free `.smirg` packages without generic functions. Their normalized
+bodies are pinned in dependent package interfaces. Transported constructor
+expressions can also reference defining-module constants and local helper functions.
+Their dependencies are copied under private owner-qualified names (including
+through source-free packages), preventing caller-name capture; helper and constant
+changes invalidate dependent package interfaces. Nested
+implicit conversions through containers remain deferred. `Std.Filesystem` now provides opt-in `Result` wrappers for reading, writing,
+listing, and checked directory traversal; existing `Optional`/`bool` builtins
+are unchanged. Test with `python tools/test_filesystem_result.py` and
+`python tools/test_filesystem_walk_result.py`.
 
 ## Examples and language capability inventory
 
@@ -324,10 +339,24 @@ Reusable `walk_files(root) -> Array[string]` lives in
 `stdlib/Std/Filesystem.sirius` (use `Std.Filesystem` within a source root).
 It performs a breadth-first walk and skips unreadable subdirectories; it does
 not stream results or include directories in the returned list.
-`examples/filesystem_walk.sirius` shows standalone use.
+`examples/filesystem_walk.sirius` shows standalone use. Opt-in
+`read_text_result`, `write_text_result` and `list_dir_result` return exhaustive
+constructor unions with `FilesystemFailure(operation, path, kind, code)`.
+`walk_files_result(root) -> WalkResult` performs the same breadth-first traversal
+but returns `WalkSuccess(files)` or the first `FilesystemFailure` from
+`list_dir` or `path_kind` (with the failing path). Empty directories succeed
+with an empty array. The new `path_kind(path)` builtin distinguishes regular
+files (1), directories (2), other entries including symlinks (3), and metadata
+lookup errors (0); `path_kind_result` wraps it in a tagged union. Neither
+walker descends into directory symlinks discovered within the tree (a
+symlink supplied as the root itself can still be enumerated). Traversal is not atomic if files change
+concurrently.
+`kind` is a portable error category and `code` is the native errno/Win32 value;
+the original `Optional`/`bool` APIs remain available.
 
 ```bash
 python tools/test_filesystem.py
+python tools/test_filesystem_walk_result.py
 # Optionally check source-level native/interpreted parity:
 python tools/test_filesystem.py --runner ./sirius-run
 ```
@@ -390,20 +419,24 @@ Current restrictions: concrete exported functions require annotated
 parameters and return types; generic exports may leave parameters unannotated
 when their return types are explicit. `export rec Point(x: i64, y: i64)` makes both
 `Alias.Point(...)` construction and the `Alias.Point` type annotation available
-to importers, including inside `Array[Alias.Point]`. Public constructors must
-have annotated parameters and direct `pub` fields (implicit parameter publication
-is supported); computed `pub` expressions cannot yet be exported. Construction
-is inlined in the importing MIR, without a library function symbol. All record
-types remain structural; their field descriptors are re-interned in each consumer.
+to importers, including inside `Array[Alias.Point]`. Public constructors must have annotated parameters. Direct parameter
+publication, computed `pub` fields and final conditional overrides are supported
+across imports and named re-exports. The compiled module interface retains the
+canonical final record shape; for computed constructors, the importing compiler
+copies only the required body syntax and analyzes it in a constructor-local
+scope. `.smirg` packages preserve the same body and pin its normalized content
+in dependent interface signatures. Construction remains inline, without a
+library constructor symbol. Defining-module constants and local helper bodies
+are transported under private owner-qualified symbols; unknown names are rejected. All record types remain structural; their field descriptors are re-interned in each consumer.
 `export let`
 shares compile-time values (`i64`, `bool`, strings, records and arrays) through
 qualified names such as `Settings.CONFIG.size`; the consuming HIR receives a
 copy of their typed value arena, without a runtime getter. Constant-only modules
-are supported. Exported functions and direct-publication constructors may use
+are supported. Exported functions and constructors may use
 imported public record types (including nested `Array`, `Optional` and `Dict`
 annotations); their resolved structural descriptors are passed to consumers.
-Named re-exports of imported public functions, generic functions, direct-publication
-constructors and constants use `export Alias.member alias PublicName` (or
+Named re-exports of imported public functions, generic functions, constructors
+and constants use `export Alias.member alias PublicName` (or
 `export Alias.member` without renaming). They preserve the original linked
 function symbol, so no forwarding MIR function is needed; re-exports also work
 transitively and in `.smirg` dependency interfaces. Namespace-wide re-exports,

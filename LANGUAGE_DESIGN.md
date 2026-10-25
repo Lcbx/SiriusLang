@@ -140,6 +140,20 @@ Constructor rules:
 * `pub x = expr` creates or overrides a published field (including an implicit `rec` field).
 * `pub value.x` abbreviates `pub x = value.x`.
 
+The implemented MIR subset evaluates unconditional `pub` statements in source
+order, allowing later publications to refer to earlier fields and to override
+them. A final `if`/`elif`/`else` may override those existing fields (with the
+same type); branches cannot introduce fields or contain other statements.
+Exported constructors with annotated parameters may also publish computed
+fields and conditionally override existing fields. Their final structural
+record shape is part of the module interface. Source imports and source-free
+`.smirg` packages transport these constructor bodies for HIR-checked inline
+construction, including re-exports. The portable subset also resolves defining-module constants and direct or
+transitive local helper calls hygienically: referenced values and helper bodies
+are copied into private, owner-qualified bindings before HIR analysis. Source-free
+packages retain the same dependencies and include them in interface fingerprints.
+Unknown free names are rejected; general closure capture remains unsupported.
+
 **Methods:** Ordinary functions whose first parameter is named `this`, invoked with dot syntax.
 
 ```python
@@ -224,6 +238,11 @@ def unwrap(result: Result) -> i64
 			return -code
 ```
 
+Patterns bind constructor parameters first in declaration order; optional
+additional binders then select the remaining published fields in canonical
+lexicographic name order. Patterns may omit these additional binders but must
+include every constructor parameter.
+
 **Current design choice:** Constructors produce structurally typed records. Union alternatives must therefore have distinct canonical record types; constructors with identical result shapes are not distinguishable alternatives. Nominal variant identity is not currently specified.
 
 ### Errors and fatal failures
@@ -254,9 +273,23 @@ def unwrap(result: Result) -> i64
   `.smirg` packages can expose public constructors, aliases and constants
   alongside generic functions; concrete non-generic functions still require
   compiled libraries or source. Nested union coercions through collections
-  and patterns involving additional constructor-published fields remain deferred.
-  Library APIs have not yet been migrated to `Result`; `Optional`, booleans and IEEE-754
-  values also remain valid in-band results.
+  remain deferred.
+  `Std.Filesystem` provides optional `ReadResult`, `WriteResult`, `ListResult`,
+  `WalkResult`, and `PathKindResult` wrappers using
+  `FilesystemFailure(operation, path, kind, code)`. Filesystem
+  builtins preserve a thread-local error snapshot: portable `kind` values
+  distinguish not found, permission denied, not a directory, is a directory,
+  invalid path, and other I/O failures; `code` retains the native errno/Win32
+  value. Success clears both fields. `filesystem_error_kind()` and
+  `filesystem_error_code()` must be read before the next filesystem operation.
+  `path_kind(path)` returns `1=regular`, `2=directory`, `3=other` (including
+  symbolic links), or `0=metadata error`; the failure snapshot is available
+  immediately. `path_kind_result` wraps this in `PathKindSuccess` or
+  `FilesystemFailure`. `walk_files_result` reports both directory-enumeration
+  and per-entry metadata failures, keeping the existing non-following symlink
+  policy. This is not an atomic snapshot of a changing filesystem.
+  The underlying `Optional`/`bool` results remain supported; these and
+  IEEE-754 in-band results remain valid.
 
 ## 6. Operators
 
@@ -452,7 +485,7 @@ export def process(data)
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported direct-publication constructors and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, and source-independent generic specialization from portable `.smirg` HIR
+See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported constructor bodies and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, and source-independent generic specialization from portable `.smirg` HIR
 packages (not generic executable MIR libraries); see [README.md](README.md) for status.
 
 ## 12. Compiler

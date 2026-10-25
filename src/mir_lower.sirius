@@ -258,6 +258,83 @@ def mir_lower_constant(state: MirBuilder, context: MirLowerContext, index: i64) 
 		return MirLowerExpr(next, dst)
 	return MirLowerExpr(mir_lower_error(next, "unsupported MIR module constant type"), -1)
 
+# A constructor's final conditional may replace existing fields but cannot
+# affect the canonical record type. The record is built before branching.
+def mir_lower_constructor_overrides(state: MirBuilder, context: MirLowerContext, block_id: i64, record: i64) -> MirBuilder
+	var next = state
+	let fields = context.types.entries[!next.register_types[!record]].fields
+	let block = context.tree.nodes[!block_id]
+	for i in 0..block.count
+		let pub_id = Hir.hir_ast_child(context.tree, block_id, i)
+		let pub = context.tree.nodes[!pub_id]
+		if pub.kind != Ast.NODE_PUB
+			return mir_lower_error(next, "constructor branch requires pub")
+		var name = Hir.hir_ast_text(context.tree, pub_id)
+		var source = -1
+		if pub.count == 0
+			source = mir_lower_binding(next, name)
+		else
+			let expression_id = Hir.hir_ast_child(context.tree, pub_id, 0)
+			if context.tree.nodes[!expression_id].kind == Ast.NODE_ATTR
+				name = Hir.hir_ast_text(context.tree, expression_id)
+			let expression = mir_lower_expression(next, context, expression_id)
+			next = expression.state
+			next.error == "" else return next
+			source = expression.slot
+		var index = -1
+		for j in 0..len(fields)
+			if fields[!j].name == name
+				index = j
+		if source < 0 or index < 0
+			return mir_lower_error(next, "constructor branch field is missing")
+		next = mir_lower_record_update(next, context, record, index, source)
+		next.error == "" else return next
+		next.bindings = next.bindings.append(MirSourceBinding(name, source, next.depth + 1))
+	return next
+
+def mir_lower_constructor_if(state: MirBuilder, context: MirLowerContext, id: i64, record: i64) -> MirBuilder
+	var next = state
+	let conditional = context.tree.nodes[!id]
+	var after = -1
+	for i in 0..conditional.count
+		let arm_id = Hir.hir_ast_child(context.tree, id, i)
+		let arm = context.tree.nodes[!arm_id]
+		let scope = len(next.bindings)
+		var no = -1
+		if arm.kind == Ast.NODE_ELSE
+			next = mir_lower_constructor_overrides(next, context, Hir.hir_ast_child(context.tree, arm_id, 0), record)
+		else
+			let condition = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, arm_id, 0))
+			next = condition.state
+			next.error == "" else return next
+			let condition_block = next.active
+			next = mir_lower_block(next)
+			let yes = next.active
+			next = mir_lower_block(next)
+			no = next.active
+			next.active = condition_block
+			next = mir_lower_end(next, Mir.mir_branch(condition.slot, yes, no))
+			next.active = yes
+			next = mir_lower_constructor_overrides(next, context, Hir.hir_ast_child(context.tree, arm_id, 1), record)
+		next.error == "" else return next
+		let body_end = next.active
+		if after < 0
+			next = mir_lower_block(next)
+			after = next.active
+		next.active = body_end
+		if not mir_lower_ended(next)
+			next = mir_lower_end(next, Mir.mir_jump(after))
+		var scoped = Array[MirSourceBinding]()
+		for j in 0..scope
+			scoped = scoped.append(next.bindings[!j])
+		next.bindings = scoped
+		if arm.kind != Ast.NODE_ELSE
+			next.active = no
+	if not mir_lower_ended(next)
+		next = mir_lower_end(next, Mir.mir_jump(after))
+	next.active = after
+	return next
+
 def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -> MirLowerExpr
 	state.error == "" else return MirLowerExpr(state, -1)
 	let node = context.tree.nodes[!id]
@@ -436,7 +513,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					for j in 0..len(function.parameters)
 						next.bindings = next.bindings.append(MirSourceBinding(function.parameters[!j].name, argument_slots[!j], next.depth + 1))
 					var evaluated = Array[MirLowerField]()
-					if function.external
+					if function.external and function.body < 0
 						for j in 0..len(function.parameters)
 							evaluated = evaluated.append(MirLowerField(function.parameters[!j].name, argument_slots[!j]))
 					else
@@ -444,8 +521,10 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 						for j in 0..body.count
 							let published = Hir.hir_ast_child(context.tree, function.body, j)
 							let pub = context.tree.nodes[!published]
+							if pub.kind == Ast.NODE_IF and j == body.count - 1
+								continue
 							if pub.kind != Ast.NODE_PUB
-								return MirLowerExpr(mir_lower_error(next, "constructor requires direct pub statements"), -1)
+								return MirLowerExpr(mir_lower_error(next, "constructor requires publications followed by an optional conditional"), -1)
 							var field_name = Hir.hir_ast_text(context.tree, published)
 							var slot = -1
 							if pub.count == 0
@@ -461,7 +540,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 							if slot < 0
 								return MirLowerExpr(mir_lower_error(next, "unknown published constructor field"), -1)
 							evaluated = evaluated.append(MirLowerField(field_name, slot))
-					next.bindings = previous
+							next.bindings = next.bindings.append(MirSourceBinding(field_name, slot, next.depth + 1))
 					var inputs = Array[i64]()
 					for field in context.types.entries[!type_id].fields
 						var source = -1
@@ -474,6 +553,13 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					let dst = len(next.register_types)
 					next = mir_lower_register(next, type_id)
 					next = mir_lower_emit(next, Mir.mir_record_new(dst, inputs))
+					if function.body >= 0
+						let body = context.tree.nodes[!function.body]
+						if body.count > 0
+							let last = Hir.hir_ast_child(context.tree, function.body, body.count - 1)
+							if context.tree.nodes[!last].kind == Ast.NODE_IF
+								next = mir_lower_constructor_if(next, context, last, dst)
+					next.bindings = previous
 					return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == Ast.NODE_INDEX and node.count == 1
 			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
@@ -586,7 +672,11 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		if context.tree.nodes[!callee].kind == Ast.NODE_NAME
 			let builtin = Hir.hir_ast_text(context.tree, callee)
 			var op = 0
-			if builtin == "arguments" and node.count == 1
+			if builtin == "filesystem_error_kind" and node.count == 1
+				op = Mir.MIR_FILESYSTEM_ERROR_KIND
+			elif builtin == "filesystem_error_code" and node.count == 1
+				op = Mir.MIR_FILESYSTEM_ERROR_CODE
+			elif builtin == "arguments" and node.count == 1
 				op = Mir.MIR_ARGUMENTS
 			elif builtin == "read_text" and node.count == 2
 				op = Mir.MIR_READ_TEXT
@@ -596,6 +686,8 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				op = Mir.MIR_LIST_DIR
 			elif builtin == "is_dir" and node.count == 2
 				op = Mir.MIR_IS_DIR
+			elif builtin == "path_kind" and node.count == 2
+				op = Mir.MIR_PATH_KIND
 			elif builtin == "str" and node.count == 2
 				op = Mir.MIR_STR_I64
 			if op != 0
@@ -819,6 +911,16 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		return MirLowerExpr(next, dst)
 	return MirLowerExpr(mir_lower_error(next, "unsupported source expression for MIR"), -1)
 
+def mir_lower_return_value(state: MirBuilder, context: MirLowerContext, value: i64) -> MirBuilder
+	var next = state
+	var slot = value
+	if Types.type_tag(context.types, context.return_type) == Types.TYPE_TAG_UNION and next.register_types[!slot] != context.return_type
+		let injected = mir_lower_inject(next, context, slot, context.return_type)
+		next = injected.state
+		next.error == "" else return next
+		slot = injected.slot
+	return mir_lower_end(next, Mir.mir_return(slot))
+
 def mir_lower_statements(state: MirBuilder, context: MirLowerContext, block_id: i64) -> MirBuilder
 	var next = state
 	let initial = len(state.bindings)
@@ -931,12 +1033,9 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				let binding = Hir.hir_ast_child(context.tree, arm, j)
 				let kind = mir_lower_type(context, binding, Analyze.HIR_BINDING)
 				var field_index = -1
-				# Pattern names are positional parameters; resolve canonical record order.
 				for constructor in context.functions
-					if constructor.name == Hir.hir_ast_text(context.tree, arm) and constructor.constructor and j < len(constructor.parameters)
-						for k in 0..len(fields)
-							if fields[!k].name == constructor.parameters[!j].name
-								field_index = k
+					if constructor.name == Hir.hir_ast_text(context.tree, arm) and constructor.constructor
+						field_index = Resolve.hir_match_field_index(fields, constructor.parameters, j)
 				if field_index < 0 or kind != fields[!field_index].kind
 					return mir_lower_error(next, "missing typed match binding")
 				let slot = len(next.register_types)
@@ -1009,7 +1108,8 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			let returned = mir_lower_expression(next, context, fallback)
 			next = returned.state
 			next.error == "" else return next
-			next = mir_lower_end(next, Mir.mir_return(returned.slot))
+			next = mir_lower_return_value(next, context, returned.slot)
+			next.error == "" else return next
 			next.active = has_value
 			let unwrapped = len(next.register_types)
 			next = mir_lower_register(next, context.types.entries[!wrapped_type].first)
@@ -1162,13 +1262,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		let value = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 0))
 		next = value.state
 		next.error == "" else return next
-		var slot = value.slot
-		if Types.type_tag(context.types, context.return_type) == Types.TYPE_TAG_UNION and next.register_types[!slot] != context.return_type
-			let injected = mir_lower_inject(next, context, slot, context.return_type)
-			next = injected.state
-			next.error == "" else return next
-			slot = injected.slot
-		return mir_lower_end(next, Mir.mir_return(slot))
+		return mir_lower_return_value(next, context, value.slot)
 	if node.kind == Ast.NODE_IF
 		var after = -1
 		var can_fallthrough = false

@@ -72,6 +72,10 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if dst_type != Types.TYPE_TAG_STRING or not mir_register_valid(types, ins.first, Types.TYPE_TAG_I64)
 			return "str requires i64 and string result"
 		return ""
+	if ins.op == Mir.MIR_FILESYSTEM_ERROR_KIND or ins.op == Mir.MIR_FILESYSTEM_ERROR_CODE
+		if dst_type != Types.TYPE_TAG_I64 or ins.first != -1 or ins.second != -1 or len(ins.inputs) != 0
+			return "filesystem error snapshot requires i64 result and no operands"
+		return ""
 	if ins.op == Mir.MIR_READ_TEXT
 		let desc = program.types.entries[!dst_type]
 		if desc.tag != Types.TYPE_TAG_OPTIONAL or desc.first != Types.TYPE_TAG_STRING or not mir_register_valid(types, ins.first, Types.TYPE_TAG_STRING)
@@ -88,6 +92,10 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 	if ins.op == Mir.MIR_IS_DIR
 		if dst_type != Types.TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, Types.TYPE_TAG_STRING)
 			return "is_dir requires string path and bool result"
+		return ""
+	if ins.op == Mir.MIR_PATH_KIND
+		if dst_type != Types.TYPE_TAG_I64 or not mir_register_valid(types, ins.first, Types.TYPE_TAG_STRING) or ins.second != -1 or len(ins.inputs) != 0
+			return "path_kind requires string path and i64 result"
 		return ""
 	if ins.op == Mir.MIR_WRITE_TEXT
 		if dst_type != Types.TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, Types.TYPE_TAG_STRING) or not mir_register_valid(types, ins.second, Types.TYPE_TAG_STRING)

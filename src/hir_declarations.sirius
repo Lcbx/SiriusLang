@@ -137,21 +137,6 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 			elif info.kind == Ast.NODE_TYPE
 				return_type = part
 		let body_id = Hir.hir_ast_child(tree, id, entry.count - 1)
-		if entry.kind == Ast.NODE_REC
-			var published = Array[string]()
-			let body = tree.nodes[!body_id]
-			for j in 0..body.count
-				let pub_id = Hir.hir_ast_child(tree, body_id, j)
-				if tree.nodes[!pub_id].kind == Ast.NODE_PUB
-					var field_name = Hir.hir_ast_text(tree, pub_id)
-					if tree.nodes[!pub_id].count > 0
-						let value_id = Hir.hir_ast_child(tree, pub_id, 0)
-						if tree.nodes[!value_id].kind == Ast.NODE_ATTR
-							field_name = Hir.hir_ast_text(tree, value_id)
-					for seen in published
-						if seen == field_name
-							return hir_declaration_error(functions, constants, "constructor field overrides are not supported yet", Hir.hir_ast_line(tree, pub_id))
-					published = published.append(field_name)
 		if entry.kind == Ast.NODE_EXTERN_DEF
 			if return_type < 0
 				return hir_declaration_error(functions, constants, "extern function requires a return type", Hir.hir_ast_line(tree, id))

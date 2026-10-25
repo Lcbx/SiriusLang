@@ -47,8 +47,18 @@ S_Optional_i64 s_dict_i64_i64_get(const S_Dict_i64_i64 *dict, int64_t key);
 typedef struct S_Array S_Array;
 S_Array *s_list_dir(const S_String *path);
 bool s_is_dir(const S_String *path);
+/* lstat-like, does not follow symlinks / reparse points: 0=error,
+   1=regular file, 2=directory, 3=other entry. Failure updates the
+   per-thread filesystem error snapshot, success clears it. */
+int64_t s_path_kind(const S_String *path);
 S_Optional_string s_read_text(const S_String *path);
 bool s_write_text(const S_String *path, const S_String *text);
+/* Last filesystem I/O outcome in this thread: 0 on success, otherwise a
+   portable category and the native errno/Win32 code. Read immediately after
+   a filesystem operation; any subsequent filesystem call overwrites it. */
+int64_t s_filesystem_error_kind(void);
+int64_t s_filesystem_error_code(void);
+
 
 S_String *s_string_from_utf8(const char *str);
 S_String *s_string_from_bytes(const char *bytes, size_t n);

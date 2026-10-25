@@ -25,7 +25,7 @@ ERRORS = {
 	'13_record_type_mismatch': 'expected i64, found bool',
 	'14_deleted_missing_field': "unknown deleted field 'y'",
 	'15_managed_record': 'invalid record field type',
-	'16_constructor_override': 'constructor field overrides are not supported yet',
+	'16_constructor_override': 'constructor branch must override an existing field with the same type',
 	'18_empty_record': 'empty records are not supported yet',
 	'19_generic_wrong_annotation': 'expected i64, found bool',
 	'20_recursive_unannotated_generic': 'recursive generic call requires an explicit return type',

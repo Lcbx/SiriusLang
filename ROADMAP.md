@@ -123,6 +123,20 @@ from 4,334,410 to 4,250,979 bytes (-1.9%); conditional cleanup, transfers,
 arguments and cross-block owners remain excluded. Ownership-specific tests and
 the MIR self-hosting fixed point pass. See [MIR_PROFILE.md](MIR_PROFILE.md).
 
+**Filesystem error detail (2026-10-25):** `Std.Filesystem` now returns
+`FilesystemFailure(operation, path, kind, code)` with portable I/O failure
+categories and native errno/Win32 codes. The runtime saves the last filesystem
+result per thread and clears it on success; native MIR and the interpreter
+expose snapshot getters. Existing `Optional`/`bool` APIs are unchanged.
+Cross-platform error classification tests and native/interpreter parity
+protect the new error payload. Full atomic result+error return values may be
+revisited with a new ABI if asynchronous filesystem work is introduced.
+`walk_files_result` now reports both listing and child metadata failures with
+`WalkSuccess`/`FilesystemFailure`, leaving best-effort `walk_files` intact.
+`path_kind` provides a non-following metadata query with explicit failure and
+`path_kind_result` exposes it through a tagged union. Traversal remains subject
+to concurrent filesystem changes (TOCTOU), rather than providing a snapshot.
+
 **Decisions:** MIR is the only compiler backend. Retain the self-hosted C
 bootstrap and value/CoW semantics. Prefer correctness and simpler interfaces
 over marginal compiler-speed gains. The packed-state benchmark below measures
@@ -218,6 +232,12 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 - [x] Add portable `list_dir` and `is_dir` filesystem intrinsics to C and MIR
   interpretation (sorted names, missing-vs-empty directory behavior, ownership).
 - [x] Add a Sirius `walk_files` helper and native/MIR-focused tests.
+- [x] Add checked `walk_files_result` returning `WalkSuccess(files) | FilesystemFailure`,
+  with native/MIR parity for empty, missing and non-directory roots, BFS and
+  nested listing errors (`tools/test_filesystem_walk_result.py`).
+- [x] Add `path_kind` plus `PathKindResult` to distinguish files, directories,
+  non-traversed symlinks/other entries, and metadata lookup failures; integrate
+  it into `walk_files_result` and check native/MIR parity.
 - [x] Move dependency traversal and exported-signature extraction out
   of Python into a Sirius-native scanner (`src/module_scan_cli.sirius`). An explicit dotted
   import only needs path resolution, not a recursive directory scan; `walk_files`
@@ -363,7 +383,7 @@ Do **not** attempt to solve all of these in one refactor. Each phase below shoul
 
 - [x] Implement local `let` record destructuring with explicit name/selector pairs, single source evaluation and typed field extraction. MIR only; `var` and recursive patterns remain deferred.
 - [ ] Generalize remaining optional constructs and nested CoW lvalues. Optional indexing, `else return` and nested CoW updates are implemented. **Started:** plain `a[i]` is accepted for literal arrays and immutable literal-backed local bindings/aliases, with conservative interval proofs for constant arithmetic (`+`, `-`, `*`) and `for` ranges with known bounds (including `len` of those arrays). HIR carries per-index proof flags to MIR lowering. Common rectangular prefixes of nested arrays are also proven, including dynamic outer indices, immutable row aliases and `len()` of proven subarrays. Empty `Array[T]()` constructors and fixed `.append(...)` chains preserve statically known outer lengths; literals assembled from immutable rows and append chains preserve matching inner dimensions even when element values are computed at runtime. Exact constant selections can retain ragged literal row shapes. Unknown-length function results, mutable arrays, and unproven ragged dimensions still require `[?]` or `[!]`; symbolic lengths tied to runtime values remain deferred.
-- [ ] Complete constructors (conditional overrides after unconditional publication), constructor-based tagged unions, exhaustive `match`, function values and noncapturing lambdas. Basic `rec` constructors with automatically published parameters and direct `pub` overrides are implemented. **Tagged unions (executable):** canonical alternatives, local `let Result = Success | Failure` aliases, typed injection in bindings/calls/returns, positional exhaustive `match`, tagged payloads, ARC and MIR interpreter/native C are implemented and tested (`tools/test_mir_union.py`), including fallthrough arms, nested managed payloads and saved-MIR round-trips (`tools/test_mir_wire.py`). **Cross-module aliases:** `export let` union aliases, qualified imported constructor patterns, named re-exports and `.smirg` interface metadata now work with structural type remapping (`tools/test_module_unions.py`). **Remaining:** constructor overrides/additional published fields in patterns, nested implicit coercions, broader variant ownership/sanitizer coverage and stdlib `Result` APIs.
+- [ ] Complete constructors (conditional overrides after unconditional publication), constructor-based tagged unions, exhaustive `match`, function values and noncapturing lambdas. `rec` constructors support implicit parameter publication, repeated unconditional `pub` with sequential dependencies, and a final `if`/`elif`/`else` overriding existing fields at fixed types. **Tagged unions (executable):** canonical alternatives, local `let Result = Success | Failure` aliases, typed injection in bindings/calls/returns, positional exhaustive `match`, tagged payloads, ARC and MIR interpreter/native C are implemented and tested (`tools/test_mir_union.py`), including fallthrough arms, nested managed payloads and saved-MIR round-trips (`tools/test_mir_wire.py`). **Cross-module aliases:** `export let` union aliases, qualified imported constructor patterns, named re-exports and `.smirg` interface metadata now work with structural type remapping (`tools/test_module_unions.py`). **Filesystem `Result` slice:** `Std.Filesystem` now exports `ReadResult`, `WriteResult`, `ListResult`, and `WalkResult` wrappers (`tools/test_filesystem_result.py`, `tools/test_filesystem_walk_result.py`). Guarded `else return` now shares union injection with ordinary returns. **Patterns:** all constructor parameters are positional, optionally followed by additional published fields in canonical order (`tools/test_constructor_publications.py`). **Exported computed constructors:** `export rec` can publish computed fields and conditional overrides across source imports, named re-exports and source-free `.smirg`; canonical result shapes and normalized body signatures are retained in module interfaces (`tools/test_module_computed_constructors.py`). Portable bodies now resolve defining-module constants and local helpers hygienically through private owner-qualified bindings, including transitive calls and source-free packages; dependency fingerprints cover helper bodies and constant values. **Remaining:** general closure capture and external helper dependencies, unrestricted constructor control flow, nested implicit coercions, broader variant ownership/sanitizer coverage and other stdlib `Result` APIs. Portable OS error kinds and native codes are now exposed through `FilesystemFailure`.
 - [ ] Implement basic static `namespace`/`import`/`export` resolution; start with separately parsed sources and a build-time dependency graph, without runtime modules.
 - [x] Expand module constant evaluation from `i64` and `bool` expressions to nested **structural record constants**, including references to earlier constants and field access. Store values in a typed arena and instantiate records with ordinary MIR instructions, preserving CoW and sorted field layout. Test overrides, shadowing, invalid initializers and snapshots (`tests/mir/module_record_constants.sirius`).
 - [x] Extend constant evaluation to decoded strings/concatenation, homogeneous arrays (including nested), constant array indexing, named record spreads/deletes, and pure `len` of constant strings/arrays. MIR materializes values with existing instructions. See `tests/mir/module_composite_constants.sirius`.

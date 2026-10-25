@@ -32,7 +32,11 @@ def module_build_compile(unit: ModuleScan.ModuleScanUnit, units: Array[ModuleSca
 			types = mapped.table
 			concrete = concrete.append(mapped.id)
 		declarations.types = types
-	let resolved = ModuleResolve.hir_resolve_module_calls(unit.tree, declarations)
+	let bodies = ModuleScan.module_scan_import_constructor_bodies(unit.tree, declarations, units)
+	if bodies.error != ""
+		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(bodies.error), bodies.error)
+	declarations = bodies.declarations
+	let resolved = ModuleResolve.hir_resolve_module_calls(bodies.tree, declarations)
 	if resolved.error != ""
 		let message = str(resolved.line) + ": " + resolved.error
 		return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure(message), message)

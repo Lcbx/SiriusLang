@@ -70,7 +70,7 @@ def main() -> None:
 			dynamic = execute([str(args.runner.resolve()), str(binary_source), str(work / 'not-found')], code=2)
 			assert dynamic.stdout == missing.stdout
 		print('PASS filesystem: failed listing is distinct from empty directory')
-		for index, bad_call in enumerate(('list_dir(123)', 'is_dir(false)')):
+		for index, bad_call in enumerate(('list_dir(123)', 'is_dir(false)', 'path_kind(false)')):
 			bad = work / f'bad{index}.sirius'
 			bad.write_text(f'def main() -> i64\n\tlet value = {bad_call}\n\treturn 0\n')
 			failure = subprocess.run([str(compiler), str(bad), str(work / 'bad.c')], capture_output=True, timeout=60)

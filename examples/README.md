@@ -69,9 +69,10 @@ by `python tools/test_filesystem.py`.
 
 ### Not yet implemented / relevant restrictions
 
-- **Tagged unions and exhaustive `match`** are planned, not available. For
-  absence, the examples use existing `Optional` results; this is not a general
-  recoverable-error union mechanism.
+- **Tagged unions and exhaustive `match`** are available in source modules,
+  including `Std.Filesystem` `Result` wrappers. The standalone examples retain
+  `Optional` where it keeps the baseline self-contained; constructor overrides
+  and nested implicit union conversions remain incomplete.
 - General `comptime`, `Any` with runtime descriptor access, vectorized
   NumPy-like computation, parallel `map`, and capturing closures are future
   features, not suitable for current executable examples.
@@ -96,7 +97,7 @@ implementations for comparison.
 | `game_of_life.sirius` | Native 2D arrays, slicing/neighbor shifts, elementwise operations and broadcasting | Express neighbor counts and generation updates as array operations instead of nested loops; benchmark allocation costs and performance |
 | `prime_sieve.sirius` | Array generation, slices and bulk Boolean-mask updates | Replace repeated element updates with concise bulk operations; check CoW behavior |
 | `word_frequencies.sirius` | Standard-library string splitting, normalization and tokenization | Process raw text or file contents instead of an already-tokenized word array |
-| `filesystem_walk.sirius` | Tagged error/result unions and exhaustive `match` | Distinguish missing files, permissions and other recoverable I/O failures from absence or success |
+| `filesystem_walk.sirius` | Use `Std.Filesystem.walk_files_result` with exhaustive matching | Report directory-listing and metadata failures instead of silently ignoring them; the best-effort example remains a baseline |
 | `geometry.sirius` | Consistent user-defined extension-method calls | Allow `point.distance(other)` as an ergonomic alternative to a named function |
 | `insertion_sort.sirius` | Negative indexing and improved array slicing | Simplify indexing and enable comparison with alternative sorting approaches |
 | `cow_nested.sirius` | More expressive nested-update APIs | Make immutable updates easier to write while testing structural sharing and ARC |
@@ -105,9 +106,9 @@ implementations for comparison.
 
 ### Suggested implementation and example order
 
-1. **Tagged unions and exhaustive matching.** Add a filesystem example with
-   explicit success/error alternatives. Both variants must return normally and
-   obey the existing ownership rules; no exception unwinder is required.
+1. **Checked filesystem example.** Adapt the standalone walker to use
+   `Std.Filesystem.walk_files_result` in a module build; retain the original
+   implementation as a baseline for comparison.
 2. **Multidimensional arrays and vector operations.** Revisit Game of Life and
    the prime sieve. Compare readability, allocation counts, native performance
    and MIR-interpreter parity against their imperative versions.

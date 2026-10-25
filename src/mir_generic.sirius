@@ -98,6 +98,8 @@ export def mir_generic_interface(unit: ModuleScan.ModuleScanUnit) -> string
 		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, exported.result_type))
 		# Named re-exports preserve their target symbol across module boundaries.
 		parts = MirWire.mir_wire_str(parts, exported.origin)
+		if exported.constructor and exported.body_signature != ""
+			parts = MirWire.mir_wire_str(parts, exported.body_signature)
 	parts = MirWire.mir_wire_num(parts, len(unit.exported_constants))
 	for index in mir_generic_constant_order(unit.exported_constants)
 		let constant = unit.exported_constants[!index]
@@ -168,7 +170,14 @@ def mir_serialize_generic_version(module: string, tree: Parser.ParseState, root:
 		if mir_generic_export_valid(declarations, name)
 			exports = exports.append(name)
 	if len(exports) == 0
-		return MirWire.MirWireSave("", "module has no exported generic functions")
+		var has_constructor = false
+		for function in declarations.functions
+			if function.constructor
+				for name in declarations.exports
+					if name == function.name
+						has_constructor = true
+		if not has_constructor
+			return MirWire.MirWireSave("", "module has no exported generic functions or constructors")
 	let snapshot = MirSemantic.mir_serialize_semantic(tree, root, declarations)
 	if snapshot.error != ""
 		return snapshot
@@ -219,7 +228,7 @@ export def mir_deserialize_generic(data: string) -> MirGenericLoad
 		return mir_generic_failure("invalid generic module name")
 	let count = MirWire.mir_wire_count(reader)
 	reader = count.reader
-	if reader.error != "" or count.value == 0 or count.value > 4096
+	if reader.error != "" or count.value > 4096
 		return mir_generic_failure("invalid generic export count")
 	var exports = Array[string]()
 	for i in 0..count.value

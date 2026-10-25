@@ -215,6 +215,43 @@ standard C `fopen`. The runtime does not suppress MSVC CRT warnings globally.
 Embedded NUL bytes in paths are rejected. `tools/test_filesystem.py` checks
 Unicode filenames, binary round-trips, and invalid paths.
 
+`Std.Filesystem` also exports `read_text_result`, `write_text_result` and
+`list_dir_result`. These return `ReadResult`, `WriteResult` and `ListResult`
+constructor-based unions with exhaustive `match`. Their success variants are
+`ReadSuccess(content: string)`, `WriteSuccess(bytes: i64)`, and
+`ListSuccess(entries: Array[string])`; all share a `FilesystemFailure(operation:
+string, path: string, kind: i64, code: i64)` error variant. The byte count is
+reported only after a successful write. The wrappers preserve the existing
+`Optional`/`bool` semantics and capture the OS error *immediately* after failure.
+
+The C runtime keeps a thread-local snapshot for each `read_text`, `write_text`,
+`list_dir` or `path_kind` attempt. On success, both getters return zero. On failure,
+`filesystem_error_kind()` returns a platform-independent category:
+`1=not_found`, `2=permission`, `3=not_directory`, `4=is_directory`,
+`5=invalid_path`, `6=other`; `filesystem_error_code()` returns the nonzero
+native numeric code (`errno` from POSIX/CRT file I/O, Win32 error from
+Windows directory enumeration). The numeric code is platform-specific; do not
+serialize it as a portable error taxonomy. Query the snapshot before another
+filesystem operation overwrites it. General code should use the `Result`
+wrappers instead of the ambient getters. This is not an atomic return of
+value+error for arbitrary asynchronous interleaving, although the snapshot
+itself is per-thread. `walk_files` keeps its best-effort behavior.
+`path_kind(path) -> i64` performs an lstat-style metadata query: `0=error`,
+`1=regular file`, `2=directory`, `3=other` (including symlinks/reparse points).
+It sets the same error snapshot on failure and clears it on success.
+`Std.Filesystem.path_kind_result(path) -> PathKindResult` wraps it in
+`PathKindSuccess(kind)` or `FilesystemFailure("path_kind", path, kind, code)`.
+`walk_files_result(root) -> WalkResult` checks both directory listing and
+per-entry metadata, reporting the first error as `FilesystemFailure` with the
+operation and affected path, otherwise returning `WalkSuccess(files)` (including
+for an empty root). It preserves breadth-first ordering and does not follow
+symlinks when deciding which children to traverse; a symlink supplied as the
+root can still be enumerated. Filesystem changes between
+listing and metadata lookup may still cause a reported error (TOCTOU); this
+is not an atomic snapshot and already-collected files are not returned on error.
+`tools/test_filesystem_result.py` and `tools/test_filesystem_walk_result.py`
+check native/interpreted parity.
+
 ## MIR collection-allocation profile and shared append (October 2026)
 
 `python tools/profile_mir_allocations.py --runs 3` instruments a **temporary**

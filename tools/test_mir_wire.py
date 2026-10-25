@@ -33,6 +33,7 @@ def main() -> None:
 		all_cases = {**{name: source for name, (source, _, _) in CASES.items()},
 			**{name: source for name, (source, _) in FAILURE_CASES.items()},
 			'embedded_newlines': 'def main() -> i64\n\tlet r = {text = "first\\nsecond\\tend"}\n\tprint(r.text)\n\treturn len(r.text)\n',
+			'path_kind': 'def main() -> i64\n\tlet path = arguments()[!1]\n\tprint(path_kind(path))\n\treturn 0\n',
 			'big_int': 'def main() -> i64\n\tlet x = 9223372036854775807\n\tprint(x)\n\treturn 0\n',
 			'min_int': 'def main() -> i64\n\tlet x = -9223372036854775807 - 1\n\tprint(x)\n\treturn 0\n',
 		}
@@ -69,6 +70,8 @@ def main() -> None:
 				argv = [str(work / 'absent.txt')]
 			elif name == 'empty_file':
 				argv = [str(work / 'empty.txt')]
+			elif name == 'path_kind':
+				argv = [str(work / 'file.txt')]
 			roundtrip(path, name, argv)
 		print(f'PASS MIR wire: {len(all_cases)} round-trip/determinism cases')
 
