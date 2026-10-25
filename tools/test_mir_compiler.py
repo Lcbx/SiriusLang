@@ -114,13 +114,23 @@ def main() -> None:
 			'\tlet b = [[1, 2], [3, 4]][0][1]\n'
 			'\tlet c = [10, 20, 30][(1 + 2) - 1]\n'
 			'\tlet d = [[10, 20], [30, 40]][2 * 1 - 1][1 + 0]\n'
-			'\tprint(a + b + c + d)\n'
+			'\tlet values = [5, 7, 11]\n'
+			'\tlet alias = values\n'
+			'\tlet offset = 1\n'
+			'\tlet matrix = [[4, 5], [6, 7]]\n'
+			'\tlet row = matrix[1]\n'
+			'\tvar total = a + b + c + d + alias[offset] + row[0]\n'
+			'\tfor i in 0..len(alias)\n'
+			'\t\ttotal += alias[i]\n'
+			'\tfor j in 1..3\n'
+			'\t\ttotal += [2, 3, 5][j]\n'
+			'\tprint(total)\n'
 			'\treturn 0\n')
 		static_c = work / 'static_literal_index.c'
 		execute([str(compiler), str(static_case), str(static_c)])
-		assert_native(run_native(cache, static_c), stdout=b'92\n')
+		assert_native(run_native(cache, static_c), stdout=b'136\n')
 		for suffix, expression in (('out_of_range', '[1, 2][2]'),
-			('unproven', 'items[0]'), ('negative', '[1, 2][-1]'),
+			('unproven', 'items[items[!0]]'), ('negative', '[1, 2][-1]'),
 			('arithmetic_out_of_range', '[1, 2][1 + 1]'),
 			('arithmetic_overflow', '[1, 2][9223372036854775807 + 1]'),
 			('arithmetic_nonconstant', '[1, 2][items[!0]]')):
@@ -130,7 +140,21 @@ def main() -> None:
 			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
 			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
 				raise AssertionError(f'Expected static bounds rejection for {expression}: {result.stdout!r}')
-		print('PASS constant-arithmetic bounds proof and rejection of unsafe plain indices')
+		for suffix, source in (
+			('mutable_length', 'def main() -> i64\n\tvar items = [1, 2]\n\tprint(items[0])\n\treturn 0\n'),
+			('range_too_wide', 'def main() -> i64\n\tlet items = [1, 2]\n\tfor i in 0..len(items) + 1\n\t\tprint(items[i])\n\treturn 0\n'),
+			('range_plus_one', 'def main() -> i64\n\tlet items = [1, 2]\n\tfor i in 0..len(items)\n\t\tprint(items[i + 1])\n\treturn 0\n'),
+			('runtime_range', 'def choose(n: i64) -> i64\n\treturn n\ndef main() -> i64\n\tlet items = [1, 2]\n\tfor i in 0..choose(2)\n\t\tprint(items[i])\n\treturn 0\n'),
+			('shadowed_length', 'def main() -> i64\n\tlet items = [1, 2]\n\tif true\n\t\tlet items = [3]\n\t\tprint(items[1])\n\treturn 0\n'),
+			('nested_nonuniform', 'def main() -> i64\n\tlet items = [[1], [2, 3]]\n\tfor i in 0..len(items)\n\t\tprint(items[i][1])\n\treturn 0\n'),
+		):
+			negative = work / (suffix + '.sirius')
+			negative.write_text(source)
+			failed = work / (suffix + '.c')
+			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
+			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
+				raise AssertionError(f'Expected conservative bound failure for {suffix}: {result.stdout!r}')
+		print('PASS immutable-local and loop-range bounds proof; reject mutable, unsafe, unknown and shadowed bounds')
 		elif_case = work / 'optional_elif.sirius'
 		elif_case.write_text('def main() -> i64\n\tlet table = Dict[i64, i64]()\n\tif false\n\t\tprint(1)\n\telif (table.get(1) or 0) == 0\n\t\tprint(2)\n\treturn 0\n')
 		output = work / 'optional_elif.c'

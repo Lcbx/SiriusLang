@@ -17,87 +17,110 @@ export let HIR_UNWRAP = 13
 # source is the call AST node; definition is the callee's declaration body ID.
 export rec HirSpecializationRequest(source: i64, definition: i64, arguments: Array[i64])
 
-export rec HirBodyState(tree: Ast.ParseState, names: Array[string], constants: Array[string], types: Types.TypeTable, symbols: Array[Hir.SymbolInfo], nodes: Array[Hir.HirNode], depth: i64, last_type: i64, error: string, error_line: i64, functions: Array[Hir.HirFunctionDecl], active_functions: Array[string], inferred_return: i64, collect_calls: bool, requests: Array[HirSpecializationRequest], module_constants: Array[Hir.HirModuleConstant])
+# Inclusive nonnegative range of an immutable i64 expression; -1 means unknown.
+export rec HirIndexRange(low: i64, high: i64)
+export rec HirStaticFact(array_literal: i64, index_range: HirIndexRange)
+
+def hir_unknown_range() -> HirIndexRange
+	return HirIndexRange(-1, -1)
+
+export rec HirBodyState(tree: Ast.ParseState, names: Array[string], constants: Array[string], types: Types.TypeTable, symbols: Array[Hir.SymbolInfo], nodes: Array[Hir.HirNode], depth: i64, last_type: i64, error: string, error_line: i64, functions: Array[Hir.HirFunctionDecl], active_functions: Array[string], inferred_return: i64, collect_calls: bool, requests: Array[HirSpecializationRequest], module_constants: Array[Hir.HirModuleConstant], facts: Array[HirStaticFact])
 
 export def new_hir_body_state(tree: Ast.ParseState, names: Array[string], constants: Array[string], types: Types.TypeTable) -> HirBodyState
-	return HirBodyState(tree, names, constants, types, Array[Hir.SymbolInfo](), Array[Hir.HirNode](), 0, Types.TYPE_TAG_INVALID, "", 0, Array[Hir.HirFunctionDecl](), Array[string](), Types.TYPE_TAG_INVALID, false, Array[HirSpecializationRequest](), Array[Hir.HirModuleConstant]())
+	return HirBodyState(tree, names, constants, types, Array[Hir.SymbolInfo](), Array[Hir.HirNode](), 0, Types.TYPE_TAG_INVALID, "", 0, Array[Hir.HirFunctionDecl](), Array[string](), Types.TYPE_TAG_INVALID, false, Array[HirSpecializationRequest](), Array[Hir.HirModuleConstant](), Array[HirStaticFact]())
 
 export rec HirBodyAnalysis(nodes: Array[Hir.HirNode], error: string, error_line: i64)
 
-# A conservative static bounds proof for array literals and chains of
-# literal array indexing. Constant nonnegative integer arithmetic is accepted;
-# unknown lengths, variable indices and negative indexing remain unproven.
-export def hir_nonnegative_constant(tree: Ast.ParseState, id: i64) -> i64
+# Bounds facts are scoped exactly like HIR symbols. Only immutable locals and
+# literal arrays contribute lengths; no runtime-dependent or mutable facts are
+# used to authorize plain indexing. All ranges are inclusive, nonnegative i64.
+export def hir_index_range(state: HirBodyState, id: i64) -> HirIndexRange
+	let tree = state.tree
 	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_NAME
+		let resolved = Hir.resolve_hir_name(state.symbols, Hir.hir_ast_text(tree, id))
+		if resolved.error == "" and not state.symbols[!resolved.field_index].mutable
+			return state.facts[!resolved.field_index].index_range
+		return hir_unknown_range()
+	if node.kind == Ast.NODE_CALL and node.count == 2
+		let callee = Hir.hir_ast_child(tree, id, 0)
+		if tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(tree, callee) == "len"
+			let array = hir_static_array_literal(state, Hir.hir_ast_child(tree, id, 1))
+			if array >= 0
+				let length = tree.nodes[!array].count
+				return HirIndexRange(length, length)
+		return hir_unknown_range()
 	if node.kind == Ast.NODE_UNARY
 		if Hir.hir_ast_text(tree, id) == "+"
-			return hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 0))
-		return -1
+			return hir_index_range(state, Hir.hir_ast_child(tree, id, 0))
+		return hir_unknown_range()
 	if node.kind == Ast.NODE_BINARY and node.count == 2
 		let op = Hir.hir_ast_text(tree, id)
 		if op != "+" and op != "-" and op != "*"
-			return -1
-		let left = hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 0))
-		let right = hir_nonnegative_constant(tree, Hir.hir_ast_child(tree, id, 1))
-		if left < 0 or right < 0
-			return -1
+			return hir_unknown_range()
+		let left = hir_index_range(state, Hir.hir_ast_child(tree, id, 0))
+		let right = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))
+		if left.low < 0 or right.low < 0
+			return hir_unknown_range()
 		if op == "+"
-			if left > 9223372036854775807 - right
-				return -1
-			return left + right
+			if left.high > 9223372036854775807 - right.high
+				return hir_unknown_range()
+			return HirIndexRange(left.low + right.low, left.high + right.high)
 		if op == "-"
-			if left < right
-				return -1
-			return left - right
-		if right > 0 and left > 9223372036854775807 / right
-			return -1
-		return left * right
+			if left.low < right.high
+				return hir_unknown_range()
+			return HirIndexRange(left.low - right.high, left.high - right.low)
+		if right.high > 0 and left.high > 9223372036854775807 / right.high
+			return hir_unknown_range()
+		return HirIndexRange(left.low * right.low, left.high * right.high)
 	if node.kind != Ast.NODE_INTEGER
-		return -1
+		return hir_unknown_range()
 	let digits = Hir.hir_ast_text(tree, id)
 	if len(digits) == 0
-		return -1
+		return hir_unknown_range()
 	var value = 0
 	for i in 0..len(digits)
 		let digit = (digits.byte_at(i) or 0) - 48
 		if digit < 0 or digit > 9
-			return -1
+			return hir_unknown_range()
 		if value > (9223372036854775807 - digit) / 10
-			return -1
+			return hir_unknown_range()
 		value = value * 10 + digit
-	return value
+	return HirIndexRange(value, value)
 
-export def hir_literal_index(tree: Ast.ParseState, id: i64, count: i64) -> i64
-	let value = hir_nonnegative_constant(tree, id)
-	if value < 0 or value >= count
-		return -1
-	return value
-
-export def hir_static_array_literal(tree: Ast.ParseState, id: i64) -> i64
+export def hir_static_array_literal(state: HirBodyState, id: i64) -> i64
+	let tree = state.tree
 	let node = tree.nodes[!id]
 	if node.kind == Ast.NODE_ARRAY
 		return id
+	if node.kind == Ast.NODE_NAME
+		let resolved = Hir.resolve_hir_name(state.symbols, Hir.hir_ast_text(tree, id))
+		if resolved.error == "" and not state.symbols[!resolved.field_index].mutable
+			return state.facts[!resolved.field_index].array_literal
+		return -1
 	if node.kind != Ast.NODE_INDEX or node.count != 2
 		return -1
-	let base = hir_static_array_literal(tree, Hir.hir_ast_child(tree, id, 0))
+	let base = hir_static_array_literal(state, Hir.hir_ast_child(tree, id, 0))
 	if base < 0
 		return -1
-	let index = hir_literal_index(tree, Hir.hir_ast_child(tree, id, 1), tree.nodes[!base].count)
-	if index < 0
+	let index = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))
+	if index.low < 0 or index.low != index.high or index.high >= tree.nodes[!base].count
 		return -1
-	let selected = Hir.hir_ast_child(tree, base, index)
+	let selected = Hir.hir_ast_child(tree, base, index.low)
 	if tree.nodes[!selected].kind != Ast.NODE_ARRAY
 		return -1
 	return selected
 
-export def hir_index_proven(tree: Ast.ParseState, id: i64) -> bool
+export def hir_index_proven(state: HirBodyState, id: i64) -> bool
+	let tree = state.tree
 	let node = tree.nodes[!id]
 	if node.kind != Ast.NODE_INDEX or node.count != 2
 		return false
-	let array = hir_static_array_literal(tree, Hir.hir_ast_child(tree, id, 0))
+	let array = hir_static_array_literal(state, Hir.hir_ast_child(tree, id, 0))
 	if array < 0
 		return false
-	return hir_literal_index(tree, Hir.hir_ast_child(tree, id, 1), tree.nodes[!array].count) >= 0
+	let index = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))
+	return index.low >= 0 and index.high < tree.nodes[!array].count
 
 export def hir_body_error(state: HirBodyState, id: i64, message: string) -> HirBodyState
 	var result = state
@@ -212,6 +235,7 @@ export def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id:
 		if symbol.name == name and symbol.depth == result.depth
 			return hir_body_error(result, id, "duplicate binding '" + name + "'")
 	result.symbols = result.symbols.append(Hir.SymbolInfo(name, type_id, type_id, mutable, result.depth))
+	result.facts = result.facts.append(HirStaticFact(-1, hir_unknown_range()))
 	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
 	return result
 
@@ -538,7 +562,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if result.last_type != Types.TYPE_TAG_INVALID and result.last_type != Types.TYPE_TAG_I64
 				return hir_body_error(result, id, "expected i64, found " + Resolve.hir_type_name(result.types, result.last_type))
 		let valid_index = result.last_type == Types.TYPE_TAG_I64 and node.count == 2
-		if kind == Ast.NODE_INDEX and not hir_index_proven(state.tree, id)
+		if kind == Ast.NODE_INDEX and not hir_index_proven(result, id)
 			return hir_body_error(result, id, "index is not statically proven in bounds; use [?] or [!]")
 		result.last_type = Types.TYPE_TAG_INVALID
 		if valid_index and owner != Types.TYPE_TAG_INVALID and Types.type_tag(result.types, owner) == Types.TYPE_TAG_ARRAY
@@ -549,7 +573,11 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 				result.last_type = optional.id
 			else
 				result.last_type = element
-			result.nodes = result.nodes.append(Hir.HirNode(id, HIR_INDEX, result.last_type, -1))
+			# HIR_INDEX.field_index records the proof consumed by MIR lowering.
+			var proven = -1
+			if kind == Ast.NODE_INDEX
+				proven = 1
+			result.nodes = result.nodes.append(Hir.HirNode(id, HIR_INDEX, result.last_type, proven))
 		return result
 	if kind == Ast.NODE_UNWRAP
 		result = hir_body_expression(result, Hir.hir_ast_child(state.tree, id, 0))
@@ -580,6 +608,10 @@ export def hir_body_block(state: HirBodyState, id: i64) -> HirBodyState
 	for i in 0..initial
 		symbols = symbols.append(result.symbols[!i])
 	result.symbols = symbols
+	var facts = Array[HirStaticFact]()
+	for i in 0..initial
+		facts = facts.append(result.facts[!i])
+	result.facts = facts
 	result.depth -= 1
 	return result
 
@@ -636,6 +668,13 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, declared) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
 		if declared == Types.TYPE_TAG_INVALID
 			declared = result.last_type
+		if node.kind == Ast.NODE_LET and initializer >= 0 and fallback < 0
+			# Evaluate before binding to preserve lexical shadowing.
+			let fact = HirStaticFact(hir_static_array_literal(result, initializer), hir_index_range(result, initializer))
+			result = hir_body_binding(result, id, Hir.hir_ast_text(state.tree, id), declared, false)
+			if result.error == ""
+				result.facts[!len(result.facts) - 1] = fact
+			return result
 		return hir_body_binding(result, id, Hir.hir_ast_text(state.tree, id), declared, node.kind == Ast.NODE_VAR)
 	if node.kind == Ast.NODE_ASSIGN
 		let lhs = Hir.hir_ast_child(state.tree, id, 0)
@@ -697,12 +736,24 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			item_type = Types.TYPE_TAG_I64
 		elif result.last_type != Types.TYPE_TAG_INVALID and Types.type_tag(result.types, result.last_type) == Types.TYPE_TAG_ARRAY
 			item_type = result.types.entries[!result.last_type].first
+		var loop_range = hir_unknown_range()
+		if result.tree.nodes[!iterable].kind == Ast.NODE_BINARY and Hir.hir_ast_text(result.tree, iterable) == ".."
+			let start = hir_index_range(result, Hir.hir_ast_child(result.tree, iterable, 0))
+			let end = hir_index_range(result, Hir.hir_ast_child(result.tree, iterable, 1))
+			if start.low >= 0 and end.low > 0 and start.low < end.high
+				loop_range = HirIndexRange(start.low, end.high - 1)
 		result = hir_body_binding(result, id, Hir.hir_ast_text(state.tree, id), item_type, false)
+		if result.error == "" and item_type == Types.TYPE_TAG_I64
+			result.facts[!len(result.facts) - 1] = HirStaticFact(-1, loop_range)
 		result = hir_body_block(result, Hir.hir_ast_child(state.tree, id, node.count - 1))
 		var symbols = Array[Hir.SymbolInfo]()
 		for i in 0..initial
 			symbols = symbols.append(result.symbols[!i])
 		result.symbols = symbols
+		var facts = Array[HirStaticFact]()
+		for i in 0..initial
+			facts = facts.append(result.facts[!i])
+		result.facts = facts
 		result.depth -= 1
 		return result
 	if node.kind == Ast.NODE_GUARD

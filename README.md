@@ -138,7 +138,7 @@ end-to-end cold-build gains are not established. The implementation order remain
    legacy-only tooling have been removed.
 4. **Features — active:** implement missing language constructs in tested slices,
    including local `let` record destructuring, nested record/array updates,
-   and statically proven plain indexing of array literals (MIR backend only).
+   and statically proven plain indexing of literal-backed immutable arrays (MIR backend only).
 
 The MIR compiler supports compile-time module `let` constants with `i64`,
 `bool`, `string`, homogeneous arrays and structural records (including nested
@@ -151,8 +151,13 @@ initializers, arbitrary function calls and general `comptime` remain deferred.
 String module constants permit explicit `: string` annotations; array type
 annotations are not yet accepted at module level.
 
-Plain `a[i]` indexing currently proves nonnegative constant arithmetic (`+`, `-`, `*`) within array literals (including nested literal chains). For other reads use
-  `a[?i]` or `a[!i]`; no general length/range inference is implemented yet.
+Plain `a[i]` indexing now proves nonnegative constant arithmetic (`+`, `-`, `*`),
+immutable `let` arrays initialized from literals (including aliases and constant-indexed
+nested arrays), and indices with conservative ranges from `for i in start..end`
+when the bounds are known, including `len()` of those arrays. Proofs respect lexical
+shadowing and reject potential `i64` overflow. Mutable arrays, runtime-dependent
+bounds, nonuniform nested indexing, and negative indices still require `a[?i]`
+or `a[!i]`. This is a scoped HIR proof, not a general symbolic bounds solver.
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits

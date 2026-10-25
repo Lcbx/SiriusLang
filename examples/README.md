@@ -76,7 +76,7 @@ by `python tools/test_filesystem.py`.
   NumPy-like computation, parallel `map`, and capturing closures are future
   features, not suitable for current executable examples.
 - Use `a[!index]` for checked array access and `a[?index]` for optional
-  lookup. Plain `a[index]` is currently proven safe for literal arrays indexed by nonnegative constant arithmetic (`+`, `-`, `*`). Variable indices and negative indexing are not yet supported without a checked/optional access.
+  lookup. Plain `a[index]` is supported for literal-backed immutable `let` arrays and aliases when the index is provably in bounds (constant arithmetic or a known `for` range, including `0..len(a)`). Mutable arrays, arbitrary runtime indices, and negative indices require checked/optional access.
 - Calls to ordinary named functions work. User-defined `value.method(...)`
   extension-call syntax is not yet supported consistently by the MIR emitter;
   `geometry.sirius` deliberately calls `distance(origin, point)` instead.
