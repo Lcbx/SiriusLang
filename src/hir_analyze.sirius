@@ -110,19 +110,20 @@ export def hir_static_array_literal(state: HirBodyState, id: i64) -> i64
 		return -1
 	return selected
 
-# The common rectangular prefix of a literal's nested shape. Ragged arrays
-# retain their known outer dimensions without assuming anything about deeper
-# elements. This is a proof about array lengths, not their element values.
-export def hir_literal_array_shape(tree: Ast.ParseState, id: i64) -> Array[i64]
+# The common rectangular prefix of an array literal's elements, including
+# immutable aliases and length-preserving expressions. Element values may be
+# computed at runtime; only their provable shapes are used here.
+export def hir_literal_array_shape(state: HirBodyState, id: i64) -> Array[i64]
+	let tree = state.tree
 	let node = tree.nodes[!id]
 	if node.kind != Ast.NODE_ARRAY
 		return Array[i64]()
 	var shape = [node.count]
 	if node.count == 0
 		return shape
-	var common = hir_literal_array_shape(tree, Hir.hir_ast_child(tree, id, 0))
+	var common = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 0))
 	for i in 1..node.count
-		let other = hir_literal_array_shape(tree, Hir.hir_ast_child(tree, id, i))
+		let other = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, i))
 		var equal = 0
 		while equal < len(common) and equal < len(other) and common[!equal] == other[!equal]
 			equal += 1
@@ -136,19 +137,44 @@ export def hir_literal_array_shape(tree: Ast.ParseState, id: i64) -> Array[i64]
 		shape = shape.append(dimension)
 	return shape
 
-# Only propagate dimensions across an indexed expression after proving the
-# index lies in the known outer dimension. A singleton index can recover the
-# exact (possibly ragged) selected literal via hir_static_array_literal.
+# Array constructors and append preserve a known outer length even when the
+# stored elements are dynamic. Keep inner dimensions only if every appended
+# element has the same proven shape as the existing rows.
 export def hir_static_array_shape(state: HirBodyState, id: i64) -> Array[i64]
 	let tree = state.tree
 	let literal = hir_static_array_literal(state, id)
 	if literal >= 0
-		return hir_literal_array_shape(tree, literal)
+		return hir_literal_array_shape(state, literal)
 	let node = tree.nodes[!id]
 	if node.kind == Ast.NODE_NAME
 		let resolved = Hir.resolve_hir_name(state.symbols, Hir.hir_ast_text(tree, id))
 		if resolved.error == "" and not state.symbols[!resolved.field_index].mutable
 			return state.facts[!resolved.field_index].array_shape
+	if node.kind == Ast.NODE_CALL
+		let callee = Hir.hir_ast_child(tree, id, 0)
+		if node.count == 1 and tree.nodes[!callee].kind == Ast.NODE_INDEX
+			let constructor = Hir.hir_ast_child(tree, callee, 0)
+			if tree.nodes[!constructor].kind == Ast.NODE_NAME and Hir.hir_ast_text(tree, constructor) == "Array"
+				return [0]
+		if node.count == 2 and tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(tree, callee) == "append"
+			let receiver = Hir.hir_ast_child(tree, callee, 0)
+			let base = hir_static_array_shape(state, receiver)
+			if len(base) == 0 or base[!0] == 9223372036854775807
+				return Array[i64]()
+			var shape = [base[!0] + 1]
+			let element = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 1))
+			if base[!0] == 0 and len(base) == 1
+				for dimension in element
+					shape = shape.append(dimension)
+			elif len(base) == len(element) + 1
+				var equal = true
+				for i in 0..len(element)
+					if base[!i + 1] != element[!i]
+						equal = false
+				if equal
+					for dimension in element
+						shape = shape.append(dimension)
+			return shape
 	if node.kind == Ast.NODE_INDEX and node.count == 2
 		let shape = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 0))
 		let index = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))

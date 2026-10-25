@@ -76,7 +76,7 @@ by `python tools/test_filesystem.py`.
   NumPy-like computation, parallel `map`, and capturing closures are future
   features, not suitable for current executable examples.
 - Use `a[!index]` for checked array access and `a[?index]` for optional
-  lookup. Plain `a[index]` is supported for literal-backed immutable `let` arrays and aliases when the index is provably in bounds (constant arithmetic or a known `for` range, including `0..len(a)`). Nested literal arrays also retain common rectangular dimensions under loop indexing and immutable row aliases, so `len(a[i])` is available when that dimension is proven. Mutable arrays, arbitrary runtime dimensions, ragged dimensions without proof, and negative indices require checked/optional access.
+  lookup. Plain `a[index]` is supported for immutable `let` arrays with proven lengths, including array literals, aliases, empty `Array[T]()` constructors and fixed `.append(...)` chains. Elements may be computed at runtime; rectangular row shapes survive immutable aliases and shape-compatible appends, so `len(a[i])` can be proven inside a loop. Mutable arrays, unknown-length function results, unproven ragged dimensions and negative indices require checked/optional access.
 - Calls to ordinary named functions work. User-defined `value.method(...)`
   extension-call syntax is not yet supported consistently by the MIR emitter;
   `geometry.sirius` deliberately calls `distance(origin, point)` instead.

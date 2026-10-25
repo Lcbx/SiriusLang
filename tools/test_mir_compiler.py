@@ -189,6 +189,53 @@ def main() -> None:
 			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
 				raise AssertionError(f'Expected nested bounds rejection for {suffix}: {result.stdout!r}')
 		print('PASS uniform nested array shape and aliases; reject ragged and out-of-range indexes')
+		# Array lengths remain statically known when their contents are
+		# runtime-computed, including immutable rows and append chains.
+		dynamic_shape = work / 'static_dynamic_shape.sirius'
+		dynamic_shape.write_text(
+			'def value(n: i64) -> i64\n'
+			'\treturn n * 2\n'
+			'def main() -> i64\n'
+			'\tlet row = [value(1), value(2)]\n'
+			'\tlet other = [value(3), value(4)]\n'
+			'\tlet rows = [row, other]\n'
+			'\tvar total = 0\n'
+			'\tfor i in 0..len(rows)\n'
+			'\t\tfor j in 0..len(rows[i])\n'
+			'\t\t\ttotal += rows[i][j]\n'
+			'\tlet grown = [5].append(value(6)).append(value(9))\n'
+			'\tlet empty = Array[i64]()\n'
+			'\tlet seeded = empty.append(value(7)).append(value(8))\n'
+			'\tlet rectangular = [row].append(other)\n'
+			'\tlet composed = Array[Array[i64]]().append(row).append(other)\n'
+			'\ttotal += grown[2] + seeded[1] + rectangular[0][1] + rectangular[1][1] + composed[1][0]\n'
+			'\tprint(total)\n'
+			'\treturn 0\n')
+		dynamic_c = work / 'static_dynamic_shape.c'
+		execute([str(compiler), str(dynamic_shape), str(dynamic_c)])
+		assert_native(run_native(cache, dynamic_c), stdout=b'72\n')
+		for suffix, source in (
+			('append_unknown_source',
+				'def make() -> Array[i64]\n\treturn [1, 2]\ndef main() -> i64\n'
+				'\tlet values = make().append(3)\n\tprint(values[0])\n\treturn 0\n'),
+			('append_ragged',
+				'def main() -> i64\n\tlet rows = [[1]].append([2, 3])\n'
+				'\tfor i in 0..len(rows)\n\t\tprint(rows[i][1])\n\treturn 0\n'),
+			('composed_ragged',
+				'def main() -> i64\n\tlet a = [1]\n\tlet b = [2, 3]\n'
+				'\tlet rows = [a, b]\n\tfor i in 0..len(rows)\n'
+				'\t\tprint(rows[i][1])\n\treturn 0\n'),
+			('append_too_wide',
+				'def main() -> i64\n\tlet items = [1].append(2)\n'
+				'\tfor i in 0..len(items) + 1\n\t\tprint(items[i])\n\treturn 0\n'),
+		):
+			negative = work / (suffix + '.sirius')
+			negative.write_text(source)
+			failed = work / (suffix + '.c')
+			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
+			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
+				raise AssertionError(f'Expected dynamic-shape bounds rejection for {suffix}: {result.stdout!r}')
+		print('PASS runtime-valued fixed shapes, constructors, append, and conservative ragged rejection')
 		elif_case = work / 'optional_elif.sirius'
 		elif_case.write_text('def main() -> i64\n\tlet table = Dict[i64, i64]()\n\tif false\n\t\tprint(1)\n\telif (table.get(1) or 0) == 0\n\t\tprint(2)\n\treturn 0\n')
 		output = work / 'optional_elif.c'
