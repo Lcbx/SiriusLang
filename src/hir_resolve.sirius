@@ -28,6 +28,8 @@ export def hir_type_name(types: Types.TypeTable, id: i64) -> string
 		return "Dict[" + hir_type_name(types, descriptor.first) + "," + hir_type_name(types, descriptor.second) + "]"
 	if descriptor.tag == Types.TYPE_TAG_OPTIONAL
 		return "Optional[" + hir_type_name(types, descriptor.first) + "]"
+	if descriptor.tag == Types.TYPE_TAG_UNION
+		return "union"
 	return "record"
 
 export def hir_expected(types: Types.TypeTable, expected: i64, found: i64) -> HirCallCheck
@@ -199,3 +201,25 @@ export def hir_constructor_publish(fields: Array[Types.RecordField], name: strin
 	return hir_record_put(fields, name, type_id)
 
 
+# Semantic matching operates on structural record alternatives, without
+# relying on source constructor names or requiring a C/MIR runtime backend.
+export rec HirMatchCheck(error: string, alternative: i64)
+
+export def check_exhaustive_match(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchCheck
+	if Types.type_tag(types, union_id) != Types.TYPE_TAG_UNION
+		return HirMatchCheck("match requires a tagged union", -1)
+	let members = types.entries[!union_id].fields
+	var seen = Array[bool]()
+	for member in members
+		seen = seen.append(false)
+	for arm in arms
+		let index = Types.union_alternative_index(types, union_id, arm)
+		if index < 0
+			return HirMatchCheck("match arm is not a union alternative", -1)
+		if seen[!index]
+			return HirMatchCheck("duplicate match alternative", members[!index].kind)
+		seen[!index] = true
+	for i in 0..len(seen)
+		if not seen[!i]
+			return HirMatchCheck("non-exhaustive match", members[!i].kind)
+	return HirMatchCheck("", -1)

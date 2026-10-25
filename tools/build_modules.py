@@ -92,6 +92,11 @@ def discover(root: Path, entry: str, scanner: Path | None = None) -> list[Module
 			if not name or name in current.exports or name in current.constants or not type_name:
 				raise ModuleError(f'duplicate/invalid exported constant: {name}')
 			current.constants[name] = type_name
+		elif current is not None and len(parts) == 3 and parts[0] == 'U':
+			_, name, type_name = parts
+			if not name or name in current.types or name in current.exports or name in current.constants or not type_name:
+				raise ModuleError(f'duplicate/invalid exported union: {name}')
+			current.types[name] = type_name
 		elif current is not None and len(parts) == 3 and parts[0] == 'T':
 			_, name, type_name = parts
 			if not name or name in current.types or name in current.exports or name in current.constants or not type_name:

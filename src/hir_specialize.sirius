@@ -18,21 +18,26 @@ export rec HirSpecializedProgram(registry: Hir.HirSpecializationRegistry, bodies
 export def new_hir_specialized_program(registry: Hir.HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: Types.TypeTable, entry: i64, error: string) -> HirSpecializedProgram
 	return HirSpecializedProgram(registry, bodies, types, entry, error, Array[HirSpecializedRoot]())
 
-export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], types: Types.TypeTable, arguments: Array[i64]) -> HirConcreteBody
+export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], types: Types.TypeTable, arguments: Array[i64], aliases: Array[Hir.HirTypeAlias]) -> HirConcreteBody
 	var names = Array[string]()
 	for function in functions
 		names = names.append(function.name)
 	var state = Analyze.new_hir_body_state(tree, names, Array[string](), types)
 	state.functions = functions
 	state.module_constants = constants
+	state.type_aliases = aliases
 	state.active_functions = [header.name]
 	state.collect_calls = true
+	if header.result_type_node >= 0
+		let expected = Analyze.hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants, aliases)
+		state.types = expected.table
+		state.expected_return = expected.type_id
 	if len(arguments) != len(header.parameters)
 		return HirConcreteBody(state.nodes, state.requests, state.types, Types.TYPE_TAG_INVALID, "specialization argument count mismatch", Hir.hir_ast_line(tree, header.source))
 	for i in 0..len(arguments)
 		let parameter = header.parameters[!i]
 		if parameter.type_node >= 0
-			let annotation = Analyze.hir_module_type_reference_with_constants(state.types, tree, parameter.type_node, functions, constants)
+			let annotation = Analyze.hir_module_type_reference_with_constants(state.types, tree, parameter.type_node, functions, constants, aliases)
 			state.types = annotation.table
 			if annotation.type_id != Types.TYPE_TAG_INVALID and annotation.type_id != arguments[!i]
 				state = Analyze.hir_body_error(state, parameter.source, "specialization argument type mismatch")
@@ -43,10 +48,10 @@ export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, 
 		state = Analyze.hir_body_block(state, header.body)
 	var result_type = state.inferred_return
 	if state.error == "" and header.result_type_node >= 0
-		let declared = Analyze.hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants)
+		let declared = Analyze.hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants, aliases)
 		state.types = declared.table
 		if declared.type_id != Types.TYPE_TAG_INVALID
-			if result_type != Types.TYPE_TAG_INVALID and result_type != declared.type_id
+			if result_type != Types.TYPE_TAG_INVALID and result_type != declared.type_id and Types.union_alternative_index(state.types, declared.type_id, result_type) < 0
 				state = Analyze.hir_body_error(state, header.source, "expected " + Resolve.hir_type_name(state.types, declared.type_id) + ", found " + Resolve.hir_type_name(state.types, result_type))
 			result_type = declared.type_id
 	return HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
@@ -75,7 +80,7 @@ export def hir_specialize_program_roots(tree: Ast.ParseState, declarations: Hir.
 					for parameter in declaration.parameters
 						if parameter.type_node < 0
 							return new_hir_specialized_program(registry, bodies, types, entry, "exported function parameters require annotations")
-						let annotated = Analyze.hir_module_type_reference_with_constants(types, tree, parameter.type_node, declarations.functions, declarations.constants)
+						let annotated = Analyze.hir_module_type_reference_with_constants(types, tree, parameter.type_node, declarations.functions, declarations.constants, declarations.type_aliases)
 						types = annotated.table
 						if annotated.type_id == Types.TYPE_TAG_INVALID
 							return new_hir_specialized_program(registry, bodies, types, entry, "unsupported exported parameter type")
@@ -108,15 +113,15 @@ export def hir_specialize_program_roots(tree: Ast.ParseState, declarations: Hir.
 				typed.return_type = header.result_type
 			else
 				for i in 0..len(header.parameters)
-					let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.parameters[!i].type_node, declarations.functions, declarations.constants)
+					let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.parameters[!i].type_node, declarations.functions, declarations.constants, declarations.type_aliases)
 					typed.types = declared.table
 					if declared.type_id == Types.TYPE_TAG_INVALID or declared.type_id != spec.arguments[!i]
 						return new_hir_specialized_program(registry, bodies, types, entry, "external specialization type mismatch")
-				let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.result_type_node, declarations.functions, declarations.constants)
+				let declared = Analyze.hir_module_type_reference_with_constants(typed.types, tree, header.result_type_node, declarations.functions, declarations.constants, declarations.type_aliases)
 				typed.types = declared.table
 				typed.return_type = declared.type_id
 		else
-			typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments)
+			typed = hir_concrete_body(tree, header, declarations.functions, declarations.constants, types, spec.arguments, declarations.type_aliases)
 		types = typed.types
 		if typed.error != ""
 			return new_hir_specialized_program(registry, bodies, types, entry, typed.error)
@@ -133,11 +138,11 @@ export def hir_specialize_program_roots(tree: Ast.ParseState, declarations: Hir.
 			if callee.external
 				result_type = callee.result_type
 			elif callee.result_type_node >= 0
-				let declared = Analyze.hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants)
+				let declared = Analyze.hir_module_type_reference_with_constants(types, tree, callee.result_type_node, declarations.functions, declarations.constants, declarations.type_aliases)
 				types = declared.table
 				result_type = declared.type_id
 			else
-				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments)
+				let inferred = hir_concrete_body(tree, callee, declarations.functions, declarations.constants, types, request.arguments, declarations.type_aliases)
 				types = inferred.types
 				if inferred.error != ""
 					return new_hir_specialized_program(registry, bodies, types, entry, inferred.error)

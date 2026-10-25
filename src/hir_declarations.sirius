@@ -2,6 +2,25 @@ import types alias Types
 import parser alias Ast
 import hir alias Hir
 import hir_constants alias Constants
+import hir_analyze alias Analyze
+
+# A module-local type alias is a union of constructor names, not a runtime
+# constant. Resolve after collecting all constructors to allow forward names.
+rec HirTypeUnionSource(name: string, source: i64)
+
+def hir_union_members(tree: Ast.ParseState, id: i64) -> Array[i64]
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_NAME
+		return [id]
+	if node.kind != Ast.NODE_BINARY or Hir.hir_ast_text(tree, id) != "|"
+		return Array[i64]()
+	var left = hir_union_members(tree, Hir.hir_ast_child(tree, id, 0))
+	let right = hir_union_members(tree, Hir.hir_ast_child(tree, id, 1))
+	if len(left) == 0 or len(right) == 0
+		return Array[i64]()
+	for member in right
+		left = left.append(member)
+	return left
 
 export def hir_declaration_error(functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], message: string, line: i64) -> Hir.HirModuleDecl
 	return Hir.new_hir_module_decl(functions, constants, Types.new_type_table(), Array[Hir.HirConstantValue](), message, line)
@@ -16,6 +35,7 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 	var imports = Array[Hir.HirImport]()
 	var exports = Array[string]()
 	var reexports = Array[Hir.HirReexport]()
+	var union_sources = Array[HirTypeUnionSource]()
 	for i in 0..module.count
 		var id = Hir.hir_ast_child(tree, root, i)
 		var entry = tree.nodes[!id]
@@ -79,6 +99,11 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 			if entry.count == 0
 				return hir_declaration_error(functions, constants, "module constant requires initializer", Hir.hir_ast_line(tree, id))
 			let initializer = Hir.hir_ast_child(tree, id, entry.count - 1)
+			if tree.nodes[!initializer].kind == Ast.NODE_BINARY and Hir.hir_ast_text(tree, initializer) == "|"
+				if entry.count != 1
+					return hir_declaration_error(functions, constants, "union type alias cannot have a value annotation", Hir.hir_ast_line(tree, id))
+				union_sources = union_sources.append(HirTypeUnionSource(name, initializer))
+				continue
 			let evaluated = Constants.hir_eval_constant(types, values, tree, initializer, constants)
 			if not evaluated.valid
 				return hir_declaration_error(functions, constants, "unsupported module constant initializer", Hir.hir_ast_line(tree, id))
@@ -158,10 +183,37 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 		for name in names
 			if name == reexport.public_name
 				return hir_declaration_error(functions, constants, "duplicate exported name: " + name, 1)
+	var aliases = Array[Hir.HirTypeAlias]()
+	for source in union_sources
+		let members = hir_union_members(tree, source.source)
+		if len(members) < 2
+			return hir_declaration_error(functions, constants, "union requires at least two constructor alternatives", Hir.hir_ast_line(tree, source.source))
+		var variants = Array[i64]()
+		for member in members
+			let name = Hir.hir_ast_text(tree, member)
+			var constructor = false
+			for function in functions
+				if function.name == name and function.constructor
+					constructor = true
+			if not constructor
+				return hir_declaration_error(functions, constants, "unknown union constructor '" + name + "'", Hir.hir_ast_line(tree, member))
+			let resolved = Analyze.hir_module_type_reference_with_constants(types, tree, member, functions, constants, aliases)
+			if resolved.error != ""
+				return hir_declaration_error(functions, constants, resolved.error, Hir.hir_ast_line(tree, member))
+			types = resolved.table
+			if Types.type_tag(types, resolved.type_id) != Types.TYPE_TAG_RECORD
+				return hir_declaration_error(functions, constants, "union constructor requires annotated record fields", Hir.hir_ast_line(tree, member))
+			variants = variants.append(resolved.type_id)
+		let interned = Types.intern_union_type(types, variants)
+		if interned.id == Types.TYPE_TAG_INVALID
+			return hir_declaration_error(functions, constants, "union alternatives must have distinct record shapes", Hir.hir_ast_line(tree, source.source))
+		types = interned.table
+		aliases = aliases.append(Hir.HirTypeAlias(source.name, interned.id))
 	var result = Hir.new_hir_module_decl(functions, constants, types, values, "", 0)
 	result.imports = imports
 	result.exports = exports
 	result.reexports = reexports
+	result.type_aliases = aliases
 	return result
 
 

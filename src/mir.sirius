@@ -83,6 +83,9 @@ export let MIR_IS_DIR = 72
 export let MIR_RECORD_NEW_MOVE = 73
 export let MIR_ARRAY_NEW_MOVE = 74
 export let MIR_SHIFT_VALID = 75
+export let MIR_UNION_NEW = 76
+export let MIR_UNION_TAG = 77
+export let MIR_UNION_GET = 78
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2
@@ -112,7 +115,7 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(false, true, true)
 	if op == MIR_DIV_F64 or op == MIR_SQRT_F64
 		return MirFailureInfo(false, false, true)
-	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME
+	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW
 		return MirFailureInfo(false, true, false)
 	return MirFailureInfo(false, false, false)
 
@@ -225,6 +228,16 @@ export def mir_string(dst: i64, value: string) -> MirInstruction
 
 export def mir_record_new(dst: i64, fields: Array[i64]) -> MirInstruction
 	return MirInstruction(MIR_RECORD_NEW, dst, -1, -1, 0, fields, "")
+
+# A tagged union retains the record payload; extraction borrows and retains it.
+export def mir_union_new(dst: i64, record: i64) -> MirInstruction
+	return mir_op(MIR_UNION_NEW, dst, record, -1, 0)
+
+export def mir_union_tag(dst: i64, owner: i64) -> MirInstruction
+	return mir_op(MIR_UNION_TAG, dst, owner, -1, 0)
+
+export def mir_union_get(dst: i64, owner: i64) -> MirInstruction
+	return mir_op(MIR_UNION_GET, dst, owner, -1, 0)
 
 export def mir_record_get(dst: i64, owner: i64, field: i64) -> MirInstruction
 	return mir_op(MIR_RECORD_GET, dst, owner, -1, field)

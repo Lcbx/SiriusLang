@@ -1,0 +1,81 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import mir_verify alias Verify
+import mir_wire alias Wire
+import types alias Types
+
+# A union wrapper owns exactly one retained record, regardless of aliases.
+def fixture(value: i64) -> Mir.MirProgram
+	let success = Types.intern_record_type(Types.new_type_table(), [Types.RecordField("value", Types.TYPE_TAG_I64)])
+	let failure = Types.intern_record_type(success.table, [Types.RecordField("code", Types.TYPE_TAG_I64)])
+	let tagged = Types.intern_union_type(failure.table, [success.id, failure.id])
+	let fields = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, value), Mir.mir_record_new(1, [0]), Mir.mir_union_new(2, 1), Mir.mir_op(Mir.MIR_COPY, 3, 2, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0), Mir.mir_union_tag(4, 3), Mir.mir_union_get(5, 3), Mir.mir_record_get(6, 5, 0), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0), Mir.mir_op(Mir.MIR_RELEASE, 5, 5, -1, 0)]
+	let runner = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, success.id, tagged.id, tagged.id, Types.TYPE_TAG_I64, success.id, Types.TYPE_TAG_I64], [Mir.MirBlock(fields, Mir.mir_return(6))], 0)
+	return Mir.mir_program_with_types([runner], tagged.table)
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		return 1
+	let program = fixture(42)
+	let verified = Verify.mir_verify(program)
+	if verified != ""
+		print("verify: " + verified)
+		return 2
+	let serialized = Wire.mir_serialize_program(program, 0)
+	if serialized.error != ""
+		print("serialize: " + serialized.error)
+		return 12
+	let decoded = Wire.mir_deserialize_program(serialized.text)
+	if decoded.error != "" or Wire.mir_serialize_program(decoded.program, decoded.entry).text != serialized.text
+		print("deserialize: " + decoded.error)
+		return 13
+	let decoded_result = Interpreter.mir_execute(decoded.program, decoded.entry, Array[Mir.MirValue](), 100, 10)
+	if decoded_result.error != "" or decoded_result.value.bits != 42
+		print("wire execution: " + decoded_result.error)
+		return 14
+	for entry in decoded_result.heap
+		if entry.refs != 0
+			return 15
+	let credit = Ownership.mir_check_balance(program)
+	if credit != ""
+		print("ownership: " + credit)
+		return 3
+	let result = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 100, 10)
+	if result.error != "" or result.value.bits != 42
+		print("interpreter: " + result.error)
+		return 4
+	for entry in result.heap
+		if entry.refs != 0
+			print("leak: " + str(entry.refs))
+			return 5
+	let emitted = Emit.mir_emit_c(program, 0)
+	if emitted.error != "" or not write_text(args[!1], emitted.code)
+		print("emit: " + emitted.error)
+		return 6
+	# Invalid injection and projection must be rejected before execution.
+	let function = program.functions[!0]
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_new(4, 0)) == ""
+		return 7
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_get(0, 3)) == ""
+		return 8
+	# A structurally valid but wrong projection must fail at runtime, not
+	# reinterpret the payload under the other record layout.
+	var bad = program
+	var bad_function = bad.functions[!0]
+	bad_function.register_types[!5] = bad.types.entries[!bad_function.register_types[!2]].fields[!0].kind
+	if bad_function.register_types[!5] == bad_function.register_types[!1]
+		bad_function.register_types[!5] = bad.types.entries[!bad_function.register_types[!2]].fields[!1].kind
+	bad.functions[!0] = bad_function
+	if Verify.mir_verify(bad) != ""
+		return 9
+	let failed = Interpreter.mir_execute(bad, 0, Array[Mir.MirValue](), 100, 10)
+	if failed.error != "union variant mismatch"
+		return 10
+	let invalid_c = Emit.mir_emit_c(bad, 0)
+	if invalid_c.error != "" or not write_text(args[!2], invalid_c.code)
+		return 11
+	print("PASS tagged union MIR runtime")
+	return 0

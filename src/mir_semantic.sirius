@@ -189,4 +189,5 @@ export def mir_deserialize_semantic(data: string) -> MirSemanticLoad
 	verified.imports = checked.imports
 	verified.exports = checked.exports
 	verified.reexports = checked.reexports
+	verified.type_aliases = checked.type_aliases
 	return MirSemanticLoad(parsed.tree, parsed.root, verified, "")

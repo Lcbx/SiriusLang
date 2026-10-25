@@ -12,6 +12,7 @@ export let TYPE_TAG_RECORD = 6
 export let TYPE_TAG_ARRAY = 7
 export let TYPE_TAG_DICT = 8
 export let TYPE_TAG_OPTIONAL = 9
+export let TYPE_TAG_UNION = 10
 
 export rec RecordField(name: string, kind: i64)
 
@@ -56,7 +57,7 @@ export def runtime_storage(types: TypeTable, id: i64) -> i64
 		return TYPE_STORAGE_BOOL
 	if tag == TYPE_TAG_STRING
 		return TYPE_STORAGE_STRING
-	if tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL
+	if tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL or tag == TYPE_TAG_UNION
 		return TYPE_STORAGE_OBJECT
 	if tag == TYPE_TAG_VOID
 		return TYPE_STORAGE_VOID
@@ -80,6 +81,8 @@ export def runtime_layout(types: TypeTable, id: i64) -> RuntimeLayout
 	let desc = types.entries[!id]
 	if desc.tag == TYPE_TAG_RECORD
 		return RuntimeLayout(storage, ownership, len(desc.fields), false)
+	if desc.tag == TYPE_TAG_UNION
+		return RuntimeLayout(storage, ownership, 2, false)
 	if desc.tag == TYPE_TAG_DICT
 		return RuntimeLayout(storage, ownership, 1, false)
 	return RuntimeLayout(storage, ownership, 0, true)
@@ -106,6 +109,14 @@ export def new_type_table() -> TypeTable
 def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> bool
 	if id <= TYPE_TAG_VOID
 		return tag == id and first == 0 and second == 0 and len(fields) == 0
+	if tag == TYPE_TAG_UNION
+		if first != 0 or second != 0 or len(fields) < 2
+			return false
+		for i in 0..len(fields)
+			let member = fields[!i]
+			if member.name != "" or member.kind <= TYPE_TAG_VOID or member.kind >= id
+				return false
+		return true
 	if tag == TYPE_TAG_RECORD
 		if first != 0 or second != 0
 			return false
@@ -134,6 +145,15 @@ export def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fiel
 		return InternedType(table, tag)
 	if not type_descriptor_parts_canonical(id, tag, first, second, fields)
 		return InternedType(table, TYPE_TAG_INVALID)
+	if tag == TYPE_TAG_UNION
+		var last = ""
+		for member in fields
+			if type_tag(table, member.kind) != TYPE_TAG_RECORD
+				return InternedType(table, TYPE_TAG_INVALID)
+			let signature = type_signature(table, member.kind)
+			if signature == "invalid" or (last != "" and last >= signature)
+				return InternedType(table, TYPE_TAG_INVALID)
+			last = signature
 	let key = type_descriptor_key(tag, first, second, fields)
 	let existing = table.lookup.get(key) or -1
 	if existing >= 0
@@ -150,7 +170,18 @@ export def type_descriptor_canonical(types: TypeTable, id: i64) -> bool
 	if id < 0 or id >= len(types.entries)
 		return false
 	let desc = types.entries[!id]
-	return type_descriptor_parts_canonical(id, desc.tag, desc.first, desc.second, desc.fields)
+	if not type_descriptor_parts_canonical(id, desc.tag, desc.first, desc.second, desc.fields)
+		return false
+	if desc.tag == TYPE_TAG_UNION
+		var last = ""
+		for member in desc.fields
+			if type_tag(types, member.kind) != TYPE_TAG_RECORD
+				return false
+			let signature = type_signature(types, member.kind)
+			if signature == "invalid" or (last != "" and last >= signature)
+				return false
+			last = signature
+	return true
 
 # TypeId is an opaque table index. Query the descriptor before branching on
 # the kind; an absent ID must never be mistaken for a composite type.
@@ -189,3 +220,91 @@ def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
 
 export def intern_record_type(table: TypeTable, fields: Array[RecordField]) -> InternedType
 	return intern_type(table, TYPE_TAG_RECORD, 0, 0, ordered_fields(fields))
+
+# Structural signatures do not depend on module-local TypeIds.
+export def type_signature(types: TypeTable, id: i64) -> string
+	if not type_descriptor_canonical(types, id)
+		return "invalid"
+	let desc = types.entries[!id]
+	if desc.tag == TYPE_TAG_I64
+		return "i64"
+	if desc.tag == TYPE_TAG_F64
+		return "f64"
+	if desc.tag == TYPE_TAG_BOOL
+		return "bool"
+	if desc.tag == TYPE_TAG_STRING
+		return "string"
+	if desc.tag == TYPE_TAG_VOID
+		return "void"
+	if desc.tag == TYPE_TAG_ARRAY
+		let element = type_signature(types, desc.first)
+		if element == "invalid"
+			return "invalid"
+		return "Array[" + element + "]"
+	if desc.tag == TYPE_TAG_OPTIONAL
+		let element = type_signature(types, desc.first)
+		if element == "invalid"
+			return "invalid"
+		return "Optional[" + element + "]"
+	if desc.tag == TYPE_TAG_DICT
+		let key = type_signature(types, desc.first)
+		let value = type_signature(types, desc.second)
+		if key == "invalid" or value == "invalid"
+			return "invalid"
+		return "Dict[" + key + "," + value + "]"
+	if desc.tag == TYPE_TAG_UNION
+		var parts = ["Union{"]
+		for member in desc.fields
+			let variant = type_signature(types, member.kind)
+			if variant == "invalid"
+				return "invalid"
+			parts = parts.append(str(len(variant)) + ":" + variant + ";")
+		return "".join(parts) + "}"
+	if desc.tag != TYPE_TAG_RECORD
+		return "invalid"
+	var parts = ["Record{"]
+	for field in desc.fields
+		let value = type_signature(types, field.kind)
+		if value == "invalid"
+			return "invalid"
+		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + value + ";")
+	return "".join(parts) + "}"
+
+
+# Union alternatives are canonical structural record TypeIds. Store them as
+# ordered, unnamed entries in the existing descriptor field arena; they are
+# *types*, not value fields. A union has no nominal constructor identity.
+# Values use a two-slot managed wrapper: structural variant tag and owned record.
+export def intern_union_type(table: TypeTable, alternatives: Array[i64]) -> InternedType
+	if len(alternatives) < 2
+		return InternedType(table, TYPE_TAG_INVALID)
+	var fields = Array[RecordField]()
+	for alternative in alternatives
+		if type_tag(table, alternative) != TYPE_TAG_RECORD
+			return InternedType(table, TYPE_TAG_INVALID)
+		let signature = type_signature(table, alternative)
+		if signature == "invalid"
+			return InternedType(table, TYPE_TAG_INVALID)
+		var at = 0
+		while at < len(fields) and type_signature(table, fields[!at].kind) < signature
+			at += 1
+		if at < len(fields) and type_signature(table, fields[!at].kind) == signature
+			return InternedType(table, TYPE_TAG_INVALID)
+		var ordered = Array[RecordField]()
+		for i in 0..at
+			ordered = ordered.append(fields[!i])
+		ordered = ordered.append(RecordField("", alternative))
+		for i in at..len(fields)
+			ordered = ordered.append(fields[!i])
+		fields = ordered
+	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
+
+# Resolve a structurally distinct alternative to its stable tag index.
+export def union_alternative_index(table: TypeTable, union_id: i64, member: i64) -> i64
+	if type_tag(table, union_id) != TYPE_TAG_UNION
+		return -1
+	let alternatives = table.entries[!union_id].fields
+	for i in 0..len(alternatives)
+		if alternatives[!i].kind == member
+			return i
+	return -1

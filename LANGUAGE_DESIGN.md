@@ -242,9 +242,21 @@ def unwrap(result: Result) -> i64
   Process exit may discard live ARC frames; no language-level cleanup or
   destructors are promised after a fatal trap. Invalid MIR, out-of-memory
   and fatal programmer assertions follow this policy unless reclassified.
-* `Result` unions and exhaustive `match` are **planned**, not yet implemented.
-  Today the supported in-band cases include `Optional`, booleans and IEEE-754
-  results. The exact future error set of each standard-library API remains open.
+* Source-level union aliases, constructor-to-union injection in annotated
+  bindings, call arguments and returns, and exhaustive `match` are executable
+  through both C and MIR interpretation. A managed wrapper stores the stable
+  alternative tag and an owned record payload; copies/returns follow ordinary
+  ARC rules. Direct variant extraction checks the runtime tag before borrowing.
+  `export let Result = Success | Failure` publishes an alias in the module's
+  typed interface. Importing modules can use `Types.Result` in annotations and
+  `Types.Success(value)` / `Types.Failure(code)` as qualified `match` arms.
+  Named re-exports preserve the union's structural identity. Source-free
+  `.smirg` packages can expose public constructors, aliases and constants
+  alongside generic functions; concrete non-generic functions still require
+  compiled libraries or source. Nested union coercions through collections
+  and patterns involving additional constructor-published fields remain deferred.
+  Library APIs have not yet been migrated to `Result`; `Optional`, booleans and IEEE-754
+  values also remain valid in-band results.
 
 ## 6. Operators
 

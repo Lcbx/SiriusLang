@@ -206,9 +206,10 @@ This verifies normal returns and explicit panic exits. Guard insertion now makes
 
 ## Failure results and host execution errors
 
-Routine recoverable failures currently return `Optional`/status values; future
-`Result` unions with exhaustive matching will use ordinary MIR return and
-branch ownership rules. IEEE-754 floating operations may return NaN/infinity
+Routine recoverable failures currently return `Optional`/status values;
+constructor-based `Result` unions can now use ordinary MIR return and branch
+ownership rules, with tagged record payloads and HIR-exhaustive matching.
+Standard-library APIs have not yet adopted `Result`. IEEE-754 floating operations may return NaN/infinity
 rather than trapping. Invalid integer division, checked indexing and forced
 unwrap still take explicit fatal `MIR_PANIC` paths.
 

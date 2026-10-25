@@ -677,8 +677,19 @@ def parse_statement(p: ParseState) -> ParseResult
 		var arms = Array[i64]()
 		arms = arms.append(value.node)
 		while next.error == "" and not kind_is(next, Lex.TOKEN_DEDENT) and not kind_is(next, Lex.TOKEN_EOF)
-			let position = next.index
+			var position = next.index
+			let line = next.tokens[!position].line
+			var variant = word(next)
 			next = expect_kind(next, Lex.TOKEN_NAME, "variant name")
+			if is_token(next, ".")
+				next = expect(next, ".")
+				variant += "." + word(next)
+				next = expect_kind(next, Lex.TOKEN_NAME, "qualified variant name")
+				if next.error == ""
+					let start = len(next.source)
+					next.source += variant
+					position = len(next.tokens)
+					next.tokens = next.tokens.append(Lex.Token(Lex.TOKEN_NAME, start, len(next.source), line, 0))
 			next = expect(next, "(")
 			var names = Array[i64]()
 			while next.error == "" and not is_token(next, ")")

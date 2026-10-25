@@ -26,6 +26,17 @@ export def module_import_type(table: Types.TypeTable, foreign: Types.TypeTable, 
 			return second
 		let result = Types.intern_dict_type(second.table, first.id, second.id)
 		return ModuleImportType(result.table, result.id)
+	if descriptor.tag == Types.TYPE_TAG_UNION
+		var current = table
+		var alternatives = Array[i64]()
+		for member in descriptor.fields
+			let imported = module_import_type(current, foreign, member.kind)
+			if imported.id == Types.TYPE_TAG_INVALID
+				return imported
+			current = imported.table
+			alternatives = alternatives.append(imported.id)
+		let result = Types.intern_union_type(current, alternatives)
+		return ModuleImportType(result.table, result.id)
 	if descriptor.tag == Types.TYPE_TAG_RECORD
 		var current = table
 		var fields = Array[Types.RecordField]()

@@ -10,6 +10,8 @@ export let HIR_BINARY = 2
 export let HIR_NAME = 3
 export let HIR_LITERAL = 4
 export let HIR_UNARY = 5
+export let HIR_MATCH_CASE = 6
+export let HIR_UNION_INJECT = 7
 
 export rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)
 
@@ -189,10 +191,11 @@ export rec HirConstantField(name: string, value: i64)
 export rec HirImport(path: string, alias: string)
 export rec HirReexport(alias: string, name: string, public_name: string)
 export rec HirExternalAlias(name: string, target: string)
-export rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: Types.TypeTable, values: Array[HirConstantValue], error: string, error_line: i64, imports: Array[HirImport], exports: Array[string], reexports: Array[HirReexport], external_aliases: Array[HirExternalAlias])
+export rec HirTypeAlias(name: string, type_id: i64)
+export rec HirModuleDecl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: Types.TypeTable, values: Array[HirConstantValue], error: string, error_line: i64, imports: Array[HirImport], exports: Array[string], reexports: Array[HirReexport], external_aliases: Array[HirExternalAlias], type_aliases: Array[HirTypeAlias])
 
 export def new_hir_module_decl(functions: Array[HirFunctionDecl], constants: Array[HirModuleConstant], types: Types.TypeTable, values: Array[HirConstantValue], error: string, error_line: i64) -> HirModuleDecl
-	return HirModuleDecl(functions, constants, types, values, error, error_line, Array[HirImport](), Array[string](), Array[HirReexport](), Array[HirExternalAlias]())
+	return HirModuleDecl(functions, constants, types, values, error, error_line, Array[HirImport](), Array[string](), Array[HirReexport](), Array[HirExternalAlias](), Array[HirTypeAlias]())
 
 export def hir_ast_child(tree: Ast.ParseState, id: i64, offset: i64) -> i64
 	let node = tree.nodes[!id]

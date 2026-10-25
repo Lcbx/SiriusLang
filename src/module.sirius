@@ -26,45 +26,7 @@ export def module_scan_filename(root: string, name: string) -> string
 
 # Canonical structural signatures independent of local module TypeIds.
 export def mir_type_signature(types: Types.TypeTable, id: i64) -> string
-	if not Types.type_descriptor_canonical(types, id)
-		return "invalid"
-	let desc = types.entries[!id]
-	if desc.tag == Types.TYPE_TAG_I64
-		return "i64"
-	if desc.tag == Types.TYPE_TAG_F64
-		return "f64"
-	if desc.tag == Types.TYPE_TAG_BOOL
-		return "bool"
-	if desc.tag == Types.TYPE_TAG_STRING
-		return "string"
-	if desc.tag == Types.TYPE_TAG_VOID
-		return "void"
-	if desc.tag == Types.TYPE_TAG_ARRAY
-		let element = mir_type_signature(types, desc.first)
-		if element == "invalid"
-			return "invalid"
-		return "Array[" + element + "]"
-	if desc.tag == Types.TYPE_TAG_OPTIONAL
-		let element = mir_type_signature(types, desc.first)
-		if element == "invalid"
-			return "invalid"
-		return "Optional[" + element + "]"
-	if desc.tag == Types.TYPE_TAG_DICT
-		let key = mir_type_signature(types, desc.first)
-		let value = mir_type_signature(types, desc.second)
-		if key == "invalid" or value == "invalid"
-			return "invalid"
-		return "Dict[" + key + "," + value + "]"
-	if desc.tag != Types.TYPE_TAG_RECORD
-		return "invalid"
-	var parts = ["Record{"]
-	for field in desc.fields
-		let value = mir_type_signature(types, field.kind)
-		if value == "invalid"
-			return "invalid"
-		parts = parts.append(str(len(field.name)) + ":" + field.name + "=" + value + ";")
-	return "".join(parts) + "}"
-
+	return Types.type_signature(types, id)
 
 # Encode each concrete argument signature as an identifier-safe, unambiguous
 # suffix. Reject excessively long names at the existing MIR library boundary.

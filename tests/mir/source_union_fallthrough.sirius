@@ -1,0 +1,16 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def value(result: Result) -> i64
+	var answer = 0
+	match result
+		Success(value)
+			answer = value
+		Failure(code)
+			answer = -code
+	return answer
+
+def main() -> i64
+	let answer: Result = Success(22)
+	return value(answer) + value(Failure(7))

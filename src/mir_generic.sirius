@@ -104,6 +104,23 @@ export def mir_generic_interface(unit: ModuleScan.ModuleScanUnit) -> string
 		parts = MirWire.mir_wire_str(parts, constant.name)
 		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, constant.type_id))
 		parts = mir_generic_constant_signature(unit.exported_values, constant.value, parts)
+	parts = MirWire.mir_wire_num(parts, len(unit.exported_aliases))
+	var aliases = Array[i64]()
+	for i in 0..len(unit.exported_aliases)
+		var at = 0
+		while at < len(aliases) and unit.exported_aliases[!aliases[!at]].name < unit.exported_aliases[!i].name
+			at += 1
+		var sorted = Array[i64]()
+		for j in 0..at
+			sorted = sorted.append(aliases[!j])
+		sorted = sorted.append(i)
+		for j in at..len(aliases)
+			sorted = sorted.append(aliases[!j])
+		aliases = sorted
+	for i in aliases
+		let alias = unit.exported_aliases[!i]
+		parts = MirWire.mir_wire_str(parts, alias.name)
+		parts = MirWire.mir_wire_str(parts, Module.mir_type_signature(unit.types, alias.type_id))
 	return "".join(parts)
 
 # Version 2 packages pinned declarations in source order. Keep that rule

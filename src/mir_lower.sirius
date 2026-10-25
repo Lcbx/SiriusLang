@@ -14,7 +14,7 @@ rec MirSourceBinding(name: string, slot: i64, depth: i64)
 rec MirLowerField(name: string, slot: i64)
 
 # Source analysis is immutable during lowering; the builder owns only mutable CFG state.
-rec MirLowerContext(tree: Ast.ParseState, hir: Array[Hir.HirNode], annotation_index: Hir.HirAnnotationIndex, types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue], call_targets: Array[Hir.HirSpecializedCall], function_name: string, argument_count: i64)
+rec MirLowerContext(tree: Ast.ParseState, hir: Array[Hir.HirNode], annotation_index: Hir.HirAnnotationIndex, types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue], call_targets: Array[Hir.HirSpecializedCall], function_name: string, argument_count: i64, return_type: i64)
 
 rec MirBuilder(active: i64)
 	pub register_types = Array[i64]()
@@ -191,6 +191,17 @@ def mir_lower_nested_assignment(state: MirBuilder, context: MirLowerContext, id:
 		next.error == "" else return next
 		updated = step.owner
 	return next
+
+def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, expected: i64) -> MirLowerExpr
+	var next = state
+	if next.register_types[!value] == expected
+		return MirLowerExpr(next, value)
+	if Types.union_alternative_index(context.types, expected, next.register_types[!value]) < 0
+		return MirLowerExpr(mir_lower_error(next, "union injection requires member record"), -1)
+	let destination = len(next.register_types)
+	next = mir_lower_register(next, expected)
+	next = mir_lower_emit(next, Mir.mir_union_new(destination, value))
+	return MirLowerExpr(next, destination)
 
 def mir_lower_literal(text: string) -> i64
 	var value = 0
@@ -636,10 +647,18 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			return MirLowerExpr(mir_lower_error(next, "unsupported MIR call result type"), -1)
 		var inputs = Array[i64]()
 		for i in 1..node.count
-			let argument = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, i))
+			let source = Hir.hir_ast_child(context.tree, id, i)
+			let argument = mir_lower_expression(next, context, source)
 			next = argument.state
 			next.error == "" else return MirLowerExpr(next, -1)
-			inputs = inputs.append(argument.slot)
+			var slot = argument.slot
+			let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
+			if injected_type != Types.TYPE_TAG_INVALID
+				let injected = mir_lower_inject(next, context, slot, injected_type)
+				next = injected.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				slot = injected.slot
+			inputs = inputs.append(slot)
 		let dst = len(next.register_types)
 		next = mir_lower_register(next, type_id)
 		next = mir_lower_emit(next, Mir.mir_call(dst, callee_id, inputs))
@@ -872,6 +891,76 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 				return mir_lower_emit(next, Mir.mir_op(op, -1, argument.slot, -1, 0))
 		let expression = mir_lower_expression(next, context, expression_id)
 		return expression.state
+	if node.kind == Ast.NODE_MATCH
+		let subject = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 0))
+		next = subject.state
+		next.error == "" else return next
+		let union_type = next.register_types[!subject.slot]
+		if Types.type_tag(context.types, union_type) != Types.TYPE_TAG_UNION
+			return mir_lower_error(next, "MIR match requires union")
+		let tag = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_union_tag(tag, subject.slot))
+		var after = -1
+		for i in 1..node.count
+			let arm = Hir.hir_ast_child(context.tree, id, i)
+			let record_type = mir_lower_type(context, arm, Hir.HIR_MATCH_CASE)
+			let alternative = Types.union_alternative_index(context.types, union_type, record_type)
+			if alternative < 0
+				return mir_lower_error(next, "missing typed match alternative")
+			let label = len(next.register_types)
+			next = mir_lower_register(next, Types.TYPE_TAG_I64)
+			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, label, -1, -1, alternative))
+			let equals = len(next.register_types)
+			next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
+			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_EQ_I64, equals, tag, label, 0))
+			let condition = next.active
+			next = mir_lower_block(next)
+			let matched = next.active
+			next = mir_lower_block(next)
+			let following = next.active
+			next.active = condition
+			next = mir_lower_end(next, Mir.mir_branch(equals, matched, following))
+			next.active = matched
+			let record = len(next.register_types)
+			next = mir_lower_register(next, record_type)
+			next = mir_lower_emit(next, Mir.mir_union_get(record, subject.slot))
+			let previous = len(next.bindings)
+			let fields = context.types.entries[!record_type].fields
+			for j in 0..context.tree.nodes[!arm].count - 1
+				let binding = Hir.hir_ast_child(context.tree, arm, j)
+				let kind = mir_lower_type(context, binding, Analyze.HIR_BINDING)
+				var field_index = -1
+				# Pattern names are positional parameters; resolve canonical record order.
+				for constructor in context.functions
+					if constructor.name == Hir.hir_ast_text(context.tree, arm) and constructor.constructor and j < len(constructor.parameters)
+						for k in 0..len(fields)
+							if fields[!k].name == constructor.parameters[!j].name
+								field_index = k
+				if field_index < 0 or kind != fields[!field_index].kind
+					return mir_lower_error(next, "missing typed match binding")
+				let slot = len(next.register_types)
+				next = mir_lower_register(next, kind)
+				next = mir_lower_emit(next, Mir.mir_record_get(slot, record, field_index))
+				next.bindings = next.bindings.append(MirSourceBinding(Hir.hir_ast_text(context.tree, binding), slot, next.depth + 1))
+			next = mir_lower_statements(next, context, Hir.hir_ast_child(context.tree, arm, context.tree.nodes[!arm].count - 1))
+			next.error == "" else return next
+			var scoped = Array[MirSourceBinding]()
+			for j in 0..previous
+				scoped = scoped.append(next.bindings[!j])
+			next.bindings = scoped
+			if not mir_lower_ended(next)
+				let arm_end = next.active
+				if after < 0
+					next = mir_lower_block(next)
+					after = next.active
+				next.active = arm_end
+				next = mir_lower_end(next, Mir.mir_jump(after))
+			next.active = following
+		next = mir_lower_end(next, Mir.mir_panic("invalid union tag"))
+		if after >= 0
+			next.active = after
+		return next
 	if node.kind == Ast.NODE_DESTRUCTURE
 		let initializer = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 0))
 		next = initializer.state
@@ -927,6 +1016,11 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			next = mir_lower_emit(next, Mir.mir_optional_unwrap(unwrapped, value.slot))
 			value_slot = unwrapped
 		let type_id = mir_lower_type(context, id, Analyze.HIR_BINDING)
+		if type_id != next.register_types[!value_slot] and Types.type_tag(context.types, type_id) == Types.TYPE_TAG_UNION
+			let wrapped = mir_lower_inject(next, context, value_slot, type_id)
+			next = wrapped.state
+			next.error == "" else return next
+			value_slot = wrapped.slot
 		if not Verify.mir_type_supported(context.types, type_id)
 			return mir_lower_error(next, "unsupported MIR binding type")
 		let register = len(next.register_types)
@@ -1068,7 +1162,13 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		let value = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 0))
 		next = value.state
 		next.error == "" else return next
-		return mir_lower_end(next, Mir.mir_return(value.slot))
+		var slot = value.slot
+		if Types.type_tag(context.types, context.return_type) == Types.TYPE_TAG_UNION and next.register_types[!slot] != context.return_type
+			let injected = mir_lower_inject(next, context, slot, context.return_type)
+			next = injected.state
+			next.error == "" else return next
+			slot = injected.slot
+		return mir_lower_end(next, Mir.mir_return(slot))
 	if node.kind == Ast.NODE_IF
 		var after = -1
 		var can_fallthrough = false
@@ -1237,7 +1337,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 	return mir_lower_error(next, "unsupported source statement for MIR: " + Ast.node_kind_name(node.kind))
 
 export def mir_lower_function_module(tree: Ast.ParseState, header: Hir.HirFunctionDecl, hir: Array[Hir.HirNode], arguments: Array[i64], return_type: i64, targets: Array[Hir.HirSpecializedCall], types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue]) -> MirLowerResult
-	let context = MirLowerContext(tree, hir, Hir.hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, values, targets, header.name, len(arguments))
+	let context = MirLowerContext(tree, hir, Hir.hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, values, targets, header.name, len(arguments), return_type)
 	var state = MirBuilder(0)
 	state = mir_lower_block(state)
 	if not Verify.mir_type_supported(context.types, return_type) or len(arguments) != len(header.parameters)

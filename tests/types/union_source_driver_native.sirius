@@ -1,0 +1,93 @@
+import parser alias Parser
+import hir alias Hir
+import hir_declarations alias Decl
+import hir_analyze alias Analyze
+import hir_specialize alias Spec
+import types alias Types
+import mir_program alias MirProgram
+import mir_interpreter alias Interpreter
+import mir alias Mir
+
+# Resolve the source union once and check that specialization uses its alias
+# and typed, arm-scoped constructor parameters.
+def analyze(source: string) -> string
+	let parsed = Parser.parse_module(source)
+	if parsed.state.error != ""
+		return "parse: " + parsed.state.error
+	let decl = Decl.hir_module_declarations(parsed.state, parsed.node)
+	if decl.error != ""
+		return decl.error
+	if len(decl.type_aliases) != 1
+		return "missing union alias"
+	let union_id = decl.type_aliases[!0].type_id
+	if Types.type_tag(decl.types, union_id) != Types.TYPE_TAG_UNION
+		return "alias does not resolve to a union"
+	let body = Spec.hir_specialize_program(parsed.state, decl, "unwrap", [union_id])
+	return body.error
+
+def main() -> i64
+	let header = "rec Success(value: i64)\nrec Failure(code: i64)\nlet Result = Success | Failure\n"
+	let good = header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tFailure(code)\n\t\t\treturn -code\n"
+	let error = analyze(good)
+	if error != ""
+		print("good: " + error)
+		return 1
+	let missing = analyze(header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n")
+	if missing != "non-exhaustive match"
+		print("missing: " + missing)
+		return 2
+	let duplicate = analyze(header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tSuccess(other)\n\t\t\treturn other\n\t\tFailure(code)\n\t\t\treturn code\n")
+	if duplicate != "duplicate match alternative"
+		print("duplicate: " + duplicate)
+		return 3
+	let unknown = analyze(header + "rec Other(id: bool)\ndef unwrap(result: Result) -> i64\n\tmatch result\n\t\tOther(id)\n\t\t\treturn 0\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tFailure(code)\n\t\t\treturn code\n")
+	if unknown != "match arm is not a union alternative"
+		print("unknown: " + unknown)
+		return 4
+	let malformed = analyze("rec A(x: i64)\nrec B(x: i64)\nlet Result = A | B\ndef unwrap(result: Result) -> i64\n\treturn 0\n")
+	if malformed != "union alternatives must have distinct record shapes"
+		print("malformed: " + malformed)
+		return 5
+	let forward = analyze("let Result = Success | Failure\n" + "rec Success(value: i64)\nrec Failure(code: i64)\ndef unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(x)\n\t\t\treturn x\n\t\tFailure(y)\n\t\t\treturn y\n")
+	if forward != ""
+		print("forward: " + forward)
+		return 6
+	let bad_names = analyze("let Result = Success | Missing\nrec Success(x: i64)\ndef unwrap(x: i64) -> i64\n\treturn 0\n")
+	if bad_names != "unknown union constructor 'Missing'"
+		print("bad names: " + bad_names)
+		return 7
+	let bad_expression = analyze("rec A(x: i64)\nrec B(y: bool)\nrec C(z: string)\nlet Result = A | (B + C) | C\ndef unwrap(value: Result) -> i64\n\treturn 0\n")
+	if bad_expression != "union requires at least two constructor alternatives"
+		print("expression: " + bad_expression)
+		return 9
+	let ordered = analyze("rec A(z: i64, a: bool)\nrec B(code: i64)\nlet Result = A | B\ndef unwrap(value: Result) -> i64\n\tmatch value\n\t\tA(first, second)\n\t\t\tif second\n\t\t\t\treturn first\n\t\t\treturn first\n\t\tB(code)\n\t\t\treturn code\n")
+	if ordered != ""
+		print("ordered: " + ordered)
+		return 10
+	let bad_match = Parser.parse_module("def unwrap(value: i64) -> i64\n\tmatch value\n\t\tSuccess(x)\n\t\t\treturn x\n")
+	let bad_decl = Decl.hir_module_declarations(bad_match.state, bad_match.node)
+	let bad_result = Spec.hir_specialize_program(bad_match.state, bad_decl, "unwrap", [Types.TYPE_TAG_I64])
+	if bad_result.error != "match requires a tagged union"
+		print("non-union: " + bad_result.error)
+		return 11
+	let parsed = Parser.parse_module(good)
+	let decl = Decl.hir_module_declarations(parsed.state, parsed.node)
+	let built = MirProgram.mir_build_program_roots(parsed.state, decl, ["unwrap"], [decl.type_aliases[!0].type_id])
+	if built.error != ""
+		print("unsafe MIR: " + built.error)
+		return 8
+	let executable = Parser.parse_module(header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tFailure(code)\n\t\t\treturn -code\n" + "def main() -> i64\n\tlet response: Result = Success(42)\n\treturn unwrap(response)\n")
+	let exec_decl = Decl.hir_module_declarations(executable.state, executable.node)
+	let exec_program = MirProgram.mir_build_program(executable.state, exec_decl, "main", Array[i64]())
+	if exec_program.error != ""
+		print("exec: " + exec_program.error)
+		return 12
+	let executed = Interpreter.mir_execute(exec_program.program, exec_program.entry, Array[Mir.MirValue](), 1000, 10)
+	if executed.error != "" or executed.value.bits != 42
+		print("execute: " + executed.error)
+		return 13
+	for entry in executed.heap
+		if entry.refs != 0
+			return 14
+	print("PASS source tagged union aliases and HIR match analysis")
+	return 0

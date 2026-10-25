@@ -168,6 +168,33 @@ criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
 its own typed records and arrays, but now delegates dictionary storage to
 `S_Dict` through a managed wrapper; record keys use structural hashing.
 
+### Tagged unions: executable subset
+
+Canonical union descriptors contain at least two distinct structural record
+alternatives with stable tag ordering across modules. Source-level
+`let Result = Success | Failure` aliases (including forward constructor names)
+are resolved in HIR; exhaustive `match` rejects missing, duplicate or invalid
+constructor arms, and binds fields in constructor parameter order.
+
+Constructor records inject into an expected union in annotated local bindings,
+function call arguments, and returns. Executable MIR uses `MIR_UNION_NEW`,
+`MIR_UNION_TAG`, and `MIR_UNION_GET`; the union owns a tagged record payload,
+with retain/drop, interpreter, and native C support. `MIR_UNION_GET` checks the
+selected tag defensively. MIR executable serialization preserves union
+identities, tags and payload operations. Test with `python tools/test_mir_union.py`,
+`python tools/test_mir_wire.py` and `python tools/test_types.py`.
+
+`export let Result = Success | Failure` publishes a union alias across modules.
+Qualified names such as `Types.Result`, `Types.Success(...)` and exhaustive
+`match` arms are supported, including named re-exports and source-free `.smirg`
+interfaces with publicly exported constructors and aliases. `.smirg` still
+only ships executable bodies for generic specializations; ordinary concrete
+functions are not automatically exported from such packages. Test with
+`python tools/test_module_unions.py`. Patterns with additional published fields
+and nested implicit conversions through containers remain deferred. The
+standard library
+has not yet adopted `Result` for its recoverable errors.
+
 ## Examples and language capability inventory
 
 See [examples/README.md](examples/README.md) for tested standalone programs,

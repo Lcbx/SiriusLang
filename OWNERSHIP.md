@@ -87,7 +87,7 @@ Failure handling is divided by its **control-flow effect**, not by whether an
 operation can fail:
 
 1. **In-band outcomes:** `Optional`/status values and floating-point nonfinite
-   results use the ordinary return/branch path. A future constructor-based
+   results use the ordinary return/branch path. An executable constructor-based
    `Result = Success | Failure` union uses the same contract: the selected
    alternative owns its managed payload, returning transfers the union's one
    root credit, and matching/projection borrows or transfers children by normal
@@ -200,7 +200,7 @@ native `SIRIUS_ARC_AUDIT`. Negative cases reject missing callee-frame cleanup
 and reads after a moved argument. This is **path coverage**, not a proof that
 all possible active heap edges are correct in native code.
 
-Remaining P0 work: register additional native/FFI container roots and scanners; verify the future union injection/match/drop paths when implemented. Process-fatal
+Remaining P0 work: register additional native/FFI container roots and scanners; extend union injection/match/drop aliasing coverage, including sanitizers and nested composites. Process-fatal
 unwinding is deliberately not required. A heap-wide static alias/reference-count
 proof would require a stronger heap abstraction.
 

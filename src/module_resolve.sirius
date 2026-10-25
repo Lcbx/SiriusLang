@@ -42,6 +42,9 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 			for function in declarations.functions
 				if function.name == target and function.constructor and function.external
 					found = true
+			for alias in declarations.type_aliases
+				if alias.name == target
+					found = true
 			if not found
 				return HirModuleResolution(tree, "type " + name + " is not exported", Hir.hir_ast_line(next, i))
 			let position = len(next.source)
@@ -78,6 +81,30 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", Hir.hir_ast_line(tree, callee_id))
 				next = hir_module_replace_name(next, callee_id, target, Hir.hir_ast_line(tree, callee_id))
 				break
+	# Match alternatives are constructor patterns, not calls. Preserve the
+	# NODE_CASE children and pattern bindings while resolving their type names.
+	for i in 0..len(tree.nodes)
+		if next.nodes[!i].kind != Parser.NODE_CASE
+			continue
+		let name = Hir.hir_ast_text(next, i)
+		for imported in declarations.imports
+			let prefix = imported.alias + "."
+			if not name.starts_with(prefix)
+				continue
+			let target = hir_module_export_target(declarations, Module.hir_module_symbol(imported.path, name.slice(len(prefix), len(name))))
+			var found = false
+			for function in declarations.functions
+				if function.name == target and function.constructor and function.external
+					found = true
+			if not found
+				return HirModuleResolution(tree, "match constructor " + name + " is not exported", Hir.hir_ast_line(next, i))
+			let position = len(next.source)
+			next.source += target
+			let token = len(next.tokens)
+			next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, position, len(next.source), Hir.hir_ast_line(next, i), 0))
+			let node = next.nodes[!i]
+			next.nodes[!i] = Parser.Node(Parser.NODE_CASE, token, node.first, node.count)
+			break
 	# Imported constants are namespace-qualified at the source level but use
 	# ordinary HIR module constants after resolution. This also handles nested
 	# projections (for example, Settings.CONFIG.width).

@@ -14,6 +14,8 @@ def main() -> None:
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	cases = (
 		('canonical', 'native_driver.sirius', 'PASS canonical type descriptors\n'),
+		('union', 'union_driver_native.sirius', 'PASS structural union types and exhaustive match checking\n'),
+		('union-source', 'union_source_driver_native.sirius', 'PASS source tagged union aliases and HIR match analysis\n'),
 		('hir', 'hir_driver_native.sirius', 'PASS typed HIR resolution\n'),
 		('specializations', 'specialization_driver_native.sirius', 'PASS HIR specialization registry\n'),
 		('worklist', 'worklist_driver_native.sirius', 'PASS HIR worklist without backend\n'),

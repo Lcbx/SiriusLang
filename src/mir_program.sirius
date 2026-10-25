@@ -31,6 +31,9 @@ export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirMo
 		let spec = analyzed.registry.entries[!i]
 		let definition = Spec.hir_definition(declarations.functions, spec.definition)
 		let header = declarations.functions[!definition]
+		for argument in spec.arguments
+			if not Verify.mir_type_supported(analyzed.types, argument)
+				return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, "MIR specialization requires supported parameter types")
 		if not Verify.mir_type_supported(analyzed.types, body.return_type)
 			return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, "MIR specialization requires a scalar return type")
 		if Decl.hir_function_external(tree, header)

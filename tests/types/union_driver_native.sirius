@@ -1,0 +1,73 @@
+import types alias Types
+import hir_resolve alias Match
+import mir alias Mir
+import mir_verify alias Verify
+import module alias Module
+import module_interface alias Interface
+
+def main() -> i64
+	let base = Types.new_type_table()
+	let success = Types.intern_record_type(base, [Types.RecordField("value", Types.TYPE_TAG_I64)])
+	let failure = Types.intern_record_type(success.table, [Types.RecordField("code", Types.TYPE_TAG_I64)])
+	let retry = Types.intern_record_type(failure.table, [Types.RecordField("retry", Types.TYPE_TAG_BOOL)])
+	let variants = [retry.id, success.id, failure.id]
+	let union = Types.intern_union_type(retry.table, variants)
+	if union.id == Types.TYPE_TAG_INVALID or not Types.type_descriptor_canonical(union.table, union.id)
+		return 1
+	let reversed = Types.intern_union_type(union.table, [failure.id, retry.id, success.id])
+	if reversed.id != union.id or len(reversed.table.entries) != len(union.table.entries)
+		return 2
+	if Types.union_alternative_index(union.table, union.id, retry.id) < 0
+		return 3
+	if Types.union_alternative_index(union.table, union.id, Types.TYPE_TAG_I64) != -1
+		return 4
+	if Types.intern_union_type(union.table, [success.id, success.id]).id != Types.TYPE_TAG_INVALID
+		return 5
+	let same_shape = Types.intern_record_type(union.table, [Types.RecordField("value", Types.TYPE_TAG_I64)])
+	if Types.intern_union_type(same_shape.table, [success.id, same_shape.id]).id != Types.TYPE_TAG_INVALID
+		return 6
+	if Types.intern_union_type(union.table, [success.id, Types.TYPE_TAG_I64]).id != Types.TYPE_TAG_INVALID
+		return 7
+	if Match.check_exhaustive_match(union.table, union.id, variants).error != ""
+		return 8
+	let incomplete = Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id])
+	if incomplete.error != "non-exhaustive match" or incomplete.alternative != retry.id
+		return 9
+	let duplicate = Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, success.id])
+	if duplicate.error != "duplicate match alternative" or duplicate.alternative != success.id
+		return 10
+	if Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, Types.TYPE_TAG_I64]).error != "match arm is not a union alternative"
+		return 11
+	if Match.check_exhaustive_match(union.table, success.id, [success.id]).error != "match requires a tagged union"
+		return 12
+	let malformed = Types.intern_type(union.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("", success.id), Types.RecordField("", failure.id)])
+	if malformed.id != Types.TYPE_TAG_INVALID
+		return 13
+	let import_base = Types.new_type_table()
+	let flipped_failure = Types.intern_record_type(import_base, [Types.RecordField("code", Types.TYPE_TAG_I64)])
+	let flipped_retry = Types.intern_record_type(flipped_failure.table, [Types.RecordField("retry", Types.TYPE_TAG_BOOL)])
+	let flipped_success = Types.intern_record_type(flipped_retry.table, [Types.RecordField("value", Types.TYPE_TAG_I64)])
+	let flipped_union = Types.intern_union_type(flipped_success.table, [flipped_success.id, flipped_retry.id, flipped_failure.id])
+	let signature = Module.mir_type_signature(union.table, union.id)
+	if signature == "invalid" or signature != Module.mir_type_signature(flipped_union.table, flipped_union.id)
+		return 14
+	# ABI tags must be independent of the order in which member records
+	# were interned in separate modules.
+	if Types.union_alternative_index(union.table, union.id, success.id) != Types.union_alternative_index(flipped_union.table, flipped_union.id, flipped_success.id)
+		return 17
+	if Types.union_alternative_index(union.table, union.id, failure.id) != Types.union_alternative_index(flipped_union.table, flipped_union.id, flipped_failure.id)
+		return 18
+	if Types.union_alternative_index(union.table, union.id, retry.id) != Types.union_alternative_index(flipped_union.table, flipped_union.id, flipped_retry.id)
+		return 19
+	let imported = Interface.module_import_type(union.table, flipped_union.table, flipped_union.id)
+	if imported.id != union.id
+		return 15
+	if Types.runtime_storage(union.table, union.id) != Types.TYPE_STORAGE_OBJECT
+		return 16
+	# Executable unions require explicit construction and extraction opcodes.
+	if not Verify.mir_type_supported(union.table, union.id)
+		return 20
+	if Verify.mir_verify(Mir.mir_program_with_types(Array[Mir.MirFunction](), union.table)) != ""
+		return 21
+	print("PASS structural union types and exhaustive match checking")
+	return 0

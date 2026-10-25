@@ -133,7 +133,24 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 	if loaded.module != name
 		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "generic package module mismatch: " + name, previous.units), parsed.cache)
 	var declarations = loaded.declarations
-	declarations.exports = loaded.exports
+	# Packages expose concrete generic functions plus compile-time-only
+	# constructors, union aliases and constants. Concrete function bodies are
+	# still unavailable as linkable exports from a .smirg package.
+	var public = loaded.exports
+	for name in declarations.exports
+		var compile_time = false
+		for function in declarations.functions
+			if function.name == name and function.constructor
+				compile_time = true
+		for alias in declarations.type_aliases
+			if alias.name == name
+				compile_time = true
+		for constant in declarations.constants
+			if constant.name == name
+				compile_time = true
+		if compile_time
+			public = public.append(name)
+	declarations.exports = public
 	var available = bundles
 	for package in archive.packages
 		available = available.append(package)

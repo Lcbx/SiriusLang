@@ -1,0 +1,13 @@
+rec Success(z: i64, a: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def unwrap(result: Result) -> i64
+	match result
+		Success(first, second)
+			return first * 10 + second
+		Failure(code)
+			return code
+
+def main() -> i64
+	return unwrap(Success(4, 2))

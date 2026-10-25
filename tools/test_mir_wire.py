@@ -36,6 +36,8 @@ def main() -> None:
 			'big_int': 'def main() -> i64\n\tlet x = 9223372036854775807\n\tprint(x)\n\treturn 0\n',
 			'min_int': 'def main() -> i64\n\tlet x = -9223372036854775807 - 1\n\tprint(x)\n\treturn 0\n',
 		}
+		for name in ('success', 'failure', 'direct', 'positional', 'fallthrough', 'managed'):
+			all_cases['union_' + name] = (ROOT / 'tests/mir' / f'source_union_{name}.sirius').read_text()
 		def roundtrip(source: Path, name: str, argv: list[str] | None = None) -> None:
 			argv = argv or []
 			artifact = work / (name + '.smir')

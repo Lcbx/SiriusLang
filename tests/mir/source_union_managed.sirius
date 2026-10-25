@@ -1,0 +1,15 @@
+rec Success(text: string)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def value(result: Result) -> i64
+	match result
+		Success(text)
+			return len(text)
+		Failure(code)
+			return -code
+
+def main() -> i64
+	let answer: Result = Success("hello")
+	let alias = answer
+	return value(answer) + value(alias)

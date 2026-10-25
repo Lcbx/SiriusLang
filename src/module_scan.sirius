@@ -16,7 +16,7 @@ export rec ModuleScanExport(name: string, parameters: Array[Hir.HirParameterDecl
 def new_module_scan_export(name: string, parameters: Array[Hir.HirParameterDecl], argument_types: Array[i64], result_type: i64) -> ModuleScanExport
 	return ModuleScanExport(name, parameters, argument_types, result_type, false, false, "")
 
-export rec ModuleScanUnit(name: string, path: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, types: Types.TypeTable, exports: Array[ModuleScanExport], has_main: bool, exported_constants: Array[Hir.HirModuleConstant], exported_values: Array[Hir.HirConstantValue])
+export rec ModuleScanUnit(name: string, path: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, types: Types.TypeTable, exports: Array[ModuleScanExport], has_main: bool, exported_constants: Array[Hir.HirModuleConstant], exported_values: Array[Hir.HirConstantValue], exported_aliases: Array[Hir.HirTypeAlias])
 export rec ModuleScanResult(visited: Array[string], error: string, units: Array[ModuleScanUnit], missing: string)
 
 export def new_module_scan_result(visited: Array[string], error: string, units: Array[ModuleScanUnit]) -> ModuleScanResult
@@ -66,6 +66,12 @@ export def module_scan_import_declarations(decl: Hir.HirModuleDecl, units: Array
 					function.argument_types = arguments
 					function.result_type = result_type.id
 					declarations.functions = declarations.functions.append(function)
+			for alias in dependency.exported_aliases
+				let mapped = ModuleInterface.module_import_type(types, dependency.types, alias.type_id)
+				if mapped.id == Types.TYPE_TAG_INVALID
+					return ModuleScanImports(declarations, "unsupported imported union type: " + dependency.name + "." + alias.name)
+				types = mapped.table
+				declarations.type_aliases = declarations.type_aliases.append(Hir.HirTypeAlias(Module.hir_module_symbol(dependency.name, alias.name), mapped.id))
 			for constant in dependency.exported_constants
 				let copied = ModuleInterface.module_import_constant(types, declarations.values, dependency.types, dependency.exported_values, constant.value)
 				if copied.index < 0
@@ -242,6 +248,7 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 		return new_module_scan_result(done, name + ":" + str(resolved.line) + ": " + resolved.error, units)
 	var signatures = Array[ModuleScanExport]()
 	var exported_constants = Array[Hir.HirModuleConstant]()
+	var exported_aliases = Array[Hir.HirTypeAlias]()
 	var types = imported.declarations.types
 	for exported in decl.exports
 		var found = false
@@ -256,7 +263,7 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 						generic = true
 						arguments = arguments.append(Types.TYPE_TAG_INVALID)
 						continue
-					let resolved = HirAnalyze.hir_module_type_reference_with_constants(types, resolved.tree, parameter.type_node, imported.declarations.functions, imported.declarations.constants)
+					let resolved = HirAnalyze.hir_module_type_reference_with_constants(types, resolved.tree, parameter.type_node, imported.declarations.functions, imported.declarations.constants, imported.declarations.type_aliases)
 					types = resolved.table
 					if resolved.type_id == Types.TYPE_TAG_INVALID
 						return new_module_scan_result(done, name + ": unsupported exported signature: " + exported, units)
@@ -284,11 +291,11 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 					var reference_tree = resolved.tree
 					let reference = len(reference_tree.nodes)
 					reference_tree.nodes = reference_tree.nodes.append(Parser.Node(Parser.NODE_TYPE, resolved.tree.nodes[!fn_decl.source].token, 0, 0))
-					let resolved = HirAnalyze.hir_module_type_reference_with_constants(types, reference_tree, reference, imported.declarations.functions, imported.declarations.constants)
+					let resolved = HirAnalyze.hir_module_type_reference_with_constants(types, reference_tree, reference, imported.declarations.functions, imported.declarations.constants, imported.declarations.type_aliases)
 					types = resolved.table
 					return_type = resolved.type_id
 				else
-					let returned = HirAnalyze.hir_module_type_reference_with_constants(types, resolved.tree, fn_decl.result_type_node, imported.declarations.functions, imported.declarations.constants)
+					let returned = HirAnalyze.hir_module_type_reference_with_constants(types, resolved.tree, fn_decl.result_type_node, imported.declarations.functions, imported.declarations.constants, imported.declarations.type_aliases)
 					types = returned.table
 					return_type = returned.type_id
 				if return_type == Types.TYPE_TAG_INVALID
@@ -298,6 +305,11 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 				signature.generic = generic
 				signatures = signatures.append(signature)
 				found = true
+		if not found
+			for alias in imported.declarations.type_aliases
+				if alias.name == exported
+					exported_aliases = exported_aliases.append(alias)
+					found = true
 		if not found
 			for constant in imported.declarations.constants
 				if constant.name == exported
@@ -338,6 +350,15 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 					signature.origin = exported.origin
 				signatures = signatures.append(signature)
 				found = true
+			for alias in dependency.exported_aliases
+				if alias.name != reexport.name
+					continue
+				let mapped = ModuleInterface.module_import_type(types, dependency.types, alias.type_id)
+				if mapped.id == Types.TYPE_TAG_INVALID
+					return new_module_scan_result(done, name + ": unsupported re-export union: " + reexport.public_name, units)
+				types = mapped.table
+				exported_aliases = exported_aliases.append(Hir.HirTypeAlias(reexport.public_name, mapped.id))
+				found = true
 			for constant in dependency.exported_constants
 				if constant.name != reexport.name
 					continue
@@ -351,7 +372,7 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 	for fn_decl in decl.functions
 		if fn_decl.name == "main" and tree.nodes[!fn_decl.source].kind == Parser.NODE_DEF
 			has_main = true
-	let unit = ModuleScanUnit(name, path, tree, decl, types, signatures, has_main, exported_constants, imported.declarations.values)
+	let unit = ModuleScanUnit(name, path, tree, decl, types, signatures, has_main, exported_constants, imported.declarations.values, exported_aliases)
 	return new_module_scan_result(done.append(name), "", units.append(unit))
 
 
@@ -382,6 +403,8 @@ def module_scan_manifest(units: Array[ModuleScanUnit]) -> string
 							manifest += "E\t" + module_scan_export(unit.tree, function)
 		for constant in unit.exported_constants
 			manifest += "C\t" + constant.name + "\t" + HirResolve.hir_type_name(unit.types, constant.type_id) + "\n"
+		for alias in unit.exported_aliases
+			manifest += "U\t" + alias.name + "\t" + HirResolve.hir_type_name(unit.types, alias.type_id) + "\n"
 		if unit.has_main
 			manifest += "F\tmain\n"
 	return manifest

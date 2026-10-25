@@ -47,7 +47,7 @@ export def mir_type_supported(types: Types.TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return mir_supported_type(tag) or tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_DICT or tag == Types.TYPE_TAG_OPTIONAL
+	return mir_supported_type(tag) or tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_DICT or tag == Types.TYPE_TAG_OPTIONAL or tag == Types.TYPE_TAG_UNION
 
 # All backends and analyses use the canonical storage descriptor for ARC.
 export def mir_managed_type(types: Types.TypeTable, type_id: i64) -> bool
@@ -142,6 +142,21 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 			return "optional presence destination must be bool"
 		if ins.op == Mir.MIR_OPTIONAL_UNWRAP and dst_type != desc.first
 			return "optional unwrap type mismatch"
+		return ""
+	if ins.op == Mir.MIR_UNION_NEW
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid union payload register"
+		if Types.union_alternative_index(program.types, dst_type, types[!ins.first]) < 0
+			return "union constructor requires member record"
+		return ""
+	if ins.op == Mir.MIR_UNION_TAG or ins.op == Mir.MIR_UNION_GET
+		if ins.first < 0 or ins.first >= len(types) or program.types.entries[!types[!ins.first]].tag != Types.TYPE_TAG_UNION
+			return "union operation requires union source"
+		if ins.op == Mir.MIR_UNION_TAG
+			if dst_type != Types.TYPE_TAG_I64
+				return "union tag requires i64 destination"
+		elif Types.union_alternative_index(program.types, types[!ins.first], dst_type) < 0
+			return "union extraction requires member record destination"
 		return ""
 	if ins.op == Mir.MIR_DICT_NEW
 		if program.types.entries[!dst_type].tag != Types.TYPE_TAG_DICT
@@ -484,8 +499,14 @@ export def mir_verify(program: Mir.MirProgram) -> string
 		if i <= Types.TYPE_TAG_VOID
 			if entry.tag != i or entry.first != 0 or entry.second != 0 or len(entry.fields) != 0
 				return "noncanonical primitive type descriptor"
-		elif entry.tag != Types.TYPE_TAG_RECORD and entry.tag != Types.TYPE_TAG_ARRAY and entry.tag != Types.TYPE_TAG_DICT and entry.tag != Types.TYPE_TAG_OPTIONAL
+		elif entry.tag != Types.TYPE_TAG_RECORD and entry.tag != Types.TYPE_TAG_ARRAY and entry.tag != Types.TYPE_TAG_DICT and entry.tag != Types.TYPE_TAG_OPTIONAL and entry.tag != Types.TYPE_TAG_UNION
 			return "noncanonical composite type descriptor"
+		if entry.tag == Types.TYPE_TAG_UNION
+			if not Types.type_descriptor_canonical(program.types, i)
+				return "noncanonical union type descriptor"
+			for member in entry.fields
+				if member.kind >= i or not mir_type_supported(program.types, member.kind)
+					return "invalid or cyclic union member"
 		if entry.tag == Types.TYPE_TAG_RECORD and (entry.first != 0 or entry.second != 0)
 			return "noncanonical record type descriptor"
 		if entry.tag == Types.TYPE_TAG_ARRAY or entry.tag == Types.TYPE_TAG_OPTIONAL

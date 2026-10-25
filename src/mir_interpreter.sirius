@@ -183,6 +183,35 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					success = 1
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, success, "")
 				continue
+			if ins.op == Mir.MIR_UNION_NEW
+				let payload = registers[!ins.first]
+				if payload.type_id == Types.TYPE_TAG_INVALID
+					return mir_failure("uninitialized union payload", steps)
+				let tag = Types.union_alternative_index(program.types, function.register_types[!ins.dst], payload.type_id)
+				if tag < 0
+					return mir_failure("invalid union payload", steps)
+				heap = mir_heap_copy(program.types, heap, payload)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
+				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], [Mir.new_mir_value(Types.TYPE_TAG_I64, tag, ""), payload], 1))
+				continue
+			if ins.op == Mir.MIR_UNION_TAG or ins.op == Mir.MIR_UNION_GET
+				let wrapper = registers[!ins.first]
+				if wrapper.type_id == Types.TYPE_TAG_INVALID or wrapper.bits < 0 or wrapper.bits >= len(heap) or heap[!wrapper.bits].refs <= 0
+					return mir_failure("invalid union handle", steps)
+				let fields = heap[!wrapper.bits].fields
+				if len(fields) != 2
+					return mir_failure("invalid union representation", steps)
+				if ins.op == Mir.MIR_UNION_TAG
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, fields[!0].bits, "")
+				else
+					let payload = fields[!1]
+					if payload.type_id != function.register_types[!ins.dst]
+						return mir_failure("union variant mismatch", steps)
+					heap = mir_heap_copy(program.types, heap, payload)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = payload
+				continue
 			if ins.op == Mir.MIR_OPTIONAL_NONE or ins.op == Mir.MIR_OPTIONAL_SOME
 				var fields = Array[Mir.MirValue]()
 				if ins.op == Mir.MIR_OPTIONAL_SOME
