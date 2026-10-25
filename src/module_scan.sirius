@@ -273,6 +273,27 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 		if iterable.error != ""
 			return iterable
 		return module_scan_capture_node(iterable.tree, Hir.hir_ast_child(next, id, 1), bindings.append(Hir.hir_ast_text(next, id)), owner, iterable.declarations, iterable.helpers)
+	if node.kind == Parser.NODE_MATCH
+		let subject = Hir.hir_ast_child(next, id, 0)
+		let scanned = module_scan_capture_node(next, subject, bindings, owner, updated, required)
+		if scanned.error != ""
+			return scanned
+		next = scanned.tree
+		updated = scanned.declarations
+		required = scanned.helpers
+		for i in 1..node.count
+			let arm = Hir.hir_ast_child(next, id, i)
+			let case = next.nodes[!arm]
+			var scoped = bindings
+			for j in 0..case.count - 1
+				scoped = scoped.append(Hir.hir_ast_text(next, Hir.hir_ast_child(next, arm, j)))
+			let body = module_scan_capture_node(next, Hir.hir_ast_child(next, arm, case.count - 1), scoped, owner, updated, required)
+			if body.error != ""
+				return body
+			next = body.tree
+			updated = body.declarations
+			required = body.helpers
+		return ModuleScanCapture(next, updated, required, "")
 	if node.kind == Parser.NODE_LAMBDA
 		var scoped = bindings
 		for i in 0..node.count - 1

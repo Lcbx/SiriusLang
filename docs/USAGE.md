@@ -121,8 +121,26 @@ callback (for example, an array element in `map` or an index in `generate`).
 Independently typable arguments may appear before or after a callback, including
 nested calls such as `map(values, fn(x) x + 1)`. The compiler inspects their
 types ahead of time without changing runtime evaluation order. The callback's
-return type is then inferred from its body. Mutually dependent callback types
-and other underdetermined signatures still require explicit `Fn` annotations.
+return type is then inferred from its body. Multi-stage callback-result chains
+are also supported when an independently typed argument seeds the chain,
+for example `pipeline(fn(s) len(s), fn(x) str(x), [7, 12])` when `pipeline`
+calls the first callback on the second callback's result. A callback passed
+through another generic function can also infer its inputs from later arguments
+(e.g. `relay(fn(x) x * 2, [7, 14])` where `relay` forwards to a generic
+`consume(callback, values)`). This works across multiple forwarding functions
+and branch bodies. Local callback aliases, record fields holding callbacks, and
+mutable reassignments also carry constraints. Nested paths such as
+`box.inner.run` are followed through record copies; overwriting `box.inner`
+invalidates aliases beneath that field. After conditional assignments,
+an alias contributes constraints only when preserved on every continuing path;
+exhaustive `match` arms are joined similarly. Branches ending with `return`
+do not weaken the aliases of paths that continue, and unreachable statements
+do not add constraints. Loops do not assume a body executes. For example,
+`let box = {run = callback}` can forward `box.run` to `consume`, even when
+`callback` is still generic. To call a record's function value directly,
+extract it first (`let f = box.run; f(value)`); direct `box.run(value)` is not
+yet supported by MIR lowering. Dependency cycles without a concrete type seed
+still require explicit `Fn` annotations.
 `map` can change the element type, and `generate` can return records, booleans
 or nested arrays. Empty results retain those types. `fold` specializes its
 return type from the initial value and callback, including heterogeneous arrays.
