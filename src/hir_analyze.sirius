@@ -19,7 +19,7 @@ export rec HirSpecializationRequest(source: i64, definition: i64, arguments: Arr
 
 # Inclusive nonnegative range of an immutable i64 expression; -1 means unknown.
 export rec HirIndexRange(low: i64, high: i64)
-export rec HirStaticFact(array_literal: i64, index_range: HirIndexRange)
+export rec HirStaticFact(array_literal: i64, index_range: HirIndexRange, array_shape: Array[i64])
 
 def hir_unknown_range() -> HirIndexRange
 	return HirIndexRange(-1, -1)
@@ -45,10 +45,9 @@ export def hir_index_range(state: HirBodyState, id: i64) -> HirIndexRange
 	if node.kind == Ast.NODE_CALL and node.count == 2
 		let callee = Hir.hir_ast_child(tree, id, 0)
 		if tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(tree, callee) == "len"
-			let array = hir_static_array_literal(state, Hir.hir_ast_child(tree, id, 1))
-			if array >= 0
-				let length = tree.nodes[!array].count
-				return HirIndexRange(length, length)
+			let shape = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 1))
+			if len(shape) > 0
+				return HirIndexRange(shape[!0], shape[!0])
 		return hir_unknown_range()
 	if node.kind == Ast.NODE_UNARY
 		if Hir.hir_ast_text(tree, id) == "+"
@@ -111,16 +110,65 @@ export def hir_static_array_literal(state: HirBodyState, id: i64) -> i64
 		return -1
 	return selected
 
+# The common rectangular prefix of a literal's nested shape. Ragged arrays
+# retain their known outer dimensions without assuming anything about deeper
+# elements. This is a proof about array lengths, not their element values.
+export def hir_literal_array_shape(tree: Ast.ParseState, id: i64) -> Array[i64]
+	let node = tree.nodes[!id]
+	if node.kind != Ast.NODE_ARRAY
+		return Array[i64]()
+	var shape = [node.count]
+	if node.count == 0
+		return shape
+	var common = hir_literal_array_shape(tree, Hir.hir_ast_child(tree, id, 0))
+	for i in 1..node.count
+		let other = hir_literal_array_shape(tree, Hir.hir_ast_child(tree, id, i))
+		var equal = 0
+		while equal < len(common) and equal < len(other) and common[!equal] == other[!equal]
+			equal += 1
+		var prefix = Array[i64]()
+		for j in 0..equal
+			prefix = prefix.append(common[!j])
+		common = prefix
+		if len(common) == 0
+			return shape
+	for dimension in common
+		shape = shape.append(dimension)
+	return shape
+
+# Only propagate dimensions across an indexed expression after proving the
+# index lies in the known outer dimension. A singleton index can recover the
+# exact (possibly ragged) selected literal via hir_static_array_literal.
+export def hir_static_array_shape(state: HirBodyState, id: i64) -> Array[i64]
+	let tree = state.tree
+	let literal = hir_static_array_literal(state, id)
+	if literal >= 0
+		return hir_literal_array_shape(tree, literal)
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_NAME
+		let resolved = Hir.resolve_hir_name(state.symbols, Hir.hir_ast_text(tree, id))
+		if resolved.error == "" and not state.symbols[!resolved.field_index].mutable
+			return state.facts[!resolved.field_index].array_shape
+	if node.kind == Ast.NODE_INDEX and node.count == 2
+		let shape = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 0))
+		let index = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))
+		if len(shape) > 1 and index.low >= 0 and index.high < shape[!0]
+			var tail = Array[i64]()
+			for i in 1..len(shape)
+				tail = tail.append(shape[!i])
+			return tail
+	return Array[i64]()
+
 export def hir_index_proven(state: HirBodyState, id: i64) -> bool
 	let tree = state.tree
 	let node = tree.nodes[!id]
 	if node.kind != Ast.NODE_INDEX or node.count != 2
 		return false
-	let array = hir_static_array_literal(state, Hir.hir_ast_child(tree, id, 0))
-	if array < 0
+	let shape = hir_static_array_shape(state, Hir.hir_ast_child(tree, id, 0))
+	if len(shape) == 0
 		return false
 	let index = hir_index_range(state, Hir.hir_ast_child(tree, id, 1))
-	return index.low >= 0 and index.high < tree.nodes[!array].count
+	return index.low >= 0 and index.high < shape[!0]
 
 export def hir_body_error(state: HirBodyState, id: i64, message: string) -> HirBodyState
 	var result = state
@@ -235,7 +283,7 @@ export def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id:
 		if symbol.name == name and symbol.depth == result.depth
 			return hir_body_error(result, id, "duplicate binding '" + name + "'")
 	result.symbols = result.symbols.append(Hir.SymbolInfo(name, type_id, type_id, mutable, result.depth))
-	result.facts = result.facts.append(HirStaticFact(-1, hir_unknown_range()))
+	result.facts = result.facts.append(HirStaticFact(-1, hir_unknown_range(), Array[i64]()))
 	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
 	return result
 
@@ -670,7 +718,7 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			declared = result.last_type
 		if node.kind == Ast.NODE_LET and initializer >= 0 and fallback < 0
 			# Evaluate before binding to preserve lexical shadowing.
-			let fact = HirStaticFact(hir_static_array_literal(result, initializer), hir_index_range(result, initializer))
+			let fact = HirStaticFact(hir_static_array_literal(result, initializer), hir_index_range(result, initializer), hir_static_array_shape(result, initializer))
 			result = hir_body_binding(result, id, Hir.hir_ast_text(state.tree, id), declared, false)
 			if result.error == ""
 				result.facts[!len(result.facts) - 1] = fact
@@ -744,7 +792,7 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 				loop_range = HirIndexRange(start.low, end.high - 1)
 		result = hir_body_binding(result, id, Hir.hir_ast_text(state.tree, id), item_type, false)
 		if result.error == "" and item_type == Types.TYPE_TAG_I64
-			result.facts[!len(result.facts) - 1] = HirStaticFact(-1, loop_range)
+			result.facts[!len(result.facts) - 1] = HirStaticFact(-1, loop_range, Array[i64]())
 		result = hir_body_block(result, Hir.hir_ast_child(state.tree, id, node.count - 1))
 		var symbols = Array[Hir.SymbolInfo]()
 		for i in 0..initial

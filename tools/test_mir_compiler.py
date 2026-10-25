@@ -155,6 +155,40 @@ def main() -> None:
 			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
 				raise AssertionError(f'Expected conservative bound failure for {suffix}: {result.stdout!r}')
 		print('PASS immutable-local and loop-range bounds proof; reject mutable, unsafe, unknown and shadowed bounds')
+		# A dynamic outer index retains the common rectangular dimensions of
+		# literal-backed nested arrays, even through immutable row aliases.
+		nested = work / 'static_nested_shape.sirius'
+		nested.write_text(
+			'def main() -> i64\n'
+			'\tlet cube = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]\n'
+			'\tvar total = 0\n'
+			'\tfor i in 0..len(cube)\n'
+			'\t\tlet plane = cube[i]\n'
+			'\t\tfor j in 0..len(plane)\n'
+			'\t\t\tlet row = plane[j]\n'
+			'\t\t\tfor k in 0..len(row)\n'
+			'\t\t\t\ttotal += row[k]\n'
+			'\tlet ragged = [[10], [20, 30]]\n'
+			'\tprint(total + ragged[0][0] + ragged[1][1])\n'
+			'\treturn 0\n')
+		nested_c = work / 'static_nested_shape.c'
+		execute([str(compiler), str(nested), str(nested_c)])
+		assert_native(run_native(cache, nested_c), stdout=b'76\n')
+		for suffix, source in (
+			('ragged_outer_loop',
+				'def main() -> i64\n\tlet rows = [[1], [2, 3]]\n\tfor i in 0..len(rows)\n\t\tprint(rows[i][1])\n\treturn 0\n'),
+			('ragged_alias',
+				'def main() -> i64\n\tlet rows = [[1], [2, 3]]\n\tfor i in 0..len(rows)\n\t\tlet row = rows[i]\n\t\tprint(row[1])\n\treturn 0\n'),
+			('nested_column_overflow',
+				'def main() -> i64\n\tlet rows = [[1, 2], [3, 4]]\n\tfor i in 0..len(rows)\n\t\tprint(rows[i][2])\n\treturn 0\n'),
+		):
+			negative = work / (suffix + '.sirius')
+			negative.write_text(source)
+			failed = work / (suffix + '.c')
+			result = subprocess.run([str(compiler), str(negative), str(failed)], capture_output=True, text=True)
+			if result.returncode != 1 or 'not statically proven in bounds' not in result.stdout or failed.exists():
+				raise AssertionError(f'Expected nested bounds rejection for {suffix}: {result.stdout!r}')
+		print('PASS uniform nested array shape and aliases; reject ragged and out-of-range indexes')
 		elif_case = work / 'optional_elif.sirius'
 		elif_case.write_text('def main() -> i64\n\tlet table = Dict[i64, i64]()\n\tif false\n\t\tprint(1)\n\telif (table.get(1) or 0) == 0\n\t\tprint(2)\n\treturn 0\n')
 		output = work / 'optional_elif.c'

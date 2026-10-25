@@ -152,12 +152,15 @@ String module constants permit explicit `: string` annotations; array type
 annotations are not yet accepted at module level.
 
 Plain `a[i]` indexing now proves nonnegative constant arithmetic (`+`, `-`, `*`),
-immutable `let` arrays initialized from literals (including aliases and constant-indexed
-nested arrays), and indices with conservative ranges from `for i in start..end`
-when the bounds are known, including `len()` of those arrays. Proofs respect lexical
-shadowing and reject potential `i64` overflow. Mutable arrays, runtime-dependent
-bounds, nonuniform nested indexing, and negative indices still require `a[?i]`
-or `a[!i]`. This is a scoped HIR proof, not a general symbolic bounds solver.
+immutable `let` arrays initialized from literals (including aliases), and indices
+with conservative ranges from `for i in start..end` when the bounds are known.
+For nested literal arrays, HIR also proves the common rectangular shape prefix,
+allowing dynamic outer indices, `len()` on proven subarrays, and immutable row
+aliases. Constant selection can recover an exact row even in a ragged literal.
+Proofs respect lexical shadowing and reject potential `i64` overflow. Mutable
+arrays, runtime-dependent dimensions, unproven ragged dimensions, and negative
+indices still require `a[?i]` or `a[!i]`. This is a scoped HIR proof, not a
+general symbolic bounds solver.
 
 See [ROADMAP.md](ROADMAP.md#current-priorities-and-decisions) for the migration
 criteria, and [RUNTIME.md](RUNTIME.md) for the data-structure review. MIR emits
