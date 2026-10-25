@@ -1,0 +1,5 @@
+def main() -> i64
+	let fs: Array[Fn[i64,i64]] = [fn(x) x + 1, fn(y) y * 2]
+	let f = fs[0]
+	let g = fs[1]
+	return f(10) + g(15) + 1

@@ -47,7 +47,7 @@ export def mir_type_supported(types: Types.TypeTable, type_id: i64) -> bool
 	if type_id < 0 or type_id >= len(types.entries)
 		return false
 	let tag = types.entries[!type_id].tag
-	return mir_supported_type(tag) or tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_DICT or tag == Types.TYPE_TAG_OPTIONAL or tag == Types.TYPE_TAG_UNION
+	return mir_supported_type(tag) or tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_DICT or tag == Types.TYPE_TAG_OPTIONAL or tag == Types.TYPE_TAG_UNION or tag == Types.TYPE_TAG_FUNCTION
 
 # All backends and analyses use the canonical storage descriptor for ARC.
 export def mir_managed_type(types: Types.TypeTable, type_id: i64) -> bool
@@ -165,6 +165,19 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 				return "union tag requires i64 destination"
 		elif Types.union_alternative_index(program.types, types[!ins.first], dst_type) < 0
 			return "union extraction requires member record destination"
+		return ""
+	if ins.op == Mir.MIR_DICT_NEXT or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
+		if ins.first < 0 or ins.first >= len(types) or not mir_register_valid(types, ins.second, Types.TYPE_TAG_I64)
+			return "invalid dictionary traversal operands"
+		let desc = program.types.entries[!types[!ins.first]]
+		if desc.tag != Types.TYPE_TAG_DICT
+			return "dictionary traversal requires Dict"
+		if ins.op == Mir.MIR_DICT_NEXT and dst_type != Types.TYPE_TAG_I64
+			return "dictionary cursor destination must be i64"
+		if ins.op == Mir.MIR_DICT_KEY and dst_type != desc.first
+			return "dictionary key destination type mismatch"
+		if ins.op == Mir.MIR_DICT_VALUE and dst_type != desc.second
+			return "dictionary value destination type mismatch"
 		return ""
 	if ins.op == Mir.MIR_DICT_NEW
 		if program.types.entries[!dst_type].tag != Types.TYPE_TAG_DICT
@@ -332,6 +345,31 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 				return "string optional result mismatch"
 		elif (ins.op == Mir.MIR_STRING_STARTS_WITH or ins.op == Mir.MIR_STRING_ENDS_WITH) and dst_type != Types.TYPE_TAG_BOOL
 			return "string predicate result mismatch"
+		return ""
+	if ins.op == Mir.MIR_FUNCTION_REF
+		if ins.immediate < 0 or ins.immediate >= len(program.functions) or program.types.entries[!dst_type].tag != Types.TYPE_TAG_FUNCTION
+			return "invalid function reference"
+		let signature = program.types.entries[!dst_type]
+		let target = program.functions[!ins.immediate]
+		if signature.first != Types.FUNCTION_EFFECT_UNCHECKED or signature.second != target.return_type or len(signature.fields) != target.argument_count
+			return "function reference signature mismatch"
+		for i in 0..target.argument_count
+			if signature.fields[!i].kind != target.register_types[!i]
+				return "function reference parameter mismatch"
+		if ins.first != -1 or ins.second != -1 or len(ins.inputs) != 0
+			return "function reference must not have operands"
+		return ""
+	if ins.op == Mir.MIR_CALL_INDIRECT
+		if ins.first < 0 or ins.first >= len(types)
+			return "invalid indirect callee"
+		let signature = program.types.entries[!types[!ins.first]]
+		if signature.tag != Types.TYPE_TAG_FUNCTION or len(ins.inputs) != len(signature.fields) or dst_type != signature.second
+			return "indirect call signature mismatch"
+		if ins.second != -1 or ins.immediate != 0
+			return "invalid indirect call encoding"
+		for i in 0..len(ins.inputs)
+			if not mir_register_valid(types, ins.inputs[!i], signature.fields[!i].kind)
+				return "indirect call argument type mismatch"
 		return ""
 	if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
 		if ins.immediate < 0 or ins.immediate >= len(program.functions)
@@ -507,8 +545,10 @@ export def mir_verify(program: Mir.MirProgram) -> string
 		if i <= Types.TYPE_TAG_VOID
 			if entry.tag != i or entry.first != 0 or entry.second != 0 or len(entry.fields) != 0
 				return "noncanonical primitive type descriptor"
-		elif entry.tag != Types.TYPE_TAG_RECORD and entry.tag != Types.TYPE_TAG_ARRAY and entry.tag != Types.TYPE_TAG_DICT and entry.tag != Types.TYPE_TAG_OPTIONAL and entry.tag != Types.TYPE_TAG_UNION
+		elif entry.tag != Types.TYPE_TAG_RECORD and entry.tag != Types.TYPE_TAG_ARRAY and entry.tag != Types.TYPE_TAG_DICT and entry.tag != Types.TYPE_TAG_OPTIONAL and entry.tag != Types.TYPE_TAG_UNION and entry.tag != Types.TYPE_TAG_FUNCTION
 			return "noncanonical composite type descriptor"
+		if entry.tag == Types.TYPE_TAG_FUNCTION and not Types.type_descriptor_canonical(program.types, i)
+			return "noncanonical function type descriptor"
 		if entry.tag == Types.TYPE_TAG_UNION
 			if not Types.type_descriptor_canonical(program.types, i)
 				return "noncanonical union type descriptor"

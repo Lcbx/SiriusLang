@@ -13,6 +13,12 @@ export let TYPE_TAG_ARRAY = 7
 export let TYPE_TAG_DICT = 8
 export let TYPE_TAG_OPTIONAL = 9
 export let TYPE_TAG_UNION = 10
+export let TYPE_TAG_FUNCTION = 11
+
+# Effect guarantees form part of the structural function signature. Only
+# UNCHECKED can currently be inferred; PURE needs transitive effect checking.
+export let FUNCTION_EFFECT_UNCHECKED = 0
+export let FUNCTION_EFFECT_PURE = 1
 
 export rec RecordField(name: string, kind: i64)
 
@@ -49,7 +55,7 @@ export rec RuntimeLayout(storage: i64, ownership: i64, fixed_slots: i64, variabl
 # The type table is canonical after interning or MIR artifact verification.
 export def runtime_storage(types: TypeTable, id: i64) -> i64
 	let tag = type_tag(types, id)
-	if tag == TYPE_TAG_I64
+	if tag == TYPE_TAG_I64 or tag == TYPE_TAG_FUNCTION
 		return TYPE_STORAGE_I64
 	if tag == TYPE_TAG_F64
 		return TYPE_STORAGE_F64
@@ -109,6 +115,13 @@ export def new_type_table() -> TypeTable
 def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> bool
 	if id <= TYPE_TAG_VOID
 		return tag == id and first == 0 and second == 0 and len(fields) == 0
+	if tag == TYPE_TAG_FUNCTION
+		if (first != FUNCTION_EFFECT_UNCHECKED and first != FUNCTION_EFFECT_PURE) or second <= TYPE_TAG_INVALID or second >= id
+			return false
+		for parameter in fields
+			if parameter.name != "" or parameter.kind <= TYPE_TAG_INVALID or parameter.kind == TYPE_TAG_VOID or parameter.kind >= id
+				return false
+		return true
 	if tag == TYPE_TAG_UNION
 		if first != 0 or second != 0 or len(fields) < 2
 			return false
@@ -203,6 +216,14 @@ export def intern_dict_type(table: TypeTable, key: i64, value: i64) -> InternedT
 export def intern_optional_type(table: TypeTable, value: i64) -> InternedType
 	return intern_type(table, TYPE_TAG_OPTIONAL, value, 0, Array[RecordField]())
 
+# Positional argument types are stored in descriptor fields, without names.
+# The result TypeId is stored in second, and the effect guarantee in first.
+export def intern_function_type(table: TypeTable, parameters: Array[i64], result: i64, effects: i64) -> InternedType
+	var fields = Array[RecordField]()
+	for parameter in parameters
+		fields = fields.append(RecordField("", parameter))
+	return intern_type(table, TYPE_TAG_FUNCTION, effects, result, fields)
+
 def ordered_fields(fields: Array[RecordField]) -> Array[RecordField]
 	var result = Array[RecordField]()
 	for field in fields
@@ -252,6 +273,17 @@ export def type_signature(types: TypeTable, id: i64) -> string
 		if key == "invalid" or value == "invalid"
 			return "invalid"
 		return "Dict[" + key + "," + value + "]"
+	if desc.tag == TYPE_TAG_FUNCTION
+		let ret = type_signature(types, desc.second)
+		if ret == "invalid"
+			return "invalid"
+		var parts = ["Fn{", str(desc.first), "|", str(len(ret)), ":", ret, "|"]
+		for parameter in desc.fields
+			let signature = type_signature(types, parameter.kind)
+			if signature == "invalid"
+				return "invalid"
+			parts = parts.append(str(len(signature)) + ":" + signature + ";")
+		return "".join(parts) + "}"
 	if desc.tag == TYPE_TAG_UNION
 		var parts = ["Union{"]
 		for member in desc.fields
@@ -298,6 +330,33 @@ export def intern_union_type(table: TypeTable, alternatives: Array[i64]) -> Inte
 			ordered = ordered.append(fields[!i])
 		fields = ordered
 	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
+
+# Implicit injection preserves structural field names and collection shape.
+# Conversion may allocate new records/arrays; it never reinterprets their layout.
+export def type_coercible(table: TypeTable, expected: i64, actual: i64) -> bool
+	if expected == actual
+		return true
+	if union_alternative_index(table, expected, actual) >= 0
+		return true
+	let expected_tag = type_tag(table, expected)
+	if expected_tag != type_tag(table, actual)
+		return false
+	if expected_tag == TYPE_TAG_ARRAY or expected_tag == TYPE_TAG_OPTIONAL
+		return type_coercible(table, table.entries[!expected].first, table.entries[!actual].first)
+	if expected_tag == TYPE_TAG_DICT
+		let left = table.entries[!expected]
+		let right = table.entries[!actual]
+		return left.first == right.first and type_coercible(table, left.second, right.second)
+	if expected_tag == TYPE_TAG_RECORD
+		let left = table.entries[!expected].fields
+		let right = table.entries[!actual].fields
+		if len(left) != len(right)
+			return false
+		for i in 0..len(left)
+			if left[!i].name != right[!i].name or not type_coercible(table, left[!i].kind, right[!i].kind)
+				return false
+		return true
+	return false
 
 # Resolve a structurally distinct alternative to its stable tag index.
 export def union_alternative_index(table: TypeTable, union_id: i64, member: i64) -> i64

@@ -1,0 +1,5 @@
+def factory() -> Fn[i64,i64]
+	return fn(x) x + 1
+def main() -> i64
+	let f = factory()
+	return f(41)

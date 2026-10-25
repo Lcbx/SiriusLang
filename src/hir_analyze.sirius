@@ -226,8 +226,24 @@ export def hir_body_type_reference(types: Types.TypeTable, tree: Ast.ParseState,
 	if node.kind == Ast.NODE_INDEX
 		name = Hir.hir_ast_text(tree, Hir.hir_ast_child(tree, id, 0))
 		first = 1
-	if name != "Array" and name != "Dict" and name != "Optional"
+	if name != "Array" and name != "Dict" and name != "Optional" and name != "Fn"
 		return Resolve.HirCallCheck(types, Types.TYPE_TAG_INVALID, "")
+	if name == "Fn"
+		if node.count < first + 1
+			return Resolve.HirCallCheck(types, Types.TYPE_TAG_INVALID, "Fn requires a return type")
+		var current = types
+		var arguments = Array[i64]()
+		for i in first..node.count - 1
+			let parameter = hir_body_type_reference(current, tree, Hir.hir_ast_child(tree, id, i))
+			if parameter.type_id == Types.TYPE_TAG_INVALID
+				return parameter
+			current = parameter.table
+			arguments = arguments.append(parameter.type_id)
+		let ret = hir_body_type_reference(current, tree, Hir.hir_ast_child(tree, id, node.count - 1))
+		if ret.type_id == Types.TYPE_TAG_INVALID
+			return ret
+		let function_type = Types.intern_function_type(ret.table, arguments, ret.type_id, Types.FUNCTION_EFFECT_UNCHECKED)
+		return Resolve.HirCallCheck(function_type.table, function_type.id, "")
 	if (name == "Dict" and node.count != first + 2) or (name != "Dict" and node.count != first + 1)
 		return Resolve.HirCallCheck(types, Types.TYPE_TAG_INVALID, "")
 	let element = hir_body_type_reference(types, tree, Hir.hir_ast_child(tree, id, first))
@@ -334,13 +350,13 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	var specialized_args = args
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
-		if function.external and function.argument_types[!i] != Types.TYPE_TAG_INVALID and function.argument_types[!i] != args[!i] and Types.union_alternative_index(result.types, function.argument_types[!i], args[!i]) < 0
+		if function.external and function.argument_types[!i] != Types.TYPE_TAG_INVALID and function.argument_types[!i] != args[!i] and not Types.type_coercible(result.types, function.argument_types[!i], args[!i])
 			return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, function.argument_types[!i]) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
 		if parameter.type_node >= 0
 			let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
 			result.types = annotation.table
 			if annotation.type_id != Types.TYPE_TAG_INVALID and annotation.type_id != args[!i]
-				if Types.union_alternative_index(result.types, annotation.type_id, args[!i]) < 0
+				if not Types.type_coercible(result.types, annotation.type_id, args[!i])
 					return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, annotation.type_id) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
 				result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, annotation.type_id, -1))
 				specialized_args[!i] = annotation.type_id
@@ -371,7 +387,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 		nested.collect_calls = result.collect_calls
 		for i in 0..len(args)
 			let param = function.parameters[!i]
-			nested = hir_body_binding(nested, param.source, param.name, args[!i], false)
+			nested = hir_body_binding(nested, param.source, param.name, specialized_args[!i], false)
 		var fields = Array[Types.RecordField]()
 		let block = state.tree.nodes[!function.body]
 		for i in 0..block.count
@@ -466,6 +482,59 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	result.last_type = nested.inferred_return
 	return result
 
+# Infer omitted parameter annotations only when an expected Fn signature is
+# available. Analyze the body in a separate scope to prohibit captures.
+def hir_body_lambda(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
+	let node = state.tree.nodes[!id]
+	var result = state
+	# A separate lexical scope rules out captures of enclosing locals.
+	var nested = new_hir_body_state(state.tree, state.names, state.constants, result.types)
+	nested.functions = state.functions
+	nested.module_constants = state.module_constants
+	nested.type_aliases = state.type_aliases
+	var parameters = Array[i64]()
+	var signature = Types.TypeDescriptor(0, 0, 0, Array[Types.RecordField]())
+	var has_expected = false
+	if Types.type_tag(nested.types, expected) == Types.TYPE_TAG_FUNCTION
+		signature = nested.types.entries[!expected]
+		has_expected = true
+		if len(signature.fields) != node.count - 1
+			return hir_body_error(result, id, "lambda parameter count does not match expected Fn type")
+	for i in 0..node.count - 1
+		let part = Hir.hir_ast_child(state.tree, id, i)
+		let parameter = state.tree.nodes[!part]
+		var parameter_type = Types.TYPE_TAG_INVALID
+		if parameter.count > 0
+			let annotation = Hir.hir_ast_child(state.tree, part, 0)
+			let typed = hir_module_type_reference_with_constants(nested.types, nested.tree, annotation, nested.functions, nested.module_constants, nested.type_aliases)
+			nested.types = typed.table
+			parameter_type = typed.type_id
+		elif has_expected
+			parameter_type = signature.fields[!i].kind
+		if parameter_type == Types.TYPE_TAG_INVALID
+			return hir_body_error(result, part, "lambda parameter requires annotation or expected Fn type")
+		if has_expected and parameter_type != signature.fields[!i].kind
+			return hir_body_error(result, part, "lambda parameter type does not match expected Fn type")
+		parameters = parameters.append(parameter_type)
+		nested = hir_body_binding(nested, part, Hir.hir_ast_text(state.tree, part), parameter_type, false)
+	let body = Hir.hir_ast_child(state.tree, id, node.count - 1)
+	nested = hir_body_expression(nested, body)
+	if nested.error != ""
+		result.error = nested.error
+		result.error_line = nested.error_line
+		return result
+	if nested.last_type == Types.TYPE_TAG_INVALID
+		return hir_body_error(result, body, "cannot infer lambda return type")
+	if has_expected and nested.last_type != signature.second
+		return hir_body_error(result, body, "lambda return type does not match expected Fn type")
+	let typed = Types.intern_function_type(nested.types, parameters, nested.last_type, Types.FUNCTION_EFFECT_UNCHECKED)
+	result.types = typed.table
+	result.last_type = typed.id
+	result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_LAMBDA, typed.id, -1))
+	if result.collect_calls
+		result.requests = result.requests.append(HirSpecializationRequest(id, id, parameters))
+	return result
+
 export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 	state.error == "" else return state
 	let node = state.tree.nodes[!id]
@@ -494,9 +563,36 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 				result.last_type = Types.TYPE_TAG_I64
 				result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_NAME, Types.TYPE_TAG_I64, -1))
 				return result
-		for function in result.names
-			if function == name
-				# Function values and constructor calls need specialization.
+		for function in result.functions
+			if function.name == name and not function.constructor
+				var parameters = Array[i64]()
+				for i in 0..len(function.parameters)
+					let parameter = function.parameters[!i]
+					var parameter_type = Types.TYPE_TAG_INVALID
+					if function.external
+						parameter_type = function.argument_types[!i]
+					elif parameter.type_node >= 0
+						let annotated = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
+						result.types = annotated.table
+						parameter_type = annotated.type_id
+					if parameter_type == Types.TYPE_TAG_INVALID
+						return hir_body_error(result, id, "function values require annotated parameters")
+					parameters = parameters.append(parameter_type)
+				var returned = function.result_type
+				if function.result_type_node >= 0
+					let annotation = hir_module_type_reference_with_constants(result.types, result.tree, function.result_type_node, result.functions, result.module_constants, result.type_aliases)
+					result.types = annotation.table
+					returned = annotation.type_id
+				if returned == Types.TYPE_TAG_INVALID
+					return hir_body_error(result, id, "function values require an annotated return type")
+				let typed = Types.intern_function_type(result.types, parameters, returned, Types.FUNCTION_EFFECT_UNCHECKED)
+				result.types = typed.table
+				if typed.id == Types.TYPE_TAG_INVALID
+					return hir_body_error(result, id, "invalid function value type")
+				result.last_type = typed.id
+				result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_NAME, typed.id, -1))
+				if result.collect_calls
+					result.requests = result.requests.append(HirSpecializationRequest(id, function.body, parameters))
 				return result
 		return hir_body_error(result, id, "unknown name '" + name + "'")
 	if kind == Ast.NODE_CALL
@@ -505,16 +601,49 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 		var receiver = Types.TYPE_TAG_INVALID
 		var method = ""
 		var resolved_function = -1
+		var indirect_type = Types.TYPE_TAG_INVALID
+		if callee_kind == Ast.NODE_NAME
+			let local = Hir.resolve_hir_name(result.symbols, Hir.hir_ast_text(state.tree, callee))
+			if local.error == "" and Types.type_tag(result.types, local.type_id) == Types.TYPE_TAG_FUNCTION
+				indirect_type = local.type_id
 		if callee_kind == Ast.NODE_ATTR
 			method = Hir.hir_ast_text(state.tree, callee)
 			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, callee, 0))
 			receiver = result.last_type
 		elif callee_kind != Ast.NODE_NAME and callee_kind != Ast.NODE_INDEX
 			result = hir_body_expression(result, callee)
+			if Types.type_tag(result.types, result.last_type) == Types.TYPE_TAG_FUNCTION
+				indirect_type = result.last_type
 		var args = Array[i64]()
 		var complete = true
 		for i in 1..node.count
-			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, id, i))
+			let child = Hir.hir_ast_child(state.tree, id, i)
+			var expected = Types.TYPE_TAG_INVALID
+			if indirect_type != Types.TYPE_TAG_INVALID and i - 1 < len(result.types.entries[!indirect_type].fields)
+				expected = result.types.entries[!indirect_type].fields[!i - 1].kind
+			elif callee_kind == Ast.NODE_NAME
+				for function in result.functions
+					if function.name == Hir.hir_ast_text(state.tree, callee) and i - 1 < len(function.parameters)
+						let parameter = function.parameters[!i - 1]
+						if function.external
+							expected = function.argument_types[!i - 1]
+						elif parameter.type_node >= 0
+							let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
+							result.types = annotation.table
+							expected = annotation.type_id
+			if callee_kind == Ast.NODE_ATTR and receiver != Types.TYPE_TAG_INVALID
+				let tag = Types.type_tag(result.types, receiver)
+				if tag == Types.TYPE_TAG_ARRAY and method == "append" and i == 1
+					expected = result.types.entries[!receiver].first
+				elif tag == Types.TYPE_TAG_DICT and method == "insert"
+					if i == 1
+						expected = result.types.entries[!receiver].first
+					elif i == 2
+						expected = result.types.entries[!receiver].second
+			if expected != Types.TYPE_TAG_INVALID
+				result = hir_body_expression_expected(result, child, expected)
+			else
+				result = hir_body_expression(result, child)
 			if result.error != ""
 				return result
 			if result.last_type == Types.TYPE_TAG_INVALID
@@ -526,6 +655,16 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if typed.type_id != Types.TYPE_TAG_INVALID
 				result.types = typed.table
 				result.last_type = typed.type_id
+		elif complete and indirect_type != Types.TYPE_TAG_INVALID
+			let signature = result.types.entries[!indirect_type]
+			if len(args) != len(signature.fields)
+				return hir_body_error(result, id, "indirect call argument count mismatch")
+			for i in 0..len(args)
+				if not Types.type_coercible(result.types, signature.fields[!i].kind, args[!i])
+					return hir_body_error(result, id, "indirect call argument type mismatch")
+				if args[!i] != signature.fields[!i].kind
+					result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, signature.fields[!i].kind, -1))
+			result.last_type = signature.second
 		elif complete and callee_kind == Ast.NODE_NAME
 			let name = Hir.hir_ast_text(state.tree, callee)
 			if Resolve.hir_is_builtin(name)
@@ -550,6 +689,14 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 				return hir_body_error(result, id, checked.error)
 			result.types = checked.table
 			result.last_type = checked.type_id
+			if (tag == Types.TYPE_TAG_ARRAY and method == "append") or (tag == Types.TYPE_TAG_DICT and method == "insert")
+				let descriptor = result.types.entries[!receiver]
+				for i in 0..len(args)
+					var expected = descriptor.first
+					if tag == Types.TYPE_TAG_DICT and i == 1
+						expected = descriptor.second
+					if args[!i] != expected
+						result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, expected, -1))
 		if result.last_type != Types.TYPE_TAG_INVALID
 			result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_CALL, result.last_type, resolved_function))
 		return result
@@ -596,8 +743,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			result.last_type = Types.TYPE_TAG_INVALID
 		return result
 	if kind == Ast.NODE_LAMBDA
-		# Lambda parameter binding is specialized with the target function type.
-		return result
+		return hir_body_lambda(state, id, Types.TYPE_TAG_INVALID)
 	if kind == Ast.NODE_RECORD
 		var fields = Array[Types.RecordField]()
 		var complete = true
@@ -713,6 +859,72 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 	# Other expressions keep their original emitter validation until typed.
 	return result
 
+# Instantiate a named generic function using an expected first-class Fn type.
+# The same specialization request as an ordinary named call is consumed by the
+# HIR worklist, so function references and calls share their specialization.
+def hir_body_function_value_expected(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
+	let name = Hir.hir_ast_text(state.tree, id)
+	let local = Hir.resolve_hir_name(state.symbols, name)
+	if local.error == ""
+		return hir_body_expression(state, id)
+	var result = state
+	let signature = state.types.entries[!expected]
+	for function in state.functions
+		if function.name != name or function.constructor
+			continue
+		if len(function.parameters) != len(signature.fields)
+			return hir_body_error(result, id, "function parameter count does not match expected Fn type")
+		var parameters = Array[i64]()
+		for i in 0..len(signature.fields)
+			let concrete = signature.fields[!i].kind
+			let parameter = function.parameters[!i]
+			var annotated = Types.TYPE_TAG_INVALID
+			if function.external
+				annotated = function.argument_types[!i]
+			elif parameter.type_node >= 0
+				let typed = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
+				result.types = typed.table
+				annotated = typed.type_id
+			if annotated != Types.TYPE_TAG_INVALID and annotated != concrete
+				return hir_body_error(result, id, "function parameter type does not match expected Fn type")
+			parameters = parameters.append(concrete)
+		# Reuse named-call inference, checking both annotated and inferred returns.
+		result = hir_body_user_call(result, id, name, parameters)
+		if result.error != ""
+			return result
+		if result.last_type == Types.TYPE_TAG_INVALID
+			return hir_body_error(result, id, "cannot infer function return type")
+		if result.last_type != signature.second
+			return hir_body_error(result, id, "function return type does not match expected Fn type")
+		result.last_type = expected
+		result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_NAME, expected, -1))
+		return result
+	return hir_body_expression(state, id)
+
+# Contextual homogeneous arrays can hold distinct alternatives when their
+# expected element type is a union. Every element is checked independently.
+export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
+	if state.tree.nodes[!id].kind == Ast.NODE_LAMBDA
+		return hir_body_lambda(state, id, expected)
+	if state.tree.nodes[!id].kind == Ast.NODE_NAME and Types.type_tag(state.types, expected) == Types.TYPE_TAG_FUNCTION
+		return hir_body_function_value_expected(state, id, expected)
+	if state.tree.nodes[!id].kind != Ast.NODE_ARRAY or Types.type_tag(state.types, expected) != Types.TYPE_TAG_ARRAY
+		return hir_body_expression(state, id)
+	var result = state
+	let element_type = result.types.entries[!expected].first
+	let node = result.tree.nodes[!id]
+	for i in 0..node.count
+		let child = Hir.hir_ast_child(result.tree, id, i)
+		result = hir_body_expression_expected(result, child, element_type)
+		result.error == "" else return result
+		if result.last_type != element_type
+			if not Types.type_coercible(result.types, element_type, result.last_type)
+				return hir_body_error(result, child, "expected " + Resolve.hir_type_name(result.types, element_type) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
+			result.nodes = result.nodes.append(Hir.HirNode(child, Hir.HIR_UNION_INJECT, element_type, -1))
+	result.last_type = expected
+	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_ARRAY, expected, -1))
+	return result
+
 export def hir_body_block(state: HirBodyState, id: i64) -> HirBodyState
 	var result = state
 	let initial = len(result.symbols)
@@ -821,7 +1033,10 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			else
 				initializer = child
 		if initializer >= 0
-			result = hir_body_expression(result, initializer)
+			if declared != Types.TYPE_TAG_INVALID
+				result = hir_body_expression_expected(result, initializer, declared)
+			else
+				result = hir_body_expression(result, initializer)
 		result.error == "" else return result
 		if fallback >= 0
 			let wrapped = result.last_type
@@ -833,7 +1048,7 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 				if descriptor.tag != Types.TYPE_TAG_OPTIONAL
 					return hir_body_error(result, id, "else return requires an Optional")
 				result.last_type = descriptor.first
-		if declared != Types.TYPE_TAG_INVALID and result.last_type != Types.TYPE_TAG_INVALID and declared != result.last_type and Types.union_alternative_index(result.types, declared, result.last_type) < 0
+		if declared != Types.TYPE_TAG_INVALID and result.last_type != Types.TYPE_TAG_INVALID and declared != result.last_type and not Types.type_coercible(result.types, declared, result.last_type)
 			return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, declared) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
 		if declared == Types.TYPE_TAG_INVALID
 			declared = result.last_type
@@ -861,6 +1076,10 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 						return hir_body_error(result, id, "indexed update requires a mutable local array")
 					return hir_body_error(result, id, "cannot assign immutable binding '" + name + "'")
 		var target_type = Types.TYPE_TAG_INVALID
+		if target.kind == Ast.NODE_NAME
+			let binding = Hir.resolve_hir_name(result.symbols, Hir.hir_ast_text(state.tree, lhs))
+			if binding.error == ""
+				target_type = binding.type_id
 		if target.kind == Ast.NODE_CHECKED_INDEX
 			result = hir_body_expression(result, lhs)
 			result.error == "" else return result
@@ -871,7 +1090,10 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			result = hir_body_expression(result, lhs)
 			result.error == "" else return result
 			target_type = result.last_type
-		result = hir_body_expression(result, rhs)
+		if target_type != Types.TYPE_TAG_INVALID
+			result = hir_body_expression_expected(result, rhs, target_type)
+		else
+			result = hir_body_expression(result, rhs)
 		if target_type != Types.TYPE_TAG_INVALID and result.last_type != Types.TYPE_TAG_INVALID and target_type != result.last_type
 			if target.kind == Ast.NODE_CHECKED_INDEX
 				return hir_body_error(result, id, "indexed assignment type mismatch")
@@ -933,10 +1155,14 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 		return hir_body_statement(result, exit_node)
 	if node.kind == Ast.NODE_RETURN or node.kind == Ast.NODE_EXPR or node.kind == Ast.NODE_RECUR
 		for i in 0..node.count
-			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, id, i))
+			let child = Hir.hir_ast_child(state.tree, id, i)
+			if node.kind == Ast.NODE_RETURN and result.expected_return != Types.TYPE_TAG_INVALID
+				result = hir_body_expression_expected(result, child, result.expected_return)
+			else
+				result = hir_body_expression(result, child)
 		if node.kind == Ast.NODE_RETURN and result.last_type != Types.TYPE_TAG_INVALID
 			var returned = result.last_type
-			if Types.type_tag(result.types, result.expected_return) == Types.TYPE_TAG_UNION and Types.union_alternative_index(result.types, result.expected_return, returned) >= 0
+			if result.expected_return != Types.TYPE_TAG_INVALID and Types.type_coercible(result.types, result.expected_return, returned)
 				returned = result.expected_return
 			if result.inferred_return != Types.TYPE_TAG_INVALID and result.inferred_return != returned
 				return hir_body_error(result, id, "inconsistent return types")

@@ -1,0 +1,29 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+rec Box(value: Result)
+
+def values() -> Array[Array[Result]]
+	return [[Success(20), Failure(1)], [Success(23)]]
+
+def total(groups: Array[Array[Result]]) -> i64
+	var score = 0
+	for group in groups
+		for item in group
+			match item
+				Success(value)
+					score += value
+				Failure(code)
+					score -= code
+	return score
+
+def main() -> i64
+	let result: Array[Array[Result]] = [[Success(20), Failure(1)], [Success(23)]]
+	let box = Box(Success(42))
+	var bonus = 0
+	match box.value
+		Success(value)
+			bonus = value
+		Failure(code)
+			bonus = -code
+	return total(result) + total(values()) + total([[Success(20), Failure(1)], [Success(23)]]) + bonus - 126

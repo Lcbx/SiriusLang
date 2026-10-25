@@ -105,9 +105,9 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 			let node = next.nodes[!i]
 			next.nodes[!i] = Parser.Node(Parser.NODE_CASE, token, node.first, node.count)
 			break
-	# Imported constants are namespace-qualified at the source level but use
-	# ordinary HIR module constants after resolution. This also handles nested
-	# projections (for example, Settings.CONFIG.width).
+	# Qualified function values use the same imported declaration as direct
+	# calls. Resolve the namespace before HIR creates a function reference.
+	# This also handles nested constant projections (Settings.CONFIG.width).
 	for i in 0..len(tree.nodes)
 		let attribute = next.nodes[!i]
 		if attribute.kind != Parser.NODE_ATTR or attribute.count != 1
@@ -125,13 +125,12 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 			for constant in declarations.constants
 				if constant.name == target
 					found = true
-			# A qualified constructor is also a type value in expressions such as
-			# Array[Types.RecordField](). Resolve it like a named type.
+			# Constructors are type values and exported functions are Fn values.
 			for function in declarations.functions
-				if function.name == target and function.constructor and function.external
+				if function.name == target and HirDeclarations.hir_function_external(next, function)
 					found = true
 			if not found
-				return HirModuleResolution(tree, "constant " + receiver + "." + name + " is not exported", Hir.hir_ast_line(next, i))
+				return HirModuleResolution(tree, "symbol " + receiver + "." + name + " is not exported", Hir.hir_ast_line(next, i))
 			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i))
 			break
 	return HirModuleResolution(next, "", 0)

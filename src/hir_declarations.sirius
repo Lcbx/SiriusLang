@@ -149,6 +149,27 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 				if tree.nodes[!Hir.hir_ast_child(tree, body_id, j)].kind == Ast.NODE_PUB
 					return hir_declaration_error(functions, constants, "def constructors are no longer supported; use rec", Hir.hir_ast_line(tree, id))
 		functions = functions.append(Hir.new_hir_function_decl(name, id, body_id, entry.kind == Ast.NODE_REC, return_type, parameters))
+	# Lambdas are private, noncapturing functions. Their AST node is a stable
+	# specialization identity, including in serialized generic modules.
+	for id in 0..len(tree.nodes)
+		let entry = tree.nodes[!id]
+		if entry.kind != Ast.NODE_LAMBDA
+			continue
+		var parameters = Array[Hir.HirParameterDecl]()
+		for j in 0..entry.count - 1
+			let part = Hir.hir_ast_child(tree, id, j)
+			let info = tree.nodes[!part]
+			var annotation = -1
+			if info.count > 0
+				annotation = Hir.hir_ast_child(tree, part, 0)
+				if info.count != 1 or tree.nodes[!annotation].kind != Ast.NODE_TYPE
+					return hir_declaration_error(functions, constants, "lambda parameter defaults are not supported", Hir.hir_ast_line(tree, part))
+			let pname = Hir.hir_ast_text(tree, part)
+			for previous in parameters
+				if previous.name == pname
+					return hir_declaration_error(functions, constants, "duplicate lambda parameter '" + pname + "'", Hir.hir_ast_line(tree, part))
+			parameters = parameters.append(Hir.HirParameterDecl(pname, part, annotation))
+		functions = functions.append(Hir.new_hir_function_decl("#lambda" + str(id), id, id, false, -1, parameters))
 	for imported in imports
 		for name in names
 			if imported.alias == name

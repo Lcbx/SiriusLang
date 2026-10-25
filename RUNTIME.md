@@ -112,7 +112,7 @@ previous values normally, and unique owners continue to update in place. The
 allocation constructor also guards against field-count arithmetic overflow.
 
 The MIR dictionary payload now uses the existing generic open-addressed
-`S_Dict`, instead of alternating fields and linear key lookup. The outer
+`S_Dict`, instead of alternating fields and linear key lookup. Read-only cursor helpers enumerate occupied hash slots without copying or mutating entries; MIR uses these to rebuild dictionaries with recursively converted values. Cursors are invalidated by mutations/rehashing and are not source values. The outer
 `S_MirRecord` remains the owned MIR register value and holds a single `S_Dict *`.
 Its copy-on-write clone retains the generic dictionary; subsequent insertions
 use `s_dict_insert` for independent snapshots. Typed copy/drop callbacks handle

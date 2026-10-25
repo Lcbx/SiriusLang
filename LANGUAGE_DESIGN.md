@@ -272,8 +272,13 @@ include every constructor parameter.
   Named re-exports preserve the union's structural identity. Source-free
   `.smirg` packages can expose public constructors, aliases and constants
   alongside generic functions; concrete non-generic functions still require
-  compiled libraries or source. Nested union coercions through collections
-  remain deferred.
+  compiled libraries or source. Implicit union coercions traverse structural
+  records, homogeneous arrays, `Optional` payloads and dictionary values
+  (with identical key types), rebuilding containers without mutating sources.
+  Contextually typed array literals accept mixed union variants; otherwise
+  literals remain homogeneous. Typed `.append` and `.insert` inject compatible
+  union values. Dictionary key conversion and unrelated record layouts are
+  unsupported.
   `Std.Filesystem` provides optional `ReadResult`, `WriteResult`, `ListResult`,
   `WalkResult`, and `PathKindResult` wrappers using
   `FilesystemFailure(operation, path, kind, code)`. Filesystem
@@ -371,7 +376,9 @@ Callbacks must be pure:
 
 ### Lambdas and context
 
-Functions and non-capturing lambdas are first-class values with concrete signatures. Compatible non-capturing functions can be stored as typed function pointers.
+Functions and non-capturing lambdas are first-class values with concrete signatures. Compatible non-capturing functions can be stored as typed function pointers. Qualified references to exported functions and their named re-exports use the same function types as local functions.
+
+**Current implementation:** `Fn[parameters...,return]` values support indirect calls, named functions and expression-bodied noncapturing lambdas (`fn(x: i64) x + 1`). Lambda parameters and unannotated generic named functions can be specialized from a contextual `Fn` type in bindings, arguments, returns, assignments and typed arrays; otherwise annotate the parameters explicitly. Qualified imports, named re-exports and source-free `.smirg` generic declarations support contextual specialization; some cross-module lambda arguments may still require explicit annotations. No captures of enclosing local variables, transitive purity checking, or higher-order generic signatures are implemented yet. `Std.Functional` therefore exposes concrete array-producing callbacks for `i64`, `f64` and `string`, while predicates such as `count_if`, `any`, `all` and `find_index` use generic argument inference with concrete `bool`/`i64` results; their callback argument must already have an inferred or annotated `Fn` type.
 
 **Capturing closures are not supported.** Higher-order functions accept optional explicit context arguments.
 

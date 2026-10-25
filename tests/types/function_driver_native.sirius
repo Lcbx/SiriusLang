@@ -1,0 +1,62 @@
+import types alias Types
+import module_interface alias Interface
+import parser alias Parser
+import hir alias Hir
+import hir_analyze alias Analyze
+import hir_resolve alias Resolve
+import mir alias Mir
+import mir_verify alias Verify
+
+def main() -> i64
+	let initial = Types.new_type_table()
+	let nested = Types.intern_array_type(initial, Types.TYPE_TAG_STRING)
+	let params = [Types.TYPE_TAG_I64, nested.id]
+	let function_type = Types.intern_function_type(nested.table, params, Types.TYPE_TAG_BOOL, Types.FUNCTION_EFFECT_UNCHECKED)
+	if function_type.id == Types.TYPE_TAG_INVALID or not Types.type_descriptor_canonical(function_type.table, function_type.id)
+		return 1
+	let repeated = Types.intern_function_type(function_type.table, params, Types.TYPE_TAG_BOOL, Types.FUNCTION_EFFECT_UNCHECKED)
+	if repeated.id != function_type.id or len(repeated.table.entries) != len(function_type.table.entries)
+		return 2
+	let swapped = Types.intern_function_type(repeated.table, [nested.id, Types.TYPE_TAG_I64], Types.TYPE_TAG_BOOL, Types.FUNCTION_EFFECT_UNCHECKED)
+	if swapped.id == function_type.id
+		return 3
+	let different_return = Types.intern_function_type(swapped.table, params, Types.TYPE_TAG_I64, Types.FUNCTION_EFFECT_UNCHECKED)
+	if different_return.id == function_type.id
+		return 4
+	let pure = Types.intern_function_type(different_return.table, params, Types.TYPE_TAG_BOOL, Types.FUNCTION_EFFECT_PURE)
+	if pure.id == function_type.id or pure.id == Types.TYPE_TAG_INVALID
+		return 5
+	if Types.intern_function_type(pure.table, params, Types.TYPE_TAG_BOOL, 2).id != Types.TYPE_TAG_INVALID
+		return 6
+	if Types.intern_function_type(pure.table, [Types.TYPE_TAG_VOID], Types.TYPE_TAG_I64, Types.FUNCTION_EFFECT_UNCHECKED).id != Types.TYPE_TAG_INVALID
+		return 7
+	if Types.intern_type(pure.table, Types.TYPE_TAG_FUNCTION, 0, Types.TYPE_TAG_I64, [Types.RecordField("named", Types.TYPE_TAG_I64)]).id != Types.TYPE_TAG_INVALID
+		return 8
+	if Types.intern_function_type(pure.table, Array[i64](), Types.TYPE_TAG_VOID, Types.FUNCTION_EFFECT_UNCHECKED).id == Types.TYPE_TAG_INVALID
+		return 9
+	let reverse = Types.new_type_table()
+	let other = Types.intern_optional_type(reverse, Types.TYPE_TAG_I64)
+	let other_nested = Types.intern_array_type(other.table, Types.TYPE_TAG_STRING)
+	let foreign = Types.intern_function_type(other_nested.table, [Types.TYPE_TAG_I64, other_nested.id], Types.TYPE_TAG_BOOL, Types.FUNCTION_EFFECT_UNCHECKED)
+	let imported = Interface.module_import_type(pure.table, foreign.table, foreign.id)
+	if imported.id != function_type.id or Types.type_signature(imported.table, imported.id) != Types.type_signature(foreign.table, foreign.id)
+		return 10
+	if Types.type_signature(pure.table, function_type.id) == Types.type_signature(pure.table, pure.id)
+		return 11
+	if not Verify.mir_type_supported(pure.table, function_type.id)
+		return 12
+	if Verify.mir_verify(Mir.mir_program_with_types(Array[Mir.MirFunction](), pure.table)) != ""
+		return 13
+	let parsed = Parser.parse_module("def apply(callback: Fn[i64,Array[string],bool]) -> i64\n\treturn 0\n")
+	if parsed.state.error != ""
+		return 14
+	let definition = Hir.hir_ast_child(parsed.state, parsed.node, 0)
+	let parameter = Hir.hir_ast_child(parsed.state, definition, 0)
+	let annotation = Hir.hir_ast_child(parsed.state, parameter, 0)
+	let resolved = Analyze.hir_body_type_reference(Types.new_type_table(), parsed.state, annotation)
+	if resolved.type_id == Types.TYPE_TAG_INVALID or Resolve.hir_type_name(resolved.table, resolved.type_id) != "Fn[i64,Array[string],bool]"
+		return 15
+	if Types.type_signature(resolved.table, resolved.type_id) != Types.type_signature(function_type.table, function_type.id)
+		return 16
+	print("PASS canonical function signatures and HIR annotations")
+	return 0

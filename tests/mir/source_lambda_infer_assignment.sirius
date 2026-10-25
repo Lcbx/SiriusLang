@@ -1,0 +1,4 @@
+def main() -> i64
+	var callback: Fn[i64,i64] = fn(x) x + 1
+	callback = fn(y) y * 2
+	return callback(21)

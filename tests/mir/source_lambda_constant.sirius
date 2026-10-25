@@ -1,0 +1,5 @@
+let SHIFT = 2
+
+def main() -> i64
+	let callback = fn(x: i64) x + SHIFT
+	return callback(40)

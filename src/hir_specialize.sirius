@@ -45,7 +45,11 @@ export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, 
 			break
 		state = Analyze.hir_body_binding(state, parameter.source, parameter.name, arguments[!i], false)
 	if state.error == ""
-		state = Analyze.hir_body_block(state, header.body)
+		if tree.nodes[!header.body].kind == Ast.NODE_LAMBDA
+			state = Analyze.hir_body_expression(state, Hir.hir_ast_child(tree, header.body, tree.nodes[!header.body].count - 1))
+			state.inferred_return = state.last_type
+		else
+			state = Analyze.hir_body_block(state, header.body)
 	var result_type = state.inferred_return
 	if state.error == "" and header.result_type_node >= 0
 		let declared = Analyze.hir_module_type_reference_with_constants(state.types, tree, header.result_type_node, functions, constants, aliases)

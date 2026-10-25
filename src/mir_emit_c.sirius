@@ -389,10 +389,11 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
 	return "".join(parts)
 
-def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, types: Types.TypeTable, checked: bool) -> string
+def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, program: Mir.MirProgram, checked: bool) -> string
+	let types = program.types
 	let op = instruction.op
 	var result = ""
-	if checked and op != Mir.MIR_CONST_I64 and op != Mir.MIR_CONST_BOOL and op != Mir.MIR_CONST_STRING and op != Mir.MIR_CONST_F64 and op != Mir.MIR_ARGUMENTS and op != Mir.MIR_FILESYSTEM_ERROR_KIND and op != Mir.MIR_FILESYSTEM_ERROR_CODE and op != Mir.MIR_RELEASE_IF_INIT
+	if checked and op != Mir.MIR_CONST_I64 and op != Mir.MIR_CONST_BOOL and op != Mir.MIR_CONST_STRING and op != Mir.MIR_CONST_F64 and op != Mir.MIR_ARGUMENTS and op != Mir.MIR_FILESYSTEM_ERROR_KIND and op != Mir.MIR_FILESYSTEM_ERROR_CODE and op != Mir.MIR_RELEASE_IF_INIT and op != Mir.MIR_FUNCTION_REF
 		if op == Mir.MIR_CALL or op == Mir.MIR_CALL_MOVE or op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_ARRAY_NEW or op == Mir.MIR_ARRAY_NEW_MOVE or op == Mir.MIR_DICT_NEW or op == Mir.MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg, checked)
@@ -403,7 +404,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			if op == Mir.MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg, checked)
-			if op >= Mir.MIR_ADD_I64 and op <= Mir.MIR_LE_I64 or op >= Mir.MIR_BIT_AND_I64 and op <= Mir.MIR_SHR_I64 or op == Mir.MIR_EQ_BOOL or op == Mir.MIR_ARRAY_GET or op == Mir.MIR_ARRAY_GET_OPTIONAL or op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_DICT_GET_OPTIONAL or op == Mir.MIR_ARRAY_APPEND or op == Mir.MIR_RECORD_SET or op == Mir.MIR_RECORD_ARRAY_APPEND or op == Mir.MIR_DIV_NO_OVERFLOW_I64 or op == Mir.MIR_ARRAY_INDEX_VALID or (op >= Mir.MIR_STRING_SLICE and op <= Mir.MIR_LE_STRING) or (op >= Mir.MIR_ADD_F64 and op <= Mir.MIR_LE_F64)
+			if op >= Mir.MIR_ADD_I64 and op <= Mir.MIR_LE_I64 or op >= Mir.MIR_BIT_AND_I64 and op <= Mir.MIR_SHR_I64 or op == Mir.MIR_EQ_BOOL or op == Mir.MIR_ARRAY_GET or op == Mir.MIR_ARRAY_GET_OPTIONAL or op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_DICT_GET_OPTIONAL or op == Mir.MIR_DICT_NEXT or op == Mir.MIR_DICT_KEY or op == Mir.MIR_DICT_VALUE or op == Mir.MIR_ARRAY_APPEND or op == Mir.MIR_RECORD_SET or op == Mir.MIR_RECORD_ARRAY_APPEND or op == Mir.MIR_DIV_NO_OVERFLOW_I64 or op == Mir.MIR_ARRAY_INDEX_VALID or (op >= Mir.MIR_STRING_SLICE and op <= Mir.MIR_LE_STRING) or (op >= Mir.MIR_ADD_F64 and op <= Mir.MIR_LE_F64)
 				result = result + mir_c_check(instruction.second, checked)
 			if op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate, checked)
@@ -414,6 +415,41 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 	let first = mir_c_register(instruction.first)
 	let second = mir_c_register(instruction.second)
 	let dst_type = function.register_types[!instruction.dst]
+	if op == Mir.MIR_FUNCTION_REF
+		return result + "\t" + dst + " = " + str(instruction.immediate) + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_CALL_INDIRECT
+		var code = result + "\t{\n"
+		var arguments = Array[string]()
+		for i in 0..len(instruction.inputs)
+			let arg = instruction.inputs[!i]
+			code = code + mir_c_check(arg, checked)
+			let kind = function.register_types[!arg]
+			var value = mir_c_register(arg)
+			if Common.mir_common_managed(types, kind)
+				value = mir_c_retain_value(types, kind, value)
+			let temporary = "s_indirect_arg" + str(i)
+			code = code + "\t\t" + mir_c_type(types, kind) + " " + temporary + " = " + value + ";\n"
+			arguments = arguments.append(temporary)
+		code = code + "\t\tswitch (" + first + ") {\n"
+		let signature = types.entries[!function.register_types[!instruction.first]]
+		for i in 0..len(program.functions)
+			let target = program.functions[!i]
+			var compatible = signature.second == target.return_type and len(signature.fields) == target.argument_count
+			if compatible
+				for j in 0..target.argument_count
+					if signature.fields[!j].kind != target.register_types[!j]
+						compatible = false
+			if compatible
+				var call = mir_c_function(i) + "()"
+				if len(arguments) > 0
+					call = mir_c_function(i) + "(" + ", ".join(arguments) + ")"
+				code = code + "\t\tcase " + str(i) + ":\n"
+				if Common.mir_common_managed(types, dst_type)
+					code = code + mir_c_store_owned(types, instruction.dst, dst_type, call, checked)
+				else
+					code = code + "\t\t\t" + dst + " = " + call + mir_c_mark_init(instruction.dst, checked) + "\n"
+				code = code + "\t\t\tbreak;\n"
+		return code + "\t\tdefault: s_panic(\"invalid indirect callee\");\n\t\t}\n\t}\n"
 	if op == Mir.MIR_ARGUMENTS
 		return mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_arguments(" + str(dst_type) + ")", checked)
 	if op == Mir.MIR_STR_I64
@@ -520,6 +556,18 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_dict_new(" + str(dst_type) + ", " + hash + ", " + eq + ", " + key_copy + ", " + key_drop + ", " + value_copy + ", " + value_drop + ")", checked)
 	if op == Mir.MIR_DICT_LENGTH
 		return result + "\t" + dst + " = (int64_t)s_dict_length(" + first + "->fields[0].dict)" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_DICT_NEXT
+		return result + "\t" + dst + " = s_dict_next_slot(" + first + "->fields[0].dict, " + second + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_DICT_KEY or op == Mir.MIR_DICT_VALUE
+		var projection = "s_dict_key_slot"
+		if op == Mir.MIR_DICT_VALUE
+			projection = "s_dict_value_slot"
+		let accessor = mir_c_field_name(types, dst_type)
+		var item = "((const S_MirField *)" + projection + "(" + first + "->fields[0].dict, " + second + "))->" + accessor
+		if Common.mir_common_managed(types, dst_type)
+			item = mir_c_retain_value(types, dst_type, item)
+			return result + mir_c_store_owned(types, instruction.dst, dst_type, item, checked)
+		return result + "\t" + dst + " = " + item + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_DICT_INSERT
 		var fields = Array[string]()
 		for input in instruction.inputs
@@ -1048,12 +1096,13 @@ def mir_c_compact_scalar_function(types: Types.TypeTable, function: Mir.MirFunct
 		blocks = blocks.append(Mir.MirBlock(instructions, Mir.MirTerminator(term.kind, operand, term.target, term.alternative, term.message)))
 	return Mir.MirFunction(function.argument_count, function.return_type, types, blocks, function.entry)
 
-def mir_c_definition(function: Mir.MirFunction, index: i64, types: Types.TypeTable, checked: bool) -> string
+def mir_c_definition(function: Mir.MirFunction, index: i64, program: Mir.MirProgram, checked: bool) -> string
 	if checked
-		return mir_c_definition_layout(function, index, types, checked)
-	return mir_c_definition_layout(mir_c_compact_scalar_function(types, function), index, types, checked)
+		return mir_c_definition_layout(function, index, program, checked)
+	return mir_c_definition_layout(mir_c_compact_scalar_function(program.types, function), index, program, checked)
 
-def mir_c_definition_layout(function: Mir.MirFunction, index: i64, types: Types.TypeTable, checked: bool) -> string
+def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.MirProgram, checked: bool) -> string
+	let types = program.types
 	var parts = Array[string]()
 	parts = parts.append(mir_c_signature(types, function, index) + "\n{\n")
 	for i in 0..len(function.register_types)
@@ -1104,7 +1153,7 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, types: Types.
 				else
 					parts = parts.append("\t" + prefix + "i64(" + mir_c_register(instruction.first) + ");\n")
 			else
-				parts = parts.append(mir_c_instruction(instruction, function, types, checked))
+				parts = parts.append(mir_c_instruction(instruction, function, program, checked))
 		# At the end of a basic block, no partially constructed heap values remain.
 		# Audit all active frame roots and scanned heap edges, independently of retains.
 		parts = parts.append("\ts_arc_audit_check_frames();\n")
@@ -1140,7 +1189,7 @@ def mir_emit_c_internal(program: Mir.MirProgram, entry: i64, checked: bool) -> M
 		parts = parts.append(mir_c_signature(program.types, program.functions[!i], i) + ";\n")
 	parts = parts.append("\n")
 	for i in 0..len(program.functions)
-		parts = parts.append(mir_c_definition(program.functions[!i], i, program.types, checked) + "\n")
+		parts = parts.append(mir_c_definition(program.functions[!i], i, program, checked) + "\n")
 	parts = parts.append("int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)" + mir_c_function(entry) + "(); }\n")
 	return MirCResult("".join(parts), "")
 
@@ -1167,7 +1216,7 @@ def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, checked: 
 				continue
 			for block in program.functions[!i].blocks
 				for ins in block.instructions
-					if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+					if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_FUNCTION_REF
 						if ins.immediate < 0 or ins.immediate >= count
 							return MirCResult("", "invalid MIR call target")
 						if not reachable[!ins.immediate]
@@ -1191,7 +1240,7 @@ def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, checked: 
 			var instructions = Array[Mir.MirInstruction]()
 			for ins in block.instructions
 				var immediate = ins.immediate
-				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_FUNCTION_REF
 					immediate = indices[!immediate]
 				instructions = instructions.append(Mir.MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 			blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))

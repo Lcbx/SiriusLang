@@ -39,6 +39,8 @@ def main() -> None:
 		}
 		for name in ('success', 'failure', 'direct', 'positional', 'fallthrough', 'managed'):
 			all_cases['union_' + name] = (ROOT / 'tests/mir' / f'source_union_{name}.sirius').read_text()
+		for name in ('optional_dict', 'dict_conversion', 'dict_managed', 'dict_growth'):
+			all_cases['union_' + name] = (ROOT / 'tests/mir' / f'source_union_{name}.sirius').read_text()
 		def roundtrip(source: Path, name: str, argv: list[str] | None = None) -> None:
 			argv = argv or []
 			artifact = work / (name + '.smir')

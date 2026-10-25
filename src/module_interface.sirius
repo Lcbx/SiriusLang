@@ -26,6 +26,20 @@ export def module_import_type(table: Types.TypeTable, foreign: Types.TypeTable, 
 			return second
 		let result = Types.intern_dict_type(second.table, first.id, second.id)
 		return ModuleImportType(result.table, result.id)
+	if descriptor.tag == Types.TYPE_TAG_FUNCTION
+		let ret = module_import_type(table, foreign, descriptor.second)
+		if ret.id == Types.TYPE_TAG_INVALID
+			return ret
+		var current = ret.table
+		var parameters = Array[i64]()
+		for parameter in descriptor.fields
+			let imported = module_import_type(current, foreign, parameter.kind)
+			if imported.id == Types.TYPE_TAG_INVALID
+				return imported
+			current = imported.table
+			parameters = parameters.append(imported.id)
+		let result = Types.intern_function_type(current, parameters, ret.id, descriptor.first)
+		return ModuleImportType(result.table, result.id)
 	if descriptor.tag == Types.TYPE_TAG_UNION
 		var current = table
 		var alternatives = Array[i64]()

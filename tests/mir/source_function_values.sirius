@@ -1,0 +1,9 @@
+def double(value: i64) -> i64
+	return value * 2
+
+def apply(callback: Fn[i64,i64], value: i64) -> i64
+	return callback(value)
+
+def main() -> i64
+	let callback: Fn[i64,i64] = double
+	return apply(callback, 21)

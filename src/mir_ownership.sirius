@@ -266,10 +266,21 @@ export def mir_credit_shapes(types: Types.TypeTable) -> Array[MirCreditShape]
 # is a whole-program contract: all callees have already passed CFG balance.
 # It does not assume that arguments or nested children refer to distinct heaps.
 def mir_credit_call(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
-	let callee = program.functions[!ins.immediate]
+	var parameters = Array[i64]()
+	var result_type = Types.TYPE_TAG_INVALID
+	if ins.op == Mir.MIR_CALL_INDIRECT
+		let signature = program.types.entries[!function.register_types[!ins.first]]
+		for parameter in signature.fields
+			parameters = parameters.append(parameter.kind)
+		result_type = signature.second
+	else
+		let callee = program.functions[!ins.immediate]
+		for i in 0..callee.argument_count
+			parameters = parameters.append(callee.register_types[!i])
+		result_type = callee.return_type
 	for i in 0..len(ins.inputs)
 		let register = ins.inputs[!i]
-		let kind = callee.register_types[!i]
+		let kind = parameters[!i]
 		if kind != function.register_types[!register]
 			return "call parameter credit type mismatch"
 		if shapes[!kind].ownership == Types.TYPE_OWNERSHIP_NONE
@@ -281,7 +292,7 @@ def mir_credit_call(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir
 			return "call transfer did not consume argument credit"
 		if not moved and register != ins.dst and mir_ownership_get(after, register) != mir_ownership_get(before, register)
 			return "borrowed call argument lost its credit"
-	if shapes[!callee.return_type].ownership != Types.TYPE_OWNERSHIP_NONE and mir_ownership_get(after, ins.dst) == 0
+	if shapes[!result_type].ownership != Types.TYPE_OWNERSHIP_NONE and mir_ownership_get(after, ins.dst) == 0
 		return "call result has no credit"
 	return ""
 
@@ -349,9 +360,11 @@ def mir_credit_projection(program: Mir.MirProgram, function: Mir.MirFunction, in
 	elif ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL
 		let desc = program.types.entries[!function.register_types[!owner]]
 		child_type = desc.first
-	elif ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL
+	elif ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL or ins.op == Mir.MIR_DICT_VALUE or ins.op == Mir.MIR_DICT_KEY
 		let desc = program.types.entries[!function.register_types[!owner]]
 		child_type = desc.second
+		if ins.op == Mir.MIR_DICT_KEY
+			child_type = desc.first
 	elif ins.op == Mir.MIR_OPTIONAL_UNWRAP
 		let desc = program.types.entries[!function.register_types[!owner]]
 		child_type = desc.first
@@ -377,11 +390,11 @@ def mir_credit_heap_function(program: Mir.MirProgram, function: Mir.MirFunction,
 			for ins in function.blocks[!block_id].instructions
 				let after = mir_ownership_after(ins, before)
 				var error = ""
-				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_CALL_INDIRECT
 					error = mir_credit_call(program, function, ins, before, after, shapes)
 				elif ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
 					error = mir_credit_children(program, function, ins, before, after, shapes)
-				elif ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_GET or ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL
+				elif ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_GET or ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
 					error = mir_credit_projection(program, function, ins, before, after, shapes)
 				if error != ""
 					return error + " in block " + str(block_id)

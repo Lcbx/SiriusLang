@@ -1,0 +1,37 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+rec SourceBox(value: Success)
+rec TargetBox(value: Result)
+rec SourcePack(items: Array[SourceBox])
+rec TargetPack(items: Array[TargetBox])
+
+def make(n: i64) -> Array[SourceBox]
+	var result = Array[SourceBox]()
+	for i in 0..n
+		result = result.append(SourceBox(Success(i + 20)))
+	return result
+
+def convert(items: Array[SourceBox]) -> Array[TargetBox]
+	return items
+
+def remap(groups: Array[Array[SourceBox]]) -> Array[Array[TargetBox]]
+	return groups
+
+def calculate(pack: TargetPack) -> i64
+	var total = 0
+	for box in pack.items
+		match box.value
+			Success(value)
+				total += value
+			Failure(code)
+				total -= code
+	return total
+
+def main() -> i64
+	let original = make(2)
+	let pack: TargetPack = SourcePack(original)
+	let converted: Array[TargetBox] = convert(original)
+	let nested = remap([make(0), original])
+	return calculate(pack) + calculate(TargetPack(converted)) + calculate(SourcePack(original)) + calculate(TargetPack(nested[!1])) + len(convert(make(0))) - 122

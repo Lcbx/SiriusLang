@@ -89,6 +89,11 @@ export let MIR_UNION_GET = 78
 export let MIR_FILESYSTEM_ERROR_KIND = 84
 export let MIR_FILESYSTEM_ERROR_CODE = 85
 export let MIR_PATH_KIND = 86
+export let MIR_DICT_NEXT = 87
+export let MIR_DICT_KEY = 88
+export let MIR_DICT_VALUE = 89
+export let MIR_FUNCTION_REF = 90
+export let MIR_CALL_INDIRECT = 91
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2
@@ -118,7 +123,9 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(false, true, true)
 	if op == MIR_DIV_F64 or op == MIR_SQRT_F64
 		return MirFailureInfo(false, false, true)
-	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW
+	if op == MIR_DICT_NEXT or op == MIR_DICT_KEY or op == MIR_DICT_VALUE
+		return MirFailureInfo(false, true, false)
+	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_CALL_INDIRECT or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW
 		return MirFailureInfo(false, true, false)
 	return MirFailureInfo(false, false, false)
 
@@ -155,6 +162,12 @@ export def new_mir_outcome(value: MirValue, error: string, steps: i64) -> MirOut
 
 export def mir_op(op: i64, dst: i64, first: i64, second: i64, immediate: i64) -> MirInstruction
 	return MirInstruction(op, dst, first, second, immediate, Array[i64](), "")
+
+export def mir_function_ref(dst: i64, function_id: i64) -> MirInstruction
+	return mir_op(MIR_FUNCTION_REF, dst, -1, -1, function_id)
+
+export def mir_call_indirect(dst: i64, callee: i64, inputs: Array[i64]) -> MirInstruction
+	return MirInstruction(MIR_CALL_INDIRECT, dst, callee, -1, 0, inputs, "")
 
 export def mir_call(dst: i64, function_id: i64, inputs: Array[i64]) -> MirInstruction
 	return MirInstruction(MIR_CALL, dst, -1, -1, function_id, inputs, "")
@@ -282,6 +295,15 @@ export def mir_dict_get_or(dst: i64, owner: i64, key: i64, fallback: i64) -> Mir
 
 export def mir_dict_length(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_DICT_LENGTH, dst, owner, -1, 0)
+
+export def mir_dict_next(dst: i64, owner: i64, cursor: i64) -> MirInstruction
+	return mir_op(MIR_DICT_NEXT, dst, owner, cursor, 0)
+
+export def mir_dict_key(dst: i64, owner: i64, cursor: i64) -> MirInstruction
+	return mir_op(MIR_DICT_KEY, dst, owner, cursor, 0)
+
+export def mir_dict_value(dst: i64, owner: i64, cursor: i64) -> MirInstruction
+	return mir_op(MIR_DICT_VALUE, dst, owner, cursor, 0)
 
 export def mir_optional_none(dst: i64) -> MirInstruction
 	return mir_op(MIR_OPTIONAL_NONE, dst, -1, -1, 0)

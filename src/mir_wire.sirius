@@ -163,9 +163,9 @@ export def mir_deserialize_program(data: string) -> MirWireLoad
 		let tag = tag_value.value
 		let first = first_value.value
 		let second = second_value.value
-		if tag < Types.TYPE_TAG_RECORD or tag > Types.TYPE_TAG_UNION or first < 0 or first >= i or second < 0 or second >= i
+		if tag < Types.TYPE_TAG_RECORD or tag > Types.TYPE_TAG_FUNCTION or first < 0 or first >= i or second < 0 or second >= i
 			return mir_wire_failure("invalid MIR type descriptor")
-		if tag != Types.TYPE_TAG_RECORD and tag != Types.TYPE_TAG_UNION and field_count.value != 0
+		if tag != Types.TYPE_TAG_RECORD and tag != Types.TYPE_TAG_UNION and tag != Types.TYPE_TAG_FUNCTION and field_count.value != 0
 			return mir_wire_failure("unexpected MIR type fields")
 		if (tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_UNION) and (first != 0 or second != 0)
 			return mir_wire_failure("invalid MIR record descriptor")

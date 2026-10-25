@@ -1,0 +1,6 @@
+def add_one(value: i64) -> i64
+	return value + 1
+
+def main() -> i64
+	let callback = fn(value: i64) add_one(value)
+	return callback(41)

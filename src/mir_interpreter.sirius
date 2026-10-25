@@ -275,6 +275,32 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = payload
 				continue
+			if ins.op == Mir.MIR_DICT_NEXT or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
+				let owner = registers[!ins.first]
+				if owner.type_id == Types.TYPE_TAG_INVALID or owner.bits < 0 or owner.bits >= len(heap) or heap[!owner.bits].refs <= 0
+					return mir_failure("invalid dictionary handle", steps)
+				let fields = heap[!owner.bits].fields
+				let cursor = registers[!ins.second].bits
+				if registers[!ins.second].type_id != Types.TYPE_TAG_I64
+					return mir_failure("invalid dictionary cursor", steps)
+				if ins.op == Mir.MIR_DICT_NEXT
+					if cursor < -1 or cursor >= len(fields) / 2
+						return mir_failure("invalid dictionary cursor", steps)
+					var following = cursor + 1
+					if following >= len(fields) / 2
+						following = -1
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, following, "")
+					continue
+				if cursor < 0 or cursor >= len(fields) / 2
+					return mir_failure("invalid dictionary cursor", steps)
+				var slot = cursor * 2
+				if ins.op == Mir.MIR_DICT_VALUE
+					slot += 1
+				let item = fields[!slot]
+				heap = mir_heap_copy(program.types, heap, item)
+				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+				registers[!ins.dst] = item
+				continue
 			if ins.op == Mir.MIR_DICT_NEW
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
@@ -536,6 +562,9 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = field
 				continue
+			if ins.op == Mir.MIR_FUNCTION_REF
+				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], ins.immediate, "")
+				continue
 			if ins.op == Mir.MIR_CONST_I64
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, ins.immediate, "")
 				continue
@@ -587,7 +616,13 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				else
 					print(value.bits)
 				continue
-			if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+			if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_CALL_INDIRECT
+				var target = ins.immediate
+				if ins.op == Mir.MIR_CALL_INDIRECT
+					let callee = registers[!ins.first]
+					if callee.type_id != function.register_types[!ins.first] or callee.bits < 0 or callee.bits >= len(program.functions)
+						return mir_failure("invalid indirect callee", steps)
+					target = callee.bits
 				var call_args = Array[Mir.MirValue]()
 				for arg_register in ins.inputs
 					let argument = registers[!arg_register]
@@ -600,7 +635,7 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 						if Mir.mir_call_move_at(ins, i)
 							moved_args = moved_args.append(i)
 							registers[!ins.inputs[!i]] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
-				let outcome = mir_execute_function_owned(program, ins.immediate, call_args, budget - steps, max_depth, depth + 1, heap, moved_args, runtime_args)
+				let outcome = mir_execute_function_owned(program, target, call_args, budget - steps, max_depth, depth + 1, heap, moved_args, runtime_args)
 				steps += outcome.steps
 				if outcome.error != ""
 					return mir_failure(outcome.error, steps)

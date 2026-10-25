@@ -1,0 +1,32 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def convert(values: Dict[i64,Success]) -> Dict[i64,Result]
+	return values
+
+def main() -> i64
+	var source = Dict[i64,Success]()
+	for i in 0..200
+		source = source.insert(i, Success(i + 1))
+	let original = source
+	let target = convert(source)
+	if len(original) != 200 or len(target) != 200
+		return 1
+	let entry = target.get(199) else return 2
+	match entry
+		Success(value)
+			if value != 200
+				return 3
+		Failure(code)
+			return 4
+	let member = Dict[i64,Success]().insert(0, Success(31)).get(0)
+	let initial = Dict[i64,Optional[Success]]().insert(4, member)
+	let changed: Dict[i64,Optional[Result]] = initial
+	let optional = changed.get(4) else return 5
+	let union = optional else return 6
+	match union
+		Success(value)
+			return value
+		Failure(code)
+			return 7

@@ -1,0 +1,6 @@
+def apply(f: Fn[i64,i64], value: i64) -> i64
+	return f(value)
+
+def main() -> i64
+	let f = fn(x: i64) x * 2
+	return apply(f, 21)

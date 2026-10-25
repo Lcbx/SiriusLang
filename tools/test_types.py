@@ -15,6 +15,7 @@ def main() -> None:
 	cases = (
 		('canonical', 'native_driver.sirius', 'PASS canonical type descriptors\n'),
 		('union', 'union_driver_native.sirius', 'PASS structural union types and exhaustive match checking\n'),
+		('function', 'function_driver_native.sirius', 'PASS canonical function signatures and HIR annotations\n'),
 		('union-source', 'union_source_driver_native.sirius', 'PASS source tagged union aliases and HIR match analysis\n'),
 		('hir', 'hir_driver_native.sirius', 'PASS typed HIR resolution\n'),
 		('specializations', 'specialization_driver_native.sirius', 'PASS HIR specialization registry\n'),

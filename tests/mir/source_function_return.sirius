@@ -1,0 +1,9 @@
+def add_one(value: i64) -> i64
+	return value + 1
+
+def choose() -> Fn[i64,i64]
+	return add_one
+
+def main() -> i64
+	let f = choose()
+	return f(41)

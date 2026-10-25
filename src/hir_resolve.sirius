@@ -30,10 +30,16 @@ export def hir_type_name(types: Types.TypeTable, id: i64) -> string
 		return "Optional[" + hir_type_name(types, descriptor.first) + "]"
 	if descriptor.tag == Types.TYPE_TAG_UNION
 		return "union"
+	if descriptor.tag == Types.TYPE_TAG_FUNCTION
+		var parts = Array[string]()
+		for param in descriptor.fields
+			parts = parts.append(hir_type_name(types, param.kind))
+		parts = parts.append(hir_type_name(types, descriptor.second))
+		return "Fn[" + ",".join(parts) + "]"
 	return "record"
 
 export def hir_expected(types: Types.TypeTable, expected: i64, found: i64) -> HirCallCheck
-	if Hir.hir_types_equal(expected, found)
+	if Types.type_coercible(types, expected, found)
 		return HirCallCheck(types, expected, "")
 	return HirCallCheck(types, Types.TYPE_TAG_INVALID, "expected " + hir_type_name(types, expected) + ", found " + hir_type_name(types, found))
 

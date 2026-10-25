@@ -799,6 +799,19 @@ const void *s_dict_get(const S_Dict *d, const void *key) {
     return slot->used ? slot->value : NULL;
 }
 size_t s_dict_length(const S_Dict *d) { return d ? d->length : 0; }
+int64_t s_dict_next_slot(const S_Dict *d, int64_t after) {
+    if (!d || after < -1 || (after >= 0 && (uint64_t)after >= d->capacity)) s_panic("invalid dictionary cursor");
+    for (size_t i = (size_t)(after + 1); i < d->capacity; ++i)
+        if (d->entries[i].used) return (int64_t)i;
+    return -1;
+}
+static const S_GEntry *s_dict_checked_slot(const S_Dict *d, int64_t slot) {
+    if (!d || slot < 0 || (uint64_t)slot >= d->capacity || !d->entries[slot].used)
+        s_panic("invalid dictionary cursor");
+    return &d->entries[slot];
+}
+const void *s_dict_key_slot(const S_Dict *d, int64_t slot) { return s_dict_checked_slot(d, slot)->key; }
+const void *s_dict_value_slot(const S_Dict *d, int64_t slot) { return s_dict_checked_slot(d, slot)->value; }
 uint64_t s_hash_i64_key(const void *key) { return s_hash_i64(*(const int64_t*)key); }
 bool s_eq_i64_key(const void *a,const void *b) { return *(const int64_t*)a == *(const int64_t*)b; }
 uint64_t s_hash_string_key(const void *key) {

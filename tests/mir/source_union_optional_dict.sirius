@@ -1,0 +1,40 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def missing(value: Optional[Result]) -> bool
+	let ignored = value else return true
+	return false
+
+def main() -> i64
+	let empty: Optional[Result] = Dict[i64,Success]().get(1)
+	if not missing(empty)
+		return 1
+	let original = Dict[i64,Success]().insert(1, Success(20))
+	let saved = original
+	let wrapped: Optional[Result] = original.get(1)
+	let selected = wrapped else return 2
+	match selected
+		Success(value)
+			if value != 20
+				return 3
+		Failure(code)
+			return 4
+	let mapping = Dict[i64,Result]().insert(10, Success(11)).insert(20, Failure(7))
+	let v = mapping.get(10) else return 5
+	match v
+		Success(value)
+			if value != 11
+				return 6
+		Failure(code)
+			return 7
+	let values = Array[Result]().append(Success(12)).append(Failure(1))
+	let nested: Optional[Array[Result]] = Dict[i64,Array[Success]]().insert(1, [Success(15)]).get(1)
+	let nested_values = nested else return 8
+	if len(nested_values) != 1 or len(values) != 2 or len(saved) != 1
+		return 9
+	match nested_values[!0]
+		Success(value)
+			return value
+		Failure(code)
+			return 10

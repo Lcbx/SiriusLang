@@ -1,0 +1,22 @@
+rec Text(value: string)
+rec Code(code: i64)
+let Outcome = Text | Code
+
+rec SourceBox(value: Text)
+rec TargetBox(value: Outcome)
+
+def length(boxes: Array[TargetBox]) -> i64
+	var total = 0
+	for box in boxes
+		match box.value
+			Text(value)
+				total += len(value)
+			Code(code)
+				total += code
+	return total
+
+def main() -> i64
+	let original = [SourceBox(Text("hello")), SourceBox(Text("world!"))]
+	let alias = original
+	let converted: Array[TargetBox] = original
+	return length(converted) + len(alias) - 2

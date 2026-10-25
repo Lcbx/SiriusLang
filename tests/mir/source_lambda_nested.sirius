@@ -1,0 +1,4 @@
+def main() -> i64
+	let maker = fn(x: i64) fn(y: i64) y + 2
+	let callback = maker(1)
+	return callback(40)

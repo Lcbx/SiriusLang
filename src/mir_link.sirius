@@ -38,7 +38,10 @@ export def mir_link_libraries(libraries: Array[MirLibrary.MirLibraryLoad]) -> Mi
 			var fields = Array[Types.RecordField]()
 			for field in desc.fields
 				fields = fields.append(Types.RecordField(field.name, type_map[!field.kind]))
-			let mapped = Types.intern_type(types, desc.tag, type_map[!desc.first], type_map[!desc.second], fields)
+			var first = type_map[!desc.first]
+			if desc.tag == Types.TYPE_TAG_FUNCTION
+				first = desc.first
+			let mapped = Types.intern_type(types, desc.tag, first, type_map[!desc.second], fields)
 			types = mapped.table
 			type_map = type_map.append(mapped.id)
 		let offset = len(functions)
@@ -51,7 +54,7 @@ export def mir_link_libraries(libraries: Array[MirLibrary.MirLibraryLoad]) -> Mi
 				var instructions = Array[Mir.MirInstruction]()
 				for ins in block.instructions
 					var immediate = ins.immediate
-					if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+					if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_FUNCTION_REF
 						immediate += offset
 					instructions = instructions.append(Mir.MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 				blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))
@@ -87,7 +90,7 @@ export def mir_link_libraries(libraries: Array[MirLibrary.MirLibraryLoad]) -> Mi
 			var instructions = Array[Mir.MirInstruction]()
 			for ins in block.instructions
 				var immediate = ins.immediate
-				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE
+				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_FUNCTION_REF
 					immediate = redirects[!immediate]
 				instructions = instructions.append(Mir.MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 			blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))

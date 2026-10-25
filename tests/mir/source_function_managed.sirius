@@ -1,0 +1,11 @@
+def echo(value: string) -> string
+	return value
+
+def apply(callback: Fn[string,string], value: string) -> string
+	return callback(value)
+
+def main() -> i64
+	let f = echo
+	let text = apply(f, "hello")
+	print(text)
+	return len(text)

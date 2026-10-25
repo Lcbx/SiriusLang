@@ -192,16 +192,159 @@ def mir_lower_nested_assignment(state: MirBuilder, context: MirLowerContext, id:
 		updated = step.owner
 	return next
 
+# Recursively convert immutable structural values, preserving the canonical
+# target layout. Arrays are rebuilt element-wise, including dynamic lengths.
 def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, expected: i64) -> MirLowerExpr
 	var next = state
-	if next.register_types[!value] == expected
+	let actual = next.register_types[!value]
+	if actual == expected
 		return MirLowerExpr(next, value)
-	if Types.union_alternative_index(context.types, expected, next.register_types[!value]) < 0
-		return MirLowerExpr(mir_lower_error(next, "union injection requires member record"), -1)
-	let destination = len(next.register_types)
-	next = mir_lower_register(next, expected)
-	next = mir_lower_emit(next, Mir.mir_union_new(destination, value))
-	return MirLowerExpr(next, destination)
+	if not Types.type_coercible(context.types, expected, actual)
+		return MirLowerExpr(mir_lower_error(next, "incompatible implicit union conversion"), -1)
+	let tag = Types.type_tag(context.types, expected)
+	if tag == Types.TYPE_TAG_UNION
+		let destination = len(next.register_types)
+		next = mir_lower_register(next, expected)
+		next = mir_lower_emit(next, Mir.mir_union_new(destination, value))
+		return MirLowerExpr(next, destination)
+	if tag == Types.TYPE_TAG_OPTIONAL
+		let source_payload = context.types.entries[!actual].first
+		let target_payload = context.types.entries[!expected].first
+		let destination = len(next.register_types)
+		next = mir_lower_register(next, expected)
+		let present = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
+		next = mir_lower_emit(next, Mir.mir_optional_has(present, value))
+		let before = next.active
+		next = mir_lower_block(next)
+		let has_value = next.active
+		next = mir_lower_block(next)
+		let empty = next.active
+		next = mir_lower_block(next)
+		let after = next.active
+		next.active = before
+		next = mir_lower_end(next, Mir.mir_branch(present, has_value, empty))
+		next.active = has_value
+		let payload = len(next.register_types)
+		next = mir_lower_register(next, source_payload)
+		next = mir_lower_emit(next, Mir.mir_optional_unwrap(payload, value))
+		let converted = mir_lower_inject(next, context, payload, target_payload)
+		next = converted.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		next = mir_lower_emit(next, Mir.mir_optional_some(destination, converted.slot))
+		next = mir_lower_end(next, Mir.mir_jump(after))
+		next.active = empty
+		next = mir_lower_emit(next, Mir.mir_optional_none(destination))
+		next = mir_lower_end(next, Mir.mir_jump(after))
+		next.active = after
+		return MirLowerExpr(next, destination)
+	if tag == Types.TYPE_TAG_RECORD
+		var inputs = Array[i64]()
+		let source_fields = context.types.entries[!actual].fields
+		let target_fields = context.types.entries[!expected].fields
+		for i in 0..len(target_fields)
+			let field = len(next.register_types)
+			next = mir_lower_register(next, source_fields[!i].kind)
+			next = mir_lower_emit(next, Mir.mir_record_get(field, value, i))
+			let converted = mir_lower_inject(next, context, field, target_fields[!i].kind)
+			next = converted.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			inputs = inputs.append(converted.slot)
+		let destination = len(next.register_types)
+		next = mir_lower_register(next, expected)
+		next = mir_lower_emit(next, Mir.mir_record_new(destination, inputs))
+		return MirLowerExpr(next, destination)
+	if tag == Types.TYPE_TAG_DICT
+		let source_desc = context.types.entries[!actual]
+		let target_desc = context.types.entries[!expected]
+		let destination = len(next.register_types)
+		next = mir_lower_register(next, expected)
+		next = mir_lower_emit(next, Mir.mir_dict_new(destination))
+		let cursor = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, cursor, -1, -1, -1))
+		let zero = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, zero, -1, -1, 0))
+		let before = next.active
+		next = mir_lower_block(next)
+		let condition = next.active
+		next.active = before
+		next = mir_lower_end(next, Mir.mir_jump(condition))
+		next.active = condition
+		let next_cursor = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_dict_next(next_cursor, value, cursor))
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, cursor, next_cursor, -1, 0))
+		let finished = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_LT_I64, finished, cursor, zero, 0))
+		next = mir_lower_block(next)
+		let body = next.active
+		next = mir_lower_block(next)
+		let after = next.active
+		next.active = condition
+		next = mir_lower_end(next, Mir.mir_branch(finished, after, body))
+		next.active = body
+		let key = len(next.register_types)
+		next = mir_lower_register(next, source_desc.first)
+		next = mir_lower_emit(next, Mir.mir_dict_key(key, value, cursor))
+		let element = len(next.register_types)
+		next = mir_lower_register(next, source_desc.second)
+		next = mir_lower_emit(next, Mir.mir_dict_value(element, value, cursor))
+		let converted = mir_lower_inject(next, context, element, target_desc.second)
+		next = converted.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		next = mir_lower_emit(next, Mir.mir_dict_insert(destination, destination, key, converted.slot))
+		next = mir_lower_end(next, Mir.mir_jump(condition))
+		next.active = after
+		return MirLowerExpr(next, destination)
+	if tag == Types.TYPE_TAG_ARRAY
+		let source_element = context.types.entries[!actual].first
+		let target_element = context.types.entries[!expected].first
+		let destination = len(next.register_types)
+		next = mir_lower_register(next, expected)
+		next = mir_lower_emit(next, Mir.mir_array_new(destination, Array[i64]()))
+		let index = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, index, -1, -1, 0))
+		let one = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, one, -1, -1, 1))
+		let size = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_ARRAY_LENGTH, size, value, -1, 0))
+		let before = next.active
+		next = mir_lower_block(next)
+		let condition = next.active
+		next.active = before
+		next = mir_lower_end(next, Mir.mir_jump(condition))
+		next.active = condition
+		let has_item = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_LT_I64, has_item, index, size, 0))
+		next = mir_lower_block(next)
+		let body = next.active
+		next = mir_lower_block(next)
+		let after = next.active
+		next.active = condition
+		next = mir_lower_end(next, Mir.mir_branch(has_item, body, after))
+		next.active = body
+		let element = len(next.register_types)
+		next = mir_lower_register(next, source_element)
+		next = mir_lower_emit(next, Mir.mir_array_get(element, value, index))
+		let converted = mir_lower_inject(next, context, element, target_element)
+		next = converted.state
+		next.error == "" else return MirLowerExpr(next, -1)
+		next = mir_lower_emit(next, Mir.mir_array_append(destination, destination, converted.slot))
+		let advanced = len(next.register_types)
+		next = mir_lower_register(next, Types.TYPE_TAG_I64)
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_ADD_I64, advanced, index, one, 0))
+		next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, index, advanced, -1, 0))
+		next = mir_lower_end(next, Mir.mir_jump(condition))
+		next.active = after
+		return MirLowerExpr(next, destination)
+	return MirLowerExpr(mir_lower_error(next, "unsupported implicit conversion"), -1)
 
 def mir_lower_literal(text: string) -> i64
 	var value = 0
@@ -340,11 +483,29 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 	let node = context.tree.nodes[!id]
 	let text = Hir.hir_ast_text(context.tree, id)
 	var next = state
+	if node.kind == Ast.NODE_LAMBDA
+		let typed = mir_lower_type(context, id, Hir.HIR_LAMBDA)
+		if typed == Types.TYPE_TAG_INVALID
+			return MirLowerExpr(mir_lower_error(next, "missing typed lambda"), -1)
+		for target in context.call_targets
+			if target.source == id
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, typed)
+				next = mir_lower_emit(next, Mir.mir_function_ref(dst, target.specialization))
+				return MirLowerExpr(next, dst)
+		return MirLowerExpr(mir_lower_error(next, "missing lambda specialization"), -1)
 	if node.kind == Ast.NODE_NAME
 		if mir_lower_type(context, id, Hir.HIR_NAME) == Types.TYPE_TAG_INVALID
 			return MirLowerExpr(mir_lower_error(state, "missing typed name"), -1)
 		let register = mir_lower_binding(state, text)
 		if register < 0
+			if Types.type_tag(context.types, mir_lower_type(context, id, Hir.HIR_NAME)) == Types.TYPE_TAG_FUNCTION
+				for target in context.call_targets
+					if target.source == id
+						let dst = len(next.register_types)
+						next = mir_lower_register(next, mir_lower_type(context, id, Hir.HIR_NAME))
+						next = mir_lower_emit(next, Mir.mir_function_ref(dst, target.specialization))
+						return MirLowerExpr(next, dst)
 			for constant in context.constants
 				if constant.name == text
 					return mir_lower_constant(next, context, constant.value)
@@ -356,10 +517,18 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			return MirLowerExpr(mir_lower_error(next, "missing typed MIR array"), -1)
 		var inputs = Array[i64]()
 		for i in 0..node.count
-			let element = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, i))
+			let child = Hir.hir_ast_child(context.tree, id, i)
+			let element = mir_lower_expression(next, context, child)
 			next = element.state
 			next.error == "" else return MirLowerExpr(next, -1)
-			inputs = inputs.append(element.slot)
+			var slot = element.slot
+			let injected_type = mir_lower_type(context, child, Hir.HIR_UNION_INJECT)
+			if injected_type != Types.TYPE_TAG_INVALID
+				let injected = mir_lower_inject(next, context, slot, injected_type)
+				next = injected.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				slot = injected.slot
+			inputs = inputs.append(slot)
 		let dst = len(next.register_types)
 		next = mir_lower_register(next, type_id)
 		next = mir_lower_emit(next, Mir.mir_array_new(dst, inputs))
@@ -506,10 +675,18 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					let previous = next.bindings
 					var argument_slots = Array[i64]()
 					for j in 0..len(function.parameters)
-						let argument = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, j + 1))
+						let source = Hir.hir_ast_child(context.tree, id, j + 1)
+						let argument = mir_lower_expression(next, context, source)
 						next = argument.state
 						next.error == "" else return MirLowerExpr(next, -1)
-						argument_slots = argument_slots.append(argument.slot)
+						var slot = argument.slot
+						let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
+						if injected_type != Types.TYPE_TAG_INVALID
+							let injected = mir_lower_inject(next, context, slot, injected_type)
+							next = injected.state
+							next.error == "" else return MirLowerExpr(next, -1)
+							slot = injected.slot
+						argument_slots = argument_slots.append(slot)
 					for j in 0..len(function.parameters)
 						next.bindings = next.bindings.append(MirSourceBinding(function.parameters[!j].name, argument_slots[!j], next.depth + 1))
 					var evaluated = Array[MirLowerField]()
@@ -617,12 +794,19 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				let value = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
 				next = value.state
 				next.error == "" else return MirLowerExpr(next, -1)
+				var inserted = value.slot
+				let injected_type = mir_lower_type(context, Hir.hir_ast_child(context.tree, id, 1), Hir.HIR_UNION_INJECT)
+				if injected_type != Types.TYPE_TAG_INVALID
+					let injected = mir_lower_inject(next, context, inserted, injected_type)
+					next = injected.state
+					next.error == "" else return MirLowerExpr(next, -1)
+					inserted = injected.slot
 				let owned = len(next.register_types)
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, owned, owner.slot, -1, 0))
 				let dst = len(next.register_types)
 				next = mir_lower_register(next, type_id)
-				next = mir_lower_emit(next, Mir.mir_array_append(dst, owned, value.slot))
+				next = mir_lower_emit(next, Mir.mir_array_append(dst, owned, inserted))
 				return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "get" and node.count == 2
 			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
@@ -651,13 +835,20 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				let value = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 2))
 				next = value.state
 				next.error == "" else return MirLowerExpr(next, -1)
+				var inserted = value.slot
+				let injected_type = mir_lower_type(context, Hir.hir_ast_child(context.tree, id, 2), Hir.HIR_UNION_INJECT)
+				if injected_type != Types.TYPE_TAG_INVALID
+					let injected = mir_lower_inject(next, context, inserted, injected_type)
+					next = injected.state
+					next.error == "" else return MirLowerExpr(next, -1)
+					inserted = injected.slot
 				# Insert consumes its owner in MIR, but source collection calls are nonconsuming.
 				let owned = len(next.register_types)
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, owned, owner.slot, -1, 0))
 				let dst = len(next.register_types)
 				next = mir_lower_register(next, type_id)
-				next = mir_lower_emit(next, Mir.mir_dict_insert(dst, owned, key.slot, value.slot))
+				next = mir_lower_emit(next, Mir.mir_dict_insert(dst, owned, key.slot, inserted))
 				return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(context.tree, callee) == "sqrt" and node.count == 2
 			let operand = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
@@ -728,6 +919,49 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					next = mir_lower_register(next, Types.TYPE_TAG_I64)
 					next = mir_lower_emit(next, Mir.mir_op(op, dst, value.slot, -1, 0))
 					return MirLowerExpr(next, dst)
+		if context.tree.nodes[!callee].kind == Ast.NODE_LAMBDA
+			let function = mir_lower_expression(next, context, callee)
+			next = function.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			var inputs = Array[i64]()
+			for i in 1..node.count
+				let source = Hir.hir_ast_child(context.tree, id, i)
+				let argument = mir_lower_expression(next, context, source)
+				next = argument.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				var slot = argument.slot
+				let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
+				if injected_type != Types.TYPE_TAG_INVALID
+					let injected = mir_lower_inject(next, context, slot, injected_type)
+					next = injected.state
+					next.error == "" else return MirLowerExpr(next, -1)
+					slot = injected.slot
+				inputs = inputs.append(slot)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, mir_lower_type(context, id, Resolve.HIR_CALL))
+			next = mir_lower_emit(next, Mir.mir_call_indirect(dst, function.slot, inputs))
+			return MirLowerExpr(next, dst)
+		if context.tree.nodes[!callee].kind == Ast.NODE_NAME
+			let local = mir_lower_binding(next, Hir.hir_ast_text(context.tree, callee))
+			if local >= 0 and Types.type_tag(context.types, next.register_types[!local]) == Types.TYPE_TAG_FUNCTION
+				var inputs = Array[i64]()
+				for i in 1..node.count
+					let source = Hir.hir_ast_child(context.tree, id, i)
+					let argument = mir_lower_expression(next, context, source)
+					next = argument.state
+					next.error == "" else return MirLowerExpr(next, -1)
+					var slot = argument.slot
+					let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
+					if injected_type != Types.TYPE_TAG_INVALID
+						let injected = mir_lower_inject(next, context, slot, injected_type)
+						next = injected.state
+						next.error == "" else return MirLowerExpr(next, -1)
+						slot = injected.slot
+					inputs = inputs.append(slot)
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, mir_lower_type(context, id, Resolve.HIR_CALL))
+				next = mir_lower_emit(next, Mir.mir_call_indirect(dst, local, inputs))
+				return MirLowerExpr(next, dst)
 		var callee_id = -1
 		for target in context.call_targets
 			if target.source == id
@@ -914,7 +1148,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 def mir_lower_return_value(state: MirBuilder, context: MirLowerContext, value: i64) -> MirBuilder
 	var next = state
 	var slot = value
-	if Types.type_tag(context.types, context.return_type) == Types.TYPE_TAG_UNION and next.register_types[!slot] != context.return_type
+	if next.register_types[!slot] != context.return_type
 		let injected = mir_lower_inject(next, context, slot, context.return_type)
 		next = injected.state
 		next.error == "" else return next
@@ -1116,7 +1350,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			next = mir_lower_emit(next, Mir.mir_optional_unwrap(unwrapped, value.slot))
 			value_slot = unwrapped
 		let type_id = mir_lower_type(context, id, Analyze.HIR_BINDING)
-		if type_id != next.register_types[!value_slot] and Types.type_tag(context.types, type_id) == Types.TYPE_TAG_UNION
+		if type_id != next.register_types[!value_slot]
 			let wrapped = mir_lower_inject(next, context, value_slot, type_id)
 			next = wrapped.state
 			next.error == "" else return next
@@ -1441,7 +1675,16 @@ export def mir_lower_function_module(tree: Ast.ParseState, header: Hir.HirFuncti
 			return MirLowerResult(Mir.MirFunction(0, return_type, state.register_types, state.blocks, 0), "unsupported MIR parameter type")
 		state = mir_lower_register(state, arguments[!i])
 		state.bindings = state.bindings.append(MirSourceBinding(header.parameters[!i].name, i, 0))
-	state = mir_lower_statements(state, context, header.body)
+	if tree.nodes[!header.body].kind == Ast.NODE_LAMBDA
+		let body = Hir.hir_ast_child(tree, header.body, tree.nodes[!header.body].count - 1)
+		let value = mir_lower_expression(state, context, body)
+		state = value.state
+		if state.error == "" and state.register_types[!value.slot] != return_type
+			state = mir_lower_error(state, "lambda result type mismatch")
+		if state.error == ""
+			state = mir_lower_end(state, Mir.mir_return(value.slot))
+	else
+		state = mir_lower_statements(state, context, header.body)
 	if state.error == "" and not mir_lower_ended(state)
 		state = mir_lower_error(state, "missing MIR return")
 	return MirLowerResult(Mir.MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)

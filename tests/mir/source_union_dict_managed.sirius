@@ -1,0 +1,18 @@
+rec Success(value: string)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def main() -> i64
+	let initial = Dict[string,Success]().insert("hello", Success("stored"))
+	let snapshot = initial
+	let promoted: Dict[string,Result] = initial
+	let first = promoted.get("hello") else return 1
+	match first
+		Success(value)
+			if value != "stored"
+				return 2
+		Failure(code)
+			return 3
+	let missing: Optional[Result] = initial.get("missing")
+	let absent = missing else return 4
+	return 5

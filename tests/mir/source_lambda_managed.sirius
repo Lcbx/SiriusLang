@@ -1,0 +1,8 @@
+def apply(value: string, f: Fn[string,string]) -> string
+	return f(value)
+
+def main() -> i64
+	let callback = fn(value: string) value + "!"
+	let result = apply("hello", callback)
+	print(result)
+	return len(result)

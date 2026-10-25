@@ -1,0 +1,43 @@
+rec Success(value: i64)
+rec Failure(code: i64)
+let Result = Success | Failure
+
+def check(table: Dict[string,Result]) -> i64
+	let first = table.get("first") else return 1
+	match first
+		Success(value)
+			if value != 12
+				return 2
+		Failure(code)
+			return 3
+	let second = table.get("second") else return 4
+	match second
+		Success(value)
+			if value != 8
+				return 5
+		Failure(code)
+			return 6
+	return 0
+
+def main() -> i64
+	let original = Dict[string,Success]().insert("first", Success(12)).insert("second", Success(8))
+	let snapshot = original
+	let promoted: Dict[string,Result] = original
+	if len(promoted) != 2 or len(snapshot) != 2 or check(original) != 0
+		return 7
+	let second = snapshot.get("second") else return 8
+	if second.value != 8
+		return 9
+	let outer = Dict[i64,Array[Success]]().insert(2, [Success(20), Success(30)])
+	let converted: Dict[i64,Array[Result]] = outer
+	let contents = converted.get(2) else return 10
+	match contents[!1]
+		Success(value)
+			if value != 30
+				return 11
+		Failure(code)
+			return 12
+	let empty: Dict[string,Result] = Dict[string,Success]()
+	if len(empty) != 0
+		return 13
+	return 14

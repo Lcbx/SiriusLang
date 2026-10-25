@@ -114,6 +114,26 @@ and `python tools/test_module_package_dependencies.py`, and
 `python tools/test_module_discovery_cache.py` and
 `python tools/test_module_incremental_discovery.py`.
 
+**Function values and lambdas (experimental):** `Fn[i64,i64]` is a concretely
+typed, noncapturing function value; named functions (including exported and
+re-exported imported functions) and expression-bodied lambdas can
+be passed, returned, and indirectly invoked. `fn(x) x + 1` infers the parameter
+type from a contextual `Fn` where available. C emission, MIR interpretation,
+linked libraries and saved MIR preserve references (`tools/test_mir_function_values.py`,
+`tools/test_mir_lambdas.py`, `tools/test_module_function_values.py`). Generic
+function references with generic parameters specialize from an expected `Fn`
+signature in typed bindings, arguments, returns, assignments and typed arrays,
+including references through `.smirg` packages. An unannotated generic function
+value without a contextual `Fn` remains an error. Source-free *concrete* bodies
+and transitive purity checking remain unsupported.
+
+**Nested union conversion (experimental):** injection extends through compatible
+records, arrays, optionals and dictionary values with unchanged key types;
+containers are rebuilt without changing shared snapshots. Typed `.append`
+and `.insert` accept compatible variants (`tools/test_union_nested_coercions.py`,
+`tools/test_union_optional_dict_coercions.py`). Unannotated collection literals
+still require homogeneous elements.
+
 ## Current development priorities
 
 MIR-generated collection allocations can be profiled with
@@ -337,6 +357,21 @@ POSIX treats path strings as bytes. Embedded NUL bytes are rejected.
 
 Reusable `walk_files(root) -> Array[string]` lives in
 `stdlib/Std/Filesystem.sirius` (use `Std.Filesystem` within a source root).
+
+`stdlib/Std/Functional.sirius` exposes callback-based 1D helpers:
+`map_*`, `filter_*`, `generate_*` and `fold_*` for `i64` and `f64`, plus
+`map_string`, `filter_string`, `generate_string` and `fold_string`. All take
+concrete `Fn` callback signatures, so generic named functions specialize at
+use sites (including imported and re-exported callbacks). `count_if`, `any`,
+`all` and `find_index` additionally specialize on **any array element type**
+when supplied a concrete `Fn[T,bool]` value; `find_index` returns `-1` when
+nothing matches. For these generic predicate helpers, give unannotated callbacks
+an explicit contextual `Fn` binding, e.g. `let p: Fn[string,bool] = predicate`,
+before passing them. All callbacks execute sequentially; purity is **not**
+checked. `.smirg` packages can supply generic functions, but concrete helpers
+still require source or compiled `.smirl` code. General type-parametric array
+results, rank-N shape preservation and optimizable/fused transforms remain
+planned. Test with `python tools/test_stdlib_callbacks.py`.
 It performs a breadth-first walk and skips unreadable subdirectories; it does
 not stream results or include directories in the returned list.
 `examples/filesystem_walk.sirius` shows standalone use. Opt-in

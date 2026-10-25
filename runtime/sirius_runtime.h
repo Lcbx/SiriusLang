@@ -143,6 +143,10 @@ void s_dict_release(S_Dict *d);
 S_Dict *s_dict_insert(S_Dict *owned, const void *key, const void *value);
 const void *s_dict_get(const S_Dict *d, const void *key);
 size_t s_dict_length(const S_Dict *d);
+/* Read-only traversal cursors are stable while the dictionary is unmodified. */
+int64_t s_dict_next_slot(const S_Dict *d, int64_t after);
+const void *s_dict_key_slot(const S_Dict *d, int64_t slot);
+const void *s_dict_value_slot(const S_Dict *d, int64_t slot);
 uint64_t s_hash_i64_key(const void *key);
 bool s_eq_i64_key(const void *a, const void *b);
 uint64_t s_hash_string_key(const void *key);

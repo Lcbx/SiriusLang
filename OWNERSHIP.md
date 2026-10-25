@@ -38,6 +38,8 @@ whole language's proposed ownership semantics. Main sources: `src/mir.sirius`,
 | `MIR_RECORD_NEW`, `MIR_ARRAY_NEW` | Borrow each input, including repeated registers | Allocate one owned root and retain once **per managed child slot** |
 | `MIR_RECORD_NEW_MOVE`, `MIR_ARRAY_NEW_MOVE` | Borrow other fields; consume selected distinct managed inputs | Move selected child credits into slots; retain others |
 | `MIR_RECORD_GET`, `MIR_ARRAY_GET`, optional/dictionary reads | Borrow container | Retain selected managed result; container keeps its child credit |
+| `MIR_DICT_KEY`, `MIR_DICT_VALUE` | Borrow dictionary at a valid read-only cursor | Retain projected managed key/value; source and snapshots retain their credits |
+| `MIR_FUNCTION_REF`, `MIR_CALL_INDIRECT` | Function reference is a non-owning scalar; indirect arguments are borrowed | Callee receives retained managed arguments and returns an owned value, like a direct call |
 | `MIR_OPTIONAL_SOME` / `NONE` | Borrow payload / no payload | Create owned optional; `SOME` retains managed payload |
 | `MIR_RECORD_SET`, `MIR_ARRAY_SET`, append, `MIR_DICT_INSERT` | Consume parent; borrow replacement / key / value | Retain incoming managed child; perform CoW if shared; release displaced child on replacement; return owned parent |
 | `MIR_CALL` | Borrow each argument | Caller retains once **per managed argument position** for callee frame; callee returns an owned result |
