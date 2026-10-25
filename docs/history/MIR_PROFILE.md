@@ -1,4 +1,6 @@
-# MIR self-compilation and code-generation profiles
+# Historical MIR self-compilation and code-generation profiles
+
+> **Historical measurements:** reproduce before applying performance claims to newer versions. See [ROADMAP.md](../../ROADMAP.md).
 
 **Historical measured baseline (2026-10-24):** An earlier modular compiler
 emitted 4,232,563 bytes of C after backward-liveness snapshot sharing and

@@ -71,8 +71,9 @@ by `python tools/test_filesystem.py`.
 
 - **Tagged unions and exhaustive `match`** are available in source modules,
   including `Std.Filesystem` `Result` wrappers. The standalone examples retain
-  `Optional` where it keeps the baseline self-contained; constructor overrides
-  and nested implicit union conversions remain incomplete.
+  `Optional` where it keeps the baseline self-contained. Computed constructor
+  publications and contextual nested union conversions are implemented;
+  heterogeneous unannotated collection literals still need typing context.
 - General `comptime`, `Any` with runtime descriptor access, vectorized
   NumPy-like computation, parallel `map`, and capturing closures are future
   features, not suitable for current executable examples.
@@ -114,10 +115,11 @@ implementations for comparison.
    and MIR-interpreter parity against their imperative versions.
 3. **String-processing standard library.** Extend word frequencies to read and
    tokenize real text. This should not require new core language semantics.
-4. **Pure collection transformations.** Explore `map`, `filter`, `reduce` and
-   array generation after their effect/purity rules are defined. `map` should
-   not be used for ordered side effects such as FizzBuzz printing; `for`
-   remains appropriate for sequential effects.
+4. **Collection transformations.** Build on the current sequential
+   `Std.Functional` callback helpers by implementing general array-producing
+   return types and checking callback purity. Only after that should
+   `map`/`filter` be considered order-independent and parallelizable; use
+   `for` for ordered effects such as FizzBuzz printing.
 5. **Extension methods and indexing ergonomics.** Update geometry and sorting
    once the MIR backend supports them consistently.
 
@@ -131,4 +133,4 @@ baseline variant so behavior and resource use can be compared meaningfully.
 
 For the **target** semantics (which may be broader), see
 [`LANGUAGE_DESIGN.md`](../LANGUAGE_DESIGN.md). For the current compiler and
-its roadmap, see [`README.md`](../README.md) and [`ROADMAP.md`](../ROADMAP.md).
+its roadmap, see [`README.md`](../README.md) and [`ROADMAP.md`](../docs/history/ROADMAP_20261025.md).

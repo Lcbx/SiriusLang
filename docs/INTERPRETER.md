@@ -1,5 +1,7 @@
 # MIR interpreter
 
+> Paths and commands in this document are relative to the repository root.
+
 **Status:** Sirius now has two execution paths for the *same* typed CFG MIR:
 `src/mir_emit_c.sirius` emits native C11, while `src/mir_interpreter.sirius`
 executes it dynamically. `src/run_cli.sirius` lowers a source file through the
@@ -173,18 +175,15 @@ Interpreter options are not included in the program's `arguments()` array.
 Compile-time diagnostics still use the compiler's existing stdout format.
 `print` and `eprint` accept the same four printable scalar types.
 
-## Next implementation steps
+## Remaining execution gaps
 
-1. **Done:** `f64` payloads, operations and representative collections,
-   `sqrt`, scientific notation and printed-value parity tests.
-2. Runtime-failure messages, stdout, stderr and exit status now match for
-   four representative cases, including a nested managed-array failure.
-   `eprint` emits stderr in both backends. Fatal implicit aborts deliberately do not unwind caller frames; verify ordinary return/in-band result ownership instead.
-3. **Done in part:** 91 positive fixtures, 18 differential examples and three
-   runtime-failure cases; add more corner cases and CLI execution budgets.
-4. **Done:** versioned serialization and loading of concrete MIR executables,
-   concrete libraries and separate portable generic packages. Next: interpreted/compiled
-   native-library boundaries. General comptime remains deferred.
+`f64` execution, concrete executable/library serialization, source-independent
+generic packages, and MIR/native differential tests are implemented. The
+remaining work is to extend parity tests to additional corner cases and
+execution budgets, improve failure diagnostics, and define native/interpreted
+library dispatch. General compile-time MIR execution is deliberately deferred.
+Implicit fatal aborts do not unwind caller frames; ordinary return paths and
+in-band `Result` values retain normal ownership semantics.
 
 ### Dictionary limitations
 

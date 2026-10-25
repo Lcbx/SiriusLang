@@ -1,5 +1,7 @@
 # Runtime implementation review
 
+> Paths and commands in this document are relative to the repository root.
+
 The C runtime remains the stable bootstrap boundary; the committed C compiler
 now also supports the Sirius `i64` bitwise operators used for packed MIR ownership.
 This is a compiler-side representation change, not a replacement of runtime
@@ -333,7 +335,7 @@ local live mask do not modify the successor's saved state. On instrumented
 modular self-compilation, `Array[i64]` clones fell from 966,353 to 870,856
 and total MIR-generated record allocations from 7,437,326 to 7,343,095.
 These counts do not establish a native runtime speedup; see
-[MIR_PROFILE.md](MIR_PROFILE.md) for the full profile and test conditions.
+[MIR_PROFILE.md](history/MIR_PROFILE.md) for the full profile and test conditions.
 
 ## Direct ownership transfer (2026-10-24)
 
@@ -344,7 +346,7 @@ On modular self-compilation, generated MIR allocation calls fell from
 7,343,095 to 7,016,214 (4.5%), with largely unchanged clone counts.
 Revisiting a block repeats the instruction walk; profile on workloads with
 highly iterative CFGs before assuming a speed improvement. See
-[MIR_PROFILE.md](MIR_PROFILE.md) for measurement details.
+[MIR_PROFILE.md](history/MIR_PROFILE.md) for measurement details.
 
 ## Runtime failure and ARC exit policy
 

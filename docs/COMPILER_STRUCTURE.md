@@ -1,5 +1,7 @@
 # Compiler source organization
 
+> Paths and commands in this document are relative to the repository root.
+
 The production compiler is a Sirius module graph rooted at
 `src/modular_cli.sirius`. The MIR execution/tooling CLI is
 `src/run_cli.sirius`; the standalone source scanner uses

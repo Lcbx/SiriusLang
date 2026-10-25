@@ -1,12 +1,14 @@
 # Sirius — MIR, Modules, Libraries, and FFI
 
-> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based source-module builder supports concrete imports and on-demand monomorphization from available generic source; the modular compiler CLI now accepts a module root and emits entry-reachable native C; mixed native/interpreted dispatch is not implemented. Native builds resolve source-free generic packages. Experimental source-free HIR template packages are supported. Core semantics are defined in [LANGUAGE_DESIGN.md](LANGUAGE_DESIGN.md); current capabilities are in [README.md](README.md). API names and artifacts below are provisional.
+> Paths and commands in this document are relative to the repository root.
+
+> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based source-module builder supports concrete imports and on-demand monomorphization from available generic source; the modular compiler CLI now accepts a module root and emits entry-reachable native C; mixed native/interpreted dispatch is not implemented. Native builds resolve source-free generic packages. Experimental source-free HIR template packages are supported. Core semantics are defined in [LANGUAGE_DESIGN.md](../LANGUAGE_DESIGN.md); current build and packaging workflows are in [Modules](MODULES.md). API names and artifacts below are provisional.
 
 ## 1. Module resolution and visibility
 
 Given a source root, `Math/Stats.sirius` defines module `Math.Stats`:
 
-```python
+```sirius
 import Math.Stats alias Stats
 
 export def describe(xs)
@@ -102,7 +104,7 @@ The format is initially versioned for compiler compatibility, not promised as a 
 
 For an exported generic function:
 
-```python
+```sirius
 export def double(x) -> i64
 	return x + x
 ```

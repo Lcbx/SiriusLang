@@ -1,5 +1,7 @@
 # Ownership in the current Sirius implementation
 
+> Paths and commands in this document are relative to the repository root.
+
 This describes the **implemented** MIR/ARC contract (October 2026), not the
 whole language's proposed ownership semantics. Main sources: `src/mir.sirius`,
 `mir_cfg.sirius`, `mir_ownership.sirius`, `mir_lifetime.sirius`,

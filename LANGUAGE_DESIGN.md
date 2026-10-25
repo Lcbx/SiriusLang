@@ -5,7 +5,7 @@
 > **Implementation note:** `i64` bitwise `&`, `|`, `<<`, and `>>` are now
 supported. This is distinct from `|` in type-union expressions.
 
-> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is deferred. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
+> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is deferred. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md).
 
 ## 1. Core Philosophy
 
@@ -32,7 +32,7 @@ Tab-based indentation, no colons or block delimiters.
 | `export` | Expose a module definition |
 | `recur` | Guaranteed tail recursion |
 
-```python
+```sirius
 let x = 10
 var y = 20
 
@@ -58,7 +58,7 @@ while y > 20
 
 Records and arrays are immutable values. Assignment through `var` replaces the value, potentially reusing uniquely owned storage.
 
-```python
+```sirius
 var point = {x = 10, y = 20}
 let original = point
 
@@ -74,7 +74,7 @@ point.x += 5
 
 Destructuring names every source field explicitly; binding names need not match:
 
-```python
+```sirius
 let {first = .a, second = .b} = value
 ```
 
@@ -89,7 +89,7 @@ recursive patterns and `var` destructuring are deferred.
 
 Record updates use spreading:
 
-```python
+```sirius
 let updated = {
 	point.*
 	del y
@@ -102,7 +102,7 @@ Operations execute top-to-bottom; later fields override earlier ones. Record sch
 
 Indexed assignment follows the same value semantics:
 
-```python
+```sirius
 var a = [1, 2, 3]
 a[!1] = 10
 ```
@@ -115,14 +115,14 @@ Functions have two mutually exclusive modes.
 
 **Evaluator:** Explicitly returns a value.
 
-```python
+```sirius
 def add(a, b)
 	return a + b
 ```
 
 **Constructor:** `rec` automatically publishes its parameters into an immutable structural record. An optional body adds computed fields or overrides parameters.
 
-```python
+```sirius
 rec Point(x, y)
 	pub length = sqrt(x*x + y*y)
 ```
@@ -156,7 +156,7 @@ Unknown free names are rejected; general closure capture remains unsupported.
 
 **Methods:** Ordinary functions whose first parameter is named `this`, invoked with dot syntax.
 
-```python
+```sirius
 def move(this, dx, dy)
 	return {
 		this.*
@@ -174,7 +174,7 @@ p = p.move(1.0, 2.0)
 
 Types are inferred; generic functions specialize for concrete argument types.
 
-```python
+```sirius
 def norm(p)
 	return sqrt(p.x*p.x + p.y*p.y)
 ```
@@ -198,9 +198,9 @@ Every type has a canonical descriptor containing:
 * Array element type and rank.
 * Type-specific memory-management and generic operations.
 
-Across modules and execution modes, structural type identity is semantic, not based on process-local descriptor addresses. Portable library interfaces preserve exported type information (see [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md)).
+Across modules and execution modes, structural type identity is semantic, not based on process-local descriptor addresses. Portable library interfaces preserve exported type information (see [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md)).
 
-```python
+```sirius
 let t = dtype(p)
 
 for field in t.fields
@@ -213,7 +213,7 @@ Ordinary values carry no runtime type ID.
 
 Explicit `Any` values carry a descriptor and inline or boxed storage.
 
-```python
+```sirius
 let value: Any = p
 let x = value.get("x")  # Optional[Any]
 ```
@@ -224,7 +224,7 @@ Dynamic lookup and checked conversion are explicit. No runtime specialization is
 
 `let Result = Success | Failure` is a compile-time union type alias formed from constructor result types; `match` tests a runtime union tag and binds the published fields:
 
-```python
+```sirius
 rec Success(value: i64)
 rec Failure(code: i64)
 
@@ -300,7 +300,7 @@ include every constructor parameter.
 
 Operators resolve statically to functions, including generic implementations.
 
-```python
+```sirius
 def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
 	return {x = a.x + b.x, y = a.y + b.y}
 ```
@@ -314,7 +314,7 @@ def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
 
 `Array[T, N]` is a homogeneous multidimensional standard-library type, inspired by Codon-NumPy. Element type `T` and rank `N` are static; shapes are dynamic. `Array[T]` is shorthand for `Array[T, 1]`.
 
-```python
+```sirius
 let x = [1.0, 2.0, 3.0]
 let y = x * 2.0 + 1.0
 let mask = y > 3.0
@@ -358,7 +358,7 @@ The minimal collection API consists of:
 * `filter`: Pure selection, initially 1D, preserving relative element order.
 * `generate`: Pure construction from indices and a statically ranked shape.
 
-```python
+```sirius
 let doubled = values.map(fn(x) x * 2)
 let positive = values.filter(fn(x) x > 0)
 let grid = generate((100, 100), fn(i, j) i*i + j*j)
@@ -382,7 +382,7 @@ Functions and non-capturing lambdas are first-class values with concrete signatu
 
 **Capturing closures are not supported.** Higher-order functions accept optional explicit context arguments.
 
-```python
+```sirius
 let ctx = {scale = 3, offset = 2}
 let result = values.map(fn(x, ctx) x * ctx.scale + ctx.offset, ctx)
 ```
@@ -391,7 +391,7 @@ Module constants may be referenced without captures. Bound receiver objects are 
 
 ### Indexing
 
-```python
+```sirius
 a[i]       # Statically proven in bounds
 a[?i]      # Optional[T]; returns None if out of bounds
 a[!i]      # Runtime-checked; panics if out of bounds
@@ -400,7 +400,7 @@ optional!   # Unbox Optional[T]; panics if absent
 
 Only straightforward static bounds checks are required. Multidimensional indexing uses `a[i, j]`; partial indexing produces lower-rank arrays.
 
-```python
+```sirius
 let value = a[?i] or 0
 let value = a[?i] else return false
 ```
@@ -411,7 +411,7 @@ let value = a[?i] else return false
 
 An expression guard requires a scalar `bool`. Execution continues when it is `true`; otherwise the `else` branch terminates the current path with `return`, `break`, or `continue`:
 
-```python
+```sirius
 value >= 0 else return -1
 found else continue
 ready else break
@@ -423,7 +423,7 @@ The condition is evaluated once, and the exit runs only when it is false. This i
 
 Conventional loops are the primary mechanism for sequential algorithms, aggregation, and effects.
 
-```python
+```sirius
 var total = 0
 for x in values
 	total += x
@@ -433,7 +433,7 @@ More elaborate functional utilities (`fold`, `reduce`, `scan`, `iterate`, `each`
 
 Ordinary recursion is supported. Direct self-tail recursion uses `recur`, guaranteed to lower to a loop.
 
-```python
+```sirius
 def factorial(n, acc = 1)
 	if n <= 1
 		return acc
@@ -476,7 +476,7 @@ Fusion, scheduling, and reuse are optimizations, not observable semantics.
 
 ## 11. Modules
 
-```python
+```sirius
 import Math.Stats alias Stats
 
 export let DEFAULT_LIMIT = 100
@@ -492,7 +492,7 @@ export def process(data)
 * Imports are initially acyclic, resolved independently of statement order. Structural records remain compatible across modules; generic specialization uses the defining declaration and canonical concrete types.
 * Module-level `let` bindings are evaluated at **compile time**, potentially with side effects, but do not cause runtime module initialization.
 
-See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported constructor bodies and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, and source-independent generic specialization from portable `.smirg` HIR
+See [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md) for the complete module, library, specialization, and interoperability design. The current compiler supports typed concrete function imports, structural record signatures, exported constructor bodies and compile-time constants, and source-available cross-module generic specialization with explicit concrete return annotations, and source-independent generic specialization from portable `.smirg` HIR
 packages (not generic executable MIR libraries); see [README.md](README.md) for status.
 
 ## 12. Compiler
@@ -525,7 +525,7 @@ The Python bootstrap is then frozen; subsequent development uses Sirius.
 
 Typed MIR is intended to share Sirius value semantics across native C11 output, unrestricted compile-time interpretation, saved-MIR runtime interpretation, and eventual mixed native/interpreted calls. Compile-time effects (including I/O and FFI when available on the host) are permitted; no mandatory purity sandbox or execution budget is planned. The syntax and staging of explicit compile-time execution remain unresolved.
 
-Portable library metadata must expose exported type/signature identities and generic MIR for downstream specialization; compiled specializations may be registered through a native hook. Sirius native/interpreter ABI compatibility does **not** imply C FFI layout compatibility. See [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md) for artifacts, call adapters, host/target distinctions, and proposed implementation stages.
+Portable library metadata must expose exported type/signature identities and generic MIR for downstream specialization; compiled specializations may be registered through a native hook. Sirius native/interpreter ABI compatibility does **not** imply C FFI layout compatibility. See [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md) for artifacts, call adapters, host/target distinctions, and proposed implementation stages.
 
 ## 13. Open Semantic Decisions
 
@@ -536,7 +536,7 @@ These remain **unresolved**, not implied guarantees:
 * Whether future nominal variant identity should distinguish union alternatives with identical structural record shapes (currently indistinguishable).
 * Imported-operator overload visibility and explicit compile-time evaluation syntax/staging.
 
-Portable MIR formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](MIR_MODULES_AND_FFI.md).
+Portable MIR formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md).
 
 ## 14. Future Improvements
 
