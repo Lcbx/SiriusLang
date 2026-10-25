@@ -1,90 +1,57 @@
 # Sequential 1D collection helpers using noncapturing Fn callbacks.
-# Array-producing helpers need concrete return types for now; predicates with
-# concrete scalar returns can specialize on collection and callback types.
-# The compiler does not yet enforce callback purity.
+# Map, filter, generate and fold specialize on argument and result types.
+# Callback purity is not enforced by the compiler.
 
-export def map_i64(values: Array[i64], callback: Fn[i64,i64]) -> Array[i64]
-	var result = Array[i64]()
+export rec IndexedI64(index: i64, value: i64)
+	pub index
+	pub value
+
+export rec IndexedF64(index: i64, value: f64)
+	pub index
+	pub value
+
+export rec IndexedString(index: i64, value: string)
+	pub index
+	pub value
+
+# Array constructors infer the result element type from a callback's Fn return
+# type or an existing collection, including when the input is empty.
+# Generic calls infer callback input types from concrete arguments where unambiguous.
+export def map(values, callback)
+	var result = empty_array_like(callback)
 	for value in values
 		result = result.append(callback(value))
 	return result
 
-export def filter_i64(values: Array[i64], predicate: Fn[i64,bool]) -> Array[i64]
-	var result = Array[i64]()
+export def filter(values, predicate)
+	var result = empty_array_like(values)
 	for value in values
 		if predicate(value)
 			result = result.append(value)
 	return result
 
-export def generate_i64(count: i64, callback: Fn[i64,i64]) -> Array[i64]
-	var result = Array[i64]()
+export def generate(count: i64, callback)
+	var result = empty_array_like(callback)
 	var index = 0
 	while index < count
 		result = result.append(callback(index))
 		index += 1
 	return result
 
-# Unlike map/filter/generate, fold is deliberately sequential.
-export def fold_i64(values: Array[i64], initial: i64, callback: Fn[i64,i64,i64]) -> i64
+# Generic in both collection element and accumulator type.
+export def fold(values, initial, callback)
 	var result = initial
 	for value in values
 		result = callback(result, value)
 	return result
 
-# Non-i64 helpers keep concrete signatures until exported generic return types
-# can express arbitrary Array element types.
-export def map_f64(values: Array[f64], callback: Fn[f64,f64]) -> Array[f64]
-	var result = Array[f64]()
-	for value in values
-		result = result.append(callback(value))
-	return result
-
-export def filter_f64(values: Array[f64], predicate: Fn[f64,bool]) -> Array[f64]
-	var result = Array[f64]()
-	for value in values
-		if predicate(value)
-			result = result.append(value)
-	return result
-
-export def generate_f64(count: i64, callback: Fn[i64,f64]) -> Array[f64]
-	var result = Array[f64]()
-	var index = 0
-	while index < count
-		result = result.append(callback(index))
-		index += 1
-	return result
-
-export def fold_f64(values: Array[f64], initial: f64, callback: Fn[f64,f64,f64]) -> f64
-	var result = initial
-	for value in values
-		result = callback(result, value)
-	return result
-
-export def map_string(values: Array[string], callback: Fn[string,string]) -> Array[string]
-	var result = Array[string]()
-	for value in values
-		result = result.append(callback(value))
-	return result
-
-export def filter_string(values: Array[string], predicate: Fn[string,bool]) -> Array[string]
-	var result = Array[string]()
-	for value in values
-		if predicate(value)
-			result = result.append(value)
-	return result
-
-export def generate_string(count: i64, callback: Fn[i64,string]) -> Array[string]
-	var result = Array[string]()
-	var index = 0
-	while index < count
-		result = result.append(callback(index))
-		index += 1
-	return result
-
-export def fold_string(values: Array[string], initial: string, callback: Fn[string,string,string]) -> string
-	var result = initial
-	for value in values
-		result = callback(result, value)
+# Convert elements to structural records without capturing a mutable index.
+# Fill indexes in a second pass; map provides the correct result type even
+# when values is empty, without requiring a named record per element type.
+export def enumerate(values)
+	var result = map(values, fn(value) {index = 0, value = value})
+	for i in 0..len(result)
+		result[!i].index = i
 	return result
 
 # These predicates specialize on both the collection and the Fn argument.
@@ -98,10 +65,7 @@ export def count_if(values, predicate) -> i64
 	return count
 
 export def any(values, predicate) -> bool
-	for value in values
-		if predicate(value)
-			return true
-	return false
+	return find_index(values, predicate) >= 0
 
 export def all(values, predicate) -> bool
 	for value in values

@@ -58,7 +58,7 @@ export def hir_parametric_expression(tree: Ast.ParseState, header: Hir.HirFuncti
 		let callee = Hir.hir_ast_child(tree, id, 0)
 		if tree.nodes[!callee].kind == Ast.NODE_NAME
 			let name = Hir.hir_ast_text(tree, callee)
-			var supported = name == "len" or name == "str" or name == "sqrt"
+			var supported = name == "len" or name == "str" or name == "sqrt" or name == "empty_array_like"
 			if not supported
 				for function in functions
 					if function.name == name and not function.constructor

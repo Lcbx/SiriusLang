@@ -850,6 +850,17 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, Mir.mir_dict_insert(dst, owned, key.slot, inserted))
 				return MirLowerExpr(next, dst)
+		if context.tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(context.tree, callee) == "empty_array_like" and node.count == 2
+			let argument = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
+			next = argument.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
+			if not Verify.mir_type_supported(context.types, type_id) or Types.type_tag(context.types, type_id) != Types.TYPE_TAG_ARRAY
+				return MirLowerExpr(mir_lower_error(next, "empty_array_like requires a typed array result"), -1)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, type_id)
+			next = mir_lower_emit(next, Mir.mir_array_new(dst, Array[i64]()))
+			return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(context.tree, callee) == "sqrt" and node.count == 2
 			let operand = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
 			next = operand.state

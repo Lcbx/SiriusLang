@@ -41,7 +41,7 @@ ERRORS = {
 	'30_string_join_wrong_type': 'expected Array[string], found Array[i64]',
 	'31_string_slice_bad_arity': 'string method argument count mismatch',
 	'32_def_constructor': 'def constructors are no longer supported; use rec',
-	'33_duplicate_module_name': "duplicate function 'VALUE'",
+	'33_duplicate_module_name': "duplicate module name 'VALUE'",
 	'34_hir_scope_escape': "unknown name 'hidden'",
 	'35_guard_type': 'expected bool, found i64',
 	'36_guard_exit': 'guard else requires return, break, or continue',

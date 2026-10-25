@@ -75,6 +75,26 @@ def main() -> i64
 ```
 
 Unannotated generic function values require an expected `Fn` signature.
+
+Functions may share a name when their annotated **parameter types differ**:
+
+```sirius
+def twice(x: i64) -> i64
+	return x * 2
+
+def twice(x: f64) -> f64
+	return x * 2.0
+
+def main() -> i64
+	let integer: Fn[i64,i64] = twice
+	return integer(21)
+```
+
+Calls choose an exact argument-type match. An overloaded function used as a
+value needs an expected `Fn` type; neither return type alone nor implicit
+coercion distinguishes overloads. Duplicate signatures and unmatched calls
+are compile-time errors. Overloading generic, extern or constructor declarations
+is not yet supported. All overloads in a source module must share export visibility.
 Noncapturing expression-bodied lambdas are supported; capturing closures are
 not. For tagged unions and exhaustive matching, see the
 [language design](../LANGUAGE_DESIGN.md#constructor-based-tagged-unions).
@@ -85,26 +105,57 @@ Import `Std.Functional` when the source root contains `stdlib/`, or arrange
 for `Std/` to be present under your chosen module root. Functions operate on
 **one-dimensional arrays, sequentially**, and purity is not checked.
 
-| Names | Supported input and output |
+| Name | Supported signatures |
 | --- | --- |
-| `map_i64`, `filter_i64`, `generate_i64`, `fold_i64` | `i64` |
-| `map_f64`, `filter_f64`, `generate_f64`, `fold_f64` | `f64` |
-| `map_string`, `filter_string`, `generate_string`, `fold_string` | `string` |
-| `count_if`, `any`, `all`, `find_index` | Generic array element type; predicate must resolve to `Fn[T,bool]` |
+| `map`, `filter` | Generic input and output element types; preserves element order |
+| `generate` | Generic callback result type (including empty arrays) |
+| `fold` | Generic over the array element and accumulator/result types |
+| `enumerate` | Generic input; returns an array of structural `{index: i64, value: T}` records |
+| `count_if`, `any`, `all`, `find_index` | Generic input elements; predicate must resolve to `Fn[T,bool]` |
 
-Array-producing helper signatures remain concrete until generic return-array
-types can be expressed by exported library functions. Generic named callbacks
-specialize from a contextual `Fn` where one is available. For a generic
-predicate helper, explicitly type an otherwise ambiguous callback first:
+Overload resolution uses parameter types, including the callback's full `Fn`
+signature. Generic named callbacks and noncapturing lambdas receive an
+expected `Fn` type when one is available. Generic helpers can also infer
+callback **parameter** types from their own concrete inputs and uses of the
+callback (for example, an array element in `map` or an index in `generate`).
+Independently typable arguments may appear before or after a callback, including
+nested calls such as `map(values, fn(x) x + 1)`. The compiler inspects their
+types ahead of time without changing runtime evaluation order. The callback's
+return type is then inferred from its body. Mutually dependent callback types
+and other underdetermined signatures still require explicit `Fn` annotations.
+`map` can change the element type, and `generate` can return records, booleans
+or nested arrays. Empty results retain those types. `fold` specializes its
+return type from the initial value and callback, including heterogeneous arrays.
+When the callback's type cannot be inferred, supply a typed `Fn` value.
+Source-free `.smirg` packages preserve generic inferred-result definitions.
 
 ```sirius
-let predicate: Fn[string,bool] = is_nonempty
-let count = Functional.count_if(values, predicate)
+import Std.Functional alias F
+
+def main() -> i64
+	let count = F.fold(["sun", "moon"], 0, fn(total, word) total + len(word))
+	let sizes = F.map(["sun", "moon"], fn(word) len(word))
+	let indexed = F.enumerate(["sun", "moon"])
+	return count + sizes[!0] + indexed[!1].index
 ```
 
-`find_index` returns `-1` if nothing matches. Pure/parallel/fused transforms
-are design goals, not current behavior. Run
-`python tools/test_stdlib_callbacks.py` for tested usage.
+`empty_array_like(array_or_callback)` is a compiler builtin returning an empty
+array whose element type is taken from an existing array or the result type of
+a concrete `Fn` callback. It evaluates its argument once, but does not invoke
+the callback. `map`, `filter`, and `generate` use it internally; no new runtime
+representation is required.
+
+`enumerate` accepts any array element type and returns records with `.index`
+(zero-based) and `.value` fields. Empty input yields a correctly typed empty
+array. The old `IndexedI64`, `IndexedF64`, and `IndexedString` record types
+remain exported for source compatibility; records returned by `enumerate` are
+structurally compatible with them. Its current library implementation maps
+values to records and then fills indexes in a second pass. `find_index` returns `-1` if there is no
+match; `any` delegates to it and both short-circuit. Generic named callbacks
+specialize from a contextual `Fn` where one is available. If a generic
+callback cannot be inferred, bind it to a typed `Fn` first. The helpers are
+sequential, and callback purity is not enforced. Run
+`python tools/test_stdlib_callbacks.py` for exercised usage.
 
 ## Standard library: filesystem
 

@@ -52,9 +52,23 @@ export def hir_call_arguments(types: Types.TypeTable, actual: Array[i64], expect
 	return HirCallCheck(types, result, "")
 
 export def hir_is_builtin(name: string) -> bool
-	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "path_kind" or name == "filesystem_error_kind" or name == "filesystem_error_code" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt"
+	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "path_kind" or name == "filesystem_error_kind" or name == "filesystem_error_code" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt" or name == "empty_array_like"
 
 export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: Array[i64]) -> HirCallCheck
+	if name == "empty_array_like"
+		if len(args) != 1
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "empty_array_like expects one array or function")
+		let source = args[!0]
+		let tag = Types.type_tag(types, source)
+		var element = Types.TYPE_TAG_INVALID
+		if tag == Types.TYPE_TAG_ARRAY
+			element = types.entries[!source].first
+		elif tag == Types.TYPE_TAG_FUNCTION
+			element = types.entries[!source].second
+		if element == Types.TYPE_TAG_INVALID or element == Types.TYPE_TAG_VOID
+			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "empty_array_like expects an array or a function returning a value")
+		let array = Types.intern_array_type(types, element)
+		return HirCallCheck(array.table, array.id, "")
 	if name == "arguments"
 		let array = Types.intern_array_type(types, Types.TYPE_TAG_STRING)
 		return hir_call_arguments(array.table, args, Array[i64](), array.id, "arguments expects no arguments")

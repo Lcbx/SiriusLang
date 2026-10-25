@@ -116,8 +116,8 @@ implementations for comparison.
 3. **String-processing standard library.** Extend word frequencies to read and
    tokenize real text. This should not require new core language semantics.
 4. **Collection transformations.** Build on the current sequential
-   `Std.Functional` callback helpers by implementing general array-producing
-   return types and checking callback purity. Only after that should
+   `Std.Functional` array-producing helpers by implementing element-type
+   polymorphic array construction and checking callback purity. Only after that should
    `map`/`filter` be considered order-independent and parallelizable; use
    `for` for ordered effects such as FizzBuzz printing.
 5. **Extension methods and indexing ergonomics.** Update geometry and sorting

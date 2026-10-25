@@ -307,6 +307,11 @@ def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
 
 * Arithmetic, comparison, indexing, and iteration support overloading.
 * Ambiguous matches are compile-time errors.
+* **Implemented named-function subset:** same-name `def` overloads with fully
+  annotated, distinct parameter signatures. Direct calls resolve exact matches;
+  first-class overloads require a contextual `Fn` type. Concrete module exports
+  use stable `_O` type-signature mangling, keeping non-overloaded symbols intact.
+  Generic, `extern`, and constructor overloads remain unsupported.
 * Imported overloads must be explicitly visible.
 * Compiler-recognized primitives support optimized numerical lowering.
 
@@ -378,7 +383,7 @@ Callbacks must be pure:
 
 Functions and non-capturing lambdas are first-class values with concrete signatures. Compatible non-capturing functions can be stored as typed function pointers. Qualified references to exported functions and their named re-exports use the same function types as local functions.
 
-**Current implementation:** `Fn[parameters...,return]` values support indirect calls, named functions and expression-bodied noncapturing lambdas (`fn(x: i64) x + 1`). Lambda parameters and unannotated generic named functions can be specialized from a contextual `Fn` type in bindings, arguments, returns, assignments and typed arrays; otherwise annotate the parameters explicitly. Qualified imports, named re-exports and source-free `.smirg` generic declarations support contextual specialization; some cross-module lambda arguments may still require explicit annotations. No captures of enclosing local variables, transitive purity checking, or higher-order generic signatures are implemented yet. `Std.Functional` therefore exposes concrete array-producing callbacks for `i64`, `f64` and `string`, while predicates such as `count_if`, `any`, `all` and `find_index` use generic argument inference with concrete `bool`/`i64` results; their callback argument must already have an inferred or annotated `Fn` type.
+**Current implementation:** `Fn[parameters...,return]` values support indirect calls, named functions and expression-bodied noncapturing lambdas (`fn(x: i64) x + 1`). Lambda parameters and unannotated generic named functions can be specialized from a contextual `Fn` type in bindings, arguments, returns, assignments and typed arrays; otherwise annotate the parameters explicitly. Qualified imports, named re-exports and source-free `.smirg` generic declarations support contextual specialization; some cross-module lambda arguments may still require explicit annotations. No captures of enclosing local variables or transitive purity checking are implemented. `Std.Functional` has one generic `fold(values, initial, callback)` which infers the accumulator/result type per specialization, including cross-module and source-free `.smirg` cases. `count_if`, `any`, `all`, and `find_index` also specialize on input types. `map`, `filter` and `generate` now return generically typed arrays, including empty arrays, using `empty_array_like(array_or_callback)` to infer an element type from an array or a concrete callback result. `enumerate` now returns generic structural indexed records for any array element type, including managed, nested and empty arrays; legacy named record types remain available for compatibility. Generic helper calls can infer the input types of unannotated lambdas and named generic callbacks from concrete arguments and how their callee uses them (such as array elements, indices or accumulators). Independently typed arguments may precede or follow the callback, including nested generic array results; type-only lookahead does not change runtime argument evaluation order. This is conservative, not full higher-order constraint solving: an explicit `Fn` binding is still required if callback signatures depend on each other or the inputs cannot establish a unique signature.
 
 **Capturing closures are not supported.** Higher-order functions accept optional explicit context arguments.
 

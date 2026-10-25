@@ -48,7 +48,7 @@ export def module_scan_import_declarations(decl: Hir.HirModuleDecl, units: Array
 					parameters = parameters.append(Hir.HirParameterDecl(exported.parameters[!i].name, -1, -1))
 				let result_type = ModuleInterface.module_import_type(types, dependency.types, exported.result_type)
 				types = result_type.table
-				if result_type.id == Types.TYPE_TAG_INVALID
+				if result_type.id == Types.TYPE_TAG_INVALID and not (exported.generic and exported.result_type == Types.TYPE_TAG_INVALID)
 					return ModuleScanImports(declarations, "unsupported imported return type: " + dependency.name + "." + exported.name)
 				let public_symbol = Module.hir_module_symbol(dependency.name, exported.name)
 				var target = public_symbol
@@ -57,8 +57,13 @@ export def module_scan_import_declarations(decl: Hir.HirModuleDecl, units: Array
 					declarations.external_aliases = declarations.external_aliases.append(Hir.HirExternalAlias(public_symbol, target))
 				var found_function = false
 				for existing in declarations.functions
-					if existing.name == target
-						found_function = true
+					if existing.name == target and existing.external and len(existing.argument_types) == len(arguments)
+						var same = true
+						for j in 0..len(arguments)
+							if existing.argument_types[!j] != arguments[!j]
+								same = false
+						if same
+							found_function = true
 				if not found_function
 					var function = Hir.new_hir_function_decl(target, -1, -1 - len(declarations.functions), false, -1, parameters)
 					function.external = true
@@ -188,7 +193,7 @@ def module_scan_constructor_closed(tree: Parser.ParseState, id: i64, bindings: A
 	let node = tree.nodes[!id]
 	if node.kind == Parser.NODE_NAME
 		let name = Hir.hir_ast_text(tree, id)
-		var found = name == "len" or name == "str" or name == "Array" or name == "Dict" or name == "Optional"
+		var found = name == "len" or name == "str" or name == "empty_array_like" or name == "Array" or name == "Dict" or name == "Optional"
 		for binding in bindings
 			if binding == name
 				found = true
@@ -250,6 +255,29 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 	var updated = declarations
 	var required = helpers
 	let node = next.nodes[!id]
+	if node.kind == Parser.NODE_BLOCK
+		var local_bindings = bindings
+		for i in 0..node.count
+			let child_id = Hir.hir_ast_child(next, id, i)
+			let child = module_scan_capture_node(next, child_id, local_bindings, owner, updated, required)
+			if child.error != ""
+				return child
+			next = child.tree
+			updated = child.declarations
+			required = child.helpers
+			if next.nodes[!child_id].kind == Parser.NODE_LET or next.nodes[!child_id].kind == Parser.NODE_VAR
+				local_bindings = local_bindings.append(Hir.hir_ast_text(next, child_id))
+		return ModuleScanCapture(next, updated, required, "")
+	if node.kind == Parser.NODE_FOR
+		let iterable = module_scan_capture_node(next, Hir.hir_ast_child(next, id, 0), bindings, owner, updated, required)
+		if iterable.error != ""
+			return iterable
+		return module_scan_capture_node(iterable.tree, Hir.hir_ast_child(next, id, 1), bindings.append(Hir.hir_ast_text(next, id)), owner, iterable.declarations, iterable.helpers)
+	if node.kind == Parser.NODE_LAMBDA
+		var scoped = bindings
+		for i in 0..node.count - 1
+			scoped = scoped.append(Hir.hir_ast_text(next, Hir.hir_ast_child(next, id, i)))
+		return module_scan_capture_node(next, Hir.hir_ast_child(next, id, node.count - 1), scoped, owner, updated, required)
 	if node.kind == Parser.NODE_NAME
 		let name = Hir.hir_ast_text(next, id)
 		for binding in bindings
@@ -283,7 +311,7 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 				if not exists
 					required = required.append(name)
 				return ModuleScanCapture(next, updated, required, "")
-		if name != "len" and name != "str" and name != "Array" and name != "Dict" and name != "Optional" and name != "print" and name != "eprint"
+		if name != "len" and name != "str" and name != "empty_array_like" and name != "Array" and name != "Dict" and name != "Optional" and name != "Fn" and name != "i64" and name != "f64" and name != "bool" and name != "string" and name != "print" and name != "eprint"
 			return ModuleScanCapture(next, updated, required, "unresolved defining-module constructor name: " + name)
 	for i in 0..node.count
 		let child = module_scan_capture_node(next, Hir.hir_ast_child(next, id, i), bindings, owner, updated, required)
@@ -391,6 +419,61 @@ export def module_scan_import_constructor_bodies(tree: Parser.ParseState, declar
 						break
 				if function.body >= 0
 					break
+	return ModuleScanBodies(next, updated, "")
+
+# Imported generic definitions retain a syntax-only body for inferred result
+# types and callback argument constraints. Even an annotated-result generic
+# needs its body for contextual callback inference at the importing call site.
+# MIR still emits the defining module's ordinary specialization symbol.
+export def module_scan_import_inferred_bodies(tree: Parser.ParseState, declarations: Hir.HirModuleDecl, units: Array[ModuleScanUnit]) -> ModuleScanBodies
+	var next = tree
+	var updated = declarations
+	for i in 0..len(updated.functions)
+		var function = updated.functions[!i]
+		if not function.external or function.body >= 0 or function.constructor
+			continue
+		var generic = function.result_type == Types.TYPE_TAG_INVALID
+		for argument in function.argument_types
+			if argument == Types.TYPE_TAG_INVALID
+				generic = true
+		if not generic
+			continue
+		var found = false
+		for owner in units
+			for original in owner.declarations.functions
+				if not original.constructor and original.body >= 0 and function.name == Module.hir_module_symbol(owner.name, original.name)
+					let copied = module_scan_copy_node(next, owner.tree, original.source)
+					next = copied.state
+					let declaration = next.nodes[!copied.node]
+					var parameters = Array[Hir.HirParameterDecl]()
+					for j in 0..declaration.count - 1
+						let part = Hir.hir_ast_child(next, copied.node, j)
+						if next.nodes[!part].kind == Parser.NODE_PARAM
+							var annotation = -1
+							if next.nodes[!part].count > 0
+								annotation = Hir.hir_ast_child(next, part, 0)
+							parameters = parameters.append(Hir.HirParameterDecl(Hir.hir_ast_text(next, part), part, annotation))
+					function.body = Hir.hir_ast_child(next, copied.node, declaration.count - 1)
+					function.source = copied.node
+					function.parameters = parameters
+					var bindings = Array[string]()
+					for parameter in parameters
+						bindings = bindings.append(parameter.name)
+					let inference = module_scan_capture_node(next, function.body, bindings, owner, updated, Array[string]())
+					if inference.error != ""
+						return ModuleScanBodies(inference.tree, inference.declarations, inference.error)
+					let captured = module_scan_import_helpers(inference, owner)
+					if captured.error != ""
+						return ModuleScanBodies(captured.tree, captured.declarations, captured.error)
+					next = captured.tree
+					updated = captured.declarations
+					updated.functions[!i] = function
+					found = true
+					break
+			if found
+				break
+		if not found
+			return ModuleScanBodies(next, updated, "missing inferred generic body: " + function.name)
 	return ModuleScanBodies(next, updated, "")
 
 # Prevent module path components from escaping the source root.
@@ -590,11 +673,11 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 					return_type = constructor_type.type_id
 					if Types.type_tag(types, return_type) != Types.TYPE_TAG_RECORD
 						return new_module_scan_result(done, name + ": exported constructor requires public fields: " + exported, units)
-				else
+				elif fn_decl.result_type_node >= 0
 					let returned = HirAnalyze.hir_module_type_reference_with_constants(types, resolved.tree, fn_decl.result_type_node, imported.declarations.functions, imported.declarations.constants, imported.declarations.type_aliases)
 					types = returned.table
 					return_type = returned.type_id
-				if return_type == Types.TYPE_TAG_INVALID
+				if return_type == Types.TYPE_TAG_INVALID and not (generic and fn_decl.result_type_node < 0)
 					return new_module_scan_result(done, name + ": unsupported exported signature: " + exported, units)
 				var signature = new_module_scan_export(exported, fn_decl.parameters, arguments, return_type)
 				signature.constructor = fn_decl.constructor
@@ -603,6 +686,14 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 						return new_module_scan_result(done, name + ": exported computed constructor references names outside its parameter/publication scope: " + exported, units)
 					signature.body_signature = module_scan_constructor_signature(resolved.tree, fn_decl.body, imported.declarations)
 				signature.generic = generic
+				for existing in signatures
+					if existing.name == signature.name and len(existing.argument_types) == len(arguments)
+						var same = true
+						for j in 0..len(arguments)
+							if existing.argument_types[!j] != arguments[!j]
+								same = false
+						if same
+							return new_module_scan_result(done, name + ": duplicate exported overload signature: " + exported, units)
 				signatures = signatures.append(signature)
 				found = true
 		if not found
@@ -639,7 +730,7 @@ export def module_scan_complete(name: string, path: string, tree: Parser.ParseSt
 					types = mapped.table
 					arguments = arguments.append(mapped.id)
 				let result_type = ModuleInterface.module_import_type(types, dependency.types, exported.result_type)
-				if result_type.id == Types.TYPE_TAG_INVALID
+				if result_type.id == Types.TYPE_TAG_INVALID and not (exported.generic and exported.result_type == Types.TYPE_TAG_INVALID)
 					return new_module_scan_result(done, name + ": unsupported re-export type: " + reexport.public_name, units)
 				types = result_type.table
 				var signature = new_module_scan_export(reexport.public_name, exported.parameters, arguments, result_type.id)

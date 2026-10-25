@@ -31,7 +31,7 @@ def mir_generic_export_valid(declarations: Hir.HirModuleDecl, name: string) -> b
 	if not published
 		return false
 	for function in declarations.functions
-		if function.name == name and not function.constructor and not function.external and function.result_type_node >= 0
+		if function.name == name and not function.constructor and not function.external
 			for parameter in function.parameters
 				if parameter.type_node < 0
 					return true

@@ -55,8 +55,21 @@ publish computed fields and fixed-type conditional overrides. Their imported
 bodies can use defining-module constants and private helper functions (also
 through `.smirg` packages), without capturing names in the consumer.
 
-Concrete exported functions require explicit parameter and return types;
-generic exports may infer parameters but require explicit return annotations.
+Concrete exported overloads use deterministic, length-prefixed type-signature
+mangling (the `_O` symbol suffix), while non-overloaded public names keep
+their existing ABI names. Both qualified imports and named re-exports resolve
+by parameter types. Existing on-demand generic specializations retain the
+separate `_G` symbol suffix. Concrete overload bodies belong in linked
+`.smirl` libraries; source-free `.smirg` packages do not carry them.
+
+Concrete exported functions require explicit parameter and return types.
+Generic exports with at least one unannotated parameter may omit the return
+annotation: each concrete specialization infers its result from the body.
+Imports, named re-exports and source-free `.smirg` definitions preserve this
+inference; recursive inferred returns still require an explicit return type.
+Generic imports also retain enough defining-module syntax to derive callback
+parameter types from concrete caller arguments, even when the exported result
+has an explicit return annotation. This works with source-free `.smirg` packages.
 Exported `let` values are compile-time immutable scalars, strings, homogeneous
 arrays or structural records (including nested combinations). Namespace-wide
 re-exports, standalone type aliases, and runtime module objects are not

@@ -13,39 +13,61 @@ PROGRAM = '''import Std.Functional alias F
 import Helpers alias H
 
 def main() -> i64
-	let values = F.generate_i64(4, fn(i: i64) i + 1)
-	let doubled = F.map_i64(values, H.twice)
-	let selected = F.filter_i64(doubled, fn(x: i64) x > 4)
-	let total = F.fold_i64(selected, 0, fn(a: i64, b: i64) a + b)
+	let values = F.generate(4, fn(i: i64) i + 1)
+	let twice: Fn[i64,i64] = H.twice
+	let doubled = F.map(values, twice)
+	let selected = F.filter(doubled, fn(x: i64) x > 4)
+	let total = F.fold(selected, 0, fn(a: i64, b: i64) a + b)
+	# Generic functions infer callback input types from concrete collection arguments.
+	let inferred = F.map(values, fn(x) x * 2)
+	let direct_generic = F.map(values, H.twice)
+	let inferred_filter = F.filter(inferred, fn(x) x > 4)
+	let inferred_fold = F.fold(["hi", "there"], 0, fn(acc, word) acc + len(word))
+	let inferred_generate = F.generate(2, fn(index) str(index))
+	if inferred[!3] != 8 or direct_generic[!2] != 6 or len(inferred_filter) != 2
+		return 34
+	if inferred_fold != 7 or inferred_generate[!0] != "0" or inferred_generate[!1] != "1"
+		return 35
+	if F.count_if([0, 1, 2], fn(x) x > 0) != 2
+		return 36
+	if not F.any([0, 1], fn(x) x == 1) or not F.all([1, 2], fn(x) x > 0)
+		return 37
+	if F.find_index([0, 2], fn(x) x > 0) != 1
+		return 38
 	if total != 14 or len(selected) != 2
 		return 1
 	if len(values) != 4 or values[!0] != 1 or values[!3] != 4
 		return 2
-	if len(F.map_i64(Array[i64](), H.twice)) != 0
+	if len(F.map(Array[i64](), twice)) != 0
 		return 3
-	if len(F.generate_i64(-1, H.twice)) != 0
+	if len(F.generate(-1, twice)) != 0
 		return 4
-	if F.fold_i64(Array[i64](), 42, fn(a: i64, b: i64) a + b) != 42
+	if F.fold(Array[i64](), 42, fn(a: i64, b: i64) a + b) != 42
 		return 5
-	let floating = F.generate_f64(3, H.fraction)
-	let scaled = F.map_f64(floating, H.scale)
-	let kept = F.filter_f64(scaled, fn(x) x > 2.0)
+	let fraction: Fn[i64,f64] = H.fraction
+	let scale: Fn[f64,f64] = H.scale
+	let floating = F.generate(3, fraction)
+	let scaled = F.map(floating, scale)
+	let kept = F.filter(scaled, fn(x: f64) x > 2.0)
 	if len(kept) != 2 or kept[!0] != 3.0 or kept[!1] != 5.0
 		return 6
-	if F.fold_f64(kept, 0.0, fn(a, b) a + b) != 8.0
+	if F.fold(kept, 0.0, fn(a: f64, b: f64) a + b) != 8.0
 		return 7
-	if len(F.map_f64(Array[f64](), H.scale)) != 0 or len(F.generate_f64(-3, H.fraction)) != 0
+	if len(F.map(Array[f64](), scale)) != 0 or len(F.generate(-3, fraction)) != 0
 		return 8
-	let words = F.map_string(["a", "be", ""], H.repeat)
-	let filtered = F.filter_string(words, fn(s) len(s) > 1)
+	let repeat: Fn[string,string] = H.repeat
+	let words = F.map(["a", "be", ""], repeat)
+	let filtered = F.filter(words, fn(s: string) len(s) > 1)
 	if len(filtered) != 2 or filtered[!0] != "aa" or filtered[!1] != "bebe"
 		return 9
-	let generated = F.generate_string(2, H.label)
+	let label: Fn[i64,string] = H.label
+	let generated = F.generate(2, label)
 	if len(generated) != 2 or generated[!0] != "a" or generated[!1] != "b"
 		return 16
-	if F.fold_string(generated, "", H.concat) != "ab"
+	let join: Fn[string,string,string] = H.concat
+	if F.fold(generated, "", join) != "ab"
 		return 17
-	if len(F.generate_string(-1, H.label)) != 0 or F.fold_string(Array[string](), "seed", H.concat) != "seed"
+	if len(F.generate(-1, label)) != 0 or F.fold(Array[string](), "seed", join) != "seed"
 		return 18
 	let nonempty: Fn[string,bool] = H.nonempty
 	if F.count_if(words, nonempty) != 2 or not F.any(words, nonempty)
@@ -61,6 +83,65 @@ def main() -> i64
 	let long: Fn[Array[i64],bool] = fn(xs) len(xs) > 1
 	if F.count_if([[1, 2], [3]], long) != 1
 		return 15
+	# Array element, accumulator and result types specialize independently.
+	let sum_lengths: Fn[i64,string,i64] = fn(a, word) a + len(word)
+	if F.fold(["hi", "there"], 3, sum_lengths) != 10
+		return 19
+	if F.fold(Array[string](), 17, sum_lengths) != 17
+		return 20
+	if F.fold(["a", "b"], 0.5, fn(a: f64, word: string) a + 1.0) != 2.5
+		return 21
+	if F.fold([1, 2], "", fn(a: string, value: i64) a + str(value)) != "12"
+		return 22
+	let numbered = F.enumerate([4, 8, 12])
+	if len(numbered) != 3 or numbered[!0].index != 0 or numbered[!2].value != 12
+		return 23
+	if numbered[!2].index != 2 or numbered[!1].value != 8
+		return 24
+	let indexed_strings = F.enumerate(["one", "two"])
+	if len(indexed_strings) != 2 or indexed_strings[!1].index != 1 or indexed_strings[!0].value != "one"
+		return 25
+	let indexed_floats = F.enumerate([1.5, 2.5])
+	if len(indexed_floats) != 2 or indexed_floats[!1].index != 1 or indexed_floats[!1].value != 2.5
+		return 26
+	if len(F.enumerate(Array[i64]())) != 0 or len(F.enumerate(Array[string]())) != 0
+		return 27
+	# enumerate infers the structural result type for arbitrary element types.
+	let booleans = F.enumerate([true, false, true])
+	if len(booleans) != 3 or booleans[!1].index != 1 or booleans[!1].value
+		return 39
+	let nested_values = F.enumerate([[1, 2], [3]])
+	if nested_values[!0].index != 0 or nested_values[!1].value[!0] != 3
+		return 40
+	let records_indexed = F.enumerate([{name = "Ada"}, {name = "Bob"}])
+	if records_indexed[!1].index != 1 or records_indexed[!0].value.name != "Ada"
+		return 41
+	let empty_bool = F.enumerate(Array[bool]())
+	let empty_record = F.enumerate(F.generate(0, fn(i) {name = str(i)}))
+	if len(empty_bool) != 0 or len(empty_record) != 0
+		return 43
+	# Legacy named records remain structurally assignable.
+	let indexed_legacy: Array[F.IndexedI64] = F.enumerate([8, 9])
+	if indexed_legacy[!1].value != 9 or indexed_legacy[!1].index != 1
+		return 44
+	# Generic array results need not have the input element type.
+	let lengths = F.map(["hi", "there"], fn(word: string) len(word))
+	if lengths[!0] != 2 or lengths[!1] != 5
+		return 28
+	let flags = F.generate(3, fn(i: i64) i == 1)
+	if len(flags) != 3 or flags[!0] or not flags[!1]
+		return 29
+	let chosen = F.filter(flags, fn(flag: bool) flag)
+	if len(chosen) != 1 or not chosen[!0]
+		return 30
+	let records = F.map([1, 2], fn(i: i64) {index = i, value = str(i)})
+	if records[!0].index != 1 or records[!1].value != "2"
+		return 31
+	if len(F.generate(0, fn(i: i64) {index = i, value = str(i)})) != 0
+		return 32
+	let nested = F.map([[1, 2], [3]], fn(xs: Array[i64]) len(xs))
+	if nested[!0] != 2 or nested[!1] != 1
+		return 33
 	return 42
 '''
 
@@ -89,6 +170,43 @@ def main() -> None:
 			'\treturn "b"\n'
 			'export def concat(a, b) -> string\n\treturn a + b\n')
 		(root / 'App.sirius').write_text(PROGRAM)
+		# Generic generation supports boolean results, but rejects non-function callbacks.
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let items = F.generate(2, 2)
+	return 0
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"empty_array_like expects an array or a function returning a value" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let items = F.map([1, 2], fn(s: string) len(s))
+	return len(items)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def unused(callback)
+	return 0
+
+def main() -> i64
+	return unused(fn(x) x)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter requires annotation or expected Fn type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''def conflict(callback)
+	let left = callback(1)
+	let right = callback("x")
+	return 0
+
+def main() -> i64
+	return conflict(fn(x) x)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"ambiguous generic callback parameter types" in invalid.stderr, invalid
 		generated = root / 'App.c'
 		compiled = run(cache.seed(), '--module-root', root, 'App', generated)
 		assert compiled.returncode == 0, compiled
@@ -125,7 +243,7 @@ def main() -> None:
 		assert (native.returncode, native.stdout, native.stderr) == (42, b'', b''), native
 
 		# .smirg stores generic definitions, not compiled concrete functions.
-		# Generic predicates in Std.Functional can be used source-free as well.
+		# Inferred-result generic folds and predicates work source-free.
 		stdlib = root / 'Std/Functional.sirius'
 		packaged = run(runner, '--emit-generic', 'Std.Functional', stdlib.with_suffix('.smirg'), stdlib, root)
 		assert packaged.returncode == 0, packaged
@@ -141,6 +259,26 @@ def main() -> i64
 		return 2
 	if F.find_index(["", "x"], nonempty) != 1
 		return 3
+	let sum_lengths: Fn[i64,string,i64] = fn(a, word) a + len(word)
+	if F.fold(["a", "bb"], 0, sum_lengths) != 3
+		return 4
+	let lengths = F.map(["a", "bb"], fn(s) len(s))
+	if len(lengths) != 2 or lengths[!0] != 1 or lengths[!1] != 2
+		return 5
+	if len(F.map(Array[string](), fn(s) len(s))) != 0
+		return 6
+	if len(F.generate(0, fn(i) i == 0)) != 0
+		return 7
+	if F.count_if([1, 2], fn(x) x > 1) != 1
+		return 8
+	if not F.any([0, 2], fn(x) x == 2) or not F.all([1, 2], fn(x) x > 0)
+		return 9
+	let indexed = F.enumerate([true, false])
+	if indexed[!1].index != 1 or indexed[!1].value
+		return 10
+	let nested = F.enumerate([[1, 2]])
+	if nested[!0].value[!1] != 2 or len(F.enumerate(Array[bool]())) != 0
+		return 11
 	return 42
 ''')
 		linked = root / 'packaged-stdlib.smirl'
@@ -154,7 +292,7 @@ def main() -> i64
 		native = run(compile_native(cache, generated))
 		assert (native.returncode, native.stdout, native.stderr) == (42, b'', b''), native
 
-	print('PASS Std.Functional: i64/f64/string callbacks, polymorphic predicates, native/MIR, source-free packages and empty arrays')
+	print('PASS Std.Functional: generic array callbacks, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
 
 
 if __name__ == '__main__':

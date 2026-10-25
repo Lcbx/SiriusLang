@@ -29,7 +29,7 @@ original definition (including on-demand generic specialization); re-exported
 constants and constructors retain their typed interfaces, including computed publications.
 Namespace-wide `export import` remains a proposal, not implemented syntax.
 
-Overload resolution for imported operators and any future support for multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
+Named-function overload resolution is implemented for annotated, distinct parameter types; imported operator overload policy and multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
 expressions; importing a module does not execute runtime initialization code.
 `export let` exposes typed constants (including strings, records and arrays) to
 importers without a runtime getter. Arbitrary effectful initializers remain proposed.
@@ -57,7 +57,7 @@ bodies contribute to public dependency fingerprints; general closure capture
 and externally defined helper functions remain unsupported.
 Exported concrete signatures and constructors can reference imported public
 record types, including nested collection types.
-Exported generic functions with unannotated parameters and explicit concrete return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Namespace-wide re-exports and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
+Exported generic functions with unannotated parameters and either explicit or inferred specialization return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Namespace-wide re-exports and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
 compile through native module imports. The generated modular compiler C is the
 checked-in bootstrap, and no ordered source concatenation is required for
 production builds. The test-only flat source adapter has also been retired; internal test drivers use native imports.

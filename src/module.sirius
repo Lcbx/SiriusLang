@@ -30,8 +30,8 @@ export def mir_type_signature(types: Types.TypeTable, id: i64) -> string
 
 # Encode each concrete argument signature as an identifier-safe, unambiguous
 # suffix. Reject excessively long names at the existing MIR library boundary.
-export def mir_generic_symbol(name: string, types: Types.TypeTable, arguments: Array[i64]) -> string
-	var result = name + "_G"
+def mir_signature_symbol(name: string, marker: string, types: Types.TypeTable, arguments: Array[i64]) -> string
+	var result = name + marker
 	for argument in arguments
 		let signature = mir_type_signature(types, argument)
 		var encoded = ""
@@ -43,3 +43,10 @@ export def mir_generic_symbol(name: string, types: Types.TypeTable, arguments: A
 				encoded += "_" + str(byte) + "_"
 		result += "_" + str(len(encoded)) + "_" + encoded
 	return result
+
+# Overload names use a distinct prefix from on-demand generic specializations.
+export def mir_overload_symbol(name: string, types: Types.TypeTable, arguments: Array[i64]) -> string
+	return mir_signature_symbol(name, "_O", types, arguments)
+
+export def mir_generic_symbol(name: string, types: Types.TypeTable, arguments: Array[i64]) -> string
+	return mir_signature_symbol(name, "_G", types, arguments)

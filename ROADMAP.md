@@ -16,7 +16,18 @@ see the [October 25, 2026 roadmap snapshot](docs/history/ROADMAP_20261025.md).
   contextual specialization from expected function signatures. Local functions,
   qualified imports, named re-exports, and packaged generics are covered by
   targeted regression tests.
-- `Std.Functional` provides sequential callbacks; purity is not enforced.
+- Typed named-function overloads use exact argument matching and deterministic
+  export symbol mangling; imported and re-exported overloads are supported.
+- Exported generic results are inferred per concrete specialization, including
+  arrays, structural records, named re-exports and source-free `.smirg`
+  packages. Recursive inferred results still require annotations.
+- `Std.Functional.map`, `filter`, `generate` and `fold` have generic
+  implementations. `empty_array_like` infers empty-array element types from
+  an array or a callback. Concrete generic callee arguments can supply
+  omitted callback parameter types, including independently typable later
+  arguments and nested generic results. `enumerate` returns structural indexed
+  records for arbitrary element types while keeping legacy record names.
+  Purity is not enforced.
 - Tagged unions, exhaustive `match`, filesystem `Result` wrappers, CoW
   snapshots, and compiler-side ownership analysis have working subsets.
 
@@ -41,6 +52,20 @@ retired. MIR is the sole C backend.
    transformations and numerical operations, runtime descriptors, effect/purity
    checking, and a richer module/library interface remain larger pieces of
    planned work.
+
+## Next implementation slice
+
+**Multi-stage higher-order inference:** infer callback signatures when one
+callback's result determines another callback's input, without requiring an
+explicit intermediate `Fn`. The current constraint discovery handles direct
+and forwarded callback calls with independently typed arguments on either
+side, including nested generic results and source-free packages, but not
+mutually dependent callback signatures. Preserve explicit diagnostics for
+underdetermined or conflicting constraints.
+
+The generic `enumerate` implementation currently uses `map` followed by a
+second pass to set indexes; consider a one-pass indexed transform only if
+measurements justify additional machinery.
 
 ## Deferred architecture
 

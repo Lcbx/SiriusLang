@@ -332,19 +332,60 @@ export def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id:
 	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
 	return result
 
+# Overload resolution is exact when more than one declaration has the name.
+# This avoids declaration-order dependency and implicit-coercion ambiguities.
+export rec HirOverloadSelection(index: i64, table: Types.TypeTable, error: string)
+
+export def hir_select_overload(state: HirBodyState, name: string, args: Array[i64]) -> HirOverloadSelection
+	var current = state.types
+	var candidates = 0
+	var matches = 0
+	var selected = -1
+	var fallback = -1
+	for i in 0..len(state.functions)
+		let function = state.functions[!i]
+		if function.name != name
+			continue
+		candidates += 1
+		fallback = i
+		if len(function.parameters) != len(args)
+			continue
+		var exact = true
+		for j in 0..len(args)
+			var declared = Types.TYPE_TAG_INVALID
+			if function.external
+				declared = function.argument_types[!j]
+			elif function.parameters[!j].type_node >= 0
+				let resolved = hir_module_type_reference_with_constants(current, state.tree, function.parameters[!j].type_node, state.functions, state.module_constants, state.type_aliases)
+				current = resolved.table
+				declared = resolved.type_id
+			if declared != Types.TYPE_TAG_INVALID and declared != args[!j]
+				exact = false
+		if exact
+			selected = i
+			matches += 1
+	if candidates == 0
+		return HirOverloadSelection(-1, current, "")
+	if candidates == 1
+		return HirOverloadSelection(fallback, current, "")
+	if matches == 0
+		return HirOverloadSelection(-1, current, "no matching overload for '" + name + "'")
+	if matches > 1
+		return HirOverloadSelection(-1, current, "ambiguous overload for '" + name + "'")
+	return HirOverloadSelection(selected, current, "")
+
 # Resolve concrete user calls independently of C emission. Unknown parameter or
 # return types are deferred; an active unannotated recursive call is deferred too.
 # The backend remains responsible for generating/reusing specializations.
 export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i64]) -> HirBodyState
 	var result = state
-	var found = false
-	var function = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
-	for candidate in state.functions
-		if candidate.name == name
-			function = candidate
-			found = true
-	if not found
+	let selected = hir_select_overload(state, name, args)
+	result.types = selected.table
+	if selected.error != ""
+		return hir_body_error(result, id, selected.error)
+	if selected.index < 0
 		return result
+	let function = state.functions[!selected.index]
 	if len(args) != len(function.parameters)
 		return hir_body_error(result, id, "argument count mismatch for '" + name + "'")
 	var specialized_args = args
@@ -364,7 +405,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	# Do not recursively analyze callees from inside an expression.
 	if result.collect_calls and not function.constructor
 		result.requests = result.requests.append(HirSpecializationRequest(id, function.body, specialized_args))
-		if function.external
+		if function.external and (function.result_type != Types.TYPE_TAG_INVALID or function.body < 0)
 			result.last_type = function.result_type
 			return result
 		if function.result_type_node >= 0
@@ -375,7 +416,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 		# Unannotated callees need a concrete result type for their caller's
 		# expressions. Infer it without recursively registering specializations.
 		# The worklist still owns emission and deduplication of these calls.
-	if function.external and (not function.constructor or function.body < 0)
+	if function.external and (not function.constructor or function.body < 0) and (function.result_type != Types.TYPE_TAG_INVALID or function.body < 0)
 		result.last_type = function.result_type
 		return result
 	if function.constructor
@@ -482,9 +523,255 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	result.last_type = nested.inferred_return
 	return result
 
-# Infer omitted parameter annotations only when an expected Fn signature is
-# available. Analyze the body in a separate scope to prohibit captures.
-def hir_body_lambda(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
+# Try each overloaded signature with its own expected callback types. This
+# permits lambdas and generic named functions to be inferred from the selected
+# overload, without depending on declaration order.
+def hir_body_overloaded_call(state: HirBodyState, id: i64, name: string) -> HirBodyState
+	let node = state.tree.nodes[!id]
+	var matches = 0
+	var chosen = state
+	for candidate in 0..len(state.functions)
+		let function = state.functions[!candidate]
+		if function.name != name or len(function.parameters) != node.count - 1
+			continue
+		var attempt = state
+		var arguments = Array[i64]()
+		var valid = true
+		for i in 0..len(function.parameters)
+			let parameter = function.parameters[!i]
+			var expected = Types.TYPE_TAG_INVALID
+			if function.external
+				expected = function.argument_types[!i]
+			elif parameter.type_node >= 0
+				let annotation = hir_module_type_reference_with_constants(attempt.types, attempt.tree, parameter.type_node, attempt.functions, attempt.module_constants, attempt.type_aliases)
+				attempt.types = annotation.table
+				expected = annotation.type_id
+			let child = Hir.hir_ast_child(attempt.tree, id, i + 1)
+			if expected != Types.TYPE_TAG_INVALID
+				attempt = hir_body_expression_expected(attempt, child, expected)
+			else
+				attempt = hir_body_expression(attempt, child)
+			if attempt.error != "" or attempt.last_type == Types.TYPE_TAG_INVALID
+				valid = false
+				break
+			if expected != Types.TYPE_TAG_INVALID and expected != attempt.last_type
+				valid = false
+				break
+			arguments = arguments.append(attempt.last_type)
+		if not valid
+			continue
+		let selected = hir_select_overload(attempt, name, arguments)
+		if selected.error != "" or selected.index != candidate
+			continue
+		attempt = hir_body_user_call(attempt, id, name, arguments)
+		if attempt.error != "" or attempt.last_type == Types.TYPE_TAG_INVALID
+			continue
+		attempt.nodes = attempt.nodes.append(Hir.HirNode(id, Resolve.HIR_CALL, attempt.last_type, candidate))
+		matches += 1
+		chosen = attempt
+	if matches == 1
+		return chosen
+	if matches > 1
+		return hir_body_error(state, id, "ambiguous overload for '" + name + "'")
+	return hir_body_error(state, id, "no matching overload for '" + name + "'")
+
+# Infer the input side of an unannotated callback from concrete arguments and
+# the generic callee's uses of that callback. The probe is deliberately
+# conservative: only expressions with known HIR types contribute constraints.
+# The callback result is inferred by analyzing its own body, not guessed here.
+rec HirCallbackProbe(state: HirBodyState, parameters: Array[i64], found: bool, ambiguous: bool, depth: i64, parameter_slot: i64)
+
+def hir_callback_restore(probe: HirCallbackProbe, count: i64) -> HirCallbackProbe
+	var state = probe.state
+	var symbols = Array[Hir.SymbolInfo]()
+	var facts = Array[HirStaticFact]()
+	for i in 0..count
+		symbols = symbols.append(state.symbols[!i])
+		facts = facts.append(state.facts[!i])
+	state.symbols = symbols
+	state.facts = facts
+	return HirCallbackProbe(state, probe.parameters, probe.found, probe.ambiguous, probe.depth, probe.parameter_slot)
+
+def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) -> HirCallbackProbe
+	var probe = original
+	let tree = probe.state.tree
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_LAMBDA or node.kind == Ast.NODE_DEF
+		return probe
+	if node.kind == Ast.NODE_BLOCK
+		let count = len(probe.state.symbols)
+		let depth = probe.state.depth
+		var next = probe
+		next.state.depth += 1
+		for i in 0..node.count
+			next = hir_callback_probe(next, Hir.hir_ast_child(tree, id, i), callback)
+		next = hir_callback_restore(next, count)
+		next.state.depth = depth
+		return next
+	if node.kind == Ast.NODE_FOR
+		let count = len(probe.state.symbols)
+		let depth = probe.state.depth
+		let iterable = Hir.hir_ast_child(tree, id, node.count - 2)
+		var typed = hir_body_expression(probe.state, iterable)
+		var element = Types.TYPE_TAG_INVALID
+		if typed.error == "" and Types.type_tag(typed.types, typed.last_type) == Types.TYPE_TAG_ARRAY
+			element = typed.types.entries[!typed.last_type].first
+		elif tree.nodes[!iterable].kind == Ast.NODE_BINARY and Hir.hir_ast_text(tree, iterable) == ".."
+			element = Types.TYPE_TAG_I64
+		var next = probe
+		if element != Types.TYPE_TAG_INVALID
+			typed.depth += 1
+			typed = hir_body_binding(typed, id, Hir.hir_ast_text(tree, id), element, false)
+			if typed.error == ""
+				next.state = typed
+		next = hir_callback_probe(next, Hir.hir_ast_child(tree, id, node.count - 1), callback)
+		next = hir_callback_restore(next, count)
+		next.state.depth = depth
+		return next
+	if node.kind == Ast.NODE_LET or node.kind == Ast.NODE_VAR
+		if node.count > 0
+			let initializer = Hir.hir_ast_child(tree, id, node.count - 1)
+			# A local may depend on the callback result and be unresolvable
+			# before specialization. Such a local supplies no constraints.
+			var typed = hir_body_expression(probe.state, initializer)
+			if typed.error == "" and typed.last_type != Types.TYPE_TAG_INVALID
+				typed = hir_body_binding(typed, id, Hir.hir_ast_text(tree, id), typed.last_type, node.kind == Ast.NODE_VAR)
+				if typed.error == ""
+					probe.state = typed
+		if node.count > 0
+			return hir_callback_probe(probe, Hir.hir_ast_child(tree, id, node.count - 1), callback)
+		return probe
+	if node.kind == Ast.NODE_CALL and node.count > 0
+		let callee = Hir.hir_ast_child(tree, id, 0)
+		if tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(tree, callee) == callback
+			let resolved = Hir.resolve_hir_name(probe.state.symbols, callback)
+			if resolved.error != "" or resolved.field_index != probe.parameter_slot
+				return probe
+			var signature = Array[i64]()
+			var valid = true
+			var current = probe.state
+			for i in 1..node.count
+				let typed = hir_body_expression(current, Hir.hir_ast_child(tree, id, i))
+				if typed.error != "" or typed.last_type == Types.TYPE_TAG_INVALID
+					valid = false
+					break
+				signature = signature.append(typed.last_type)
+				current = typed
+			if valid
+				if probe.found
+					if len(signature) != len(probe.parameters)
+						probe.ambiguous = true
+					else
+						for i in 0..len(signature)
+							if signature[!i] != probe.parameters[!i]
+								probe.ambiguous = true
+				else
+					probe.parameters = signature
+					probe.found = true
+				probe.state.types = current.types
+			return probe
+	# A helper can forward the callback to another generic function instead of
+	# invoking it directly (e.g. any -> find_index). Reuse that function's
+	# constraints, with a bounded walk to avoid recursive forwarding cycles.
+	if node.kind == Ast.NODE_CALL and node.count > 1 and probe.depth < 8
+		let callee = Hir.hir_ast_child(tree, id, 0)
+		if tree.nodes[!callee].kind == Ast.NODE_NAME
+			let name = Hir.hir_ast_text(tree, callee)
+			for i in 1..node.count
+				let forwarded = Hir.hir_ast_child(tree, id, i)
+				if tree.nodes[!forwarded].kind != Ast.NODE_NAME or Hir.hir_ast_text(tree, forwarded) != callback
+					continue
+				let resolved = Hir.resolve_hir_name(probe.state.symbols, callback)
+				if resolved.error != "" or resolved.field_index != probe.parameter_slot
+					continue
+				var arguments = Array[i64]()
+				var known = true
+				var context = probe.state
+				for j in 1..i
+					let expression = Hir.hir_ast_child(tree, id, j)
+					let typed = hir_body_expression(context, expression)
+					if typed.error != "" or typed.last_type == Types.TYPE_TAG_INVALID
+						known = false
+						break
+					arguments = arguments.append(typed.last_type)
+					context = typed
+				if not known
+					continue
+				for function in probe.state.functions
+					if function.name != name or len(function.parameters) != node.count - 1 or function.body < 0
+						continue
+					let hint = hir_generic_callback_parameters(context, function, i - 1, arguments, probe.depth + 1)
+					if hint.ambiguous
+						probe.ambiguous = true
+					if hint.found
+						if probe.found
+							if len(hint.parameters) != len(probe.parameters)
+								probe.ambiguous = true
+							else
+								for j in 0..len(hint.parameters)
+									if hint.parameters[!j] != probe.parameters[!j]
+										probe.ambiguous = true
+						else
+							probe.parameters = hint.parameters
+							probe.found = true
+						probe.state.types = hint.state.types
+					break
+	var next = probe
+	for i in 0..node.count
+		next = hir_callback_probe(next, Hir.hir_ast_child(tree, id, i), callback)
+	return next
+
+# Derive callback parameter types without assuming any particular stdlib name.
+# Only already-typed preceding arguments can seed the generic callee's scope.
+def hir_generic_callback_parameters(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], depth: i64) -> HirCallbackProbe
+	var nested = new_hir_body_state(state.tree, state.names, state.constants, state.types)
+	nested.functions = state.functions
+	nested.module_constants = state.module_constants
+	nested.type_aliases = state.type_aliases
+	var probe = HirCallbackProbe(nested, Array[i64](), false, false, depth, index)
+	if depth > 8 or function.body < 0 or index >= len(function.parameters)
+		return probe
+	for i in 0..len(function.parameters)
+		var type_id = Types.TYPE_TAG_INVALID
+		if i < len(arguments)
+			type_id = arguments[!i]
+		elif function.external and i < len(function.argument_types)
+			type_id = function.argument_types[!i]
+		elif function.parameters[!i].type_node >= 0
+			let annotation = hir_module_type_reference_with_constants(nested.types, nested.tree, function.parameters[!i].type_node, nested.functions, nested.module_constants, nested.type_aliases)
+			nested.types = annotation.table
+			type_id = annotation.type_id
+		nested = hir_body_binding(nested, function.parameters[!i].source, function.parameters[!i].name, type_id, false)
+	probe.state = nested
+	return hir_callback_probe(probe, function.body, function.parameters[!index].name)
+
+# Collect independently typable arguments on both sides of a callback. These
+# speculative checks only extend the type table: nodes, calls, and diagnostics
+# are discarded so runtime evaluation and specialization order stay unchanged.
+# A callback itself is left unknown until its constraints have been gathered.
+rec HirCallbackArgumentHints(state: HirBodyState, arguments: Array[i64])
+
+def hir_callback_argument_hints(state: HirBodyState, call_id: i64, callback_child: i64, preceding: Array[i64]) -> HirCallbackArgumentHints
+	var result = state
+	var known = preceding.append(Types.TYPE_TAG_INVALID)
+	let tree = state.tree
+	let call = tree.nodes[!call_id]
+	for i in callback_child + 1..call.count
+		let child = Hir.hir_ast_child(tree, call_id, i)
+		if tree.nodes[!child].kind == Ast.NODE_LAMBDA
+			known = known.append(Types.TYPE_TAG_INVALID)
+			continue
+		let inspected = hir_body_expression(result, child)
+		if inspected.error == "" and inspected.last_type != Types.TYPE_TAG_INVALID
+			result.types = inspected.types
+			known = known.append(inspected.last_type)
+		else
+			known = known.append(Types.TYPE_TAG_INVALID)
+	return HirCallbackArgumentHints(result, known)
+
+# Infer omitted lambda parameters from an expected Fn signature or sound
+# generic-callee constraints. A separate scope prohibits captures.
+def hir_body_lambda(state: HirBodyState, id: i64, expected: i64, hints: Array[i64]) -> HirBodyState
 	let node = state.tree.nodes[!id]
 	var result = state
 	# A separate lexical scope rules out captures of enclosing locals.
@@ -511,6 +798,10 @@ def hir_body_lambda(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
 			parameter_type = typed.type_id
 		elif has_expected
 			parameter_type = signature.fields[!i].kind
+		elif len(hints) == node.count - 1
+			parameter_type = hints[!i]
+		if not has_expected and len(hints) == node.count - 1 and parameter_type != hints[!i]
+			return hir_body_error(result, part, "lambda parameter type does not match inferred callback type")
 		if parameter_type == Types.TYPE_TAG_INVALID
 			return hir_body_error(result, part, "lambda parameter requires annotation or expected Fn type")
 		if has_expected and parameter_type != signature.fields[!i].kind
@@ -563,6 +854,12 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 				result.last_type = Types.TYPE_TAG_I64
 				result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_NAME, Types.TYPE_TAG_I64, -1))
 				return result
+		var overloads = 0
+		for function in result.functions
+			if function.name == name and not function.constructor
+				overloads += 1
+		if overloads > 1
+			return hir_body_error(result, id, "overloaded function value requires expected Fn type: '" + name + "'")
 		for function in result.functions
 			if function.name == name and not function.constructor
 				var parameters = Array[i64]()
@@ -606,6 +903,14 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			let local = Hir.resolve_hir_name(result.symbols, Hir.hir_ast_text(state.tree, callee))
 			if local.error == "" and Types.type_tag(result.types, local.type_id) == Types.TYPE_TAG_FUNCTION
 				indirect_type = local.type_id
+		if callee_kind == Ast.NODE_NAME and indirect_type == Types.TYPE_TAG_INVALID
+			let name = Hir.hir_ast_text(state.tree, callee)
+			var overloads = 0
+			for function in result.functions
+				if function.name == name
+					overloads += 1
+			if overloads > 1
+				return hir_body_overloaded_call(result, id, name)
 		if callee_kind == Ast.NODE_ATTR
 			method = Hir.hir_ast_text(state.tree, callee)
 			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, callee, 0))
@@ -643,7 +948,22 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if expected != Types.TYPE_TAG_INVALID
 				result = hir_body_expression_expected(result, child, expected)
 			else
-				result = hir_body_expression(result, child)
+				var inferred = false
+				if callee_kind == Ast.NODE_NAME and indirect_type == Types.TYPE_TAG_INVALID
+					let name = Hir.hir_ast_text(state.tree, callee)
+					for function in result.functions
+						if function.name == name and i - 1 < len(function.parameters) and function.body >= 0
+							let arguments = hir_callback_argument_hints(result, id, i, args)
+							let hint = hir_generic_callback_parameters(arguments.state, function, i - 1, arguments.arguments, 0)
+							if hint.ambiguous
+								return hir_body_error(result, child, "ambiguous generic callback parameter types")
+							if hint.found
+								result.types = hint.state.types
+								result = hir_body_expression_callback(result, child, hint.parameters)
+								inferred = true
+							break
+				if not inferred
+					result = hir_body_expression(result, child)
 			if result.error != ""
 				return result
 			if result.last_type == Types.TYPE_TAG_INVALID
@@ -743,7 +1063,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			result.last_type = Types.TYPE_TAG_INVALID
 		return result
 	if kind == Ast.NODE_LAMBDA
-		return hir_body_lambda(state, id, Types.TYPE_TAG_INVALID)
+		return hir_body_lambda(state, id, Types.TYPE_TAG_INVALID, Array[i64]())
 	if kind == Ast.NODE_RECORD
 		var fields = Array[Types.RecordField]()
 		var complete = true
@@ -869,8 +1189,18 @@ def hir_body_function_value_expected(state: HirBodyState, id: i64, expected: i64
 		return hir_body_expression(state, id)
 	var result = state
 	let signature = state.types.entries[!expected]
-	for function in state.functions
-		if function.name != name or function.constructor
+	var arguments = Array[i64]()
+	for field in signature.fields
+		arguments = arguments.append(field.kind)
+	let selected = hir_select_overload(state, name, arguments)
+	if selected.error != ""
+		return hir_body_error(result, id, selected.error)
+	result.types = selected.table
+	for i in 0..len(state.functions)
+		if i != selected.index
+			continue
+		let function = state.functions[!i]
+		if function.constructor
 			continue
 		if len(function.parameters) != len(signature.fields)
 			return hir_body_error(result, id, "function parameter count does not match expected Fn type")
@@ -901,11 +1231,42 @@ def hir_body_function_value_expected(state: HirBodyState, id: i64, expected: i64
 		return result
 	return hir_body_expression(state, id)
 
+# A generic function value can be specialized once its argument types are
+# known, even if its result type has to be inferred by the existing worklist.
+def hir_body_callback_value(state: HirBodyState, id: i64, parameters: Array[i64]) -> HirBodyState
+	let name = Hir.hir_ast_text(state.tree, id)
+	let local = Hir.resolve_hir_name(state.symbols, name)
+	if local.error == ""
+		return hir_body_expression(state, id)
+	let selected = hir_select_overload(state, name, parameters)
+	if selected.error != ""
+		return hir_body_error(state, id, selected.error)
+	if selected.index < 0
+		return hir_body_expression(state, id)
+	var result = state
+	result.types = selected.table
+	result = hir_body_user_call(result, id, name, parameters)
+	if result.error != "" or result.last_type == Types.TYPE_TAG_INVALID
+		return result
+	let typed = Types.intern_function_type(result.types, parameters, result.last_type, Types.FUNCTION_EFFECT_UNCHECKED)
+	result.types = typed.table
+	result.last_type = typed.id
+	result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_NAME, typed.id, -1))
+	return result
+
+def hir_body_expression_callback(state: HirBodyState, id: i64, parameters: Array[i64]) -> HirBodyState
+	let kind = state.tree.nodes[!id].kind
+	if kind == Ast.NODE_LAMBDA
+		return hir_body_lambda(state, id, Types.TYPE_TAG_INVALID, parameters)
+	if kind == Ast.NODE_NAME
+		return hir_body_callback_value(state, id, parameters)
+	return hir_body_expression(state, id)
+
 # Contextual homogeneous arrays can hold distinct alternatives when their
 # expected element type is a union. Every element is checked independently.
 export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
 	if state.tree.nodes[!id].kind == Ast.NODE_LAMBDA
-		return hir_body_lambda(state, id, expected)
+		return hir_body_lambda(state, id, expected, Array[i64]())
 	if state.tree.nodes[!id].kind == Ast.NODE_NAME and Types.type_tag(state.types, expected) == Types.TYPE_TAG_FUNCTION
 		return hir_body_function_value_expected(state, id, expected)
 	if state.tree.nodes[!id].kind != Ast.NODE_ARRAY or Types.type_tag(state.types, expected) != Types.TYPE_TAG_ARRAY

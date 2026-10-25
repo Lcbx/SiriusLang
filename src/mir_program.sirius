@@ -21,6 +21,18 @@ export rec MirProgramBuild(program: Mir.MirProgram, entry: i64, error: string, e
 def new_mir_program_build(program: Mir.MirProgram, entry: i64, error: string) -> MirProgramBuild
 	return MirProgramBuild(program, entry, error, Array[Mir.MirNamedExport](), Array[Mir.MirNamedImport]())
 
+def mir_external_symbol(functions: Array[Hir.HirFunctionDecl], header: Hir.HirFunctionDecl, types: Types.TypeTable, arguments: Array[i64]) -> string
+	for argument in header.argument_types
+		if argument == Types.TYPE_TAG_INVALID
+			return Module.mir_generic_symbol(header.name, types, arguments)
+	var overloads = 0
+	for function in functions
+		if function.name == header.name and function.external
+			overloads += 1
+	if overloads > 1
+		return Module.mir_overload_symbol(header.name, types, arguments)
+	return header.name
+
 export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirModuleDecl, names: Array[string], arguments: Array[i64]) -> MirProgramBuild
 	let analyzed = Spec.hir_specialize_program_roots(tree, declarations, names, arguments)
 	var functions = Array[Mir.MirFunction]()
@@ -41,11 +53,7 @@ export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirMo
 			for j in 0..len(spec.arguments)
 				if Verify.mir_managed_type(analyzed.types, spec.arguments[!j])
 					releases = releases.append(Mir.mir_op(Mir.MIR_RELEASE, j, j, -1, 0))
-			var symbol = header.name
-			for argument in header.argument_types
-				if argument == Types.TYPE_TAG_INVALID
-					symbol = Module.mir_generic_symbol(header.name, analyzed.types, spec.arguments)
-					break
+			let symbol = mir_external_symbol(declarations.functions, header, analyzed.types, spec.arguments)
 			functions = functions.append(Mir.MirFunction(len(spec.arguments), body.return_type, spec.arguments, [Mir.MirBlock(releases, Mir.mir_panic("unresolved MIR import: " + symbol))], 0))
 		else
 			let lowered = Lower.mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
@@ -73,11 +81,7 @@ export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirMo
 		let declaration = Spec.hir_definition(declarations.functions, spec.definition)
 		if declaration >= 0 and Decl.hir_function_external(tree, declarations.functions[!declaration])
 			let header = declarations.functions[!declaration]
-			var symbol = header.name
-			for argument in header.argument_types
-				if argument == Types.TYPE_TAG_INVALID
-					symbol = Module.mir_generic_symbol(header.name, analyzed.types, spec.arguments)
-					break
+			let symbol = mir_external_symbol(declarations.functions, header, analyzed.types, spec.arguments)
 			result.imports = result.imports.append(Mir.MirNamedImport(symbol, i))
 	for root in analyzed.roots
 		result.exports = result.exports.append(Mir.MirNamedExport(root.name, root.function_id))
