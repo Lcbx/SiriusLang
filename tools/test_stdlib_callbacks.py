@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Check callback-powered Std.Functional helpers, generic predicates and packages."""
 from pathlib import Path
+import argparse
 import shutil
 import subprocess
 import tempfile
@@ -142,6 +143,23 @@ def main() -> i64
 	let nested = F.map([[1, 2], [3]], fn(xs: Array[i64]) len(xs))
 	if nested[!0] != 2 or nested[!1] != 1
 		return 33
+	# scan returns the seed plus every successive accumulator value.
+	let prefixes = F.scan([1, 2, 3], 0, fn(acc, x) acc + x)
+	if len(prefixes) != 4 or prefixes[!0] != 0 or prefixes[!1] != 1 or prefixes[!2] != 3 or prefixes[!3] != 6
+		return 52
+	let words_so_far = F.scan([1, 2, 3], "", fn(acc, x) acc + str(x))
+	if words_so_far[!0] != "" or words_so_far[!2] != "12" or words_so_far[!3] != "123"
+		return 53
+	let record_states = F.scan(["a", "bb"], {count = 0}, fn(acc, word) {count = acc.count + len(word)})
+	if len(record_states) != 3 or record_states[!0].count != 0 or record_states[!1].count != 1 or record_states[!2].count != 3
+		return 54
+	let empty_scan = F.scan(Array[string](), {count = 7}, fn(acc, s) {count = acc.count + len(s)})
+	if len(empty_scan) != 1 or empty_scan[!0].count != 7
+		return 55
+	# Snapshot semantics: changing an accumulated state cannot mutate prior states.
+	let arrays = F.scan([1, 2], [0], fn(acc, x) acc.append(x))
+	if len(arrays) != 3 or len(arrays[!0]) != 1 or len(arrays[!1]) != 2 or arrays[!2][!2] != 2
+		return 56
 	# zip and zip_with are generic in both inputs and their result.
 	let pairs = F.zip([1, 2, 3], ["one", "two"])
 	if len(pairs) != 2 or pairs[!0].left != 1 or pairs[!1].right != "two"
@@ -173,6 +191,9 @@ def run(*command: object) -> subprocess.CompletedProcess[bytes]:
 
 
 def main() -> None:
+	parser = argparse.ArgumentParser(description=__doc__)
+	parser.add_argument("--runner", type=Path, help="existing compatible MIR runner executable")
+	args = parser.parse_args()
 	cache = BuildCache(require_cc())
 	with tempfile.TemporaryDirectory(prefix='sirius-stdlib-callbacks-') as tmp:
 		root = Path(tmp)
@@ -237,6 +258,14 @@ def main() -> i64
 ''')
 		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
 		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let values = F.scan([1, 2], 0, fn(acc: string, x: i64) acc)
+	return len(values)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
 		generated = root / 'App.c'
 		compiled = run(cache.seed(), '--module-root', root, 'App', generated)
 		assert compiled.returncode == 0, compiled
@@ -250,7 +279,7 @@ def main() -> i64
 		assert audit_build.returncode == 0, audit_build
 		audit_run = run(audited)
 		assert (audit_run.returncode, audit_run.stdout, audit_run.stderr) == (42, b'', b''), audit_run
-		runner = cache.native_tool('run_cli')
+		runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
 		library = root / 'App.smirl'
 		built = run(runner, '--build-modules', root, 'App', library)
 		assert built.returncode == 0, built
@@ -315,6 +344,12 @@ def main() -> i64
 		return 12
 	if len(sums) != 2 or sums[!1] != 22 or len(F.zip(Array[i64](), Array[string]())) != 0
 		return 13
+	let prefixes = F.scan([1, 3, 2], 0, fn(acc, n) acc + n)
+	if len(prefixes) != 4 or prefixes[!0] != 0 or prefixes[!3] != 6
+		return 14
+	let empty_scan = F.scan(Array[string](), "seed", fn(acc, word) acc + word)
+	if len(empty_scan) != 1 or empty_scan[!0] != "seed"
+		return 15
 	return 42
 ''')
 		linked = root / 'packaged-stdlib.smirl'
@@ -328,7 +363,7 @@ def main() -> i64
 		native = run(compile_native(cache, generated))
 		assert (native.returncode, native.stdout, native.stderr) == (42, b'', b''), native
 
-	print('PASS Std.Functional: generic array callbacks, zip/zip_with, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
+	print('PASS Std.Functional: generic array callbacks, zip/zip_with, scan, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
 
 
 if __name__ == '__main__':

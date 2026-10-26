@@ -110,10 +110,17 @@ for `Std/` to be present under your chosen module root. Functions operate on
 | `map`, `filter` | Generic input and output element types; preserves element order |
 | `generate` | Generic callback result type (including empty arrays) |
 | `fold` | Generic over the array element and accumulator/result types |
+| `scan` | Generic prefix accumulation; returns the initial state followed by each accumulated state |
 | `zip_with` | Pairwise transform of two arrays of any element types; callback result determines the output type |
 | `zip` | Pair two arrays into structural `{left: A, right: B}` records |
 | `enumerate` | Generic input; returns an array of structural `{index: i64, value: T}` records |
 | `count_if`, `any`, `all`, `find_index` | Generic input elements; predicate must resolve to `Fn[T,bool]` |
+
+`scan(values, initial, callback)` returns `len(values) + 1` states, starting
+with `initial`. Its callback takes `(accumulator, element)` and returns the
+next accumulator of the same type; empty input produces `[initial]`. The
+accumulator may differ from the input element type. For example,
+`scan([1, 2, 3], 0, fn(a, x) a + x)` returns `[0, 1, 3, 6]`.
 
 `zip` and `zip_with` traverse left-to-right and stop when either array runs
 out (the output length is the shorter input length). They never pad or reject

@@ -45,6 +45,17 @@ export def fold(values, initial, callback)
 		result = callback(result, value)
 	return result
 
+# Prefix accumulation retains the initial state as element zero.
+# Each callback result becomes the next state; with empty input, return
+# a one-element array containing only the initial state.
+export def scan(values, initial, callback)
+	var accumulated = initial
+	var result = [initial]
+	for value in values
+		accumulated = callback(accumulated, value)
+		result = result.append(accumulated)
+	return result
+
 # Pairwise array transformations stop at the shorter input. The callback's
 # result type determines the element type, including for empty output arrays.
 export def zip_with(left, right, callback)
