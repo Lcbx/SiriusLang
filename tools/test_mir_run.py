@@ -107,7 +107,7 @@ def main() -> None:
 					raise AssertionError(f'runtime error mismatch {name} {backend}: {result!r}')
 			print(f'PASS MIR run runtime failure {name}')
 		# The existing native float-constructor fixture is now shared too.
-		float_source = ROOT / 'tests/fixtures/06_constructor.sirius'
+		float_source = ROOT / 'tests/language/fixtures/06_constructor.sirius'
 		float_result = subprocess.run([str(runner), str(float_source)], capture_output=True)
 		if float_result.returncode != 0 or normalize_newlines(float_result.stdout) != b'5\n' or float_result.stderr:
 			raise AssertionError(f'f64 constructor parity: {float_result!r}')
@@ -133,8 +133,8 @@ def main() -> None:
 			raise AssertionError(f'options must not enter program argv: {argument_test!r}')
 		print('PASS MIR run option argument separation')
 		if args.all_fixtures:
-			fixtures = [(ROOT / 'tests/fixtures' / (name + '.sirius'),
-				ROOT / 'tests/expected_output' / (name + '.txt')) for name in REFERENCE]
+			fixtures = [(ROOT / 'tests/language/fixtures' / (name + '.sirius'),
+				ROOT / 'tests/language/expected_output' / (name + '.txt')) for name in REFERENCE]
 			fixtures += [(path, ROOT / 'tests/compiler/expected_output' / (path.stem + '.txt'))
 				for path in sorted((ROOT / 'tests/compiler/fixtures').glob('*.sirius'))]
 			passed = 0

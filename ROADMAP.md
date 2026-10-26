@@ -75,6 +75,19 @@ The generic `enumerate` implementation currently uses `map` followed by a
 second pass to set indexes; consider a one-pass indexed transform only if
 measurements justify additional machinery.
 
+## Regression follow-up (October 26, 2026)
+
+The current native module/package test run exposes a separate constructor-name
+resolution regression in `.smirl` builds: the `module_bundles`,
+`module_incremental_discovery`, `module_package_dependencies`,
+`module_reexports`, `module_unions`, `source_modules`, and
+`contextual_function_specialization` drivers fail with
+`unresolved defining-module constructor name` for imported record/union
+constructors. Focused `module_computed_constructors` and package tests still
+pass. Investigate the defining-module constructor lookup in the module-link
+path without weakening these regression cases. The test-layout cleanup does
+not change the compiler or claim these tests pass.
+
 ## Deferred architecture
 
 - **MIR compile-time execution:** reuse the existing MIR interpreter to

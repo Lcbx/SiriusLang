@@ -4,7 +4,8 @@ import subprocess
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
 
-from test_all import run_script, select_scripts
+from test_all import GROUP_PATTERNS, groups_for, run_script, select_scripts
+from test_fixture_layout import check_pairs, check_json_cases
 from profile_mir_allocations import parse_report
 
 from project_paths import executable_path, normalize_newlines
@@ -51,6 +52,39 @@ def main() -> None:
 		assert [path.name for path in select_scripts(root, ('test_mir_*',))] == ['test_mir_ownership.py']
 		assert [path.name for path in select_scripts(root, ('test_*',), ('*ownership*',))] == ['test_a.py', 'test_z.py']
 		assert select_scripts(root, ('missing_*',)) == []
+		assert [path.name for path in select_scripts(root, groups=('mir',))] == ['test_mir_ownership.py']
+		assert select_scripts(root, ('test_a',), groups=('mir',)) == []
+		assert groups_for(root / 'test_mir_ownership.py') == ('mir',)
+		assert groups_for(root / 'test_a.py') == ()
+		assert 'smoke' in GROUP_PATTERNS
+		fixtures = root / 'fixtures'
+		output = root / 'expected_output'
+		fixtures.mkdir(); output.mkdir()
+		(fixtures / 'a.sirius').write_text('')
+		(output / 'a.txt').write_text('')
+		assert check_pairs(root) == 1
+		(output / 'extra.txt').write_text('')
+		try:
+			check_pairs(root)
+		except AssertionError:
+			pass
+		else:
+			raise AssertionError('Orphan output fixture was accepted')
+		cases = root / 'cases'; cases.mkdir()
+		(cases / 'a.c').write_text('')
+		(cases / 'expectations.json').write_text('{"a": {}}')
+		assert check_json_cases(cases, '.c') == 1
+		(cases / 'orphan.c').write_text('')
+		try:
+			check_json_cases(cases, '.c')
+		except AssertionError:
+			pass
+		else:
+			raise AssertionError('Missing case expectation was accepted')
+		# Every registered driver must be discoverable through at least one group.
+		unclassified = [p.name for p in select_scripts(Path(__file__).resolve().parent)
+			if not groups_for(p)]
+		assert not unclassified, f'Unclassified test drivers: {unclassified}'
 		source = root / 'cached'; source.write_bytes(b'binary')
 		output = root / 'new' / 'binary'
 		assert copy_binary(source, output) == output and output.read_bytes() == b'binary'

@@ -74,8 +74,8 @@ def check_cases(cc: str, compiler: Path, work: Path, jobs: int = 4,
 	expected_errors: dict[str, str] | None = None) -> tuple[int, int]:
 	"""Test independent cases concurrently, reporting in deterministic fixture order."""
 	jobs = validate_jobs(jobs)
-	positives = [(ROOT / 'tests/fixtures' / (name + '.sirius'),
-		ROOT / 'tests/expected_output' / (name + '.txt')) for name in REFERENCE]
+	positives = [(ROOT / 'tests/language/fixtures' / (name + '.sirius'),
+		ROOT / 'tests/language/expected_output' / (name + '.txt')) for name in REFERENCE]
 	positives += [(src, ROOT / 'tests/compiler/expected_output' / (src.stem + '.txt'))
 		for src in sorted((ROOT / 'tests/compiler/fixtures').glob('*.sirius'))]
 	positives = [(source, expected) for source, expected in positives if source.stem not in positive_exclude]

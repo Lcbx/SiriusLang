@@ -1,1 +1,3 @@
-tests/fixtures/*.smirg binary
+*.smir binary
+*.smirl binary
+*.smirg binary

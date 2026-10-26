@@ -9,9 +9,9 @@ def add(name: str, sirius: str, c: str, output: str):
     source = dedent(sirius).strip() + '\n'
     # Four spaces in the template are one Sirius tab, without changing C source.
     source = '\n'.join(line.replace('    ', '\t', len(line) - len(line.lstrip(' ')) // 4) if False else '\t' * ((len(line) - len(line.lstrip(' '))) // 4) + line.lstrip(' ') for line in source.splitlines()) + '\n'
-    (ROOT / 'tests' / 'fixtures' / f'{name}.sirius').write_text(source)
-    (ROOT / 'tests' / 'reference_c' / f'{name}.c').write_text('/* Reference lowering, not required byte-for-byte compiler output. */\n' + dedent(c).lstrip())
-    (ROOT / 'tests' / 'expected_output' / f'{name}.txt').write_text(output)
+    (ROOT / 'tests' / 'language' / 'fixtures' / f'{name}.sirius').write_text(source)
+    (ROOT / 'tests' / 'language' / 'reference_c' / f'{name}.c').write_text('/* Reference lowering, not required byte-for-byte compiler output. */\n' + dedent(c).lstrip())
+    (ROOT / 'tests' / 'language' / 'expected_output' / f'{name}.txt').write_text(output)
 
 add('01_scalars', '''
     def main() -> i64

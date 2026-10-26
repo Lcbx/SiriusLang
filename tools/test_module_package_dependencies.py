@@ -66,7 +66,7 @@ def main() -> None:
 		# declaration-order fingerprints without re-export target identities.
 		new_package = (root / 'Wrapped.smirg').read_bytes()
 		assert new_package.startswith(b'SIRIUS-MIR-GENERIC/3\n')
-		legacy = Path(__file__).resolve().parents[1] / 'tests/fixtures/legacy_wrapped_v2.smirg'
+		legacy = Path(__file__).resolve().parents[1] / 'tests/modules/artifacts/legacy_wrapped_v2.smirg'
 		assert legacy.read_bytes().startswith(b'SIRIUS-MIR-GENERIC/2\n')
 		(root / 'Wrapped.smirg').write_bytes(legacy.read_bytes())
 		checked(runner, '--build-modules', root, 'WrappedApp', output)

@@ -18,7 +18,7 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	runtime = cache.runtime()
-	cases = sorted((ROOT / 'tests/reference_c').glob('*.c'))
+	cases = sorted((ROOT / 'tests/language/reference_c').glob('*.c'))
 	if not cases:
 		raise AssertionError('No expected C references found')
 
@@ -27,8 +27,8 @@ def main() -> None:
 		def check(item: tuple[int, Path]) -> str:
 			index, source = item
 			stem = source.stem
-			fixture = ROOT / 'tests/fixtures' / f'{stem}.sirius'
-			stdout = ROOT / 'tests/expected_output' / f'{stem}.txt'
+			fixture = ROOT / 'tests/language/fixtures' / f'{stem}.sirius'
+			stdout = ROOT / 'tests/language/expected_output' / f'{stem}.txt'
 			if not fixture.is_file() or not stdout.is_file():
 				raise AssertionError(f'Missing expected C/output for {stem}')
 			folder = work / f'case_{index}'
@@ -48,13 +48,13 @@ def main() -> None:
 			folder.mkdir()
 			binary = folder / ('program.exe' if sys.platform == 'win32' else 'program')
 
-			compile_c(cache.cc, ROOT / 'tests/runtime_errors' / f'{stem}.c', binary, runtime)
+			compile_c(cache.cc, ROOT / 'tests/language/runtime_errors' / f'{stem}.c', binary, runtime)
 			result = subprocess.run([str(binary)], capture_output=True, text=True, encoding='utf-8', cwd=folder)
 			if result.returncode != expected['exit'] or expected['stderr_contains'] not in result.stderr:
 				raise AssertionError(f'Runtime failure mismatch {stem}: {result}')
 			return f'PASS {stem} (expected runtime panic)'
 
-		errors = json.loads((ROOT / 'tests/runtime_errors/expectations.json').read_text(encoding='utf-8'))
+		errors = json.loads((ROOT / 'tests/language/runtime_errors/expectations.json').read_text(encoding='utf-8'))
 		with ThreadPoolExecutor(max_workers=validate_jobs(args.jobs)) as pool:
 			for message in pool.map(check, enumerate(cases)):
 				print(message)

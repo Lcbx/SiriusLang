@@ -28,25 +28,40 @@ then adopt the new syntax in compiler sources.
 ## Test runner
 
 ```sh
+python tools/test_all.py --group smoke --fail-fast
+python tools/test_all.py --group frontend --fail-fast
+python tools/test_all.py --group mir --fail-fast
+python tools/test_all.py --group modules --fail-fast
 python tools/test_all.py --list
-python tools/test_all.py --match 'test_mir_*' --fail-fast
-python tools/test_all.py --match 'test_module_*' --fail-fast
-python tools/test_examples.py
-python tools/test_stdlib_callbacks.py
-python tools/test_docs.py
-python tools/test_bootstrap.py
+python tools/test_all.py                      # entire active suite; expensive
 ```
 
-`test_all.py` supports repeated `--match`/`--exclude` globs and
-`--fail-fast`; `--list` gives the current script inventory. The full suite
-includes expensive native builds. For independently compiled generations and
-native smoke tests, run `python tools/test_mir_selfhost.py`.
+All active Python test drivers remain independently executable as
+`python tools/test_<name>.py`. The runner runs them sequentially in sorted
+order, using a separate process group and a configurable timeout per driver.
+It reports failures while continuing unless `--fail-fast` is given.
 
-Positive compiler fixtures, negative diagnostics and MIR/native parity cases
-are distinct kinds of evidence; fixture counts are not a complete language
-conformance claim. `tools/generate_core_fixtures.py` and
-`tools/generate_extended_fixtures.py` are *manual* fixture-authoring tools
-that overwrite checked-in files.
+`--group` is repeatable and selects the union of the named groups:
+`smoke`, `frontend`, `mir`, `modules`, `language`, `runtime`, `tooling`.
+Some drivers belong to more than one group. Repeated `--match` patterns
+select by filename/stem, `--exclude` removes matching drivers, and those
+filters combine with group selection. `--list` previews the final selection;
+`--timeout 0` disables the per-driver timeout (default 600 seconds).
+The runner does not forward driver-specific options such as `--jobs` or
+`--rebuild`; invoke an individual driver for those controls.
+
+The cheap `smoke` group checks the source module graph, documentation links,
+fixture pairing and test-runner helpers without building a C compiler.
+The full suite includes costly native builds, bootstrap fixed points, and
+MIR/native comparisons. The internal fixture check does **not** execute all
+proposed language-design cases. For self-hosting evidence, run
+`python tools/test_mir_selfhost.py` and
+`python tools/generate_bootstrap.py --check` as appropriate.
+
+Test inputs are described in [test organization](../tests/README.md).
+`tools/generate_core_fixtures.py` and
+`tools/generate_extended_fixtures.py` are manual fixture-authoring tools
+that overwrite checked-in files; they are not test runners.
 
 ## Source map
 
@@ -56,9 +71,9 @@ that overwrite checked-in files.
 | `bootstrap/compiler.c` | Reproducible native seed |
 | `runtime/` | C11 runtime and headers |
 | `stdlib/Std/` | Filesystem and callback helpers |
-| `tests/` | Fixtures, unit drivers, diagnostics and MIR coverage |
+| `tests/` | Golden fixtures, diagnostics, component inputs and MIR artifacts |
 | `examples/` | Standalone documented programs |
-| `tools/` | Build, test and benchmark scripts |
+| `tools/` | Build helpers, Python test drivers, fixture generators and benchmarks |
 
 See [Compiler structure](COMPILER_STRUCTURE.md) for module boundaries and
 [Ownership](OWNERSHIP.md) for managed register/ARC rules.

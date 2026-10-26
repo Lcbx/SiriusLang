@@ -102,7 +102,7 @@ def main() -> None:
 		print(f'PASS MIR wire: {len(invalid)} corrupted and incompatible artifacts rejected')
 
 		if args.all_fixtures:
-			fixtures = [ROOT / 'tests/fixtures' / (name + '.sirius') for name in REFERENCE]
+			fixtures = [ROOT / 'tests/language/fixtures' / (name + '.sirius') for name in REFERENCE]
 			fixtures += sorted((ROOT / 'tests/compiler/fixtures').glob('*.sirius'))
 			passed = 0
 			for source in fixtures:

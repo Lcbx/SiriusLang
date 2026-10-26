@@ -77,7 +77,7 @@ def main() -> None:
 		write(root, 'NoAnnotation', 'export def bad(x) -> i64\n\treturn 0\n')
 		assert discover(root, 'NoAnnotation')[-1].exports['bad'].parameters == 'x'
 		write(root, 'NoReturn', 'export def bad(x: i64)\n\treturn x\n')
-		reject(root, 'NoReturn', 'exported function requires a return type')
+		reject(root, 'NoReturn', 'exported nongeneric function requires a return type')
 		write(root, 'UnknownType', 'export def bad(x: Something) -> i64\n\treturn 0\n')
 		reject(root, 'UnknownType', 'unsupported exported signature')
 		write(root, 'Malformed', 'export def nope(\n')

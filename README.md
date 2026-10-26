@@ -81,16 +81,18 @@ and restrictions are listed with runnable examples in
 ## Develop and test
 
 ```sh
-python tools/test_examples.py
+python tools/test_all.py --group smoke --fail-fast
+python tools/test_all.py --group modules --fail-fast
 python tools/test_all.py --list
-python tools/test_all.py --match 'test_module_*' --fail-fast
+python tools/test_examples.py
 python tools/generate_bootstrap.py --check
 ```
 
 The source compiler is in `src/`; `bootstrap/compiler.c` is a generated,
 checked-in bootstrap artifact. The old Python compiler, flat manifest, and
-legacy AST-to-C emitter have been retired. See [Development](docs/DEVELOPMENT.md)
-for builds, self-hosting, testing, and bootstrap regeneration.
+legacy AST-to-C emitter have been retired. See [Development](docs/DEVELOPMENT.md) and
+[Test organization](tests/README.md) for builds, test groups, fixtures,
+and bootstrap regeneration.
 
 ## Documentation
 

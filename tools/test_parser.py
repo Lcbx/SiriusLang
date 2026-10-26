@@ -19,7 +19,7 @@ def main() -> None:
 	cases = sorted((ROOT / 'tests/parser/fixtures').glob('*.sirius'))
 	if not cases:
 		raise SystemExit('No parser test fixtures found')
-	programs = sorted((ROOT / 'tests/fixtures').glob('*.sirius'))
+	programs = sorted((ROOT / 'tests/language/fixtures').glob('*.sirius'))
 	programs += sorted((ROOT / 'src').glob('*.sirius'))
 
 	with tempfile.TemporaryDirectory() as tmp:
