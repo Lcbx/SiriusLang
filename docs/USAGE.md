@@ -110,8 +110,24 @@ for `Std/` to be present under your chosen module root. Functions operate on
 | `map`, `filter` | Generic input and output element types; preserves element order |
 | `generate` | Generic callback result type (including empty arrays) |
 | `fold` | Generic over the array element and accumulator/result types |
+| `zip_with` | Pairwise transform of two arrays of any element types; callback result determines the output type |
+| `zip` | Pair two arrays into structural `{left: A, right: B}` records |
 | `enumerate` | Generic input; returns an array of structural `{index: i64, value: T}` records |
 | `count_if`, `any`, `all`, `find_index` | Generic input elements; predicate must resolve to `Fn[T,bool]` |
+
+`zip` and `zip_with` traverse left-to-right and stop when either array runs
+out (the output length is the shorter input length). They never pad or reject
+mismatched lengths. They return correctly typed empty arrays when one input is
+empty. For numerical computations requiring equal dimensions, explicitly
+validate lengths before calling them.
+
+```sirius
+import Std.Functional alias F
+
+let pairs = F.zip([1, 2], ["one"])
+let added = F.zip_with([1, 2], [10, 20], fn(a, b) a + b)
+# pairs is [{left = 1, right = "one"}]; added is [11, 22]
+```
 
 Overload resolution uses parameter types, including the callback's full `Fn`
 signature. Generic named callbacks and noncapturing lambdas receive an
@@ -137,10 +153,32 @@ exhaustive `match` arms are joined similarly. Branches ending with `return`
 do not weaken the aliases of paths that continue, and unreachable statements
 do not add constraints. Loops do not assume a body executes. For example,
 `let box = {run = callback}` can forward `box.run` to `consume`, even when
-`callback` is still generic. To call a record's function value directly,
-extract it first (`let f = box.run; f(value)`); direct `box.run(value)` is not
-yet supported by MIR lowering. Dependency cycles without a concrete type seed
-still require explicit `Fn` annotations. Compilation diagnostics distinguish **conflicting** inferred signatures, **cyclic** forwarding dependencies with no type seed, and **underdetermined** callback parameter types; annotate callback parameters to resolve the latter two.
+`callback` is still generic. Conversely, a **record literal argument** can infer
+an unannotated callback field from a generic callee that invokes that field:
+
+```sirius
+def sum_box(box, values) -> i64
+	var total = 0
+	for value in values
+		total += box.run(value)
+	return total
+
+let answer = sum_box({run = fn(x) x * 2}, [7, 14])
+```
+
+Nested literal fields (`box.inner.run`) and independently constrained fields
+work as well, including with `.smirg` generic declarations. The inference is
+limited to record literals with identifiable callback fields; it does not
+infer arbitrary record transformations or types without a concrete seed.
+Record function fields support direct indirect calls (`box.run(value)`),
+including nested projections; extracting a field first (`let f = box.run;
+f(value)`) also works. Dependency cycles without a concrete type seed
+still require explicit `Fn` annotations. Compilation diagnostics distinguish
+**conflicting** inferred signatures, **cyclic** forwarding dependencies without
+a type seed, and **underdetermined** callback parameter types. Conflicts include
+the first mismatching type or arity and callback-call lines in the defining
+body; cycles include the forwarding chain. For unresolved or cyclic cases,
+annotate callback parameters explicitly.
 `map` can change the element type, and `generate` can return records, booleans
 or nested arrays. Empty results retain those types. `fold` specializes its
 return type from the initial value and callback, including heterogeneous arrays.

@@ -29,6 +29,14 @@ export def consume(callback, values) -> i64
 	for value in values
 		total += callback(value)
 	return total
+
+export def conflicting_arity(callback) -> i64
+	let first = callback(7)
+	let second = callback(7, 14)
+	return 0
+
+export def relay_conflict(callback, enabled: bool) -> i64
+	return conflict(callback, enabled)
 '''
 
 GOOD = '''import Provider alias P
@@ -41,10 +49,19 @@ def main() -> i64
 	return 42
 '''
 
+# The leading fragments remain stable; the additional fragments ensure errors
+# carry actionable provenance through source modules and .smirg packages.
 CASES = {
-	'Underdetermined': ('P.unused(fn(x) x * 2, 42)', b"underdetermined callback parameters in 'unused'"),
-	'Conflicting': ('P.conflict(fn(x) x * 2, true)', b"conflicting generic callback parameter types in 'conflict'"),
-	'Cyclic': ('P.left(fn(x) x * 2, [7, 14])', b"cyclic callback dependency in 'left'"),
+	'Underdetermined': ('P.unused(fn(x) x * 2, 42)',
+		(b"underdetermined callback parameters in 'unused'", b'annotate the callback parameters')),
+	'Conflicting': ('P.conflict(fn(x) x * 2, true)',
+		(b"conflicting generic callback parameter types in 'conflict'", b'parameter 1: i64 versus string', b'callback calls at lines 6 and 8')),
+	'ConflictingArity': ('P.conflicting_arity(fn(x) x * 2)',
+		(b"conflicting generic callback parameter types in 'conflicting_arity'", b'callback arity 1 versus 2')),
+	'ConflictingForwarded': ('P.relay_conflict(fn(x) x * 2, true)',
+		(b"conflicting generic callback parameter types in 'relay_conflict'", b'parameter 1: i64 versus string')),
+	'Cyclic': ('P.left(fn(x) x * 2, [7, 14])',
+		(b"cyclic callback dependency in 'left'", b'left -> right -> left', b'annotate the callback parameters')),
 }
 
 
@@ -53,10 +70,10 @@ def run(*args: object) -> subprocess.CompletedProcess[bytes]:
 
 
 def verify_compiler(compiler: Path, folder: Path, cc: BuildCache) -> None:
-	for name, (expression, diagnostic) in CASES.items():
+	for name, (expression, fragments) in CASES.items():
 		output = folder / f'{name}.c'
 		result = run(compiler, '--module-root', folder, name, output)
-		assert result.returncode != 0 and diagnostic in result.stderr, (name, result)
+		assert result.returncode != 0 and all(part in result.stderr for part in fragments), (name, result)
 	generated = folder / 'Good.c'
 	result = run(compiler, '--module-root', folder, 'Good', generated)
 	assert result.returncode == 0, result
@@ -84,7 +101,7 @@ def main() -> None:
 			assert result.returncode == 0, result
 			(root / 'Provider.sirius').unlink()
 			verify_compiler(cache.seed(), root, cache)
-	print('PASS callback diagnostics: conflicting, underdetermined and cyclic constraints')
+	print('PASS callback diagnostics: conflict types/arity/locations, forwarding, cycles and underdetermined')
 
 
 if __name__ == '__main__':

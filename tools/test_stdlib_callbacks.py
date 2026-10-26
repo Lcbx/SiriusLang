@@ -142,6 +142,28 @@ def main() -> i64
 	let nested = F.map([[1, 2], [3]], fn(xs: Array[i64]) len(xs))
 	if nested[!0] != 2 or nested[!1] != 1
 		return 33
+	# zip and zip_with are generic in both inputs and their result.
+	let pairs = F.zip([1, 2, 3], ["one", "two"])
+	if len(pairs) != 2 or pairs[!0].left != 1 or pairs[!1].right != "two"
+		return 45
+	let sums = F.zip_with([1, 2, 3], [10, 20], fn(a, b) a + b)
+	if len(sums) != 2 or sums[!0] != 11 or sums[!1] != 22
+		return 46
+	let zipped_records = F.zip_with(["one", "two"], [1, 2], fn(s, n) {name = s, count = n})
+	if zipped_records[!0].name != "one" or zipped_records[!1].count != 2
+		return 47
+	let nested_pairs = F.zip([[1, 2]], [true, false])
+	if len(nested_pairs) != 1 or nested_pairs[!0].left[!1] != 2 or not nested_pairs[!0].right
+		return 48
+	let composed = F.map(F.zip([1, 2], [10, 20]), fn(pair) pair.left + pair.right)
+	if composed[!1] != 22
+		return 49
+	if len(F.zip(Array[i64](), ["unused"])) != 0 or len(F.zip([1], Array[string]())) != 0
+		return 50
+	let empty_pairs = F.zip(Array[i64](), Array[string]())
+	let empty_mapped = F.zip_with(Array[i64](), Array[string](), fn(a, b) str(a) + b)
+	if len(empty_pairs) != 0 or len(empty_mapped) != 0
+		return 51
 	return 42
 '''
 
@@ -207,6 +229,14 @@ def main() -> i64
 ''')
 		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
 		assert invalid.returncode != 0 and b"conflicting generic callback parameter types" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let values = F.zip_with([1], ["a"], fn(a: string, b: string) a + b)
+	return len(values)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
 		generated = root / 'App.c'
 		compiled = run(cache.seed(), '--module-root', root, 'App', generated)
 		assert compiled.returncode == 0, compiled
@@ -279,6 +309,12 @@ def main() -> i64
 	let nested = F.enumerate([[1, 2]])
 	if nested[!0].value[!1] != 2 or len(F.enumerate(Array[bool]())) != 0
 		return 11
+	let zipped = F.zip(["left", "right"], [1, 2, 3])
+	let sums = F.zip_with([1, 2], [10, 20, 30], fn(a, b) a + b)
+	if len(zipped) != 2 or zipped[!1].left != "right" or zipped[!0].right != 1
+		return 12
+	if len(sums) != 2 or sums[!1] != 22 or len(F.zip(Array[i64](), Array[string]())) != 0
+		return 13
 	return 42
 ''')
 		linked = root / 'packaged-stdlib.smirl'
@@ -292,7 +328,7 @@ def main() -> i64
 		native = run(compile_native(cache, generated))
 		assert (native.returncode, native.stdout, native.stderr) == (42, b'', b''), native
 
-	print('PASS Std.Functional: generic array callbacks, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
+	print('PASS Std.Functional: generic array callbacks, zip/zip_with, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
 
 
 if __name__ == '__main__':

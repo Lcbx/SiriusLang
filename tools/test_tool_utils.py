@@ -6,7 +6,7 @@ from tempfile import TemporaryDirectory
 
 from test_all import GROUP_PATTERNS, groups_for, run_script, select_scripts
 from test_fixture_layout import check_pairs, check_json_cases
-from profile_mir_allocations import parse_report
+from profile_mir_allocations import parse_report, same_generated_c
 
 from project_paths import executable_path, normalize_newlines
 from build_support import assert_native, copy_binary
@@ -46,6 +46,12 @@ def main() -> None:
 		assert len(by_type) == 2
 	with TemporaryDirectory() as directory:
 		root = Path(directory)
+		lf = root / 'generated.c'; crlf = root / 'seed.c'
+		lf.write_bytes(b'int main(void) {\n return 0;\n}\n')
+		crlf.write_bytes(b'int main(void) {\r\n return 0;\r\n}\r\n')
+		assert same_generated_c(lf, crlf) and same_generated_c(crlf, lf)
+		crlf.write_bytes(b'int main(void) {\r\n return 1;\r\n}\r\n')
+		assert not same_generated_c(lf, crlf)
 		for name in ('test_z.py', 'test_a.py', 'test_mir_ownership.py', 'not_a_test.py'):
 			(root / name).touch()
 		assert [path.name for path in select_scripts(root)] == ['test_a.py', 'test_mir_ownership.py', 'test_z.py']

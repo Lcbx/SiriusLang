@@ -21,7 +21,7 @@ see the [October 25, 2026 roadmap snapshot](docs/history/ROADMAP_20261025.md).
 - Exported generic results are inferred per concrete specialization, including
   arrays, structural records, named re-exports and source-free `.smirg`
   packages. Recursive inferred results still require annotations.
-- `Std.Functional.map`, `filter`, `generate` and `fold` have generic
+- `Std.Functional.map`, `filter`, `generate`, `fold`, `zip` and `zip_with` have generic
   implementations. `empty_array_like` infers empty-array element types from
   an array or a callback. Concrete generic callee arguments can supply
   omitted callback parameter types, including independently typable later
@@ -47,7 +47,9 @@ retired. MIR is the sole C backend.
 3. **Simplify compiler and runtime where justified.** Remove duplication
    when a shared interface is clearer. Profile allocations and compiler stages
    before changing storage or ownership passes; don't optimize solely for
-   benchmark wins on tiny microcases.
+   benchmark wins on tiny microcases. Investigate allocation lifetime and
+   region-based scratch storage for nonescaping temporary data, without a
+   universal implicit context or changes to visible value semantics.
 4. **Expand the language and standard library gradually.** Generalized array
    transformations and numerical operations, runtime descriptors, effect/purity
    checking, and a richer module/library interface remain larger pieces of
@@ -64,10 +66,14 @@ Conditional alias joins now retain only identities preserved by continuing
 `if`/`elif`/`else` paths; exhaustive `match` arms use the same rule, with
 pattern-bound fields available to local inference. Return and guard exits do
 not contaminate the continuing path; loop joins allow zero iterations.
-The compiler now distinguishes conflicting callback signatures, forwarding
+The compiler distinguishes conflicting callback signatures, forwarding
 cycles without type seeds, and underdetermined callbacks, naming the relevant
-function and recommending explicit annotations. Further work includes richer
-constraint traces. Direct calls through function-valued record fields now use
+function and recommending explicit annotations. Conflicts now identify the
+first incompatible callback parameter types or arities and the defining-body
+call-site lines; forwarding preserves that evidence. Cycles report the
+bounded, human-readable forwarding chain, including for `.smirg` imports.
+A full source-file-aware explanation of all higher-order constraints remains
+future work. Direct calls through function-valued record fields use
 existing MIR indirect calls, including nested field projections. Defining-module `match` constructors in imported generic
 bodies now resolve correctly, including from source-free packages. Truly underdetermined callbacks still require an explicit `Fn` annotation.
 
@@ -87,9 +93,53 @@ source module and contextual callback regressions now pass in the focused
 native runner tests. `test_module_capture_imports.py` also checks collisions,
 source-free `.smirg` dependencies, deterministic linking, and missing aliases.
 
-Next: improve higher-order constraint diagnostics and inference as described
-above; keep the test groups, native/interpreter parity and bootstrap fixed
-point passing as further features are added.
+Generic calls now infer unannotated callback fields in record literal arguments,
+including nested literal paths, when the defining generic body invokes that
+specific field with known argument types. Each field is inferred independently;
+conflicting and unrelated fields cannot silently supply a type. Imported generic
+bodies and source-free `.smirg` packages use the same rules. This does not
+infer callback fields through arbitrary record transformations or through
+values with no usable type seed.
+
+The independent two-generation bootstrap check and the record-literal
+callback interpreter/source-free package regression now pass. Sequential
+`zip_with` exercises binary callback inference with heterogeneous array inputs,
+while `zip` builds generic structural pairs on top of it; both truncate to the
+shorter array. The two-array helpers require no new compiler inference rules.
+
+Next: investigate a concrete nested inference limitation: a generic function
+which calls `map(values, fn(x) box.apply(x))` cannot currently infer an
+unannotated `apply` callback inside a record literal at its call site. Keep
+this separate from direct `map(values, box.apply)`, which already works.
+Retain native/interpreter parity, diagnostics and the self-hosting fixed point.
+
+## Allocation-lifetime investigation (experimental; October 26, 2026)
+
+Jai-style scratch arenas may benefit temporary numerical buffers and compiler
+analysis passes. Sirius should keep semantic dependencies explicit; an implicit,
+mutable context for every function is not a current goal. Allocation placement
+should preserve CoW value semantics, ARC cleanup, and native/MIR parity.
+
+The existing `tools/profile_mir_allocations.py` records 19,078,159 generated
+MIR record allocations (including 2,725,320 CoW clones) during a local
+self-hosting run. This count alone does **not** establish which allocations
+are nonescaping or suitable for a region. The profiler now ignores LF/CRLF
+differences when comparing generated C with the checked-in bootstrap.
+
+A separate C11, **POD-only** scratch prototype in
+`tests/runtime/scratch_arena.c` has been validated for alignment, overflow,
+reset/reuse, and comparison with `malloc`/`free` on two synthetic phase-local
+workloads. `tools/test_runtime_scratch_arena.py --benchmark` reports timings
+and allocation counts; the results are not compiler performance measurements.
+No production allocator, emitted C, language syntax, or ownership behavior
+has changed.
+
+Next: identify real pass-local allocations and prove that no pointers or
+managed references escape a reset boundary; then compare memory peaks,
+end-to-end timings, and ARC effects in both execution backends. A region for
+arbitrary ARC-managed values must account for child release and CoW aliasing;
+do **not** reset it as if it contained plain bytes. Require a real workload
+improvement before exposing any allocator-selection API.
 
 ## Deferred architecture
 

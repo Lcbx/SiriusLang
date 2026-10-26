@@ -45,6 +45,21 @@ export def fold(values, initial, callback)
 		result = callback(result, value)
 	return result
 
+# Pairwise array transformations stop at the shorter input. The callback's
+# result type determines the element type, including for empty output arrays.
+export def zip_with(left, right, callback)
+	var result = empty_array_like(callback)
+	var index = 0
+	while index < len(left) and index < len(right)
+		result = result.append(callback(left[!index], right[!index]))
+		index += 1
+	return result
+
+# Generic pairs use structural records so inputs may have unrelated types.
+# Reuse zip_with for its bounds and traversal rules.
+export def zip(left, right)
+	return zip_with(left, right, fn(a, b) {left = a, right = b})
+
 # Convert elements to structural records without capturing a mutable index.
 # Fill indexes in a second pass; map provides the correct result type even
 # when values is empty, without requiring a named record per element type.

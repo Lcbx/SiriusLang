@@ -88,5 +88,9 @@ See [Compiler structure](COMPILER_STRUCTURE.md) for module boundaries and
   `tools/profile_mir_allocations.py`; for dictionary workloads use
   `tools/profile_runtime_dict.py` or `tools/benchmark_dictionaries.py`.
   Single microbenchmarks are not whole-compiler performance evidence.
+- `python tools/test_runtime_scratch_arena.py` validates an isolated
+  POD-only scratch allocator experiment; use `--benchmark` for synthetic
+  allocation-count and CPU-time comparisons, and `--sanitize` to test with
+  supported Clang/GCC sanitizers. It is not production runtime code.
 - [Runtime](RUNTIME.md), [IR design](IR_DESIGN.md) and the
   [historical MIR profiles](history/MIR_PROFILE.md) provide detailed context.

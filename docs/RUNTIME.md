@@ -84,6 +84,37 @@ shared snapshots, borrowed-value keys, and the retained scalar API. Run
 `python tools/test_runtime_collections.py` and the reference-C suite; the
 collection test was also checked with Clang ASan/UBSan.
 
+## Experimental scratch lifetime study (October 26, 2026)
+
+A proof-of-concept **local** arena exists only in
+`tests/runtime/scratch_arena.c`; it is not linked into Sirius programs.
+It accepts explicitly scoped, aligned, nonescaping POD buffers and retains
+blocks for reuse across phase resets. It does not retain or release ARC
+children and therefore must never own arbitrary Sirius records or arrays.
+The test covers alignment, overflow rejection, multiblock reuse, and output
+parity with individually allocated buffers; run:
+
+```sh
+python tools/test_runtime_scratch_arena.py
+python tools/test_runtime_scratch_arena.py --sanitize    # if supported
+python tools/test_runtime_scratch_arena.py --benchmark   # local CPU timings
+```
+
+In one `-O2` local microbenchmark, 600 phases of 512 64-byte scratch nodes
+reduced individual heap allocation calls from 307,200 to 8 (retaining 32 KiB).
+For 200 phases of 64 4-KiB temporary buffers, calls fell from 12,800 to 64
+(retaining 256 KiB). Timings were lower in these **synthetic** cases, but the
+retained peak memory and absence of escaping values are intentional trade-offs.
+No speedup of the actual compiler, runtime, matrix example, or interpreter is
+claimed. Treat this as a safe-scoping experiment, not a proposed general
+allocator interface.
+
+The existing MIR allocation profiler found 19,078,159 generated record
+allocations in a local self-hosting run (2,725,320 CoW clones). Counts do not
+encode escape lifetimes, and persistent or ARC-managed records cannot simply
+be moved to scratch storage. Its output comparison now normalizes LF/CRLF
+line endings; source text is otherwise compared exactly.
+
 ## Next runtime steps
 
 1. **Measured:** MIR-generated record/collection allocation counts in self-hosting

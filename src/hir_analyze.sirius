@@ -578,28 +578,31 @@ def hir_body_overloaded_call(state: HirBodyState, id: i64, name: string) -> HirB
 # Imported declarations use length-prefixed internal names; report the source
 # function name, preserving embedded underscores in user diagnostics.
 def hir_callback_display_name(name: string) -> string
-	if not name.starts_with("M_")
-		return name
+	var readable = name
+	if readable.starts_with("__SiriusConstructorCapture_")
+		readable = readable.slice(len("__SiriusConstructorCapture_"), len(readable))
+	if not readable.starts_with("M_")
+		return readable
 	var i = 2
 	var last = ""
-	while i < len(name)
+	while i < len(readable)
 		var size = 0
 		var digits = false
-		while i < len(name) and (name.byte_at(i) or 0) != 95
-			let digit = (name.byte_at(i) or 0) - 48
+		while i < len(readable) and (readable.byte_at(i) or 0) != 95
+			let digit = (readable.byte_at(i) or 0) - 48
 			if digit < 0 or digit > 9
-				return name
+				return readable
 			digits = true
 			size = size * 10 + digit
 			i += 1
-		if not digits or i >= len(name) or size > len(name) - i - 1
-			return name
+		if not digits or i >= len(readable) or size > len(readable) - i - 1
+			return readable
 		i += 1
-		last = name.slice(i, i + size)
+		last = readable.slice(i, i + size)
 		i += size
-		if i < len(name)
-			if (name.byte_at(i) or 0) != 95
-				return name
+		if i < len(readable)
+			if (readable.byte_at(i) or 0) != 95
+				return readable
 			i += 1
 	return last
 
@@ -608,7 +611,7 @@ def hir_callback_display_name(name: string) -> string
 # conservative: only expressions with known HIR types contribute constraints.
 # The callback result is inferred by analyzing its own body, not guessed here.
 rec HirCallbackAlias(slot: i64, field: string)
-rec HirCallbackProbe(state: HirBodyState, parameters: Array[i64], found: bool, ambiguous: bool, depth: i64, parameter_slot: i64, aliases: Array[HirCallbackAlias], reachable: bool, ancestry: Array[i64], cyclic: bool)
+rec HirCallbackProbe(state: HirBodyState, parameters: Array[i64], found: bool, ambiguous: bool, depth: i64, parameter_slot: i64, parameter_field: string, aliases: Array[HirCallbackAlias], reachable: bool, ancestry: Array[i64], cyclic: bool, source: i64, conflict: string, cycle_trace: string)
 
 # Callback aliases are identified by lexical symbol slot, not by name. This
 # prevents a shadowing binding from inheriting an outer callback constraint.
@@ -642,7 +645,7 @@ def hir_callback_reference(probe: HirCallbackProbe, id: i64) -> bool
 	let path = hir_callback_path(probe, id)
 	if path.slot < 0
 		return false
-	if path.slot == probe.parameter_slot and path.field == ""
+	if path.slot == probe.parameter_slot and path.field == probe.parameter_field
 		return true
 	for alias in probe.aliases
 		if alias.slot == path.slot and alias.field == path.field
@@ -707,7 +710,7 @@ def hir_callback_restore(probe: HirCallbackProbe, count: i64) -> HirCallbackProb
 	for alias in probe.aliases
 		if alias.slot < count
 			aliases = aliases.append(alias)
-	return HirCallbackProbe(state, probe.parameters, probe.found, probe.ambiguous, probe.depth, probe.parameter_slot, aliases, probe.reachable, probe.ancestry, probe.cyclic)
+	return HirCallbackProbe(state, probe.parameters, probe.found, probe.ambiguous, probe.depth, probe.parameter_slot, probe.parameter_field, aliases, probe.reachable, probe.ancestry, probe.cyclic, probe.source, probe.conflict, probe.cycle_trace)
 
 # Retain an alias only if every control-flow path preserves the same binding.
 # The callback's required parameter types, unlike aliases, are constraints from
@@ -720,6 +723,51 @@ def hir_callback_common_aliases(left: HirCallbackProbe, right: HirCallbackProbe)
 				result = result.append(alias)
 				break
 	return result
+
+# Keep the first contradictory pair of constraints; it is enough to explain
+# the failure without turning this conservative probe into a constraint solver.
+# Source nodes refer to the defining function, including imported bodies.
+def hir_callback_merge_signature(original: HirCallbackProbe, signature: Array[i64], source: i64) -> HirCallbackProbe
+	var probe = original
+	if not probe.found
+		probe.parameters = signature
+		probe.source = source
+		probe.found = true
+		return probe
+	var detail = ""
+	if len(signature) != len(probe.parameters)
+		detail = "callback arity " + str(len(probe.parameters)) + " versus " + str(len(signature))
+	else
+		for i in 0..len(signature)
+			if signature[!i] != probe.parameters[!i]
+				detail = "parameter " + str(i + 1) + ": " + Resolve.hir_type_name(probe.state.types, probe.parameters[!i]) + " versus " + Resolve.hir_type_name(probe.state.types, signature[!i])
+				break
+	if detail != ""
+		probe.ambiguous = true
+		if probe.conflict == ""
+			probe.conflict = detail + " (callback calls at lines " + str(Hir.hir_ast_line(probe.state.tree, probe.source)) + " and " + str(Hir.hir_ast_line(probe.state.tree, source)) + ")"
+	return probe
+
+# Ancestry is a bounded stack of defining function body IDs. On a repeated
+# body, include the complete forwarding chain, not just the failing callee.
+def hir_callback_cycle_trace(probe: HirCallbackProbe, repeated: Hir.HirFunctionDecl) -> string
+	var chain = ""
+	var names = Array[string]()
+	for body in probe.ancestry
+		for function in probe.state.functions
+			if function.body == body
+				let name = hir_callback_display_name(function.name)
+				if chain != ""
+					chain += " -> "
+				chain += name
+				for previous in names
+					if previous == name
+						return chain
+				names = names.append(name)
+				break
+	if chain != ""
+		chain += " -> "
+	return chain + hir_callback_display_name(repeated.name)
 
 def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) -> HirCallbackProbe
 	var probe = original
@@ -739,6 +787,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 		probe.found = exit.found
 		probe.ambiguous = exit.ambiguous
 		probe.cyclic = exit.cyclic
+		probe.source = exit.source
+		probe.conflict = exit.conflict
+		probe.cycle_trace = exit.cycle_trace
 		probe.state.types = exit.state.types
 		return probe
 	if node.kind == Ast.NODE_BLOCK
@@ -769,6 +820,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			path.found = observed.found
 			path.ambiguous = observed.ambiguous
 			path.cyclic = observed.cyclic
+			path.source = observed.source
+			path.conflict = observed.conflict
+			path.cycle_trace = observed.cycle_trace
 			if branch.kind == Ast.NODE_ELSE
 				has_else = true
 				path = hir_callback_probe(path, Hir.hir_ast_child(tree, arm, 0), callback)
@@ -788,6 +842,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			observed.found = path.found
 			observed.ambiguous = path.ambiguous
 			observed.cyclic = path.cyclic
+			observed.source = path.source
+			observed.conflict = path.conflict
+			observed.cycle_trace = path.cycle_trace
 		if not has_else
 			if has_path
 				var joined = probe
@@ -819,6 +876,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			path.found = observed.found
 			path.ambiguous = observed.ambiguous
 			path.cyclic = observed.cyclic
+			path.source = observed.source
+			path.conflict = observed.conflict
+			path.cycle_trace = observed.cycle_trace
 			var case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
 			path.state.types = case_type.table
 			if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
@@ -848,6 +908,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			observed.found = path.found
 			observed.ambiguous = path.ambiguous
 			observed.cyclic = path.cyclic
+			observed.source = path.source
+			observed.conflict = path.conflict
+			observed.cycle_trace = path.cycle_trace
 		var exhaustive = false
 		if union_id != Types.TYPE_TAG_INVALID
 			let checked = Resolve.check_exhaustive_match(observed.state.types, union_id, alternatives)
@@ -936,17 +999,8 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 				signature = signature.append(typed.last_type)
 				current = typed
 			if valid
-				if probe.found
-					if len(signature) != len(probe.parameters)
-						probe.ambiguous = true
-					else
-						for i in 0..len(signature)
-							if signature[!i] != probe.parameters[!i]
-								probe.ambiguous = true
-				else
-					probe.parameters = signature
-					probe.found = true
 				probe.state.types = current.types
+				probe = hir_callback_merge_signature(probe, signature, id)
 			return probe
 	# A helper can forward the callback to another generic function instead of
 	# invoking it directly (e.g. any -> find_index). Reuse that function's
@@ -982,24 +1036,21 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 							seen = true
 					if seen
 						probe.cyclic = true
+						if probe.cycle_trace == ""
+							probe.cycle_trace = hir_callback_cycle_trace(probe, function)
 						break
 					let hint = hir_generic_callback_parameters(context, function, i - 1, arguments, probe.depth + 1, probe.ancestry)
 					if hint.cyclic
 						probe.cyclic = true
+						if probe.cycle_trace == ""
+							probe.cycle_trace = hint.cycle_trace
 					if hint.ambiguous
 						probe.ambiguous = true
+						if probe.conflict == ""
+							probe.conflict = hint.conflict
 					if hint.found
-						if probe.found
-							if len(hint.parameters) != len(probe.parameters)
-								probe.ambiguous = true
-							else
-								for j in 0..len(hint.parameters)
-									if hint.parameters[!j] != probe.parameters[!j]
-										probe.ambiguous = true
-						else
-							probe.parameters = hint.parameters
-							probe.found = true
 						probe.state.types = hint.state.types
+						probe = hir_callback_merge_signature(probe, hint.parameters, hint.source)
 					break
 	var next = probe
 	for i in 0..node.count
@@ -1009,11 +1060,19 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 # Derive callback parameter types without assuming any particular stdlib name.
 # Only already-typed preceding arguments can seed the generic callee's scope.
 def hir_generic_callback_parameters(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], depth: i64, ancestry: Array[i64]) -> HirCallbackProbe
+	return hir_generic_callback_parameters_field(state, function, index, arguments, depth, ancestry, "")
+
+# Probe a callback stored in a field of a record-valued generic argument.
+# The field path is exact: using box.other must not constrain box.run.
+def hir_generic_callback_parameters_field(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], depth: i64, ancestry: Array[i64], field: string) -> HirCallbackProbe
 	var nested = new_hir_body_state(state.tree, state.names, state.constants, state.types)
 	nested.functions = state.functions
 	nested.module_constants = state.module_constants
 	nested.type_aliases = state.type_aliases
-	var probe = HirCallbackProbe(nested, Array[i64](), false, false, depth, index, Array[HirCallbackAlias](), true, ancestry.append(function.body), false)
+	var aliases = Array[HirCallbackAlias]()
+	if field != ""
+		aliases = aliases.append(HirCallbackAlias(index, field))
+	var probe = HirCallbackProbe(nested, Array[i64](), false, false, depth, index, field, aliases, true, ancestry.append(function.body), false, -1, "", "")
 	if depth > 8 or function.body < 0 or index >= len(function.parameters)
 		return probe
 	for i in 0..len(function.parameters)
@@ -1070,6 +1129,98 @@ def hir_callback_argument_hints(state: HirBodyState, function: Hir.HirFunctionDe
 				known[!i - 1] = typed.last_type
 				changed = true
 	return HirCallbackArgumentHints(result, known)
+
+# A record-literal callback can be constrained by the generic callee's use
+# of that particular field. Probe only literal fields: spread/computed values
+# still need their own concrete types, and unrelated fields remain untouched.
+rec HirCallbackFieldHint(id: i64, parameters: Array[i64])
+rec HirCallbackRecordHints(state: HirBodyState, fields: Array[HirCallbackFieldHint], conflict: string)
+
+def hir_callback_record_hints(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], id: i64, prefix: string) -> HirCallbackRecordHints
+	var result = HirCallbackRecordHints(state, Array[HirCallbackFieldHint](), "")
+	let tree = state.tree
+	let node = tree.nodes[!id]
+	if node.kind != Ast.NODE_RECORD
+		return result
+	for i in 0..node.count
+		let field = Hir.hir_ast_child(tree, id, i)
+		if tree.nodes[!field].kind != Ast.NODE_FIELD
+			continue
+		let path = hir_callback_field_path(prefix, Hir.hir_ast_text(tree, field))
+		let child = Hir.hir_ast_child(tree, field, 0)
+		let kind = tree.nodes[!child].kind
+		if kind == Ast.NODE_RECORD
+			let nested = hir_callback_record_hints(result.state, function, index, arguments, child, path)
+			result.state = nested.state
+			for hint in nested.fields
+				result.fields = result.fields.append(hint)
+			if result.conflict == ""
+				result.conflict = nested.conflict
+		elif kind == Ast.NODE_LAMBDA or kind == Ast.NODE_NAME
+			let probe = hir_generic_callback_parameters_field(result.state, function, index, arguments, 0, Array[i64](), path)
+			if probe.ambiguous and result.conflict == ""
+				result.conflict = probe.conflict
+			if probe.found and not probe.ambiguous
+				result.state.types = probe.state.types
+				result.fields = result.fields.append(HirCallbackFieldHint(child, probe.parameters))
+	return result
+
+# Shared record construction for both ordinary records and literal callback
+# fields inferred from a generic callee. All fields still typecheck in order.
+def hir_body_record(state: HirBodyState, id: i64, hints: Array[HirCallbackFieldHint]) -> HirBodyState
+	let node = state.tree.nodes[!id]
+	var result = state
+	var fields = Array[Types.RecordField]()
+	var complete = true
+	for i in 0..node.count
+		let field_id = Hir.hir_ast_child(state.tree, id, i)
+		let field = state.tree.nodes[!field_id]
+		let name = Hir.hir_ast_text(state.tree, field_id)
+		if field.kind == Ast.NODE_FIELD
+			let value = Hir.hir_ast_child(state.tree, field_id, 0)
+			if state.tree.nodes[!value].kind == Ast.NODE_RECORD
+				result = hir_body_record(result, value, hints)
+			else
+				var inferred = false
+				for hint in hints
+					if hint.id == value
+						result = hir_body_expression_callback(result, value, hint.parameters)
+						inferred = true
+						break
+				if not inferred
+					result = hir_body_expression(result, value)
+			if result.error != ""
+				return result
+			if result.last_type == Types.TYPE_TAG_INVALID
+				complete = false
+			elif complete
+				let edit = Resolve.hir_record_put(fields, name, result.last_type)
+				if edit.error != ""
+					return hir_body_error(result, field_id, edit.error)
+				fields = edit.fields
+		elif field.kind == Ast.NODE_SPREAD
+			let symbol = Hir.resolve_hir_name(result.symbols, name)
+			if symbol.type_id == Types.TYPE_TAG_INVALID
+				complete = false
+			elif complete
+				let edit = Resolve.hir_record_spread(result.types, fields, symbol.type_id)
+				if edit.error != ""
+					return hir_body_error(result, field_id, edit.error)
+				fields = edit.fields
+		elif field.kind == Ast.NODE_DELETE and complete
+			let edit = Resolve.hir_record_delete(fields, name)
+			if edit.error != ""
+				return hir_body_error(result, field_id, edit.error)
+			fields = edit.fields
+	result.last_type = Types.TYPE_TAG_INVALID
+	if complete
+		let typed = Resolve.resolve_hir_record(result.types, fields)
+		if typed.error != ""
+			return hir_body_error(result, id, typed.error)
+		result.types = typed.table
+		result.last_type = typed.type_id
+		result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_RECORD, typed.type_id, -1))
+	return result
 
 # Infer omitted lambda parameters from an expected Fn signature or sound
 # generic-callee constraints. A separate scope prohibits captures.
@@ -1264,9 +1415,21 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 					for function in result.functions
 						if function.name == name and i - 1 < len(function.parameters) and function.body >= 0
 							let arguments = hir_callback_argument_hints(result, function, id, i, args)
+							if result.tree.nodes[!child].kind == Ast.NODE_RECORD
+								let record = hir_callback_record_hints(arguments.state, function, i - 1, arguments.arguments, child, "")
+								if record.conflict != ""
+									return hir_body_error(result, child, "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "': " + record.conflict)
+								if len(record.fields) > 0
+									result.types = record.state.types
+									result = hir_body_record(result, child, record.fields)
+									inferred = true
+									break
 							let hint = hir_generic_callback_parameters(arguments.state, function, i - 1, arguments.arguments, 0, Array[i64]())
 							if hint.ambiguous
-								return hir_body_error(result, child, "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'")
+								var message = "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'"
+								if hint.conflict != ""
+									message += ": " + hint.conflict
+								return hir_body_error(result, child, message)
 							if hint.found
 								result.types = hint.state.types
 								result = hir_body_expression_callback(result, child, hint.parameters)
@@ -1280,7 +1443,10 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 										needs_context = true
 								if needs_context
 									if hint.cyclic
-										return hir_body_error(result, child, "cyclic callback dependency in '" + hir_callback_display_name(name) + "'; annotate the callback parameters")
+										var message = "cyclic callback dependency in '" + hir_callback_display_name(name) + "'"
+										if hint.cycle_trace != ""
+											message += ": " + hint.cycle_trace
+										return hir_body_error(result, child, message + "; annotate the callback parameters")
 									return hir_body_error(result, child, "underdetermined callback parameters in '" + hir_callback_display_name(name) + "'; annotate the callback parameters")
 							break
 				if not inferred
@@ -1386,46 +1552,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 	if kind == Ast.NODE_LAMBDA
 		return hir_body_lambda(state, id, Types.TYPE_TAG_INVALID, Array[i64]())
 	if kind == Ast.NODE_RECORD
-		var fields = Array[Types.RecordField]()
-		var complete = true
-		for i in 0..node.count
-			let field_id = Hir.hir_ast_child(state.tree, id, i)
-			let field = state.tree.nodes[!field_id]
-			let name = Hir.hir_ast_text(state.tree, field_id)
-			if field.kind == Ast.NODE_FIELD
-				result = hir_body_expression(result, Hir.hir_ast_child(state.tree, field_id, 0))
-				if result.error != ""
-					return result
-				if result.last_type == Types.TYPE_TAG_INVALID
-					complete = false
-				elif complete
-					let edit = Resolve.hir_record_put(fields, name, result.last_type)
-					if edit.error != ""
-						return hir_body_error(result, field_id, edit.error)
-					fields = edit.fields
-			elif field.kind == Ast.NODE_SPREAD
-				let symbol = Hir.resolve_hir_name(result.symbols, name)
-				if symbol.type_id == Types.TYPE_TAG_INVALID
-					complete = false
-				elif complete
-					let edit = Resolve.hir_record_spread(result.types, fields, symbol.type_id)
-					if edit.error != ""
-						return hir_body_error(result, field_id, edit.error)
-					fields = edit.fields
-			elif field.kind == Ast.NODE_DELETE and complete
-				let edit = Resolve.hir_record_delete(fields, name)
-				if edit.error != ""
-					return hir_body_error(result, field_id, edit.error)
-				fields = edit.fields
-		result.last_type = Types.TYPE_TAG_INVALID
-		if complete
-			let typed = Resolve.resolve_hir_record(result.types, fields)
-			if typed.error != ""
-				return hir_body_error(result, id, typed.error)
-			result.types = typed.table
-			result.last_type = typed.type_id
-			result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_RECORD, typed.type_id, -1))
-		return result
+		return hir_body_record(result, id, Array[HirCallbackFieldHint]())
 	if kind == Ast.NODE_ARRAY
 		var element_type = Types.TYPE_TAG_INVALID
 		var complete = true

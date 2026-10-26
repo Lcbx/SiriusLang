@@ -118,6 +118,11 @@ def parse_report(stderr: str) -> tuple[dict[str, int], dict[int, dict[str, int]]
 	return counts, by_type
 
 
+def same_generated_c(generated: Path, seed: Path) -> bool:
+	"""Compare C text, ignoring platform-specific LF/CRLF differences."""
+	return generated.read_text(encoding='utf-8') == seed.read_text(encoding='utf-8')
+
+
 def run(command: list[str]) -> subprocess.CompletedProcess[str]:
 	result = subprocess.run(command, capture_output=True, text=True, errors='replace')
 	if result.returncode:
@@ -167,7 +172,8 @@ def main() -> None:
 			result = run(command)
 			timings.append(perf_counter() - start)
 			stats.append(parse_report(result.stderr))
-			if args.source is None and output.read_bytes() != seed.read_bytes():
+			# Generated C may use LF even when the committed bootstrap has CRLF.
+			if args.source is None and not same_generated_c(output, seed):
 				raise RuntimeError('Instrumented self-hosting output differs from the committed C bootstrap')
 	if any(stat != stats[0] for stat in stats[1:]):
 		raise RuntimeError('Allocation counts are not deterministic')
