@@ -90,6 +90,35 @@ export def module_scan_import_declarations(decl: Hir.HirModuleDecl, units: Array
 	declarations.types = types
 	return ModuleScanImports(declarations, "")
 
+# Copied generic/constructor bodies can refer to imports belonging to their
+# defining module. Transport those interfaces under owner-specific aliases;
+# using the caller's alias would bind a completely different dependency.
+def module_scan_capture_import_alias(owner: string, alias: string) -> string
+	return "__SiriusImport_" + Module.hir_module_symbol(owner, alias)
+
+def module_scan_import_owner_dependencies(declarations: Hir.HirModuleDecl, owner: ModuleScanUnit, units: Array[ModuleScanUnit]) -> ModuleScanImports
+	var added = Array[Hir.HirImport]()
+	for imported in owner.declarations.imports
+		let alias = module_scan_capture_import_alias(owner.name, imported.alias)
+		var exists = false
+		for previous in declarations.imports
+			if previous.alias == alias
+				exists = true
+		if not exists
+			added = added.append(Hir.HirImport(imported.path, alias))
+	if len(added) == 0
+		return ModuleScanImports(declarations, "")
+	var request = declarations
+	request.imports = added
+	let mapped = module_scan_import_declarations(request, units)
+	if mapped.error != ""
+		return mapped
+	var merged = mapped.declarations
+	merged.imports = declarations.imports
+	for imported in added
+		merged.imports = merged.imports.append(imported)
+	return ModuleScanImports(merged, "")
+
 # Source-free .smirg packages retain their constructor AST. A public
 # constructor body can therefore be copied into the importing syntax arena,
 # with its canonical result type still coming from the exported interface.
@@ -191,6 +220,15 @@ def module_scan_computed_constructor(tree: Parser.ParseState, function: Hir.HirF
 # Helper definitions and constants are transported with private module symbols.
 def module_scan_constructor_closed(tree: Parser.ParseState, id: i64, bindings: Array[string], declarations: Hir.HirModuleDecl) -> bool
 	let node = tree.nodes[!id]
+	# A qualified name is closed over an explicit defining-module import.
+	# Keep bare aliases invalid; HIR will validate member visibility.
+	if node.kind == Parser.NODE_ATTR and node.count == 1
+		let receiver = Hir.hir_ast_child(tree, id, 0)
+		if tree.nodes[!receiver].kind == Parser.NODE_NAME
+			let name = Hir.hir_ast_text(tree, receiver)
+			for imported in declarations.imports
+				if imported.alias == name
+					return true
 	if node.kind == Parser.NODE_NAME
 		let name = Hir.hir_ast_text(tree, id)
 		var found = name == "len" or name == "str" or name == "empty_array_like" or name == "Array" or name == "Dict" or name == "Optional"
@@ -201,7 +239,7 @@ def module_scan_constructor_closed(tree: Parser.ParseState, id: i64, bindings: A
 			if constant.name == name
 				found = true
 		for function in declarations.functions
-			if function.name == name and not function.constructor and function.source >= 0 and function.body >= 0
+			if function.name == name and (function.external or (not function.constructor and function.source >= 0 and function.body >= 0))
 				found = true
 		if not found
 			return false
@@ -291,6 +329,11 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 				if function.name == name and function.constructor
 					next = module_scan_rename(next, arm, Module.hir_module_symbol(owner.name, name))
 					break
+			for imported in owner.declarations.imports
+				let prefix = imported.alias + "."
+				if name.starts_with(prefix)
+					next = module_scan_rename(next, arm, module_scan_capture_import_alias(owner.name, imported.alias) + name.slice(len(imported.alias), len(name)))
+					break
 			let case = next.nodes[!arm]
 			var scoped = bindings
 			for j in 0..case.count - 1
@@ -307,6 +350,29 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 		for i in 0..node.count - 1
 			scoped = scoped.append(Hir.hir_ast_text(next, Hir.hir_ast_child(next, id, i)))
 		return module_scan_capture_node(next, Hir.hir_ast_child(next, id, node.count - 1), scoped, owner, updated, required)
+	# A qualified member/type is bound to the imported module of its owner.
+	# Keep the attribute for the regular module resolver, but replace its
+	# receiver with an alias that cannot collide with the importing program.
+	if node.kind == Parser.NODE_ATTR and node.count == 1
+		let receiver = Hir.hir_ast_child(next, id, 0)
+		if next.nodes[!receiver].kind == Parser.NODE_NAME
+			let alias = Hir.hir_ast_text(next, receiver)
+			var local = false
+			for binding in bindings
+				if binding == alias
+					local = true
+			if not local
+				for imported in owner.declarations.imports
+					if imported.alias == alias
+						next = module_scan_rename(next, receiver, module_scan_capture_import_alias(owner.name, alias))
+						return ModuleScanCapture(next, updated, required, "")
+	if node.kind == Parser.NODE_TYPE
+		let name = Hir.hir_ast_text(next, id)
+		for imported in owner.declarations.imports
+			let prefix = imported.alias + "."
+			if name.starts_with(prefix)
+				next = module_scan_rename(next, id, module_scan_capture_import_alias(owner.name, imported.alias) + name.slice(len(imported.alias), len(name)))
+				break
 	if node.kind == Parser.NODE_NAME
 		let name = Hir.hir_ast_text(next, id)
 		for binding in bindings
@@ -329,6 +395,10 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 				updated.constants = updated.constants.append(Hir.HirModuleConstant(symbol, copied.index, updated.values[!copied.index].type_id))
 			next = module_scan_rename(next, id, symbol)
 			return ModuleScanCapture(next, updated, required, "")
+		for function in owner.declarations.functions
+			if function.name == name and function.constructor
+				next = module_scan_rename(next, id, Module.hir_module_symbol(owner.name, name))
+				return ModuleScanCapture(next, updated, required, "")
 		for function in owner.declarations.functions
 			if function.name == name and not function.constructor and function.source >= 0 and function.body >= 0
 				let symbol = module_scan_capture_symbol(owner.name, name)
@@ -434,6 +504,10 @@ export def module_scan_import_constructor_bodies(tree: Parser.ParseState, declar
 					for original in owner.declarations.functions
 						if not original.constructor or function.name != Module.hir_module_symbol(owner.name, original.name)
 							continue
+						let dependencies = module_scan_import_owner_dependencies(updated, owner, units)
+						if dependencies.error != ""
+							return ModuleScanBodies(next, updated, dependencies.error)
+						updated = dependencies.declarations
 						let copied = module_scan_copy_node(next, owner.tree, original.body)
 						let captured = module_scan_capture_constructor(copied.state, copied.node, original, owner, updated)
 						let helpers = module_scan_import_helpers(captured, owner)
@@ -471,6 +545,10 @@ export def module_scan_import_inferred_bodies(tree: Parser.ParseState, declarati
 		for owner in units
 			for original in owner.declarations.functions
 				if not original.constructor and original.body >= 0 and function.name == Module.hir_module_symbol(owner.name, original.name)
+					let dependencies = module_scan_import_owner_dependencies(updated, owner, units)
+					if dependencies.error != ""
+						return ModuleScanBodies(next, updated, dependencies.error)
+					updated = dependencies.declarations
 					let copied = module_scan_copy_node(next, owner.tree, original.source)
 					next = copied.state
 					let declaration = next.nodes[!copied.node]

@@ -70,6 +70,11 @@ inference; recursive inferred returns still require an explicit return type.
 Generic imports also retain enough defining-module syntax to derive callback
 parameter types from concrete caller arguments, even when the exported result
 has an explicit return annotation. This works with source-free `.smirg` packages.
+References in transported generic bodies—including qualified calls, function
+values, constructor calls, type annotations and match alternatives—bind to
+the defining module's imports, not similarly named aliases in the consumer.
+A missing defining-module import is rejected instead of falling back to the
+consumer namespace.
 Exported `let` values are compile-time immutable scalars, strings, homogeneous
 arrays or structural records (including nested combinations). Namespace-wide
 re-exports, standalone type aliases, and runtime module objects are not
@@ -142,6 +147,7 @@ python tools/test_mir_library.py
 python tools/test_mir_link.py
 python tools/test_module_packages.py
 python tools/test_module_package_dependencies.py
+python tools/test_module_capture_imports.py
 python tools/test_module_bundles.py
 ```
 
