@@ -67,9 +67,9 @@ not contaminate the continuing path; loop joins allow zero iterations.
 The compiler now distinguishes conflicting callback signatures, forwarding
 cycles without type seeds, and underdetermined callbacks, naming the relevant
 function and recommending explicit annotations. Further work includes richer
-constraint traces, inference from pattern-bound values of imported generic
-functions, and MIR support for directly calling a record's function-valued
-field. Truly underdetermined callbacks still require an explicit `Fn` annotation.
+constraint traces. Direct calls through function-valued record fields now use
+existing MIR indirect calls, including nested field projections. Defining-module `match` constructors in imported generic
+bodies now resolve correctly, including from source-free packages. Truly underdetermined callbacks still require an explicit `Fn` annotation.
 
 The generic `enumerate` implementation currently uses `map` followed by a
 second pass to set indexes; consider a one-pass indexed transform only if

@@ -1217,6 +1217,14 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			method = Hir.hir_ast_text(state.tree, callee)
 			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, callee, 0))
 			receiver = result.last_type
+			if Types.type_tag(result.types, receiver) == Types.TYPE_TAG_RECORD
+				let field = Hir.resolve_hir_field(result.types, receiver, method)
+				if field.error != ""
+					return hir_body_error(result, callee, field.error)
+				if Types.type_tag(result.types, field.type_id) != Types.TYPE_TAG_FUNCTION
+					return hir_body_error(result, callee, "record field '" + method + "' is not callable")
+				indirect_type = field.type_id
+				result.nodes = result.nodes.append(Hir.HirNode(callee, Hir.HIR_FIELD, field.type_id, field.field_index))
 		elif callee_kind != Ast.NODE_NAME and callee_kind != Ast.NODE_INDEX
 			result = hir_body_expression(result, callee)
 			if Types.type_tag(result.types, result.last_type) == Types.TYPE_TAG_FUNCTION

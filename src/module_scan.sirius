@@ -283,6 +283,14 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 		required = scanned.helpers
 		for i in 1..node.count
 			let arm = Hir.hir_ast_child(next, id, i)
+			# Pattern constructors belong to the defining module, not to the
+			# importing module's namespace. These nodes are not ordinary calls
+			# and therefore bypass the normal free-name capture path.
+			let name = Hir.hir_ast_text(next, arm)
+			for function in owner.declarations.functions
+				if function.name == name and function.constructor
+					next = module_scan_rename(next, arm, Module.hir_module_symbol(owner.name, name))
+					break
 			let case = next.nodes[!arm]
 			var scoped = bindings
 			for j in 0..case.count - 1

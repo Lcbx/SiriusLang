@@ -62,13 +62,20 @@ export def matched_values(callback, item: Item) -> i64
 
 APP = '''import Provider alias P
 
+# Must not capture the importer's identically named constructor.
+rec Number(value: bool)
+	pub value
+
 def main() -> i64
 	let item: P.Item = P.Word("ok")
 	let a = P.match_join(fn(x) x * 2, [7, 14], item)
 	let b = P.match_return(fn(x) x * 2, [7, 14], item)
 	let c = P.if_return(fn(x) x * 2, [7, 14], false)
 	let d = P.guard_return(fn(x) x * 2, [7, 14], true)
-	if a != 42 or b != 42 or c != 42 or d != 42
+	let number: P.Item = P.Number(2)
+	let e = P.matched_values(fn(x) x * 2, number)
+	let f = P.matched_values(fn(x) x * 2, item)
+	if a != 42 or b != 42 or c != 42 or d != 42 or e != 4 or f != 0
 		return 1
 	return 42
 '''
@@ -140,7 +147,8 @@ def main() -> None:
 			bad = run(cache.seed(), '--module-root', root, name, root / f'{name}.c')
 			expected = b'conflicting generic callback parameter types' if name == 'match_conflict' else b'underdetermined callback parameters'
 			assert bad.returncode != 0 and expected in bad.stderr, (name, bad)
-		# Pattern bindings in a local generic function also constrain callbacks.
+		# Pattern bindings constrain callbacks locally and after importing the
+		# generic body, including from a source-free .smirg package.
 		local = PROVIDER + "\ndef main() -> i64\n\tlet item: Item = Number(2)\n\treturn matched_values(fn(x) x * 2, item)\n"
 		(root / 'Local.sirius').write_text(local)
 		local_output = root / 'Local.c'

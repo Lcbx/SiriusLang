@@ -785,7 +785,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 							extra = arguments[!1]
 						next = mir_lower_emit(next, Mir.mir_op(string_op, dst, receiver.slot, arguments[!0], extra))
 						return MirLowerExpr(next, dst)
-		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "append" and node.count == 2
+		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "append" and node.count == 2 and mir_lower_type(context, callee, Hir.HIR_FIELD) == Types.TYPE_TAG_INVALID
 			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
 			if Verify.mir_type_supported(context.types, type_id) and Types.type_tag(context.types, type_id) == Types.TYPE_TAG_ARRAY
 				let owner = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, callee, 0))
@@ -808,7 +808,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, Mir.mir_array_append(dst, owned, inserted))
 				return MirLowerExpr(next, dst)
-		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "get" and node.count == 2
+		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "get" and node.count == 2 and mir_lower_type(context, callee, Hir.HIR_FIELD) == Types.TYPE_TAG_INVALID
 			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
 			if Verify.mir_type_supported(context.types, type_id) and Types.type_tag(context.types, type_id) == Types.TYPE_TAG_OPTIONAL
 				let owner = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, callee, 0))
@@ -823,7 +823,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				next = mir_lower_register(next, type_id)
 				next = mir_lower_emit(next, Mir.mir_dict_get_optional(dst, owner.slot, key.slot))
 				return MirLowerExpr(next, dst)
-		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "insert" and node.count == 3
+		if context.tree.nodes[!callee].kind == Ast.NODE_ATTR and Hir.hir_ast_text(context.tree, callee) == "insert" and node.count == 3 and mir_lower_type(context, callee, Hir.HIR_FIELD) == Types.TYPE_TAG_INVALID
 			let type_id = mir_lower_type(context, id, Resolve.HIR_CALL)
 			if Verify.mir_type_supported(context.types, type_id) and Types.type_tag(context.types, type_id) == Types.TYPE_TAG_DICT
 				let owner = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, callee, 0))
@@ -930,10 +930,21 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 					next = mir_lower_register(next, Types.TYPE_TAG_I64)
 					next = mir_lower_emit(next, Mir.mir_op(op, dst, value.slot, -1, 0))
 					return MirLowerExpr(next, dst)
-		if context.tree.nodes[!callee].kind == Ast.NODE_LAMBDA
-			let function = mir_lower_expression(next, context, callee)
-			next = function.state
-			next.error == "" else return MirLowerExpr(next, -1)
+		var indirect = context.tree.nodes[!callee].kind == Ast.NODE_LAMBDA
+		var function_slot = -1
+		if context.tree.nodes[!callee].kind == Ast.NODE_NAME
+			let local = mir_lower_binding(next, Hir.hir_ast_text(context.tree, callee))
+			if local >= 0 and Types.type_tag(context.types, next.register_types[!local]) == Types.TYPE_TAG_FUNCTION
+				indirect = true
+				function_slot = local
+		elif context.tree.nodes[!callee].kind == Ast.NODE_ATTR
+			indirect = Types.type_tag(context.types, mir_lower_type(context, callee, Hir.HIR_FIELD)) == Types.TYPE_TAG_FUNCTION
+		if indirect
+			if function_slot < 0
+				let function = mir_lower_expression(next, context, callee)
+				next = function.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				function_slot = function.slot
 			var inputs = Array[i64]()
 			for i in 1..node.count
 				let source = Hir.hir_ast_child(context.tree, id, i)
@@ -950,29 +961,8 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				inputs = inputs.append(slot)
 			let dst = len(next.register_types)
 			next = mir_lower_register(next, mir_lower_type(context, id, Resolve.HIR_CALL))
-			next = mir_lower_emit(next, Mir.mir_call_indirect(dst, function.slot, inputs))
+			next = mir_lower_emit(next, Mir.mir_call_indirect(dst, function_slot, inputs))
 			return MirLowerExpr(next, dst)
-		if context.tree.nodes[!callee].kind == Ast.NODE_NAME
-			let local = mir_lower_binding(next, Hir.hir_ast_text(context.tree, callee))
-			if local >= 0 and Types.type_tag(context.types, next.register_types[!local]) == Types.TYPE_TAG_FUNCTION
-				var inputs = Array[i64]()
-				for i in 1..node.count
-					let source = Hir.hir_ast_child(context.tree, id, i)
-					let argument = mir_lower_expression(next, context, source)
-					next = argument.state
-					next.error == "" else return MirLowerExpr(next, -1)
-					var slot = argument.slot
-					let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
-					if injected_type != Types.TYPE_TAG_INVALID
-						let injected = mir_lower_inject(next, context, slot, injected_type)
-						next = injected.state
-						next.error == "" else return MirLowerExpr(next, -1)
-						slot = injected.slot
-					inputs = inputs.append(slot)
-				let dst = len(next.register_types)
-				next = mir_lower_register(next, mir_lower_type(context, id, Resolve.HIR_CALL))
-				next = mir_lower_emit(next, Mir.mir_call_indirect(dst, local, inputs))
-				return MirLowerExpr(next, dst)
 		var callee_id = -1
 		for target in context.call_targets
 			if target.source == id
