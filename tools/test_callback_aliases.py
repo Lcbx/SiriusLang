@@ -105,7 +105,7 @@ def main() -> None:
 		(root / 'App.sirius').write_text(APP)
 		(root / 'Negative.sirius').write_text(NEGATIVE)
 		bad = run(cache.seed(), '--module-root', root, 'Negative', root / 'Negative.c')
-		assert bad.returncode != 0 and b'lambda parameter requires annotation' in bad.stderr, bad
+		assert bad.returncode != 0 and b'underdetermined callback parameters' in bad.stderr, bad
 		generated = root / 'App.c'
 		check(run(cache.seed(), '--module-root', root, 'App', generated))
 		check(run(compile_native(cache, generated)), 42)

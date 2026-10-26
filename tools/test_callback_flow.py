@@ -200,7 +200,7 @@ def main() -> None:
 			path = root / f'Negative_{name}.sirius'
 			path.write_text(source)
 			bad = run(cache.seed(), '--module-root', root, f'Negative_{name}', root / f'{name}.c')
-			expected = b'ambiguous generic callback parameter types' if name == 'conflict' else b'lambda parameter requires annotation'
+			expected = b'conflicting generic callback parameter types' if name == 'conflict' else b'underdetermined callback parameters'
 			assert bad.returncode != 0 and expected in bad.stderr, (name, bad)
 		generated = root / 'App.c'
 		check(run(cache.seed(), '--module-root', root, 'App', generated))

@@ -575,12 +575,40 @@ def hir_body_overloaded_call(state: HirBodyState, id: i64, name: string) -> HirB
 		return hir_body_error(state, id, "ambiguous overload for '" + name + "'")
 	return hir_body_error(state, id, "no matching overload for '" + name + "'")
 
+# Imported declarations use length-prefixed internal names; report the source
+# function name, preserving embedded underscores in user diagnostics.
+def hir_callback_display_name(name: string) -> string
+	if not name.starts_with("M_")
+		return name
+	var i = 2
+	var last = ""
+	while i < len(name)
+		var size = 0
+		var digits = false
+		while i < len(name) and (name.byte_at(i) or 0) != 95
+			let digit = (name.byte_at(i) or 0) - 48
+			if digit < 0 or digit > 9
+				return name
+			digits = true
+			size = size * 10 + digit
+			i += 1
+		if not digits or i >= len(name) or size > len(name) - i - 1
+			return name
+		i += 1
+		last = name.slice(i, i + size)
+		i += size
+		if i < len(name)
+			if (name.byte_at(i) or 0) != 95
+				return name
+			i += 1
+	return last
+
 # Infer the input side of an unannotated callback from concrete arguments and
 # the generic callee's uses of that callback. The probe is deliberately
 # conservative: only expressions with known HIR types contribute constraints.
 # The callback result is inferred by analyzing its own body, not guessed here.
 rec HirCallbackAlias(slot: i64, field: string)
-rec HirCallbackProbe(state: HirBodyState, parameters: Array[i64], found: bool, ambiguous: bool, depth: i64, parameter_slot: i64, aliases: Array[HirCallbackAlias], reachable: bool)
+rec HirCallbackProbe(state: HirBodyState, parameters: Array[i64], found: bool, ambiguous: bool, depth: i64, parameter_slot: i64, aliases: Array[HirCallbackAlias], reachable: bool, ancestry: Array[i64], cyclic: bool)
 
 # Callback aliases are identified by lexical symbol slot, not by name. This
 # prevents a shadowing binding from inheriting an outer callback constraint.
@@ -679,7 +707,7 @@ def hir_callback_restore(probe: HirCallbackProbe, count: i64) -> HirCallbackProb
 	for alias in probe.aliases
 		if alias.slot < count
 			aliases = aliases.append(alias)
-	return HirCallbackProbe(state, probe.parameters, probe.found, probe.ambiguous, probe.depth, probe.parameter_slot, aliases, probe.reachable)
+	return HirCallbackProbe(state, probe.parameters, probe.found, probe.ambiguous, probe.depth, probe.parameter_slot, aliases, probe.reachable, probe.ancestry, probe.cyclic)
 
 # Retain an alias only if every control-flow path preserves the same binding.
 # The callback's required parameter types, unlike aliases, are constraints from
@@ -710,6 +738,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 		probe.parameters = exit.parameters
 		probe.found = exit.found
 		probe.ambiguous = exit.ambiguous
+		probe.cyclic = exit.cyclic
 		probe.state.types = exit.state.types
 		return probe
 	if node.kind == Ast.NODE_BLOCK
@@ -739,6 +768,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			path.parameters = observed.parameters
 			path.found = observed.found
 			path.ambiguous = observed.ambiguous
+			path.cyclic = observed.cyclic
 			if branch.kind == Ast.NODE_ELSE
 				has_else = true
 				path = hir_callback_probe(path, Hir.hir_ast_child(tree, arm, 0), callback)
@@ -757,6 +787,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			observed.parameters = path.parameters
 			observed.found = path.found
 			observed.ambiguous = path.ambiguous
+			observed.cyclic = path.cyclic
 		if not has_else
 			if has_path
 				var joined = probe
@@ -787,6 +818,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			path.parameters = observed.parameters
 			path.found = observed.found
 			path.ambiguous = observed.ambiguous
+			path.cyclic = observed.cyclic
 			var case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
 			path.state.types = case_type.table
 			if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
@@ -815,6 +847,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			observed.parameters = path.parameters
 			observed.found = path.found
 			observed.ambiguous = path.ambiguous
+			observed.cyclic = path.cyclic
 		var exhaustive = false
 		if union_id != Types.TYPE_TAG_INVALID
 			let checked = Resolve.check_exhaustive_match(observed.state.types, union_id, alternatives)
@@ -943,7 +976,16 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 				for function in probe.state.functions
 					if function.name != name or len(function.parameters) != node.count - 1 or function.body < 0
 						continue
-					let hint = hir_generic_callback_parameters(context, function, i - 1, arguments, probe.depth + 1)
+					var seen = false
+					for ancestor in probe.ancestry
+						if ancestor == function.body
+							seen = true
+					if seen
+						probe.cyclic = true
+						break
+					let hint = hir_generic_callback_parameters(context, function, i - 1, arguments, probe.depth + 1, probe.ancestry)
+					if hint.cyclic
+						probe.cyclic = true
 					if hint.ambiguous
 						probe.ambiguous = true
 					if hint.found
@@ -966,12 +1008,12 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 
 # Derive callback parameter types without assuming any particular stdlib name.
 # Only already-typed preceding arguments can seed the generic callee's scope.
-def hir_generic_callback_parameters(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], depth: i64) -> HirCallbackProbe
+def hir_generic_callback_parameters(state: HirBodyState, function: Hir.HirFunctionDecl, index: i64, arguments: Array[i64], depth: i64, ancestry: Array[i64]) -> HirCallbackProbe
 	var nested = new_hir_body_state(state.tree, state.names, state.constants, state.types)
 	nested.functions = state.functions
 	nested.module_constants = state.module_constants
 	nested.type_aliases = state.type_aliases
-	var probe = HirCallbackProbe(nested, Array[i64](), false, false, depth, index, Array[HirCallbackAlias](), true)
+	var probe = HirCallbackProbe(nested, Array[i64](), false, false, depth, index, Array[HirCallbackAlias](), true, ancestry.append(function.body), false)
 	if depth > 8 or function.body < 0 or index >= len(function.parameters)
 		return probe
 	for i in 0..len(function.parameters)
@@ -1019,7 +1061,7 @@ def hir_callback_argument_hints(state: HirBodyState, function: Hir.HirFunctionDe
 			let kind = tree.nodes[!child].kind
 			if kind != Ast.NODE_LAMBDA and kind != Ast.NODE_NAME
 				continue
-			let hint = hir_generic_callback_parameters(result, function, i - 1, known, 0)
+			let hint = hir_generic_callback_parameters(result, function, i - 1, known, 0, Array[i64]())
 			if not hint.found or hint.ambiguous
 				continue
 			var typed = hir_body_expression_callback(result, child, hint.parameters)
@@ -1214,13 +1256,24 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 					for function in result.functions
 						if function.name == name and i - 1 < len(function.parameters) and function.body >= 0
 							let arguments = hir_callback_argument_hints(result, function, id, i, args)
-							let hint = hir_generic_callback_parameters(arguments.state, function, i - 1, arguments.arguments, 0)
+							let hint = hir_generic_callback_parameters(arguments.state, function, i - 1, arguments.arguments, 0, Array[i64]())
 							if hint.ambiguous
-								return hir_body_error(result, child, "ambiguous generic callback parameter types")
+								return hir_body_error(result, child, "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'")
 							if hint.found
 								result.types = hint.state.types
 								result = hir_body_expression_callback(result, child, hint.parameters)
 								inferred = true
+							elif result.tree.nodes[!child].kind == Ast.NODE_LAMBDA
+								let lambda = result.tree.nodes[!child]
+								var needs_context = false
+								for j in 0..lambda.count - 1
+									let parameter = Hir.hir_ast_child(result.tree, child, j)
+									if result.tree.nodes[!parameter].count == 0
+										needs_context = true
+								if needs_context
+									if hint.cyclic
+										return hir_body_error(result, child, "cyclic callback dependency in '" + hir_callback_display_name(name) + "'; annotate the callback parameters")
+									return hir_body_error(result, child, "underdetermined callback parameters in '" + hir_callback_display_name(name) + "'; annotate the callback parameters")
 							break
 				if not inferred
 					result = hir_body_expression(result, child)

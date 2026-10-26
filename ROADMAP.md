@@ -64,10 +64,12 @@ Conditional alias joins now retain only identities preserved by continuing
 `if`/`elif`/`else` paths; exhaustive `match` arms use the same rule, with
 pattern-bound fields available to local inference. Return and guard exits do
 not contaminate the continuing path; loop joins allow zero iterations.
-Remaining tasks are more precise cyclic/ambiguous-constraint diagnostics,
-inference from pattern-bound values of imported generic functions,
-and MIR support for directly calling a record's function-valued field. Truly
-underdetermined callbacks still require an explicit `Fn` annotation.
+The compiler now distinguishes conflicting callback signatures, forwarding
+cycles without type seeds, and underdetermined callbacks, naming the relevant
+function and recommending explicit annotations. Further work includes richer
+constraint traces, inference from pattern-bound values of imported generic
+functions, and MIR support for directly calling a record's function-valued
+field. Truly underdetermined callbacks still require an explicit `Fn` annotation.
 
 The generic `enumerate` implementation currently uses `map` followed by a
 second pass to set indexes; consider a one-pass indexed transform only if

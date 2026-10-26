@@ -49,13 +49,13 @@ NEGATIVE_CASES = (
 
 def main() -> i64
 	return conflict(fn(x) x, [1], ["bad"])
-''', b'ambiguous generic callback parameter types'),
+''', b'conflicting generic callback parameter types'),
 	('''def ignored(callback, values) -> i64
 	return len(values)
 
 def main() -> i64
 	return ignored(fn(x) x, [1])
-''', b'lambda parameter requires annotation or expected Fn type'),
+''', b'underdetermined callback parameters'),
 )
 
 

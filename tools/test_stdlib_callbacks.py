@@ -196,7 +196,7 @@ def main() -> i64
 	return unused(fn(x) x)
 ''')
 		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
-		assert invalid.returncode != 0 and b"lambda parameter requires annotation or expected Fn type" in invalid.stderr, invalid
+		assert invalid.returncode != 0 and b"underdetermined callback parameters" in invalid.stderr, invalid
 		(root / 'Invalid.sirius').write_text('''def conflict(callback)
 	let left = callback(1)
 	let right = callback("x")
@@ -206,7 +206,7 @@ def main() -> i64
 	return conflict(fn(x) x)
 ''')
 		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
-		assert invalid.returncode != 0 and b"ambiguous generic callback parameter types" in invalid.stderr, invalid
+		assert invalid.returncode != 0 and b"conflicting generic callback parameter types" in invalid.stderr, invalid
 		generated = root / 'App.c'
 		compiled = run(cache.seed(), '--module-root', root, 'App', generated)
 		assert compiled.returncode == 0, compiled

@@ -140,7 +140,7 @@ do not add constraints. Loops do not assume a body executes. For example,
 `callback` is still generic. To call a record's function value directly,
 extract it first (`let f = box.run; f(value)`); direct `box.run(value)` is not
 yet supported by MIR lowering. Dependency cycles without a concrete type seed
-still require explicit `Fn` annotations.
+still require explicit `Fn` annotations. Compilation diagnostics distinguish **conflicting** inferred signatures, **cyclic** forwarding dependencies with no type seed, and **underdetermined** callback parameter types; annotate callback parameters to resolve the latter two.
 `map` can change the element type, and `generate` can return records, booleans
 or nested arrays. Empty results retain those types. `fold` specializes its
 return type from the initial value and callback, including heterogeneous arrays.

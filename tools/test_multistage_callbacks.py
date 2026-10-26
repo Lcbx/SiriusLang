@@ -104,7 +104,7 @@ def main() -> i64
 
 def main() -> i64
 	return inconsistent(fn(x) x, fn(x) str(x), [7])
-''', b'ambiguous generic callback parameter types'),
+''', b'conflicting generic callback parameter types'),
 	('''def left(callback, values) -> i64
 	return right(callback, values)
 
@@ -113,7 +113,7 @@ def right(callback, values) -> i64
 
 def main() -> i64
 	return left(fn(x) x * 2, [7])
-''', b'lambda parameter requires annotation or expected Fn type'),
+''', b'cyclic callback dependency'),
 	('''def consume(callback, values) -> i64
 	var total = 0
 	for value in values
@@ -125,13 +125,13 @@ def conflicting(callback, left, right) -> i64
 
 def main() -> i64
 	return conflicting(fn(x) x, [1], ["a"])
-''', b'ambiguous generic callback parameter types'),
+''', b'conflicting generic callback parameter types'),
 	('''def unused(first, second) -> i64
 	return 0
 
 def main() -> i64
 	return unused(fn(x) x, fn(y) y)
-''', b'lambda parameter requires annotation or expected Fn type'),
+''', b'underdetermined callback parameters'),
 )
 
 

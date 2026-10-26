@@ -138,7 +138,7 @@ def main() -> None:
 		for name, source in NEGATIVES.items():
 			(root / f'{name}.sirius').write_text(source)
 			bad = run(cache.seed(), '--module-root', root, name, root / f'{name}.c')
-			expected = b'ambiguous generic callback parameter types' if name == 'match_conflict' else b'lambda parameter requires annotation'
+			expected = b'conflicting generic callback parameter types' if name == 'match_conflict' else b'underdetermined callback parameters'
 			assert bad.returncode != 0 and expected in bad.stderr, (name, bad)
 		# Pattern bindings in a local generic function also constrain callbacks.
 		local = PROVIDER + "\ndef main() -> i64\n\tlet item: Item = Number(2)\n\treturn matched_values(fn(x) x * 2, item)\n"
