@@ -1,13 +1,26 @@
-# Typed record constructors, typed functions, and f64.
+# Geometry using records, f64 arithmetic, and an exhaustive tagged-union match.
 rec Point(x: f64, y: f64)
+rec Rectangle(width: f64, height: f64)
+rec Triangle(base: f64, height: f64)
+
+let Shape = Rectangle | Triangle
 
 def distance(a: Point, b: Point) -> f64
 	let dx = a.x - b.x
 	let dy = a.y - b.y
 	return sqrt(dx * dx + dy * dy)
 
+def area(shape: Shape) -> f64
+	match shape
+		Rectangle(width, height)
+			return width * height
+		Triangle(base, height)
+			return base * height / 2.0
+
 def main() -> i64
 	let origin = Point(0.0, 0.0)
 	let point = Point(3.0, 4.0)
 	print(distance(origin, point))
+	print(area(Rectangle(3.0, 4.0)))
+	print(area(Triangle(4.0, 3.0)))
 	return 0

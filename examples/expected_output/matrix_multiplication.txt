@@ -1,0 +1,16 @@
+A * x (2 entries, one per line):
+140
+320
+y * A (3 entries, one per line):
+14
+19
+24
+A * B (2x2, row-major):
+58
+64
+139
+154
+Bad vector shape:
+error: incompatible matrix/vector dimensions
+Bad matrix shape:
+error: incompatible matrix dimensions

@@ -11,19 +11,34 @@ the other examples have checked-in expected output and are exercised by
 | --- | --- |
 | [`fizzbuzz.sirius`](fizzbuzz.sirius) | `for` ranges, `if`/`elif`, remainder and printing |
 | [`fibonacci.sirius`](fibonacci.sirius) | Functions, sequential loops and mutable locals |
-| [`prime_sieve.sirius`](prime_sieve.sirius) | Sieve of Eratosthenes, arrays, `while`, checked indexing |
+| [`prime_sieve.sirius`](prime_sieve.sirius) | Sieve of Eratosthenes, checked indexing, recoverable `SieveResult` union and exhaustive `match` |
 | [`game_of_life.sirius`](game_of_life.sirius) | Conway's Game of Life, nested arrays, value-based generations |
 | [`insertion_sort.sirius`](insertion_sort.sirius) | Sorting, indexed updates, copy-on-write snapshots |
-| [`word_frequencies.sirius`](word_frequencies.sirius) | Dictionary insertion and optional lookup/fallback |
+| [`word_frequencies.sirius`](word_frequencies.sirius) | Dictionaries, optional lookup, and `Found`/`Missing` tagged-union results |
 | [`cow_nested.sirius`](cow_nested.sirius) | Record constructors, nested CoW updates, destructuring |
 | [`generic_choose.sirius`](generic_choose.sirius) | Compile-time specialization of one function for three types |
-| [`geometry.sirius`](geometry.sirius) | `f64`, record constructors and `sqrt` |
+| [`geometry.sirius`](geometry.sirius) | `f64`, records, `sqrt`, and exhaustive shape dispatch using `match` |
+| [`matrix_multiplication.sirius`](matrix_multiplication.sirius) | Locally defined row-major `Matrix`, matrix–vector, vector–matrix, matrix–matrix products, and shape errors via tagged unions |
+| [`event_log.sirius`](event_log.sirius) | Typed heterogeneous `Array[Event]`, three union variants, and `match` in a loop |
 | [`bitwise_rgb.sirius`](bitwise_rgb.sirius) | `i64` bitwise operations and shifts |
 | [`filesystem_walk.sirius`](filesystem_walk.sirius) | Recursive directory traversal, command-line args and filesystem optionals |
 
 All standalone examples have `main() -> i64` and return zero on success.
+`matrix_multiplication.sirius` keeps the entire matrix representation and
+operations local to the example: a flat `Array[f64]` in row-major order,
+explicit shape checks, ordinary nested loops, and fresh result arrays. It
+demonstrates rectangular products and invalid-dimension results. Since `str()`
+currently formats only `i64`, it prints each `f64` result on its own line
+(matrix entries in row-major order). Native 2D arrays and broadcasting are
+not assumed.
+
 `game_of_life.sirius` shows a 5×5 blinker through two generations; it uses
-only **new value construction**, not shared mutable state.
+only **new value construction**, not shared mutable state. The examples
+`event_log`, `geometry`, `prime_sieve`, `word_frequencies`, and
+`matrix_multiplication` show different uses of constructor-based tagged unions:
+typed mixed collections, shape dispatch, recoverable errors,
+optional-to-result conversion, and dimension-checked numerical results.
+Every `match` handles all alternatives.
 
 ## Running
 
@@ -35,6 +50,14 @@ python tools/build_compiler.py
 cc -std=c11 -I runtime game_of_life.c runtime/sirius_runtime.c -lm -o game_of_life
 ./game_of_life
 python tools/test_examples.py
+```
+
+To also check the same golden outputs through the MIR interpreter after
+building `sirius-run`:
+
+```sh
+python tools/build_mir_runner.py
+python tools/test_examples.py --runner ./sirius-run
 ```
 
 On Windows, use `sirius.exe` / `game_of_life.exe`, and use the appropriate C
@@ -61,6 +84,8 @@ by `python tools/test_filesystem.py`.
 - **Collections:** homogeneous arrays (including nested arrays), typed
   dictionaries, immutable snapshots with CoW, record/array nested updates,
   iteration, optional lookups, unwrap/fallback and checked indexing.
+- **Tagged unions:** constructor-derived union aliases, injected return values,
+  exhaustive `match` with field bindings, and mixed-variant typed arrays.
 - **Runtime:** printing, string concatenation and basic string methods,
   file I/O and directory listing, argument access, bitwise integer operations.
 - **Toolchain:** source modules/imports, specialized generic packages,
@@ -69,11 +94,12 @@ by `python tools/test_filesystem.py`.
 
 ### Not yet implemented / relevant restrictions
 
-- **Tagged unions and exhaustive `match`** are available in source modules,
-  including `Std.Filesystem` `Result` wrappers. The standalone examples retain
-  `Optional` where it keeps the baseline self-contained. Computed constructor
-  publications and contextual nested union conversions are implemented;
-  heterogeneous unannotated collection literals still need typing context.
+- **Tagged unions and exhaustive `match`** work in standalone sources and
+  modules, including `Std.Filesystem` `Result` wrappers. Variants are
+  distinguished by structural record shape, not constructor name: two
+  constructors with identical published field types cannot be separate union
+  alternatives. Mixed-variant array literals need an expected type such as
+  `let events: Array[Event] = [...]`; unannotated literals remain homogeneous.
 - General `comptime`, `Any` with runtime descriptor access, vectorized
   NumPy-like computation, parallel `map`, and capturing closures are future
   features, not suitable for current executable examples.
@@ -95,6 +121,7 @@ implementations for comparison.
 
 | Example | Potential feature or library improvement | Expected benefit |
 | --- | --- | --- |
+| `matrix_multiplication.sirius` | Native multidimensional arrays, slicing, vectorized matrix operations and broadcasting | Replace the example-local row-major implementation once those features exist; compare correctness, performance and CoW behavior |
 | `game_of_life.sirius` | Native 2D arrays, slicing/neighbor shifts, elementwise operations and broadcasting | Express neighbor counts and generation updates as array operations instead of nested loops; benchmark allocation costs and performance |
 | `prime_sieve.sirius` | Array generation, slices and bulk Boolean-mask updates | Replace repeated element updates with concise bulk operations; check CoW behavior |
 | `word_frequencies.sirius` | Standard-library string splitting, normalization and tokenization | Process raw text or file contents instead of an already-tokenized word array |
@@ -127,8 +154,8 @@ Other planned capabilities—general compile-time execution, dynamic `Any`,
 reflection and parallel transformations—have little immediate benefit for these
 small examples and need not block their evolution.
 
-When revising an example, keep its expected output and add native/interpreter
-parity tests. For optimization-oriented rewrites, retain the original or a
+When revising an example, update its checked-in golden output and run native
+and (when available) interpreter parity tests. For optimization-oriented rewrites, retain the original or a
 baseline variant so behavior and resource use can be compared meaningfully.
 
 For the **target** semantics (which may be broader), see

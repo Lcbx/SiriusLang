@@ -1,5 +1,11 @@
-# Sieve of Eratosthenes: homogeneous arrays and checked indexing.
-def primes_up_to(limit: i64) -> Array[i64]
+# A checked sieve returns success or a recoverable error as a tagged union.
+rec Primes(values: Array[i64])
+rec InvalidLimit(message: string)
+let SieveResult = Primes | InvalidLimit
+
+def primes_up_to(limit: i64) -> SieveResult
+	if limit < 2
+		return InvalidLimit("limit must be at least 2")
 	var composite = Array[bool]()
 	for _ in 0..(limit + 1)
 		composite = composite.append(false)
@@ -15,12 +21,19 @@ def primes_up_to(limit: i64) -> Array[i64]
 	for value in 2..(limit + 1)
 		if not composite[!value]
 			primes = primes.append(value)
-	return primes
+	return Primes(primes)
+
+def describe(result: SieveResult) -> string
+	match result
+		Primes(values)
+			var line = "Primes:"
+			for prime in values
+				line += " " + str(prime)
+			return line
+		InvalidLimit(message)
+			return "Error: " + message
 
 def main() -> i64
-	let primes = primes_up_to(50)
-	var line = "Primes:"
-	for prime in primes
-		line += " " + str(prime)
-	print(line)
+	print(describe(primes_up_to(50)))
+	print(describe(primes_up_to(1)))
 	return 0

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Compile and run the standalone Sirius examples with their golden output."""
+import argparse
 from pathlib import Path
 import shutil
 import subprocess
@@ -13,6 +14,12 @@ def main() -> None:
 	examples = ROOT / 'examples'
 	sources = sorted(path for path in examples.glob('*.sirius') if path.name != 'filesystem_walk.sirius')
 	expected = examples / 'expected_output'
+	parser = argparse.ArgumentParser(description=__doc__)
+	parser.add_argument('--runner', type=Path, help='built sirius-run executable for MIR/native parity')
+	args = parser.parse_args()
+	runner = args.runner.resolve() if args.runner else None
+	if runner and not runner.is_file():
+		parser.error(f'not a file: {runner}')
 	assert sources, 'No standalone examples found'
 	assert {path.stem for path in sources} == {path.stem for path in expected.glob('*.txt')}, 'Example output fixtures do not match example sources'
 	cache = BuildCache(shutil.which('clang') or require_cc())
@@ -30,7 +37,12 @@ def main() -> None:
 			wanted = normalize_newlines((expected / (source.stem + '.txt')).read_bytes())
 			assert result.returncode == 0 and normalize_newlines(result.stdout) == wanted and not result.stderr, (
 				source.name, result.returncode, result.stdout, result.stderr, wanted)
-			print(f'PASS {source.name}', flush=True)
+			if runner:
+				interpreted = subprocess.run([str(runner), str(source)], capture_output=True, timeout=120)
+				assert (interpreted.returncode, normalize_newlines(interpreted.stdout),
+					normalize_newlines(interpreted.stderr)) == (result.returncode, wanted, b''), (
+						source.name, interpreted.returncode, interpreted.stdout, interpreted.stderr, wanted)
+			print(f'PASS {source.name}' + (' (native + MIR)' if runner else ''), flush=True)
 	print(f'PASS {len(sources)} standalone examples')
 
 

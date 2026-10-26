@@ -1,16 +1,30 @@
-# Count already-tokenized words using a copy-on-write dictionary.
-# String splitting/tokenization is deliberately outside this example.
+# Count words with a CoW dictionary; distinguish found/missing queries by tag.
+rec Found(word: string, count: i64)
+rec Missing(word: string)
+let Lookup = Found | Missing
+
 def frequencies(words: Array[string]) -> Dict[string, i64]
 	var counts = Dict[string, i64]()
 	for word in words
 		counts = counts.insert(word, (counts.get(word) or 0) + 1)
 	return counts
 
+def lookup(counts: Dict[string, i64], word: string) -> Lookup
+	let count = counts.get(word) else return Missing(word)
+	return Found(word, count)
+
+def describe(result: Lookup) -> string
+	match result
+		Found(word, count)
+			return word + ": " + str(count)
+		Missing(word)
+			return word + ": absent"
+
 def main() -> i64
 	let words = ["red", "blue", "red", "green", "blue", "red"]
 	let counts = frequencies(words)
-	print("red: " + str(counts.get("red") or 0))
-	print("blue: " + str(counts.get("blue") or 0))
-	print("green: " + str(counts.get("green") or 0))
-	print("missing: " + str(counts.get("missing") or 0))
+	print(describe(lookup(counts, "red")))
+	print(describe(lookup(counts, "blue")))
+	print(describe(lookup(counts, "green")))
+	print(describe(lookup(counts, "missing")))
 	return 0

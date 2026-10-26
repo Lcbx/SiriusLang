@@ -1,0 +1,6 @@
+Ada joined
+Ada scored 10
+Lin joined
+Lin scored 7
+Ada left (finished)
+Total points: 17

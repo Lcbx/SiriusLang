@@ -1,0 +1,30 @@
+# A heterogeneous event stream has one statically known tagged-union element type.
+rec Joined(name: string)
+rec Scored(name: string, points: i64)
+rec Left(name: string, reason: string)
+let Event = Joined | Scored | Left
+
+def show_events(events: Array[Event]) -> i64
+	var total = 0
+	for event in events
+		match event
+			Joined(name)
+				print(name + " joined")
+			Scored(name, points)
+				print(name + " scored " + str(points))
+				total += points
+			Left(name, reason)
+				print(name + " left (" + reason + ")")
+	print("Total points: " + str(total))
+	return 0
+
+def main() -> i64
+	let events: Array[Event] = [
+		Joined("Ada"),
+		Scored("Ada", 10),
+		Joined("Lin"),
+		Scored("Lin", 7),
+		Left("Ada", "finished")
+	]
+	show_events(events)
+	return 0

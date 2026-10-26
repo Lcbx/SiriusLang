@@ -1,0 +1,78 @@
+# A small row-major matrix, implemented locally until Sirius has native 2D arrays.
+# data[row * cols + col] stores one element; multiplication builds fresh arrays.
+rec Matrix(rows: i64, cols: i64, data: Array[f64])
+rec VectorProduct(values: Array[f64])
+rec MatrixProduct(value: Matrix)
+rec ShapeError(message: string)
+
+let VectorResult = VectorProduct | ShapeError
+let MatrixResult = MatrixProduct | ShapeError
+
+def valid_matrix(matrix: Matrix) -> bool
+	return matrix.rows >= 0 and matrix.cols >= 0 and len(matrix.data) == matrix.rows * matrix.cols
+
+def matvec(matrix: Matrix, vector: Array[f64]) -> VectorResult
+	if not valid_matrix(matrix) or matrix.cols != len(vector)
+		return ShapeError("incompatible matrix/vector dimensions")
+	var values = Array[f64]()
+	for row in 0..matrix.rows
+		var sum = 0.0
+		for col in 0..matrix.cols
+			sum += matrix.data[!(row * matrix.cols + col)] * vector[!col]
+		values = values.append(sum)
+	return VectorProduct(values)
+
+def vecmat(vector: Array[f64], matrix: Matrix) -> VectorResult
+	if not valid_matrix(matrix) or len(vector) != matrix.rows
+		return ShapeError("incompatible vector/matrix dimensions")
+	var values = Array[f64]()
+	for col in 0..matrix.cols
+		var sum = 0.0
+		for row in 0..matrix.rows
+			sum += vector[!row] * matrix.data[!(row * matrix.cols + col)]
+		values = values.append(sum)
+	return VectorProduct(values)
+
+def matmul(left: Matrix, right: Matrix) -> MatrixResult
+	if not valid_matrix(left) or not valid_matrix(right) or left.cols != right.rows
+		return ShapeError("incompatible matrix dimensions")
+	var data = Array[f64]()
+	for row in 0..left.rows
+		for col in 0..right.cols
+			var sum = 0.0
+			for k in 0..left.cols
+				sum += left.data[!(row * left.cols + k)] * right.data[!(k * right.cols + col)]
+			data = data.append(sum)
+	return MatrixProduct(Matrix(left.rows, right.cols, data))
+
+# Print one f64 per line: the current str() intrinsic only accepts i64.
+def show_vector(label: string, result: VectorResult) -> i64
+	print(label)
+	match result
+		VectorProduct(values)
+			for value in values
+				print(value)
+		ShapeError(message)
+			print("error: " + message)
+	return 0
+
+def show_matrix(label: string, result: MatrixResult) -> i64
+	print(label)
+	match result
+		MatrixProduct(value)
+			for row in 0..value.rows
+				for col in 0..value.cols
+					print(value.data[!(row * value.cols + col)])
+		ShapeError(message)
+			print("error: " + message)
+	return 0
+
+def main() -> i64
+	let a = Matrix(2, 3, [1.0, 2.0, 3.0, 4.0, 5.0, 6.0])
+	let b = Matrix(3, 2, [7.0, 8.0, 9.0, 10.0, 11.0, 12.0])
+	show_vector("A * x (2 entries, one per line):", matvec(a, [10.0, 20.0, 30.0]))
+	show_vector("y * A (3 entries, one per line):", vecmat([2.0, 3.0], a))
+	show_matrix("A * B (2x2, row-major):", matmul(a, b))
+	show_vector("Bad vector shape:", matvec(a, [1.0, 2.0]))
+	show_matrix("Bad matrix shape:", matmul(b, b))
+	return 0
