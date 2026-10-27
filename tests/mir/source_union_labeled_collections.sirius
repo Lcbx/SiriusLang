@@ -1,0 +1,40 @@
+rec Meters(value: i64)
+rec Feet(value: i64)
+rec Failed(message: string)
+let Reading = Meters | Feet | Failed
+
+enum Color
+	Red
+	Green
+	Blue
+
+def score(value: Reading) -> i64
+	match value
+		Meters(n)
+			return n
+		Feet(n)
+			return n * 10
+		Failed(message)
+			return len(message)
+
+def color_score(value: Color) -> i64
+	match value
+		Red()
+			return 1
+		Green()
+			return 7
+		Blue()
+			return 20
+
+def main() -> i64
+	let readings = Array[Reading]().append(Meters(2)).append(Feet(3)).append(Failed("no"))
+	let snapshot = readings
+	let indexed = Dict[i64,Reading]().insert(1, Feet(4)).insert(2, Meters(5))
+	let saved = indexed
+	let chosen = indexed.get(1) else return 99
+	let colors = Array[Color]().append(Green()).append(Red())
+	let color_table = Dict[i64,Color]().insert(8, Blue())
+	let selected = color_table.get(8) else return 98
+	if len(snapshot) != 3 or len(saved) != 2
+		return 97
+	return score(readings[!0]) + score(readings[!1]) + score(readings[!2]) + score(chosen) + score(Meters(5)) + color_score(colors[!0]) + color_score(colors[!1]) + color_score(selected)

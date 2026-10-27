@@ -286,20 +286,36 @@ A record can be implicitly injected when **exactly one** union alternative has
 its structural type. When multiple alternatives have the same payload shape,
 construction must select a label explicitly. A **direct constructor call**
 retains its label in a contextually typed `let`, `return`, typed array
-literal, or typed function argument (including indirect calls). Qualified imported constructors (`C.Red()`) and match patterns
-(`C.Red()`) use the defining constructor's label, including across re-exports;
+literal, typed function argument (including indirect calls), or insertion into
+`Array[Union]` / `Dict[Key,Union]` through `append` / `insert`. Qualified imported
+constructors (`C.Red()`) and match patterns (`C.Red()`) use the defining
+constructor's label, including across re-exports;
 module-qualified names do not change record or union type identity. Storing
-the record first erases its constructor name and cannot later recover a label.
-Dedicated `Union.Label(...)` injection for already constructed records and
-contextual injection in all collection mutation and nested expression forms
-remain to be implemented.
+the record first erases its constructor name; no label can be inferred from a
+stored structural value when the union has same-shaped alternatives.
+
+Explicit `Length.Meters(data)` construction accepts **any record**
+structurally compatible with the selected `Meters` payload, including a value
+previously stored with another constructor's name. It constructs a new union
+value with that alternative's label, regardless of whether other alternatives
+have identical or different payload shapes. `Length.Meters(existing_length)`
+is invalid when `existing_length` is already a tagged `Length` value: this
+operation does **not** relabel unions. Destructure an existing union payload
+before constructing a new alternative. Qualified exported aliases can be
+used as `Units.Length.Meters(data)`. Contextual injection in all nested
+expression forms remains incomplete.
 `enum` and `A | B` are supported; there is no distinct `variant` declaration.
 
 MIR uses explicit canonical tag indices for labeled construction and checked
 extraction; its verifier, interpreter and C emitter preserve them, including
-when record shapes coincide. The runtime initially retains the existing managed
-tag-plus-payload representation; a compact scalar representation for empty
-payload enums is a separate optimization. Unlabeled MIR union descriptors
+when record shapes coincide. Unions whose every alternative is an empty record
+use an unowned `i64` tag directly; arrays and dictionaries store this scalar in
+their ordinary 8-byte field slots on 64-bit targets. All other unions retain
+a managed tag-plus-record-pointer wrapper: arrays can mix payload sizes, with
+each payload record allocated separately. Constructing an enum alternative
+still allocates its empty record temporarily; extracting an empty payload in
+MIR materializes a record, while a source `match` with no bound fields needs
+only the tag. Unlabeled MIR union descriptors
 remain supported for internal/serialized uses. Nominal wrappers (`newtype`),
 generic/recursive unions, refutable bindings and unifying `Optional[T]` with
 unions require separate design and implementation work.

@@ -123,6 +123,10 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 			for constant in declarations.constants
 				if constant.name == target
 					found = true
+			# Imported type aliases may qualify an explicit Union.Label(payload).
+			for alias in declarations.type_aliases
+				if alias.name == target
+					found = true
 			# Constructors are type values and exported functions are Fn values.
 			for function in declarations.functions
 				if function.name == target and HirDeclarations.hir_function_external(next, function)

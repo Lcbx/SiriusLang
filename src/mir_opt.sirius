@@ -19,6 +19,21 @@ def mir_optimize_function(types: Types.TypeTable, function: Mir.MirFunction) -> 
 		var i = 0
 		while i < len(block.instructions)
 			let ins = block.instructions[!i]
+			# A freshly created empty record used solely to select an enum tag
+			# need not be allocated. Require the adjacent release as proof of
+			# last use; leave standalone records and mixed unions unchanged.
+			if ins.op == Mir.MIR_RECORD_NEW and len(ins.inputs) == 0 and i + 2 < len(block.instructions)
+				let wrapped = block.instructions[!i + 1]
+				let released = block.instructions[!i + 2]
+				if wrapped.op == Mir.MIR_UNION_NEW and wrapped.first == ins.dst and released.op == Mir.MIR_RELEASE and released.first == ins.dst and Types.union_is_enum(types, function.register_types[!wrapped.dst])
+					var alternative = wrapped.second
+					if alternative == -1
+						alternative = Types.union_alternative_index(types, function.register_types[!wrapped.dst], function.register_types[!ins.dst])
+					let members = types.entries[!function.register_types[!wrapped.dst]].fields
+					if alternative >= 0 and alternative < len(members) and members[!alternative].kind == function.register_types[!ins.dst] and members[!alternative].name != ""
+						instructions = instructions.append(Mir.mir_union_new_empty(wrapped.dst, alternative))
+						i += 3
+						continue
 			# Lifetime releases immediately following a call or constructor allow
 			# direct ownership transfer. Capture every eligible distinct managed input
 			# before consuming those releases; retain all other arguments.

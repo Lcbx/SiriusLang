@@ -1,0 +1,85 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_opt alias Opt
+import mir_ownership alias Ownership
+import mir_verify alias Verify
+import mir_wire alias Wire
+import types alias Types
+
+# Only a last-use empty payload can disappear. A record that is reused
+# or belongs to a heterogeneous union must still be materialized.
+def fixture(reused: bool, heterogeneous: bool) -> Mir.MirProgram
+	let empty = Types.intern_record_type(Types.new_type_table(), Array[Types.RecordField]())
+	let wide = Types.intern_record_type(empty.table, [Types.RecordField("x", Types.TYPE_TAG_I64)])
+	var alternatives = [Types.RecordField("Idle", empty.id), Types.RecordField("Running", empty.id)]
+	if heterogeneous
+		alternatives = [Types.RecordField("Idle", empty.id), Types.RecordField("Wide", wide.id)]
+	let union = Types.intern_labeled_union_type(wide.table, alternatives)
+	var code = [Mir.mir_record_new(0, Array[i64]()), Mir.mir_union_new_labeled(1, 0, 0)]
+	if reused
+		code = code.append(Mir.mir_union_new_labeled(3, 0, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+	code = code.append(Mir.mir_union_tag(2, 1))
+	if heterogeneous
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+	if reused and heterogeneous
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0))
+	var registers = [empty.id, union.id, Types.TYPE_TAG_I64]
+	if reused
+		registers = registers.append(union.id)
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, registers, [Mir.MirBlock(code, Mir.mir_return(2))], 0)
+	return Mir.mir_program_with_types([function], union.table)
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 2
+		return 1
+	let input = fixture(false, false)
+	if Verify.mir_verify(input) != "" or Ownership.mir_check_balance(input) != ""
+		return 2
+	let optimized = Opt.mir_optimize_unchecked(input).program
+	let ins = optimized.functions[!0].blocks[!0].instructions
+	if len(ins) != 2 or ins[!0].op != Mir.MIR_UNION_NEW or ins[!0].first != -1 or ins[!0].second != 0
+		return 3
+	if Verify.mir_verify(optimized) != "" or Ownership.mir_check_balance(optimized) != ""
+		return 4
+	if len(Opt.mir_optimize_unchecked(optimized).program.functions[!0].blocks[!0].instructions) != 2
+		return 5
+	let executed = Interpreter.mir_execute(optimized, 0, Array[Mir.MirValue](), 100, 10)
+	if executed.error != "" or executed.value.bits != 0
+		return 6
+	for value in executed.heap
+		if value.refs != 0
+			return 7
+	let serialized = Wire.mir_serialize_program(optimized, 0)
+	if serialized.error != ""
+		return 8
+	let decoded = Wire.mir_deserialize_program(serialized.text)
+	if decoded.error != "" or Verify.mir_verify(decoded.program) != ""
+		return 9
+	let replay = Interpreter.mir_execute(decoded.program, 0, Array[Mir.MirValue](), 100, 10)
+	if replay.error != "" or replay.value.bits != 0
+		return 10
+	let emitted = Emit.mir_emit_c_reachable_verified(optimized, 0)
+	if emitted.error != "" or not write_text(args[!1], emitted.code)
+		return 11
+	let function = optimized.functions[!0]
+	if Verify.mir_verify_instruction(optimized, function, Mir.mir_union_new_empty(1, 2)) == ""
+		return 12
+	if Verify.mir_verify_instruction(optimized, function, Mir.mir_union_new_empty(1, -1)) == ""
+		return 13
+	for reuse in [true, false]
+		let other = fixture(reuse, true)
+		if Verify.mir_verify(other) != "" or Ownership.mir_check_balance(other) != ""
+			return 14
+		let unchanged = Opt.mir_optimize_unchecked(other).program
+		if unchanged.functions[!0].blocks[!0].instructions[!0].op != Mir.MIR_RECORD_NEW
+			return 15
+		if Verify.mir_verify_instruction(other, other.functions[!0], Mir.mir_union_new_empty(1, 0)) == ""
+			return 16
+	let shared = Opt.mir_optimize_unchecked(fixture(true, false)).program
+	if shared.functions[!0].blocks[!0].instructions[!0].op != Mir.MIR_RECORD_NEW
+		return 17
+	print("PASS empty enum payload elimination, safe fallback, serialization, native/MIR")
+	return 0

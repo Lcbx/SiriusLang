@@ -242,7 +242,8 @@ export def mir_credit_shapes(types: Types.TypeTable) -> Array[MirCreditShape]
 				if shapes[!field.kind].depth >= depth
 					depth = shapes[!field.kind].depth + 1
 		elif desc.tag == Types.TYPE_TAG_UNION
-			fixed = 1
+			if ownership == Types.TYPE_OWNERSHIP_OBJECT
+				fixed = 1
 			for field in desc.fields
 				if shapes[!field.kind].depth >= depth
 					depth = shapes[!field.kind].depth + 1
@@ -348,6 +349,8 @@ def mir_credit_projection(program: Mir.MirProgram, function: Mir.MirFunction, in
 	var owner = ins.first
 	var child_type = function.register_types[!ins.dst]
 	if ins.op == Mir.MIR_UNION_NEW
+		if owner == -1
+			return ""
 		child_type = function.register_types[!owner]
 	elif ins.op == Mir.MIR_UNION_GET
 		child_type = function.register_types[!ins.dst]

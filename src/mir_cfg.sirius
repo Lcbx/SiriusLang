@@ -79,6 +79,8 @@ export def mir_instruction_reads(ins: Mir.MirInstruction) -> Array[i64]
 		if len(ins.inputs) == 0
 			return ins.inputs
 		return Array[i64]()
+	if ins.op == Mir.MIR_UNION_NEW and ins.first == -1
+		return ins.inputs
 	if ins.op == Mir.MIR_CALL_INDIRECT
 		var reads = [ins.first]
 		for argument in ins.inputs

@@ -79,15 +79,68 @@ only for an unambiguous payload shape. A direct constructor in an expected-union
 Qualified constructors and match patterns also preserve labels after module
 name mangling, including re-exports. Contextually typed arrays and function
 arguments (including imported, indirect, nested, and record-constructor calls)
-can contain distinct directly constructed alternatives. Stored records remain
-label-free.
+can contain distinct directly constructed alternatives. `Array.append` and
+`Dict.insert` also accept directly constructed same-shape alternatives,
+including enum constructors and qualified imports; the native and MIR paths
+preserve their selected tags. Stored records remain label-free.
 
-**Next:** design explicit alternative injection (`Union.Label(...)`) for
-previously constructed records, then cover remaining collection methods and
-nested expression forms. Verify source-free packages and native/interpreter
-parity before considering compact scalar-tag storage for
-payload-free enums *if measured*, followed by named pattern binders and
-refutable bindings. No new nominal `variant` or special payload type is planned.
+Explicit `Union.Label(record)` now constructs the selected alternative
+from any structurally compatible record payload; an existing union cannot be
+relabeled through this form. Qualified exported union aliases also resolve.
+The mixed-size `Array[Union]` native/MIR and ARC regression confirms that
+each element stores a fixed-size tagged wrapper referring to separately sized
+payload records, not a largest-variant inline buffer.
+
+**Next:** verify explicit construction through source-free packages, and extend
+contextual constructor selection to remaining nested expressions where real
+examples justify it. Then named pattern binders and refutable bindings remain
+possible ergonomic improvements. No new nominal `variant` or special payload
+type is planned.
+
+**Compact enum storage (implemented):** A union whose alternatives are all
+empty records now uses an unowned `i64` tag instead of a heap wrapper. Arrays,
+dictionaries, arguments and record fields store that scalar directly in their
+existing `S_MirField` slot. The MIR interpreter has equivalent semantics;
+pattern arms without payload fields no longer extract a record. Native/MIR,
+ARC and CoW regressions are in `tools/test_union_scalar_enums.py`. In a
+Clang `-O2` generated-Sirius comparison (300,000 elements, 48 traversals,
+16 CoW updates, seven alternating runs), median native elapsed time fell
+from 0.198 s to 0.018 s after eliminating unused empty-payload extraction,
+and observed max RSS from about 39.5 MiB to 7.5 MiB. The workload performs
+14.4 million enum matches and strongly favors this optimization; it is one
+workload, not a general 11x speedup claim. Construction no longer requires a temporary record for the common immediate
+last-use case: post-cleanup MIR folds `RECORD_NEW(empty)`, `UNION_NEW`, and
+`RELEASE(record)` into a payload-free enum-tag operation. The native emitter,
+interpreter, verifier, and serialized MIR all support this form. This does
+not change independently used records or heterogeneous unions. Tests are in
+`tools/test_enum_empty_opt.py`. In a construction-oriented, generated-Sirius
+workload (2.4 million appends, one traversal/match, Clang `-O2`, nine runs),
+median native elapsed time fell from 32.5 ms to 12.3 ms. The narrower
+measurement excludes compilation and is reproducible using
+`tools/benchmark_enum_construction.py` with both compiler binaries. Other
+construction forms still materialize records; broaden the optimization only
+when tests and measurements justify it.
+
+**Experimental general-purpose union storage (not implemented):**
+`tools/benchmark_union_storage.py` compares the existing two-allocation
+wrapper/record representation with a one-allocation fused wrapper and an
+inline max-payload-width array, using a standalone scalar-only C11 model.
+It includes construction, repeated traversal, detached CoW copies with one
+replacement, cleanup, and requested-byte accounting. At 80,000 values,
+48 traversals and 16 CoW updates (five runs, Clang/GCC `-O2`), the inline
+model took 0.21–0.44× the current model's time for payload-free enums and
+0.66–0.81× for balanced alternatives with up to six `i64` fields. But a
+rare 100-`i64` alternative (1 in 64 elements) made the fixed-width inline
+model approximately **16× slower** and increased modeled peak storage from
+roughly 10 MiB to 202 MiB. Fused heap wrappers had variable results and still
+needed one allocation per union. These are **C model measurements, not
+compiler-generated Sirius benchmarks**; managed fields, full ARC auditing,
+serialization, MIR interpretation and end-to-end workload effects are not
+modeled. Consequently only the payload-free scalar case was adopted; general
+payload storage is unchanged. Inline storage for other alternatives requires
+type-directed array/dictionary/register layout and ownership rules, plus
+native/MIR parity and end-to-end benchmarks. Do not assume the largest-
+alternative inline layout is universally beneficial.
 
 ## Completed higher-order constraint diagnostics
 

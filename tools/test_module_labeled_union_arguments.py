@@ -12,10 +12,14 @@ UNITS = '''export rec Meters(value: i64)
 \tpub value
 export rec Feet(value: i64)
 \tpub value
+export rec Raw(value: i64)
+\tpub value
 export let Length = Meters | Feet
 export enum Color
 \tRed
 \tGreen
+export def empty_dict() -> Dict[i64,Length]
+\treturn Dict[i64,Length]()
 export def score(x: Length) -> i64
 \tmatch x
 \t\tMeters(v)
@@ -53,6 +57,8 @@ def sum_values(values: Array[U.Length]) -> i64
 \treturn total
 
 def main() -> i64
+\tlet raw = U.Raw(10)
+\tlet explicit = classify(U.Length.Feet(raw))
 \tlet a = classify(U.Meters(2))
 \tlet b = classify(pass_through(U.Feet(3)))
 \tlet c = display(U.Green())
@@ -61,7 +67,13 @@ def main() -> i64
 \tlet f: Fn[U.Length, i64] = classify
 \tlet g = f(U.Meters(4))
 \tlet h = Wrapper(U.Feet(3))
-\treturn a + b + c + d + e + g + classify(h.item)
+\tlet empty_readings: Array[U.Length] = []
+\tlet readings = empty_readings.append(U.Meters(6)).append(U.Feet(7))
+\tlet indexed = U.empty_dict().insert(1, U.Meters(8)).insert(2, U.Feet(9))
+\tlet selected = indexed.get(2) else return 0
+\tlet empty_colors: Array[U.Color] = []
+\tlet colors = empty_colors.append(U.Red()).append(U.Green())
+\treturn explicit + a + b + c + d + e + g + classify(h.item) + classify(readings[!0]) + classify(readings[!1]) + classify(selected) + display(colors[!1])
 '''
 
 
@@ -84,7 +96,7 @@ def main() -> None:
         (root / 'Main.sirius').write_text(MAIN, encoding='utf-8')
         generated = compile_module(compiler, root, 'Main')
         assert generated.returncode == 0, generated.stderr
-        check_native(cache, root / 'Main.c', code=84)
+        check_native(cache, root / 'Main.c', code=176)
 
         audit = root / 'audit'
         built = subprocess.run([cache.cc, *C_FLAGS, '-Wno-unused-function',
@@ -94,19 +106,21 @@ def main() -> None:
             *link_flags(cache.cc), '-o', str(audit)], capture_output=True, text=True, timeout=120)
         assert built.returncode == 0, built.stderr
         observed = subprocess.run([str(audit)], capture_output=True, timeout=60)
-        assert observed.returncode == 84, observed
+        assert observed.returncode == 176, observed
 
         # Constructor names do not survive an intermediate structural record.
         for name, body in (
             ('LocalRaw', 'let raw = U.Meters(1)\n\treturn classify(raw)'),
             ('ImportedRaw', 'let raw = U.Feet(1)\n\treturn U.score(raw)'),
             ('IndirectRaw', 'let f: Fn[U.Length, i64] = classify\n\tlet raw = U.Meters(1)\n\treturn f(raw)'),
+            ('ExplicitRetag', 'let x: U.Length = U.Meters(1)\n\treturn classify(U.Length.Feet(x))'),
+            ('ExplicitWrongShape', 'return classify(U.Length.Feet({other = 2}))'),
         ):
             (root / f'{name}.sirius').write_text(
                 MAIN.split('def main() -> i64')[0] +
                 'def main() -> i64\n\t' + body + '\n', encoding='utf-8')
             failed = compile_module(compiler, root, name)
-            assert failed.returncode != 0 and ('expected union, found record' in failed.stderr or 'indirect call argument type mismatch' in failed.stderr), failed
+            assert failed.returncode != 0 and ('expected union, found record' in failed.stderr or 'indirect call argument type mismatch' in failed.stderr or 'explicit union construction' in failed.stderr), failed
 
         # A constructor outside the expected union must not be silently selected.
         (root / 'Wrong.sirius').write_text(

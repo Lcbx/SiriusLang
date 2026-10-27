@@ -1,0 +1,20 @@
+rec Accepted(value: string)
+rec Rejected(value: string)
+let Answer = Accepted | Rejected
+
+def score(value: Answer) -> i64
+	match value
+		Accepted(text)
+			return len(text)
+		Rejected(text)
+			return len(text) * 10
+
+def main() -> i64
+	let values = Array[Answer]().append(Accepted("ok")).append(Rejected("bad"))
+	let snapshot = values
+	let mapping = Dict[i64,Answer]().insert(1, Rejected("no")).insert(2, Accepted("yes"))
+	let copy = mapping
+	let chosen = mapping.get(1) else return 99
+	if len(snapshot) != 2 or len(copy) != 2
+		return 98
+	return score(values[!0]) + score(values[!1]) + score(chosen)

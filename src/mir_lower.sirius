@@ -679,6 +679,21 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		next = mir_lower_emit(next, Mir.mir_op(opcode, dst, -1, -1, immediate))
 		return MirLowerExpr(next, dst)
 	if node.kind == Ast.NODE_CALL
+		let explicit = Hir.hir_annotation_find(context.hir, context.annotation_index, id, Analyze.HIR_UNION_CONSTRUCT)
+		if explicit >= 0
+			let typed = context.hir[!explicit]
+			let payload = Hir.hir_ast_child(context.tree, id, 1)
+			let evaluated = mir_lower_expression(next, context, payload)
+			next = evaluated.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			let expected = context.types.entries[!typed.type_id].fields[!typed.field_index].kind
+			let converted = mir_lower_inject(next, context, evaluated.slot, expected)
+			next = converted.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, typed.type_id)
+			next = mir_lower_emit(next, Mir.mir_union_new_labeled(dst, converted.slot, typed.field_index))
+			return MirLowerExpr(next, dst)
 		let callee = Hir.hir_ast_child(context.tree, id, 0)
 		if context.tree.nodes[!callee].kind == Ast.NODE_NAME or context.tree.nodes[!callee].kind == Ast.NODE_ATTR
 			let name = Hir.hir_ast_text(context.tree, callee)
@@ -814,7 +829,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				var inserted = value.slot
 				let injected_type = mir_lower_type(context, Hir.hir_ast_child(context.tree, id, 1), Hir.HIR_UNION_INJECT)
 				if injected_type != Types.TYPE_TAG_INVALID
-					let injected = mir_lower_inject(next, context, inserted, injected_type)
+					let injected = mir_lower_inject_source(next, context, inserted, injected_type, Hir.hir_ast_child(context.tree, id, 1))
 					next = injected.state
 					next.error == "" else return MirLowerExpr(next, -1)
 					inserted = injected.slot
@@ -855,7 +870,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				var inserted = value.slot
 				let injected_type = mir_lower_type(context, Hir.hir_ast_child(context.tree, id, 2), Hir.HIR_UNION_INJECT)
 				if injected_type != Types.TYPE_TAG_INVALID
-					let injected = mir_lower_inject(next, context, inserted, injected_type)
+					let injected = mir_lower_inject_source(next, context, inserted, injected_type, Hir.hir_ast_child(context.tree, id, 2))
 					next = injected.state
 					next.error == "" else return MirLowerExpr(next, -1)
 					inserted = injected.slot
@@ -1300,14 +1315,16 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 			next.active = condition
 			next = mir_lower_end(next, Mir.mir_branch(equals, matched, following))
 			next.active = matched
-			let record = len(next.register_types)
-			next = mir_lower_register(next, record_type)
-			if context.types.entries[!union_type].fields[!0].name != ""
-				next = mir_lower_emit(next, Mir.mir_union_get_labeled(record, subject.slot, alternative))
-			else
-				next = mir_lower_emit(next, Mir.mir_union_get(record, subject.slot))
-			let previous = len(next.bindings)
 			let fields = context.types.entries[!record_type].fields
+			var record = -1
+			if len(fields) != 0
+				record = len(next.register_types)
+				next = mir_lower_register(next, record_type)
+				if context.types.entries[!union_type].fields[!0].name != ""
+					next = mir_lower_emit(next, Mir.mir_union_get_labeled(record, subject.slot, alternative))
+				else
+					next = mir_lower_emit(next, Mir.mir_union_get(record, subject.slot))
+			let previous = len(next.bindings)
 			for j in 0..context.tree.nodes[!arm].count - 1
 				let binding = Hir.hir_ast_child(context.tree, arm, j)
 				let kind = mir_lower_type(context, binding, Analyze.HIR_BINDING)

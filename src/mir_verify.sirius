@@ -152,6 +152,13 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 			return "optional unwrap type mismatch"
 		return ""
 	if ins.op == Mir.MIR_UNION_NEW
+		if ins.first == -1
+			if not Types.union_is_enum(program.types, dst_type)
+				return "empty union constructor requires enum destination"
+			let alternatives = program.types.entries[!dst_type].fields
+			if ins.second < 0 or ins.second >= len(alternatives) or alternatives[!ins.second].name == "" or ins.immediate != 0 or len(ins.inputs) != 0
+				return "invalid empty union alternative"
+			return ""
 		if ins.first < 0 or ins.first >= len(types)
 			return "invalid union payload register"
 		if ins.second >= 0

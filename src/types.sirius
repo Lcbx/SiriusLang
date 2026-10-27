@@ -53,6 +53,18 @@ export rec RuntimeLayout(storage: i64, ownership: i64, fixed_slots: i64, variabl
 
 # These queries deliberately do not derive ownership from the TypeId value.
 # The type table is canonical after interning or MIR artifact verification.
+# A union of only empty record alternatives carries no payload. Store its
+# alternative index in an i64 slot instead of a managed wrapper. This retains
+# label identity while keeping array/dictionary field slots unchanged.
+export def union_is_enum(types: TypeTable, id: i64) -> bool
+	if type_tag(types, id) != TYPE_TAG_UNION
+		return false
+	for alt in types.entries[!id].fields
+		let payload = types.entries[!alt.kind]
+		if payload.tag != TYPE_TAG_RECORD or len(payload.fields) != 0
+			return false
+	return true
+
 export def runtime_storage(types: TypeTable, id: i64) -> i64
 	let tag = type_tag(types, id)
 	if tag == TYPE_TAG_I64 or tag == TYPE_TAG_FUNCTION
@@ -63,6 +75,8 @@ export def runtime_storage(types: TypeTable, id: i64) -> i64
 		return TYPE_STORAGE_BOOL
 	if tag == TYPE_TAG_STRING
 		return TYPE_STORAGE_STRING
+	if tag == TYPE_TAG_UNION and union_is_enum(types, id)
+		return TYPE_STORAGE_I64
 	if tag == TYPE_TAG_RECORD or tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_DICT or tag == TYPE_TAG_OPTIONAL or tag == TYPE_TAG_UNION
 		return TYPE_STORAGE_OBJECT
 	if tag == TYPE_TAG_VOID

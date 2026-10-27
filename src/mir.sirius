@@ -132,7 +132,9 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 # immediate carries literal bits or a function index. A call uses inputs to
 # identify argument registers, in evaluation order. Most other operands are
 # register indices; UNION_NEW/UNION_GET use second as an alternative tag when
-# it is nonnegative. Unused operands are -1.
+# it is nonnegative. An enum UNION_NEW may use first=-1 to construct a
+# payload-free alternative directly; the verifier requires a valid enum tag.
+# Other unused operands are -1.
 export rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64], text: string)
 export rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
 export rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
@@ -255,6 +257,11 @@ export def mir_union_new(dst: i64, record: i64) -> MirInstruction
 
 export def mir_union_new_labeled(dst: i64, record: i64, alternative: i64) -> MirInstruction
 	return mir_op(MIR_UNION_NEW, dst, record, alternative, 0)
+
+# A payload-free enum alternative needs only its index; -1 means there is
+# no source record to retain. Verifiers reject this form for other unions.
+export def mir_union_new_empty(dst: i64, alternative: i64) -> MirInstruction
+	return mir_op(MIR_UNION_NEW, dst, -1, alternative, 0)
 
 export def mir_union_tag(dst: i64, owner: i64) -> MirInstruction
 	return mir_op(MIR_UNION_TAG, dst, owner, -1, 0)

@@ -493,18 +493,24 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 	if op == Mir.MIR_SQRT_F64
 		return result + "\t" + dst + " = sqrt(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_UNION_NEW
-		let payload_type = function.register_types[!instruction.first]
 		var tag = instruction.second
-		if tag == -1
-			tag = Types.union_alternative_index(types, dst_type, payload_type)
+		if instruction.first != -1 and tag == -1
+			tag = Types.union_alternative_index(types, dst_type, function.register_types[!instruction.first])
+		if Types.union_is_enum(types, dst_type)
+			return result + "\t" + dst + " = " + str(tag) + mir_c_mark_init(instruction.dst, checked) + "\n"
 		let code = result + "\t{ S_MirRecord *variant = s_mir_record_new(" + str(dst_type) + ", 2);\n"
 		return code + "\t\tvariant->fields[0].bits = " + str(tag) + ";\n\t\tvariant->fields[1].record = s_mir_record_retain(" + first + ");\n" + mir_c_store_owned(types, instruction.dst, dst_type, "variant", checked) + "\t}\n"
 	if op == Mir.MIR_UNION_TAG
+		if Types.union_is_enum(types, function.register_types[!instruction.first])
+			return result + "\t" + dst + " = " + first + mir_c_mark_init(instruction.dst, checked) + "\n"
 		return result + "\t" + dst + " = " + first + "->fields[0].bits" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_UNION_GET
 		var member = instruction.second
 		if member == -1
 			member = Types.union_alternative_index(types, function.register_types[!instruction.first], dst_type)
+		if Types.union_is_enum(types, function.register_types[!instruction.first])
+			let code = result + "\tif (" + first + " != " + str(member) + ") s_panic(\"union variant mismatch\");\n"
+			return code + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)", checked)
 		let code = result + "\tif (" + first + "->fields[0].bits != " + str(member) + ") s_panic(\"union variant mismatch\");\n"
 		return code + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_record_retain(" + first + "->fields[1].record)", checked)
 	if op == Mir.MIR_OPTIONAL_NONE

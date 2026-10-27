@@ -11,6 +11,7 @@ export let HIR_ASSIGN = 10
 export let HIR_ARRAY = 11
 export let HIR_INDEX = 12
 export let HIR_UNWRAP = 13
+export let HIR_UNION_CONSTRUCT = 14
 
 # Specialization requests are discovered while analyzing a concrete function.
 # source is the call AST node; definition is the callee's declaration body ID.
@@ -1347,6 +1348,41 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 	if kind == Ast.NODE_CALL
 		let callee = Hir.hir_ast_child(state.tree, id, 0)
 		let callee_kind = state.tree.nodes[!callee].kind
+		# Union.Label(record) chooses a label for structural payload data. This
+		# is not a method on a union value or a union-to-union conversion.
+		if callee_kind == Ast.NODE_ATTR
+			let owner = Hir.hir_ast_child(state.tree, callee, 0)
+			if state.tree.nodes[!owner].kind == Ast.NODE_NAME
+				let owner_name = Hir.hir_ast_text(state.tree, owner)
+				let binding = Hir.resolve_hir_name(result.symbols, owner_name)
+				if binding.error != ""
+					let named = hir_module_type_reference_with_constants(result.types, result.tree, owner, result.functions, result.module_constants, result.type_aliases)
+					if Types.type_tag(named.table, named.type_id) == Types.TYPE_TAG_UNION
+						result.types = named.table
+						let members = result.types.entries[!named.type_id].fields
+						let label = Hir.hir_ast_text(result.tree, callee)
+						var alternative = -1
+						for i in 0..len(members)
+							if members[!i].name == label
+								alternative = i
+						if alternative < 0
+							return hir_body_error(result, callee, "unknown union alternative '" + label + "'")
+						if node.count != 2
+							return hir_body_error(result, id, "explicit union construction requires one record argument")
+						let payload = Hir.hir_ast_child(result.tree, id, 1)
+						result = hir_body_expression_expected(result, payload, members[!alternative].kind)
+						result.error == "" else return result
+						let payload_tag = Types.type_tag(result.types, result.last_type)
+						if payload_tag == Types.TYPE_TAG_UNION
+							return hir_body_error(result, payload, "explicit union construction cannot relabel an existing union value")
+						if payload_tag != Types.TYPE_TAG_RECORD
+							return hir_body_error(result, payload, "explicit union construction requires a record payload")
+						if not Types.type_coercible(result.types, members[!alternative].kind, result.last_type)
+							return hir_body_error(result, payload, "explicit union construction record is incompatible with alternative '" + label + "'")
+						result.last_type = named.type_id
+						result.nodes = result.nodes.append(Hir.HirNode(id, HIR_UNION_CONSTRUCT, named.type_id, alternative))
+						result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_CALL, named.type_id, -1))
+						return result
 		var receiver = Types.TYPE_TAG_INVALID
 		var method = ""
 		var resolved_function = -1
@@ -1490,7 +1526,20 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if tag == Types.TYPE_TAG_STRING and Resolve.hir_is_string_method(method)
 				checked = Resolve.resolve_hir_string_call(result.types, receiver, method, args)
 			elif (tag == Types.TYPE_TAG_ARRAY and method == "append") or (tag == Types.TYPE_TAG_DICT and (method == "get" or method == "insert"))
-				checked = Resolve.resolve_hir_collection_call(result.types, receiver, method, args)
+				# Constructor calls can select a labeled alternative even when its
+				# structural payload matches another alternative. The ordinary
+				# collection checker still handles all other type compatibility.
+				var checked_args = args
+				if (tag == Types.TYPE_TAG_ARRAY and method == "append") or (tag == Types.TYPE_TAG_DICT and method == "insert")
+					let descriptor = result.types.entries[!receiver]
+					for i in 0..len(args)
+						if tag == Types.TYPE_TAG_ARRAY or i == 1
+							var expected = descriptor.first
+							if tag == Types.TYPE_TAG_DICT
+								expected = descriptor.second
+							if args[!i] != expected and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), expected, args[!i]) >= 0
+								checked_args[!i] = expected
+				checked = Resolve.resolve_hir_collection_call(result.types, receiver, method, checked_args)
 			if checked.error != ""
 				return hir_body_error(result, id, checked.error)
 			result.types = checked.table

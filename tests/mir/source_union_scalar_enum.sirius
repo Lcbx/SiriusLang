@@ -1,0 +1,54 @@
+enum Signal
+	Idle
+	Running
+	Stopped
+
+rec Empty()
+rec Wide(a: i64, b: string)
+let Mixed = Idle | Wide
+
+rec Envelope(current: Signal, history: Array[Signal])
+
+def score(status: Signal) -> i64
+	match status
+		Idle()
+			return 1
+		Running()
+			return 2
+		Stopped()
+			return 3
+
+def flip(status: Signal) -> Signal
+	match status
+		Idle()
+			return Running()
+		Running()
+			return Stopped()
+		Stopped()
+			return Idle()
+
+def mixed_score(value: Mixed) -> i64
+	match value
+		Idle()
+			return 7
+		Wide(a, b)
+			return a + len(b)
+
+def main() -> i64
+	let original = Array[Signal]().append(Idle()).append(Running()).append(Stopped())
+	let snapshot = original
+	var values = original
+	let replacement: Signal = Stopped()
+	values[!1] = replacement
+	let table = Dict[i64,Signal]().insert(4, Running()).insert(9, Stopped())
+	let selected = table.get(4) else return 90
+	let retained = Envelope(flip(selected), values)
+	let optional = table.get(9) else return 91
+	let explicit: Signal = Signal.Idle(Empty())
+	let mixed: Mixed = Mixed.Idle(Empty())
+	let other: Mixed = Wide(10, "hi")
+	if score(snapshot[!1]) != 2 or score(values[!1]) != 3 or score(retained.current) != 3
+		return 92
+	if score(optional) != 3 or score(explicit) != 1 or mixed_score(mixed) != 7 or mixed_score(other) != 12
+		return 93
+	return score(values[!0]) + score(values[!1]) + score(retained.history[!2]) + score(flip(selected))

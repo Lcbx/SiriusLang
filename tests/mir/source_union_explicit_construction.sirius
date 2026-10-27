@@ -1,0 +1,40 @@
+rec Meters(value: i64)
+rec Feet(value: i64)
+rec Unrelated(value: i64)
+rec Tiny(ok: bool)
+rec Large(code: i64, text: string, items: Array[i64])
+rec Empty()
+rec Nothing()
+let Reading = Meters | Feet | Tiny | Large | Empty
+
+def score(reading: Reading) -> i64
+	match reading
+		Meters(value)
+			return value
+		Feet(value)
+			return value * 2
+		Tiny(ok)
+			if ok
+				return 5
+			return 0
+		Large(code, text, items)
+			return code + len(text) + len(items)
+		Empty()
+			return 1
+
+def main() -> i64
+	let raw = Unrelated(7)
+	let first: Reading = Reading.Meters({value = 7})
+	let second: Reading = Reading.Feet(raw)
+	let items: Array[Reading] = [Reading.Meters(raw), Reading.Feet(raw), Reading.Tiny(Tiny(true)), Reading.Large(Large(3, "hey", [1, 2])), Reading.Empty(Nothing())]
+	let copy = items
+	let extended = items.append(Reading.Feet(Unrelated(6)))
+	let dict = Dict[i64,Reading]().insert(1, Reading.Meters(raw)).insert(2, Reading.Large(Large(4, "hello", [1, 2, 3])))
+	let entry = dict.get(2) else return 96
+	if len(items) != 5 or len(copy) != 5 or len(extended) != 6
+		return 97
+	if score(items[!0]) != 7 or score(items[!1]) != 14 or score(items[!2]) != 5 or score(items[!3]) != 8 or score(items[!4]) != 1
+		return 98
+	if score(entry) != 12 or score(extended[!5]) != 12
+		return 99
+	return score(first) + score(second) + score(items[!3]) + score(entry) + score(copy[!2]) + score(extended[!5])

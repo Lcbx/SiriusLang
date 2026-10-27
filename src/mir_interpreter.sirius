@@ -192,6 +192,13 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, success, "")
 				continue
 			if ins.op == Mir.MIR_UNION_NEW
+				if ins.first == -1
+					let alternatives = program.types.entries[!function.register_types[!ins.dst]].fields
+					if not Types.union_is_enum(program.types, function.register_types[!ins.dst]) or ins.second < 0 or ins.second >= len(alternatives) or alternatives[!ins.second].name == ""
+						return mir_failure("invalid empty union alternative", steps)
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], ins.second, "")
+					continue
 				let payload = registers[!ins.first]
 				if payload.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized union payload", steps)
@@ -203,6 +210,10 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				let alternatives = program.types.entries[!function.register_types[!ins.dst]].fields
 				if tag >= len(alternatives) or alternatives[!tag].kind != payload.type_id or (ins.second >= 0 and alternatives[!tag].name == "")
 					return mir_failure("invalid union payload", steps)
+				if Types.union_is_enum(program.types, function.register_types[!ins.dst])
+					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], tag, "")
+					continue
 				heap = mir_heap_copy(program.types, heap, payload)
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
@@ -210,6 +221,20 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				continue
 			if ins.op == Mir.MIR_UNION_TAG or ins.op == Mir.MIR_UNION_GET
 				let wrapper = registers[!ins.first]
+				if Types.union_is_enum(program.types, function.register_types[!ins.first])
+					let alternatives = program.types.entries[!function.register_types[!ins.first]].fields
+					if wrapper.type_id == Types.TYPE_TAG_INVALID or wrapper.bits < 0 or wrapper.bits >= len(alternatives)
+						return mir_failure("invalid enum tag", steps)
+					if ins.op == Mir.MIR_UNION_TAG
+						registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, wrapper.bits, "")
+					else
+						let member = alternatives[!wrapper.bits]
+						if member.kind != function.register_types[!ins.dst] or (ins.second >= 0 and wrapper.bits != ins.second)
+							return mir_failure("union variant mismatch", steps)
+						heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
+						registers[!ins.dst] = Mir.new_mir_value(member.kind, len(heap), "")
+						heap = heap.append(Mir.MirHeapRecord(member.kind, Array[Mir.MirValue](), 1))
+					continue
 				if wrapper.type_id == Types.TYPE_TAG_INVALID or wrapper.bits < 0 or wrapper.bits >= len(heap) or heap[!wrapper.bits].refs <= 0
 					return mir_failure("invalid union handle", steps)
 				let fields = heap[!wrapper.bits].fields

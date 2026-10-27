@@ -84,6 +84,7 @@ Each basic block holds ordered instructions and one terminator (`Jump`, `Branch`
 * `let Result = Success | Failure` defines a compile-time type alias for a union of **labeled** constructor alternatives. `Success` and `Failure` remain purely structural record constructors; the label is carried only by the union alternative. Union `|` in this declaration is a type operation, distinct from bitwise integer `|`.
 * Constructor patterns such as `Success(value)` resolve both the constructor label and its structural payload shape. HIR checks label-based exhaustiveness and records the selected canonical tag for MIR lowering, even if two payload shapes are identical. `enum Color` is shorthand for empty `rec` declarations and a labeled union.
 * Canonical union descriptors sort unique `(label, record TypeId)` pairs by label and preserve them through module type translation and MIR serialization. `MIR_UNION_NEW`/`MIR_UNION_GET` use the existing `second` field as a nonnegative label index; `-1` remains available for legacy unlabeled MIR with unambiguous record shapes. A structural record can be injected implicitly only when its shape identifies a unique alternative. An immediate constructor call in an expected-union binding or return retains its label; broader source expressions and imported qualified constructors still need work. The C scalar-register compactor must never reinterpret the alternative index as a register.
+* Unions with exclusively zero-field record alternatives use an unowned `i64` tag; `MIR_UNION_NEW` writes that tag and `MIR_UNION_TAG` reads it directly. `MIR_UNION_GET` materializes an empty record when actually needed, but match lowering skips the extraction when the pattern binds no fields. After lifetime cleanup, MIR optimization may replace an immediately released empty record followed by enum injection with `MIR_UNION_NEW` whose `first` is `-1` and `second` is the selected alternative; the verifier restricts this source-free form to valid labeled, payload-free enums. No record is allocated by either native execution or MIR interpretation for that form. Unions with any nonempty alternative still use an `S_MirRecord*` tagged wrapper (`fields[0]` tag, `fields[1]` retained record pointer). Arrays and dictionaries keep fixed-size `S_MirField` slots (8 bytes on tested 64-bit targets), not an inline buffer of the largest alternative. A proposed max-payload-width inline layout would require type-dependent strides, active-alternative retain/drop, managed-field handling, and safe extraction of independently owned records after matching. The isolated POD-only C11 comparison in `tools/benchmark_union_storage.py` documents the tradeoff; it is **not** integrated into MIR or C emission and is not an end-to-end Sirius performance result.
 * Array access becomes a bounds proof/optional result/checked panic path, depending on syntax.
 * **Deferred (medium priority):** signed negative array indices normalize relative to array length before the bounds check (`-1` is last element). This applies to reads and CoW writes; optional/checked/proven access retain their current semantics. See `tests/deferred/25_negative_indexing.sirius`.
 * Record spread, deletions and overrides are resolved to a new record layout; preserve left-to-right **expression evaluation** even if a field is later overwritten.
@@ -183,12 +184,18 @@ positions. `RuntimeLayout(storage, ownership, fixed_slots, variable_slots)`
 describes the **current** MIR implementation, not a stable FFI or shared-library
 ABI. Storage is `i64`, `f64`, `bool`, `S_String *`, `S_MirRecord *`, or void;
 invalid IDs have an invalid layout. Scalar values are trivial; strings own an
-`S_String` reference and composite values own an `S_MirRecord` reference.
+`S_String` reference and other composite values generally own an `S_MirRecord` reference. Payload-free unions instead have `i64` scalar storage and no ownership credit.
 
 An `S_MirRecord` contains a reference count, local numeric type index, length,
 capacity and `S_MirField` union slots. Records use one fixed slot per field in
 canonical name order; arrays use `length` variable slots; optionals use zero
-or one; dictionary wrappers use one slot holding `S_Dict *`. The C emitter
+or one; dictionary wrappers use one slot holding `S_Dict *`. Unions with
+only empty-record alternatives use zero heap slots: their value is the scalar
+alternative index. Other unions use two fixed slots (alternative index and a
+retained pointer to a separately allocated record payload), so `Array[Union]`
+can mix arbitrarily different payload sizes without changing its element slot
+size.
+The C emitter
 selects union members, retains and releases by the canonical descriptor.
 `sizeof(S_MirField)`, alignment and header offsets remain target-ABI-dependent.
 The interpreter uses its own heap representation but the same static ownership
@@ -226,9 +233,10 @@ alternatives, ordered by label. Empty `rec` payloads are valid, allowing `enum`
 as source sugar. `MIR_UNION_NEW` and `MIR_UNION_GET` reuse the existing `second`
 instruction slot for explicit alternative indices, independent of payload
 shape; unlabeled legacy MIR uses `-1` for uniquely shaped payload lookup.
-The interpreter and C backend retain the same managed tagged wrapper. HIR
-matches source constructor labels and annotates canonical alternative indices,
-so equal-shaped alternatives do not collapse during lowering.
+The interpreter and C backend use a scalar tag for payload-free unions and a
+managed wrapper for unions with payloads. HIR matches source constructor labels
+and annotates canonical alternative indices, so equal-shaped alternatives do
+not collapse during lowering.
 
 `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, `MIR_DICT_LENGTH`, `MIR_DICT_NEXT`, `MIR_DICT_KEY`, and `MIR_DICT_VALUE` operate on canonical `Dict[K,V]` descriptors. `K` may be `i64`, `bool`, `f64`, `string`, or a canonical record recursively containing hashable fields; `V` can be any MIR-supported type, including managed arrays/records/dictionaries. Native MIR C uses the shared runtime's open-addressed `S_Dict` through an owned `S_MirRecord` wrapper; the interpreter retains list-based storage. `MIR_DICT_INSERT` consumes its owner, reuses unique storage, or clones shared dictionary entries while retaining nested values. Existing keys are replaced without changing entry count. Structural record hashing and equality inspect each canonical field recursively; signed floating zero hashes identically. The verifier checks key/value/result types. `MIR_DICT_GET_OR` accepts an already evaluated fallback register, **not** an `Optional` result, and must not be used as a direct lowering of lazy source `or`. Read-only cursor operations enumerate dictionary entries for nested value coercions without modifying the source. Source `Dict[K,V]()`, `.insert`, and `len(dict)` are supported experimentally; source `.get` now lowers through Optional and CFG control flow.
 
