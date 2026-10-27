@@ -13,6 +13,44 @@ export def hir_module_symbol(path: string, name: string) -> string
 	return result + "_" + str(len(final)) + "_" + final + "_" + str(len(name)) + "_" + name
 
 
+
+# Qualified names are rewritten to length-prefixed module symbols by the
+# source linker. Decode the final component for constructor-label matching:
+# the label belongs to a union alternative, not to its structural payload.
+# Validate every segment (including underscores inside identifiers) rather
+# than matching a suffix that might belong to an unrelated local constructor.
+export def hir_module_symbol_member(symbol: string) -> string
+	if not symbol.starts_with("M_")
+		return symbol
+	var position = 1
+	var count = 0
+	var member = ""
+	while position < len(symbol)
+		if (symbol.byte_at(position) or 0) != 95
+			return symbol
+		position += 1
+		let start = position
+		var width = 0
+		while position < len(symbol)
+			let digit = symbol.byte_at(position) or 0
+			if digit < 48 or digit > 57
+				break
+			width = width * 10 + digit - 48
+			if width > len(symbol)
+				return symbol
+			position += 1
+		if position == start or position >= len(symbol) or (symbol.byte_at(position) or 0) != 95
+			return symbol
+		position += 1
+		if width == 0 or width > len(symbol) - position
+			return symbol
+		member = symbol.slice(position, position + width)
+		position += width
+		count += 1
+	if count < 2
+		return symbol
+	return member
+
 # Translate a dotted module name to its source-root-relative file path.
 export def module_scan_filename(root: string, name: string) -> string
 	var result = root + "/"

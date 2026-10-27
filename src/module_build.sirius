@@ -204,7 +204,7 @@ export def module_build_link(root: string, entry: string) -> MirLibrary.ModuleBu
 			if not main_exported
 				roots = roots.append("main")
 		if len(roots) == 0
-			if len(unit.exported_constants) > 0 or len(unit.exports) > 0
+			if len(unit.exported_constants) > 0 or len(unit.exported_aliases) > 0 or len(unit.exports) > 0
 				continue
 			return MirLibrary.ModuleBuildCompiled(MirLibrary.mir_library_failure("module has no exported declarations: " + unit.name), "module has no exported declarations: " + unit.name)
 		let compiled = module_build_compile(unit, scanned.units, roots, Array[i64](), false, unit.types)

@@ -43,10 +43,10 @@ promised while the language is experimental.
 
 ## Priorities
 
-1. **Complete language features in tested slices.** Improve generic and
-   higher-order type inference, especially generic array-producing callbacks
-   and callbacks across module boundaries. Extend error diagnostics and tagged
-   union ergonomics where needed. Keep MIR/native/interpreter parity.
+1. **Finish constructor-labeled unions and enum ergonomics.** Keep records
+   structural, give union alternatives explicit labels, and retain native/MIR
+   parity. Continue improving generic and higher-order inference after the
+   foundational union identity and pattern work.
 2. **Maintain correctness and cross-platform portability.** Preserve the
    self-hosting bootstrap fixed point, CoW semantics, error-path behavior, ARC
    balance, Windows GCC support, and deterministic serialization. Add focused
@@ -62,7 +62,34 @@ promised while the language is experimental.
    checking, and a richer module/library interface remain larger pieces of
    planned work.
 
-## Next implementation slice
+## Union semantics: implemented core and remaining work
+
+`rec` remains structural. `let Result = Success | Failure` now interns
+alternatives as canonical `(constructor label, record shape)` pairs; two
+alternatives may have identical payload types. `enum Name` is source shorthand
+for empty-record constructors and their labeled union, **not** a new nominal
+type category. A separate `variant` declaration has been dropped from the
+design.
+
+The existing union runtime, MIR tag instructions, verified explicit alternative
+indices, interpreter, C emitter, and serialization are reused. Source `match`
+resolves tags by label, while plain record-to-union injection stays implicit
+only for an unambiguous payload shape. A direct constructor in an expected-union
+`let` or `return` can select its label even when record shapes coincide.
+Qualified constructors and match patterns also preserve labels after module
+name mangling, including re-exports. Contextually typed arrays and function
+arguments (including imported, indirect, nested, and record-constructor calls)
+can contain distinct directly constructed alternatives. Stored records remain
+label-free.
+
+**Next:** design explicit alternative injection (`Union.Label(...)`) for
+previously constructed records, then cover remaining collection methods and
+nested expression forms. Verify source-free packages and native/interpreter
+parity before considering compact scalar-tag storage for
+payload-free enums *if measured*, followed by named pattern binders and
+refutable bindings. No new nominal `variant` or special payload type is planned.
+
+## Completed higher-order constraint diagnostics
 
 **Higher-order constraint diagnostics and inference:** generic callbacks can now
 flow through local aliases, copied nested record fields, and mutable

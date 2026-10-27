@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 from build_support import BuildCache, C_FLAGS, execute, link_flags, require_cc, run_native, assert_native, compile_native
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 
 SOURCES = {
@@ -39,12 +39,12 @@ def main() -> None:
 			native = subprocess.run([str(binary)], capture_output=True)
 			dynamic = subprocess.run([str(runner), str(input_file)], capture_output=True)
 			for backend, actual in (('native', native), ('interpreter', dynamic)):
-				assert (actual.returncode, actual.stdout, actual.stderr) == (code, stdout, b''), (name, backend, actual)
+				assert (actual.returncode, normalize_newlines(actual.stdout), normalize_newlines(actual.stderr)) == (code, stdout, b''), (name, backend, actual)
 			if name == 'source_function_managed':
 				audit = work / 'audit'
 				execute([cache.cc, *C_FLAGS, '-Wno-unused-function', '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'), str(output_file), str(ROOT / 'runtime/sirius_runtime.c'), *link_flags(cache.cc), '-o', str(audit)])
 				checked = subprocess.run([str(audit)], capture_output=True)
-				assert (checked.returncode, checked.stdout, checked.stderr) == (code, stdout, b''), checked
+				assert (checked.returncode, normalize_newlines(checked.stdout), normalize_newlines(checked.stderr)) == (code, stdout, b''), checked
 		for i, text in enumerate(INVALID):
 			bad = work / f'invalid-{i}.sirius'
 			bad.write_text(text)

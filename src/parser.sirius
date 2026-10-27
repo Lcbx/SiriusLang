@@ -53,6 +53,7 @@ export let NODE_EXTERN_DEF = 46
 export let NODE_IMPORT = 47
 export let NODE_EXPORT = 48
 export let NODE_REEXPORT = 49
+export let NODE_ENUM = 50
 
 export def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -91,6 +92,8 @@ export def node_kind_name(kind: i64) -> string
 		return "export"
 	if kind == NODE_REEXPORT
 		return "reexport"
+	if kind == NODE_ENUM
+		return "enum"
 	if kind == NODE_DELETE
 		return "delete"
 	if kind == NODE_DESTRUCTURE
@@ -567,7 +570,7 @@ def parse_statement(p: ParseState) -> ParseResult
 		return append_node(next, NODE_IMPORT, token, path)
 	if op == "export"
 		next.index += 1
-		if is_name(next) and not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
+		if is_name(next) and not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec") and not is_token(next, "enum")
 			let owner = next.index
 			next = expect_kind(next, Lex.TOKEN_NAME, "import alias")
 			next = expect(next, ".")
@@ -586,10 +589,30 @@ def parse_statement(p: ParseState) -> ParseResult
 				children = children.append(renamed.node)
 			next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
 			return append_node(next, NODE_EXPORT, token, children)
-		if not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec")
+		if not is_token(next, "def") and not is_token(next, "let") and not is_token(next, "rec") and not is_token(next, "enum")
 			return ParseResult(fail(next, "export requires def, rec, let or imported member"), -1)
 		let definition = parse_statement(next)
 		return unary_node(definition.state, NODE_EXPORT, token, definition.node)
+	# Enum is syntactic sugar for empty record constructors and their labeled
+	# union. Each case is kept as a NODE_REC child so HIR reuses constructors.
+	if op == "enum" and p.tokens[!p.index + 1].kind == Lex.TOKEN_NAME
+		next.index += 1
+		let name = next.index
+		next = expect_kind(next, Lex.TOKEN_NAME, "enum name")
+		next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline")
+		next = expect_kind(next, Lex.TOKEN_INDENT, "enum alternatives")
+		var cases = Array[i64]()
+		while next.error == "" and not kind_is(next, Lex.TOKEN_DEDENT) and not kind_is(next, Lex.TOKEN_EOF)
+			let label = next.index
+			next = expect_kind(next, Lex.TOKEN_NAME, "enum alternative")
+			next = expect_kind(next, Lex.TOKEN_NEWLINE, "newline after enum alternative")
+			let body = append_node(next, NODE_BLOCK, label, Array[i64]())
+			next = body.state
+			let constructor = append_node(next, NODE_REC, label, [body.node])
+			next = constructor.state
+			cases = cases.append(constructor.node)
+		next = expect_kind(next, Lex.TOKEN_DEDENT, "dedent")
+		return append_node(next, NODE_ENUM, name, cases)
 	if op == "def" or op == "rec" or op == "extern"
 		next.index += 1
 		if op == "extern"

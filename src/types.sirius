@@ -125,9 +125,9 @@ def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, 
 	if tag == TYPE_TAG_UNION
 		if first != 0 or second != 0 or len(fields) < 2
 			return false
-		for i in 0..len(fields)
-			let member = fields[!i]
-			if member.name != "" or member.kind <= TYPE_TAG_VOID or member.kind >= id
+		let labeled = fields[!0].name != ""
+		for member in fields
+			if (member.name != "") != labeled or member.kind <= TYPE_TAG_VOID or member.kind >= id
 				return false
 		return true
 	if tag == TYPE_TAG_RECORD
@@ -148,6 +148,30 @@ def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, 
 		return second > TYPE_TAG_INVALID and second != TYPE_TAG_VOID and second < id
 	return false
 
+# Union alternatives have two distinct canonical encodings. Legacy unions are
+# unnamed and ordered by payload signature. Labeled unions are ordered by
+# unique labels, independent of payload shape (which can repeat). Mixed forms
+# are invalid; an unlabelled payload cannot select a labeled alternative.
+def union_fields_canonical(table: TypeTable, fields: Array[RecordField]) -> bool
+	if len(fields) < 2
+		return false
+	let labeled = fields[!0].name != ""
+	var previous = ""
+	for i in 0..len(fields)
+		let member = fields[!i]
+		if type_tag(table, member.kind) != TYPE_TAG_RECORD or (member.name != "") != labeled
+			return false
+		let signature = type_signature(table, member.kind)
+		if signature == "invalid"
+			return false
+		var key = signature
+		if labeled
+			key = member.name
+		if i > 0 and previous >= key
+			return false
+		previous = key
+	return true
+
 # Canonical fields are sorted by the caller. Invalid construction leaves the
 # table unchanged and returns the existing invalid TypeId (0).
 export def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fields: Array[RecordField]) -> InternedType
@@ -158,15 +182,8 @@ export def intern_type(table: TypeTable, tag: i64, first: i64, second: i64, fiel
 		return InternedType(table, tag)
 	if not type_descriptor_parts_canonical(id, tag, first, second, fields)
 		return InternedType(table, TYPE_TAG_INVALID)
-	if tag == TYPE_TAG_UNION
-		var last = ""
-		for member in fields
-			if type_tag(table, member.kind) != TYPE_TAG_RECORD
-				return InternedType(table, TYPE_TAG_INVALID)
-			let signature = type_signature(table, member.kind)
-			if signature == "invalid" or (last != "" and last >= signature)
-				return InternedType(table, TYPE_TAG_INVALID)
-			last = signature
+	if tag == TYPE_TAG_UNION and not union_fields_canonical(table, fields)
+		return InternedType(table, TYPE_TAG_INVALID)
 	let key = type_descriptor_key(tag, first, second, fields)
 	let existing = table.lookup.get(key) or -1
 	if existing >= 0
@@ -185,15 +202,8 @@ export def type_descriptor_canonical(types: TypeTable, id: i64) -> bool
 	let desc = types.entries[!id]
 	if not type_descriptor_parts_canonical(id, desc.tag, desc.first, desc.second, desc.fields)
 		return false
-	if desc.tag == TYPE_TAG_UNION
-		var last = ""
-		for member in desc.fields
-			if type_tag(types, member.kind) != TYPE_TAG_RECORD
-				return false
-			let signature = type_signature(types, member.kind)
-			if signature == "invalid" or (last != "" and last >= signature)
-				return false
-			last = signature
+	if desc.tag == TYPE_TAG_UNION and not union_fields_canonical(types, desc.fields)
+		return false
 	return true
 
 # TypeId is an opaque table index. Query the descriptor before branching on
@@ -290,6 +300,10 @@ export def type_signature(types: TypeTable, id: i64) -> string
 			let variant = type_signature(types, member.kind)
 			if variant == "invalid"
 				return "invalid"
+			# Retain the historical signature of unnamed unions. Labeled
+			# alternatives include their identity, not just their layout.
+			if member.name != ""
+				parts = parts.append(str(len(member.name)) + ":" + member.name + "=")
 			parts = parts.append(str(len(variant)) + ":" + variant + ";")
 		return "".join(parts) + "}"
 	if desc.tag != TYPE_TAG_RECORD
@@ -303,10 +317,10 @@ export def type_signature(types: TypeTable, id: i64) -> string
 	return "".join(parts) + "}"
 
 
-# Union alternatives are canonical structural record TypeIds. Store them as
-# ordered, unnamed entries in the existing descriptor field arena; they are
-# *types*, not value fields. A union has no nominal constructor identity.
-# Values use a two-slot managed wrapper: structural variant tag and owned record.
+# Existing constructor-based unions use ordered, unnamed record alternatives.
+# Labeled unions (below) instead include the constructor label in type identity.
+# Both use this descriptor field arena; neither changes structural record types.
+# Executable unions currently use a two-slot tag-and-payload managed wrapper.
 export def intern_union_type(table: TypeTable, alternatives: Array[i64]) -> InternedType
 	if len(alternatives) < 2
 		return InternedType(table, TYPE_TAG_INVALID)
@@ -330,6 +344,53 @@ export def intern_union_type(table: TypeTable, alternatives: Array[i64]) -> Inte
 			ordered = ordered.append(fields[!i])
 		fields = ordered
 	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
+
+# Labeled alternatives are structurally identified by (label, payload type).
+# Sorting by label makes tag indices stable across independent modules and
+# construction order. Duplicate labels are rejected even for different shapes.
+# This type-level API does not enable source-level variant construction yet.
+export def intern_labeled_union_type(table: TypeTable, alternatives: Array[RecordField]) -> InternedType
+	if len(alternatives) < 2
+		return InternedType(table, TYPE_TAG_INVALID)
+	var fields = Array[RecordField]()
+	for alternative in alternatives
+		if alternative.name == "" or type_tag(table, alternative.kind) != TYPE_TAG_RECORD
+			return InternedType(table, TYPE_TAG_INVALID)
+		var at = 0
+		while at < len(fields) and fields[!at].name < alternative.name
+			at += 1
+		if at < len(fields) and fields[!at].name == alternative.name
+			return InternedType(table, TYPE_TAG_INVALID)
+		var ordered = Array[RecordField]()
+		for i in 0..at
+			ordered = ordered.append(fields[!i])
+		ordered = ordered.append(alternative)
+		for i in at..len(fields)
+			ordered = ordered.append(fields[!i])
+		fields = ordered
+	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
+
+# Explicit labels distinguish alternatives sharing the same structural payload.
+# A record can still be implicitly injected when exactly one alternative has
+# its shape. Never infer an ambiguous label from the record's type alone.
+export def union_labeled_alternative_index(table: TypeTable, union_id: i64, label: string, member: i64) -> i64
+	if label == "" or type_tag(table, union_id) != TYPE_TAG_UNION
+		return -1
+	let alternatives = table.entries[!union_id].fields
+	for i in 0..len(alternatives)
+		if alternatives[!i].name == label and alternatives[!i].kind == member
+			return i
+	return -1
+
+# Constructor names may be module-qualified in a resolved source program.
+# Qualifiers select the constructor, not part of the union's canonical label.
+export def union_constructor_alternative_index(table: TypeTable, union_id: i64, constructor: string, member: i64) -> i64
+	if type_tag(table, union_id) != TYPE_TAG_UNION
+		return -1
+	for alternative in table.entries[!union_id].fields
+		if alternative.name != "" and (constructor == alternative.name or constructor.ends_with("." + alternative.name))
+			return union_labeled_alternative_index(table, union_id, alternative.name, member)
+	return -1
 
 # Implicit injection preserves structural field names and collection shape.
 # Conversion may allocate new records/arrays; it never reinterprets their layout.
@@ -363,7 +424,10 @@ export def union_alternative_index(table: TypeTable, union_id: i64, member: i64)
 	if type_tag(table, union_id) != TYPE_TAG_UNION
 		return -1
 	let alternatives = table.entries[!union_id].fields
+	var found = -1
 	for i in 0..len(alternatives)
 		if alternatives[!i].kind == member
-			return i
-	return -1
+			if found >= 0
+				return -1
+			found = i
+	return found

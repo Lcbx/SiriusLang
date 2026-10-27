@@ -42,13 +42,21 @@ export def module_import_type(table: Types.TypeTable, foreign: Types.TypeTable, 
 		return ModuleImportType(result.table, result.id)
 	if descriptor.tag == Types.TYPE_TAG_UNION
 		var current = table
+		let named = descriptor.fields[!0].name != ""
 		var alternatives = Array[i64]()
+		var labeled = Array[Types.RecordField]()
 		for member in descriptor.fields
 			let imported = module_import_type(current, foreign, member.kind)
 			if imported.id == Types.TYPE_TAG_INVALID
 				return imported
 			current = imported.table
-			alternatives = alternatives.append(imported.id)
+			if named
+				labeled = labeled.append(Types.RecordField(member.name, imported.id))
+			else
+				alternatives = alternatives.append(imported.id)
+		if named
+			let result = Types.intern_labeled_union_type(current, labeled)
+			return ModuleImportType(result.table, result.id)
 		let result = Types.intern_union_type(current, alternatives)
 		return ModuleImportType(result.table, result.id)
 	if descriptor.tag == Types.TYPE_TAG_RECORD

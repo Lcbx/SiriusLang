@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, C_FLAGS, link_flags, require_cc
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 
 def run(*command: object) -> subprocess.CompletedProcess[bytes]:
@@ -14,7 +14,7 @@ def run(*command: object) -> subprocess.CompletedProcess[bytes]:
 
 
 def check(result: subprocess.CompletedProcess[bytes], status: int, stdout: bytes = b'') -> None:
-	assert (result.returncode, result.stdout, result.stderr) == (status, stdout, b''), result
+	assert (result.returncode, normalize_newlines(result.stdout), normalize_newlines(result.stderr)) == (status, stdout, b''), result
 
 
 def main() -> None:

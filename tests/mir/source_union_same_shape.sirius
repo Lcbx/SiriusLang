@@ -1,0 +1,20 @@
+rec Meters(value: i64)
+rec Feet(value: i64)
+let Length = Meters | Feet
+
+def identify(length: Length) -> i64
+	match length
+		Meters(value)
+			return value
+		Feet(value)
+			return value + 10
+
+def construct() -> Length
+	return Feet(4)
+
+def main() -> i64
+	# Constructor names do not alter the ordinary structural record type.
+	let plain: Meters = Feet(9)
+	let first: Length = Meters(3)
+	let second: Length = Feet(4)
+	return identify(first) + identify(second) + identify(construct())

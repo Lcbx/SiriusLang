@@ -45,6 +45,7 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 	var exports = Array[string]()
 	var reexports = Array[Hir.HirReexport]()
 	var union_sources = Array[HirTypeUnionSource]()
+	var enum_sources = Array[i64]()
 	for i in 0..module.count
 		var id = Hir.hir_ast_child(tree, root, i)
 		var entry = tree.nodes[!id]
@@ -81,8 +82,8 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 					public_name = Hir.hir_ast_text(tree, Hir.hir_ast_child(tree, exported, 1))
 				reexports = reexports.append(Hir.HirReexport(Hir.hir_ast_text(tree, owner), Hir.hir_ast_text(tree, id), public_name))
 				continue
-			if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_REC
-				return hir_declaration_error(functions, constants, "export requires def, rec or let", Hir.hir_ast_line(tree, id))
+			if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_REC and entry.kind != Ast.NODE_ENUM
+				return hir_declaration_error(functions, constants, "export requires def, rec, let or enum", Hir.hir_ast_line(tree, id))
 			var has_return = false
 			for j in 0..entry.count - 1
 				if tree.nodes[!Hir.hir_ast_child(tree, id, j)].kind == Ast.NODE_TYPE
@@ -105,7 +106,7 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 		for imported in imports
 			if imported.alias == name
 				return hir_declaration_error(functions, constants, "declaration shadows module alias '" + name + "'", Hir.hir_ast_line(tree, id))
-		if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_REC and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_EXTERN_DEF
+		if entry.kind != Ast.NODE_DEF and entry.kind != Ast.NODE_REC and entry.kind != Ast.NODE_LET and entry.kind != Ast.NODE_EXTERN_DEF and entry.kind != Ast.NODE_ENUM
 			return hir_declaration_error(functions, constants, "unsupported module statement", Hir.hir_ast_line(tree, id))
 		if (name == "print" or name == "eprint") and (entry.kind == Ast.NODE_DEF or entry.kind == Ast.NODE_REC or entry.kind == Ast.NODE_EXTERN_DEF)
 			return hir_declaration_error(functions, constants, "duplicate function '" + name + "'", Hir.hir_ast_line(tree, id))
@@ -126,6 +127,21 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 					if previous.name == name and (previous.constructor or tree.nodes[!previous.source].kind != Ast.NODE_DEF)
 						return hir_declaration_error(functions, constants, "cannot overload constructor or extern '" + name + "'", Hir.hir_ast_line(tree, id))
 		names = names.append(name)
+		if entry.kind == Ast.NODE_ENUM
+			enum_sources = enum_sources.append(id)
+			for j in 0..entry.count
+				let item = Hir.hir_ast_child(tree, id, j)
+				let label = Hir.hir_ast_text(tree, item)
+				for previous in names
+					if previous == label
+						return hir_declaration_error(functions, constants, "duplicate enum alternative '" + label + "'", Hir.hir_ast_line(tree, item))
+				names = names.append(label)
+				let body = Hir.hir_ast_child(tree, item, 0)
+				functions = functions.append(Hir.new_hir_function_decl(label, item, body, true, -1, Array[Hir.HirParameterDecl]()))
+				function_exports = function_exports.append(published)
+				if published
+					exports = exports.append(label)
+			continue
 		if entry.kind == Ast.NODE_LET
 			if entry.count == 0
 				return hir_declaration_error(functions, constants, "module constant requires initializer", Hir.hir_ast_line(tree, id))
@@ -247,7 +263,7 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 		let members = hir_union_members(tree, source.source)
 		if len(members) < 2
 			return hir_declaration_error(functions, constants, "union requires at least two constructor alternatives", Hir.hir_ast_line(tree, source.source))
-		var variants = Array[i64]()
+		var alternatives = Array[Types.RecordField]()
 		for member in members
 			let name = Hir.hir_ast_text(tree, member)
 			var constructor = false
@@ -262,12 +278,25 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 			types = resolved.table
 			if Types.type_tag(types, resolved.type_id) != Types.TYPE_TAG_RECORD
 				return hir_declaration_error(functions, constants, "union constructor requires annotated record fields", Hir.hir_ast_line(tree, member))
-			variants = variants.append(resolved.type_id)
-		let interned = Types.intern_union_type(types, variants)
+			alternatives = alternatives.append(Types.RecordField(name, resolved.type_id))
+		let interned = Types.intern_labeled_union_type(types, alternatives)
 		if interned.id == Types.TYPE_TAG_INVALID
-			return hir_declaration_error(functions, constants, "union alternatives must have distinct record shapes", Hir.hir_ast_line(tree, source.source))
+			return hir_declaration_error(functions, constants, "union alternatives must have distinct constructor labels", Hir.hir_ast_line(tree, source.source))
 		types = interned.table
 		aliases = aliases.append(Hir.HirTypeAlias(source.name, interned.id))
+	for source in enum_sources
+		let declaration = tree.nodes[!source]
+		var alternatives = Array[Types.RecordField]()
+		for i in 0..declaration.count
+			let item = Hir.hir_ast_child(tree, source, i)
+			let record = Types.intern_record_type(types, Array[Types.RecordField]())
+			types = record.table
+			alternatives = alternatives.append(Types.RecordField(Hir.hir_ast_text(tree, item), record.id))
+		let interned = Types.intern_labeled_union_type(types, alternatives)
+		if interned.id == Types.TYPE_TAG_INVALID
+			return hir_declaration_error(functions, constants, "enum requires at least two distinct alternatives", Hir.hir_ast_line(tree, source))
+		types = interned.table
+		aliases = aliases.append(Hir.HirTypeAlias(Hir.hir_ast_text(tree, source), interned.id))
 	var result = Hir.new_hir_module_decl(functions, constants, types, values, "", 0)
 	result.imports = imports
 	result.exports = exports

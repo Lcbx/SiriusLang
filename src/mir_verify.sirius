@@ -154,7 +154,16 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 	if ins.op == Mir.MIR_UNION_NEW
 		if ins.first < 0 or ins.first >= len(types)
 			return "invalid union payload register"
-		if Types.union_alternative_index(program.types, dst_type, types[!ins.first]) < 0
+		if ins.second >= 0
+			if Types.type_tag(program.types, dst_type) != Types.TYPE_TAG_UNION
+				return "labeled union constructor requires union destination"
+			let alternatives = program.types.entries[!dst_type].fields
+			if ins.second >= len(alternatives)
+				return "invalid labeled union alternative"
+			let selected = alternatives[!ins.second]
+			if selected.name == "" or selected.kind != types[!ins.first]
+				return "labeled union constructor payload mismatch"
+		elif ins.second != -1 or Types.union_alternative_index(program.types, dst_type, types[!ins.first]) < 0
 			return "union constructor requires member record"
 		return ""
 	if ins.op == Mir.MIR_UNION_TAG or ins.op == Mir.MIR_UNION_GET
@@ -163,7 +172,14 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if ins.op == Mir.MIR_UNION_TAG
 			if dst_type != Types.TYPE_TAG_I64
 				return "union tag requires i64 destination"
-		elif Types.union_alternative_index(program.types, types[!ins.first], dst_type) < 0
+		elif ins.second >= 0
+			let alternatives = program.types.entries[!types[!ins.first]].fields
+			if ins.second >= len(alternatives)
+				return "invalid labeled union alternative"
+			let selected = alternatives[!ins.second]
+			if selected.name == "" or selected.kind != dst_type
+				return "labeled union extraction payload mismatch"
+		elif ins.second != -1 or Types.union_alternative_index(program.types, types[!ins.first], dst_type) < 0
 			return "union extraction requires member record destination"
 		return ""
 	if ins.op == Mir.MIR_DICT_NEXT or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE

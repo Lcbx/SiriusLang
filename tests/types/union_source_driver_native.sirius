@@ -45,8 +45,8 @@ def main() -> i64
 		print("unknown: " + unknown)
 		return 4
 	let malformed = analyze("rec A(x: i64)\nrec B(x: i64)\nlet Result = A | B\ndef unwrap(result: Result) -> i64\n\treturn 0\n")
-	if malformed != "union alternatives must have distinct record shapes"
-		print("malformed: " + malformed)
+	if malformed != ""
+		print("same-shaped labels: " + malformed)
 		return 5
 	let forward = analyze("let Result = Success | Failure\n" + "rec Success(value: i64)\nrec Failure(code: i64)\ndef unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(x)\n\t\t\treturn x\n\t\tFailure(y)\n\t\t\treturn y\n")
 	if forward != ""

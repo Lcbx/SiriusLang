@@ -1,5 +1,6 @@
 import types alias Types
 import hir alias Hir
+import module alias Module
 
 # Call signature validation is semantic: no C names or ownership helpers.
 # A checked call returns an interned result type, and (possibly) an extended
@@ -214,8 +215,6 @@ export def hir_record_spread(types: Types.TypeTable, fields: Array[Types.RecordF
 	return HirRecordEdit(result, -1, "")
 
 export def resolve_hir_record(types: Types.TypeTable, fields: Array[Types.RecordField]) -> HirCallCheck
-	if len(fields) == 0
-		return HirCallCheck(types, Types.TYPE_TAG_INVALID, "empty records are not supported yet")
 	let interned = Types.intern_record_type(types, fields)
 	return HirCallCheck(interned.table, interned.id, "")
 
@@ -265,3 +264,29 @@ export def check_exhaustive_match(types: Types.TypeTable, union_id: i64, arms: A
 		if not seen[!i]
 			return HirMatchCheck("non-exhaustive match", members[!i].kind)
 	return HirMatchCheck("", -1)
+
+# Exhaustiveness is about labels, not payload record shapes. Source match
+# analysis resolves each constructor name to a canonical alternative index.
+export def check_exhaustive_match_indices(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchCheck
+	if Types.type_tag(types, union_id) != Types.TYPE_TAG_UNION
+		return HirMatchCheck("match requires a tagged union", -1)
+	let members = types.entries[!union_id].fields
+	var seen = Array[bool]()
+	for member in members
+		seen = seen.append(false)
+	for index in arms
+		if index < 0 or index >= len(members)
+			return HirMatchCheck("match arm is not a union alternative", -1)
+		if seen[!index]
+			return HirMatchCheck("duplicate match alternative", members[!index].kind)
+		seen[!index] = true
+	for i in 0..len(seen)
+		if not seen[!i]
+			return HirMatchCheck("non-exhaustive match", members[!i].kind)
+	return HirMatchCheck("", -1)
+
+# Resolve the exported constructor's source label after module name mangling.
+# Only a direct constructor call or match pattern uses this entry point;
+# stored record values carry no constructor identity.
+export def hir_union_constructor_alternative_index(types: Types.TypeTable, union_id: i64, constructor: string, record_type: i64) -> i64
+	return Types.union_constructor_alternative_index(types, union_id, Module.hir_module_symbol_member(constructor), record_type)

@@ -245,7 +245,64 @@ additional binders then select the remaining published fields in canonical
 lexicographic name order. Patterns may omit these additional binders but must
 include every constructor parameter.
 
-**Current design choice:** Constructors produce structurally typed records. Union alternatives must therefore have distinct canonical record types; constructors with identical result shapes are not distinguishable alternatives. Nominal variant identity is not currently specified.
+### Structural records and labeled union alternatives
+
+Record constructor names do not affect record type identity: two records with
+identical field names and types are interchangeable. In a union, the *name of
+an alternative* is retained alongside its structural payload type:
+
+```sirius
+rec Meters(value: f64)
+rec Feet(value: f64)
+let Length = Meters | Feet
+```
+
+The union has two distinct alternatives, `Meters: {value: f64}` and
+`Feet: {value: f64}`. Its canonical identity is the order-independent set of
+`(constructor label, payload shape)` pairs. Duplicate labels are invalid.
+Records are not nominal types: outside the union, `Meters(2.0)` and
+`Feet(2.0)` have the same structural type.
+
+An enum is shorthand for a union of empty-record constructors:
+
+```sirius
+enum Color
+    Red
+    Green
+    Blue
+
+# Equivalent to:
+rec Red()
+rec Green()
+rec Blue()
+let Color = Red | Green | Blue
+```
+
+All three payloads are the same empty record type. The selected union label,
+not the payload's type, distinguishes them. No implicit ordinal, integer
+conversion, or ordering relation is defined. Empty records are valid values.
+
+A record can be implicitly injected when **exactly one** union alternative has
+its structural type. When multiple alternatives have the same payload shape,
+construction must select a label explicitly. A **direct constructor call**
+retains its label in a contextually typed `let`, `return`, typed array
+literal, or typed function argument (including indirect calls). Qualified imported constructors (`C.Red()`) and match patterns
+(`C.Red()`) use the defining constructor's label, including across re-exports;
+module-qualified names do not change record or union type identity. Storing
+the record first erases its constructor name and cannot later recover a label.
+Dedicated `Union.Label(...)` injection for already constructed records and
+contextual injection in all collection mutation and nested expression forms
+remain to be implemented.
+`enum` and `A | B` are supported; there is no distinct `variant` declaration.
+
+MIR uses explicit canonical tag indices for labeled construction and checked
+extraction; its verifier, interpreter and C emitter preserve them, including
+when record shapes coincide. The runtime initially retains the existing managed
+tag-plus-payload representation; a compact scalar representation for empty
+payload enums is a separate optimization. Unlabeled MIR union descriptors
+remain supported for internal/serialized uses. Nominal wrappers (`newtype`),
+generic/recursive unions, refutable bindings and unifying `Optional[T]` with
+unions require separate design and implementation work.
 
 ### Errors and fatal failures
 
@@ -578,7 +635,7 @@ These remain **unresolved**, not implied guarantees:
 
 * Explicit numeric conversions, floating-point edge behavior, and any future checked or saturating integer operations. Basic `i64` wrapping and division/remainder semantics are specified above.
 * Structural equality and hashing for all types (especially floats and arrays with elementwise `==`).
-* Whether future nominal variant identity should distinguish union alternatives with identical structural record shapes (currently indistinguishable).
+* Whether and how opt-in nominal `newtype` wrappers should restrict construction, conversion, and export visibility. Labeled variants themselves use structural `(label, payload)` identities.
 * Imported-operator overload visibility and explicit compile-time evaluation syntax/staging.
 
 Portable MIR formats, registration/dispatch ABIs, and C interoperability are separate open architectural questions in [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md).
@@ -596,7 +653,7 @@ The active priorities and prerequisite decisions are tracked in [ROADMAP.md](ROA
 * More precise purity/effect analysis.
 * Structured concurrency: `spawn`, `sync`, channels, cancellation.
 * Atomic RC for shared allocations and an M:N scheduler.
-* Advanced pattern matching and richer algebraic data types.
+* Advanced pattern matching and richer algebraic data types beyond labeled variants.
 
 ### Medium priority
 
@@ -619,7 +676,7 @@ The active priorities and prerequisite decisions are tracked in [ROADMAP.md](ROA
 * Generalized NumPy ufunc dispatch.
 * User-level SIMD intrinsics.
 * GPU kernel compilation.
-* Arbitrary union types.
+* Generalized unions beyond constructor-labeled record alternatives.
 
 **Language influences:** Python (syntax), NumPy (arrays), Codon (compiled numerics), Roc (immutable values and CoW), Koka (FBIP and ARC), Futhark (functional arrays), Zig (compiler implementation).
 

@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, C_FLAGS, compile_native, link_flags, require_cc
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 
 def run(binary: Path, *args: Path | str) -> subprocess.CompletedProcess[bytes]:
@@ -28,12 +28,12 @@ def main() -> None:
 			assert run(compiler, source, generated).returncode == 0
 			native = compile_native(cache, generated)
 			for outcome in (run(native), run(runner, source)):
-				assert (outcome.returncode, outcome.stdout) == (status, output), (name, outcome)
+				assert (outcome.returncode, normalize_newlines(outcome.stdout)) == (status, output), (name, outcome)
 				assert error in outcome.stderr, (name, outcome)
 			wire = work / (name + '.smir')
 			assert run(runner, '--emit-mir', wire, source).returncode == 0
 			loaded = run(runner, '--load-mir', wire)
-			assert (loaded.returncode, loaded.stdout) == (status, output) and error in loaded.stderr, (name, loaded)
+			assert (loaded.returncode, normalize_newlines(loaded.stdout)) == (status, output) and error in loaded.stderr, (name, loaded)
 			if status == 0:
 				# Some Windows toolchains have no sanitizer runtime; probe it first.
 				flags = ['-fsanitize=signed-integer-overflow', '-fno-sanitize-recover=all']
@@ -49,12 +49,12 @@ def main() -> None:
 					build = subprocess.run(cmd, capture_output=True)
 					assert build.returncode == 0, build.stderr
 					result = run(audited)
-					assert (result.returncode, result.stdout, result.stderr) == (0, output, b''), result
+					assert (result.returncode, normalize_newlines(result.stdout), normalize_newlines(result.stderr)) == (0, output, b''), result
 				else:
 					print('SKIP signed-overflow sanitizer (unsupported by C toolchain)')
 		driver = cache.native_driver('integer-edges', ROOT / 'tests/mir/integer_edges_driver_native.sirius')
 		result = run(driver)
-		assert (result.returncode, result.stdout) == (0, b'PASS raw MIR integer division checks\n'), result
+		assert (result.returncode, normalize_newlines(result.stdout)) == (0, b'PASS raw MIR integer division checks\n'), result
 	print('PASS i64 wrapping, truncating division, traps, MIR/native/wire and UBSan')
 
 

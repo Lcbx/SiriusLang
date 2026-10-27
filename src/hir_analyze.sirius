@@ -391,13 +391,17 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	var specialized_args = args
 	for i in 0..len(args)
 		let parameter = function.parameters[!i]
-		if function.external and function.argument_types[!i] != Types.TYPE_TAG_INVALID and function.argument_types[!i] != args[!i] and not Types.type_coercible(result.types, function.argument_types[!i], args[!i])
-			return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, function.argument_types[!i]) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
+		if function.external and function.argument_types[!i] != Types.TYPE_TAG_INVALID and function.argument_types[!i] != args[!i]
+			let expected = function.argument_types[!i]
+			if not Types.type_coercible(result.types, expected, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), expected, args[!i]) < 0
+				return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, expected) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
+			result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, expected, -1))
+			specialized_args[!i] = expected
 		if parameter.type_node >= 0
 			let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
 			result.types = annotation.table
 			if annotation.type_id != Types.TYPE_TAG_INVALID and annotation.type_id != args[!i]
-				if not Types.type_coercible(result.types, annotation.type_id, args[!i])
+				if not Types.type_coercible(result.types, annotation.type_id, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), annotation.type_id, args[!i]) < 0
 					return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, annotation.type_id) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
 				result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, annotation.type_id, -1))
 				specialized_args[!i] = annotation.type_id
@@ -492,10 +496,9 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 				result.nodes = result.nodes.append(typed_node)
 		for request in nested.requests
 			result.requests = result.requests.append(request)
-		if len(fields) > 0
-			let record = Types.intern_record_type(nested.types, fields)
-			result.types = record.table
-			result.last_type = record.id
+		let record = Types.intern_record_type(nested.types, fields)
+		result.types = record.table
+		result.last_type = record.id
 		return result
 	if function.result_type_node >= 0
 		let declared = hir_module_type_reference_with_constants(result.types, result.tree, function.result_type_node, result.functions, result.module_constants, result.type_aliases)
@@ -882,7 +885,10 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			var case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
 			path.state.types = case_type.table
 			if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
-				alternatives = alternatives.append(case_type.type_id)
+				var alternative = Types.union_alternative_index(path.state.types, union_id, case_type.type_id)
+				if path.state.types.entries[!union_id].fields[!0].name != ""
+					alternative = Resolve.hir_union_constructor_alternative_index(path.state.types, union_id, Hir.hir_ast_text(tree, arm), case_type.type_id)
+				alternatives = alternatives.append(alternative)
 				let fields = path.state.types.entries[!case_type.type_id].fields
 				var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
 				for function in path.state.functions
@@ -906,7 +912,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			observed = hir_callback_constraints(observed, path)
 		var exhaustive = false
 		if union_id != Types.TYPE_TAG_INVALID
-			let checked = Resolve.check_exhaustive_match(observed.state.types, union_id, alternatives)
+			let checked = Resolve.check_exhaustive_match_indices(observed.state.types, union_id, alternatives)
 			exhaustive = checked.error == ""
 		if not exhaustive
 			if has_path
@@ -1460,7 +1466,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if len(args) != len(signature.fields)
 				return hir_body_error(result, id, "indirect call argument count mismatch")
 			for i in 0..len(args)
-				if not Types.type_coercible(result.types, signature.fields[!i].kind, args[!i])
+				if not Types.type_coercible(result.types, signature.fields[!i].kind, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), signature.fields[!i].kind, args[!i]) < 0
 					return hir_body_error(result, id, "indirect call argument type mismatch")
 				if args[!i] != signature.fields[!i].kind
 					result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, signature.fields[!i].kind, -1))
@@ -1703,6 +1709,26 @@ def hir_body_expression_callback(state: HirBodyState, id: i64, parameters: Array
 		return hir_body_callback_value(state, id, parameters)
 	return hir_body_expression(state, id)
 
+# A direct constructor call retains its source label while being checked against
+# an expected union type. A previously stored structural record has no label.
+export def hir_direct_constructor_alternative(state: HirBodyState, source: i64, expected: i64, actual: i64) -> i64
+	if Types.type_tag(state.types, expected) != Types.TYPE_TAG_UNION
+		return -1
+	let node = state.tree.nodes[!source]
+	if node.kind != Ast.NODE_CALL or node.count == 0
+		return -1
+	let callee = Hir.hir_ast_child(state.tree, source, 0)
+	if state.tree.nodes[!callee].kind != Ast.NODE_NAME and state.tree.nodes[!callee].kind != Ast.NODE_ATTR
+		return -1
+	let name = Hir.hir_ast_text(state.tree, callee)
+	var constructor = false
+	for function in state.functions
+		if function.constructor and (function.name == name or function.name.ends_with("." + name))
+			constructor = true
+	if not constructor
+		return -1
+	return Resolve.hir_union_constructor_alternative_index(state.types, expected, name, actual)
+
 # Contextual homogeneous arrays can hold distinct alternatives when their
 # expected element type is a union. Every element is checked independently.
 export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
@@ -1720,7 +1746,7 @@ export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: 
 		result = hir_body_expression_expected(result, child, element_type)
 		result.error == "" else return result
 		if result.last_type != element_type
-			if not Types.type_coercible(result.types, element_type, result.last_type)
+			if not Types.type_coercible(result.types, element_type, result.last_type) and hir_direct_constructor_alternative(result, child, element_type, result.last_type) < 0
 				return hir_body_error(result, child, "expected " + Resolve.hir_type_name(result.types, element_type) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
 			result.nodes = result.nodes.append(Hir.HirNode(child, Hir.HIR_UNION_INJECT, element_type, -1))
 	result.last_type = expected
@@ -1766,10 +1792,13 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 				return hir_body_error(result, arm_id, case_type.error)
 			if case_type.type_id == Types.TYPE_TAG_INVALID
 				return hir_body_error(result, arm_id, "unknown match constructor '" + Hir.hir_ast_text(state.tree, arm_id) + "'")
-			if Types.union_alternative_index(result.types, union_id, case_type.type_id) < 0
+			var alternative = Types.union_alternative_index(result.types, union_id, case_type.type_id)
+			if result.types.entries[!union_id].fields[!0].name != ""
+				alternative = Resolve.hir_union_constructor_alternative_index(result.types, union_id, Hir.hir_ast_text(state.tree, arm_id), case_type.type_id)
+			if alternative < 0
 				return hir_body_error(result, arm_id, "match arm is not a union alternative")
-			alternatives = alternatives.append(case_type.type_id)
-			result.nodes = result.nodes.append(Hir.HirNode(arm_id, Hir.HIR_MATCH_CASE, case_type.type_id, Types.union_alternative_index(result.types, union_id, case_type.type_id)))
+			alternatives = alternatives.append(alternative)
+			result.nodes = result.nodes.append(Hir.HirNode(arm_id, Hir.HIR_MATCH_CASE, case_type.type_id, alternative))
 			# Existing positional parameters precede optional computed fields.
 			var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
 			for function in result.functions
@@ -1798,7 +1827,7 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			result.symbols = scoped
 			result.facts = scoped_facts
 			result.depth -= 1
-		let checked = Resolve.check_exhaustive_match(result.types, union_id, alternatives)
+		let checked = Resolve.check_exhaustive_match_indices(result.types, union_id, alternatives)
 		if checked.error != ""
 			return hir_body_error(result, id, checked.error)
 		return result
@@ -1851,7 +1880,8 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 					return hir_body_error(result, id, "else return requires an Optional")
 				result.last_type = descriptor.first
 		if declared != Types.TYPE_TAG_INVALID and result.last_type != Types.TYPE_TAG_INVALID and declared != result.last_type and not Types.type_coercible(result.types, declared, result.last_type)
-			return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, declared) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
+			if hir_direct_constructor_alternative(result, initializer, declared, result.last_type) < 0
+				return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, declared) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
 		if declared == Types.TYPE_TAG_INVALID
 			declared = result.last_type
 		if node.kind == Ast.NODE_LET and initializer >= 0 and fallback < 0
@@ -1964,8 +1994,10 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 				result = hir_body_expression(result, child)
 		if node.kind == Ast.NODE_RETURN and result.last_type != Types.TYPE_TAG_INVALID
 			var returned = result.last_type
-			if result.expected_return != Types.TYPE_TAG_INVALID and Types.type_coercible(result.types, result.expected_return, returned)
-				returned = result.expected_return
+			if result.expected_return != Types.TYPE_TAG_INVALID
+				let source = Hir.hir_ast_child(state.tree, id, 0)
+				if Types.type_coercible(result.types, result.expected_return, returned) or hir_direct_constructor_alternative(result, source, result.expected_return, returned) >= 0
+					returned = result.expected_return
 			if result.inferred_return != Types.TYPE_TAG_INVALID and result.inferred_return != returned
 				return hir_body_error(result, id, "inconsistent return types")
 			result.inferred_return = returned

@@ -1,0 +1,98 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_ownership alias Ownership
+import mir_verify alias Verify
+import mir_wire alias Wire
+import types alias Types
+
+# Feet and Meters share one structural payload, but must retain distinct tags.
+def fixture() -> Mir.MirProgram
+	let payload = Types.intern_record_type(Types.new_type_table(), [Types.RecordField("value", Types.TYPE_TAG_STRING)])
+	let union = Types.intern_labeled_union_type(payload.table, [Types.RecordField("Meters", payload.id), Types.RecordField("Feet", payload.id)])
+	let feet = Types.union_labeled_alternative_index(union.table, union.id, "Feet", payload.id)
+	let meters = Types.union_labeled_alternative_index(union.table, union.id, "Meters", payload.id)
+	let instructions = [
+		Mir.mir_string(0, "abc"),
+		Mir.mir_record_new(1, [0]),
+		Mir.mir_union_new_labeled(2, 1, feet),
+		Mir.mir_union_new_labeled(3, 1, meters),
+		Mir.mir_union_tag(4, 2),
+		Mir.mir_union_tag(5, 3),
+		Mir.mir_union_get_labeled(6, 3, meters),
+		Mir.mir_record_get(7, 6, 0),
+		Mir.mir_op(Mir.MIR_STRING_LENGTH, 8, 7, -1, 0),
+		Mir.mir_op(Mir.MIR_SUB_I64, 9, 5, 4, 0),
+		Mir.mir_op(Mir.MIR_ADD_I64, 10, 8, 9, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 7, 7, -1, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 6, 6, -1, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0),
+		Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0),
+	]
+	let registers = [Types.TYPE_TAG_STRING, payload.id, union.id, union.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, payload.id, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64]
+	let runner = Mir.MirFunction(0, Types.TYPE_TAG_I64, registers, [Mir.MirBlock(instructions, Mir.mir_return(10))], 0)
+	return Mir.mir_program_with_types([runner], union.table)
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		return 1
+	let program = fixture()
+	if Verify.mir_verify(program) != ""
+		print("verify: " + Verify.mir_verify(program))
+		return 2
+	let checked = Ownership.mir_check_balance(program)
+	if checked != ""
+		print("ownership: " + checked)
+		return 3
+	let executed = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 100, 10)
+	if executed.error != "" or executed.value.bits != 4
+		print("interpreter: " + executed.error)
+		return 4
+	for item in executed.heap
+		if item.refs != 0
+			return 5
+	let serialized = Wire.mir_serialize_program(program, 0)
+	if serialized.error != ""
+		return 6
+	let decoded = Wire.mir_deserialize_program(serialized.text)
+	if decoded.error != "" or Wire.mir_serialize_program(decoded.program, 0).text != serialized.text
+		return 7
+	let replay = Interpreter.mir_execute(decoded.program, decoded.entry, Array[Mir.MirValue](), 100, 10)
+	if replay.error != "" or replay.value.bits != 4
+		return 8
+	let function = program.functions[!0]
+	# The legacy payload-only op and invalid or mismatched tags are rejected.
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_new(2, 1)) == ""
+		return 9
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_new_labeled(2, 1, -2)) == ""
+		return 10
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_new_labeled(2, 1, 2)) == ""
+		return 11
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_get(6, 3)) == ""
+		return 12
+	if Verify.mir_verify_instruction(program, function, Mir.mir_union_get_labeled(7, 3, 0)) == ""
+		return 13
+	let emitted = Emit.mir_emit_c(program, 0)
+	if emitted.error != "" or not write_text(args[!1], emitted.code)
+		return 14
+	# The wrong label has an identical payload shape and passes verification,
+	# but projection must still check the run-time discriminant.
+	var bad = program
+	var bad_function = bad.functions[!0]
+	var bad_block = bad_function.blocks[!0]
+	bad_block.instructions[!6] = Mir.mir_union_get_labeled(6, 3, 0)
+	bad_function.blocks[!0] = bad_block
+	bad.functions[!0] = bad_function
+	if Verify.mir_verify(bad) != ""
+		return 15
+	let failure = Interpreter.mir_execute(bad, 0, Array[Mir.MirValue](), 100, 10)
+	if failure.error != "union variant mismatch"
+		return 16
+	let bad_c = Emit.mir_emit_c(bad, 0)
+	if bad_c.error != "" or not write_text(args[!2], bad_c.code)
+		return 17
+	print("PASS labeled union MIR tags, interpreter, serialization and ownership")
+	return 0

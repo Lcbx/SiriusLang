@@ -1,0 +1,74 @@
+import types alias Types
+import module alias Module
+import module_interface alias Interface
+import mir alias Mir
+import mir_verify alias Verify
+import mir_wire alias Wire
+
+# Compiler-level descriptor regression; source-level labeled syntax is pending.
+# The legacy payload-only constructor still must reject labeled unions.
+def main() -> i64
+	let empty = Types.intern_record_type(Types.new_type_table(), Array[Types.RecordField]())
+	if empty.id == Types.TYPE_TAG_INVALID
+		return 1
+	let wrapped = Types.intern_record_type(empty.table, [Types.RecordField("value", Types.TYPE_TAG_F64)])
+	let labels = [Types.RecordField("Green", empty.id), Types.RecordField("Red", empty.id), Types.RecordField("Blue", empty.id)]
+	let colors = Types.intern_labeled_union_type(wrapped.table, labels)
+	if colors.id == Types.TYPE_TAG_INVALID or not Types.type_descriptor_canonical(colors.table, colors.id)
+		return 2
+	let ordered = Types.intern_labeled_union_type(colors.table, [Types.RecordField("Blue", empty.id), Types.RecordField("Green", empty.id), Types.RecordField("Red", empty.id)])
+	if ordered.id != colors.id or len(ordered.table.entries) != len(colors.table.entries)
+		return 3
+	if Types.union_labeled_alternative_index(colors.table, colors.id, "Blue", empty.id) != 0 or Types.union_labeled_alternative_index(colors.table, colors.id, "Red", empty.id) != 2
+		return 4
+	if Types.union_labeled_alternative_index(colors.table, colors.id, "Blue", wrapped.id) != -1 or Types.union_labeled_alternative_index(colors.table, colors.id, "Yellow", empty.id) != -1
+		return 5
+	if Types.union_alternative_index(colors.table, colors.id, empty.id) != -1 or Types.type_coercible(colors.table, colors.id, empty.id)
+		return 6
+	let length = Types.intern_labeled_union_type(colors.table, [Types.RecordField("Meters", wrapped.id), Types.RecordField("Feet", wrapped.id)])
+	if length.id == Types.TYPE_TAG_INVALID or Types.union_labeled_alternative_index(length.table, length.id, "Meters", wrapped.id) == Types.union_labeled_alternative_index(length.table, length.id, "Feet", wrapped.id)
+		return 7
+	if Types.intern_labeled_union_type(length.table, [Types.RecordField("Red", empty.id), Types.RecordField("Red", wrapped.id)]).id != Types.TYPE_TAG_INVALID
+		return 8
+	if Types.intern_labeled_union_type(length.table, [Types.RecordField("Red", empty.id), Types.RecordField("", empty.id)]).id != Types.TYPE_TAG_INVALID
+		return 9
+	if Types.intern_labeled_union_type(length.table, [Types.RecordField("Red", Types.TYPE_TAG_I64), Types.RecordField("Green", empty.id)]).id != Types.TYPE_TAG_INVALID
+		return 10
+	if Types.intern_type(length.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("Red", empty.id), Types.RecordField("Blue", empty.id)]).id != Types.TYPE_TAG_INVALID
+		return 11
+	if Types.intern_type(length.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("", empty.id), Types.RecordField("Blue", empty.id)]).id != Types.TYPE_TAG_INVALID
+		return 12
+	let foreign_empty = Types.intern_record_type(Types.new_type_table(), Array[Types.RecordField]())
+	let foreign_wrapped = Types.intern_record_type(foreign_empty.table, [Types.RecordField("value", Types.TYPE_TAG_F64)])
+	let foreign_length = Types.intern_labeled_union_type(foreign_wrapped.table, [Types.RecordField("Meters", foreign_wrapped.id), Types.RecordField("Feet", foreign_wrapped.id)])
+	let imported = Interface.module_import_type(length.table, foreign_length.table, foreign_length.id)
+	if imported.id != length.id or Module.mir_type_signature(length.table, length.id) != Module.mir_type_signature(foreign_length.table, foreign_length.id)
+		return 13
+	let different = Types.intern_labeled_union_type(length.table, [Types.RecordField("Yards", wrapped.id), Types.RecordField("Feet", wrapped.id)])
+	if different.id == length.id or Module.mir_type_signature(different.table, different.id) == Module.mir_type_signature(length.table, length.id)
+		return 14
+	let old_union = Types.intern_union_type(length.table, [empty.id, wrapped.id])
+	if old_union.id == Types.TYPE_TAG_INVALID or Types.union_alternative_index(old_union.table, old_union.id, wrapped.id) < 0
+		return 15
+	# Descriptors survive executable MIR wire round trips even when they are
+	# not used by the entry function. Payload-only UNION_NEW remains forbidden.
+	let operations = [Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 7)]
+	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64], [Mir.MirBlock(operations, Mir.mir_return(0))], 0)
+	let program = Mir.mir_program_with_types([function], different.table)
+	if Verify.mir_verify(program) != ""
+		return 16
+	let encoded = Wire.mir_serialize_program(program, 0)
+	if encoded.error != ""
+		return 17
+	let decoded = Wire.mir_deserialize_program(encoded.text)
+	if decoded.error != "" or Wire.mir_serialize_program(decoded.program, 0).text != encoded.text
+		return 18
+	if Types.union_labeled_alternative_index(decoded.program.types, colors.id, "Red", empty.id) != 2
+		return 19
+	# Existing payload-only MIR injection cannot guess the label.
+	let legacy_instruction = Mir.mir_union_new(1, 0)
+	let cannot_construct = Mir.MirFunction(0, Types.TYPE_TAG_I64, [empty.id, colors.id], [Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(0))], 0)
+	if Verify.mir_verify_instruction(program, cannot_construct, legacy_instruction) == ""
+		return 20
+	print("PASS labeled union descriptor identity and serialization")
+	return 0

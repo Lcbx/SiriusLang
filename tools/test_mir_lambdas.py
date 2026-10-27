@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, C_FLAGS, compile_native, link_flags, require_cc
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 CASES = {
 	'source_lambda_basic': (42, b''),
@@ -46,7 +46,7 @@ def run(binary: Path, *args: object) -> subprocess.CompletedProcess[bytes]:
 
 
 def check(result: subprocess.CompletedProcess[bytes], name: str, status: int, stdout: bytes = b'') -> None:
-	assert (result.returncode, result.stdout, result.stderr) == (status, stdout, b''), (name, result)
+	assert (result.returncode, normalize_newlines(result.stdout), normalize_newlines(result.stderr)) == (status, stdout, b''), (name, result)
 
 
 def main() -> None:

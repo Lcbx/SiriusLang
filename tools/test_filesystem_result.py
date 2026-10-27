@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, compile_native, require_cc
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 
 PROGRAM = '''import Std.Filesystem alias FS
@@ -116,12 +116,13 @@ def main() -> None:
 		run(str(cache.seed()), '--module-root', str(root), 'App', str(generated))
 		native = compile_native(cache, generated)
 		native_result = run(str(native), *arguments)
-		assert native_result.stdout == b'filesystem Result: ok\n', native_result
+		assert normalize_newlines(native_result.stdout) == b'filesystem Result: ok\n', native_result
 		runner = cache.native_tool('run_cli')
 		library = root / 'linked.smirl'
 		run(str(runner), '--build-modules', str(root), 'App', str(library))
 		interpreted = run(str(runner), '--entry', 'M_3_App_4_main', '--load-lib', str(library), *arguments)
-		assert (native_result.stdout, native_result.stderr) == (interpreted.stdout, interpreted.stderr)
+		assert (normalize_newlines(native_result.stdout), normalize_newlines(native_result.stderr)) == (
+			normalize_newlines(interpreted.stdout), normalize_newlines(interpreted.stderr))
 		assert (root / 'français.txt').read_bytes() == 'hello\né'.encode('utf-8')
 		print('PASS filesystem Result: success, absence, write failure, empty directory, UTF-8, native/MIR parity')
 

@@ -6,7 +6,7 @@ import subprocess
 import tempfile
 
 from build_support import BuildCache, C_FLAGS, compile_native, link_flags, require_cc
-from project_paths import ROOT
+from project_paths import ROOT, normalize_newlines
 
 
 def run(binary: Path, *args: Path | str) -> subprocess.CompletedProcess[bytes]:
@@ -14,7 +14,7 @@ def run(binary: Path, *args: Path | str) -> subprocess.CompletedProcess[bytes]:
 
 
 def check(result: subprocess.CompletedProcess[bytes], code: int, stdout: bytes = b'', stderr: bytes = b'') -> None:
-	assert (result.returncode, result.stdout, result.stderr) == (code, stdout, stderr), result
+	assert (result.returncode, normalize_newlines(result.stdout), normalize_newlines(result.stderr)) == (code, stdout, stderr), result
 
 
 def main() -> None:
@@ -40,11 +40,11 @@ def main() -> None:
 			check(run(binary), code, stdout, stderr)
 			# MIR interpretation must use the same signed-index semantics.
 			interpreter = run(runner, source)
-			assert interpreter.returncode == code and interpreter.stdout == stdout and stderr in interpreter.stderr, (name, interpreter)
+			assert interpreter.returncode == code and normalize_newlines(interpreter.stdout) == stdout and stderr in normalize_newlines(interpreter.stderr), (name, interpreter)
 			saved = work / (name + '.smir')
 			check(run(runner, '--emit-mir', saved, source), 0)
 			reloaded = run(runner, '--load-mir', saved)
-			assert reloaded.returncode == code and reloaded.stdout == stdout and stderr in reloaded.stderr, (name, reloaded)
+			assert reloaded.returncode == code and normalize_newlines(reloaded.stdout) == stdout and stderr in normalize_newlines(reloaded.stderr), (name, reloaded)
 			if code == 0:
 				audited = work / 'audit'
 				cmd = [cache.cc, *C_FLAGS, '-Wno-unused-function', '-DSIRIUS_ARC_AUDIT',

@@ -1,0 +1,20 @@
+enum Color
+	Red
+	Green
+	Blue
+
+def score(color: Color) -> i64
+	match color
+		Red()
+			return 1
+		Green()
+			return 2
+		Blue()
+			return 3
+
+def main() -> i64
+	let plain: Red = Green()
+	let a: Color = Red()
+	let b: Color = Green()
+	let c: Color = Blue()
+	return score(a) * 100 + score(b) * 10 + score(c)

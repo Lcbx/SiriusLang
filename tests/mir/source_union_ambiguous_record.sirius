@@ -1,0 +1,8 @@
+rec Meters(value: i64)
+rec Feet(value: i64)
+let Length = Meters | Feet
+
+def main() -> i64
+	let record = Meters(3)
+	let value: Length = record
+	return 0

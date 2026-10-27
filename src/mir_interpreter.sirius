@@ -195,8 +195,13 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				let payload = registers[!ins.first]
 				if payload.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized union payload", steps)
-				let tag = Types.union_alternative_index(program.types, function.register_types[!ins.dst], payload.type_id)
-				if tag < 0
+				var tag = ins.second
+				if tag == -1
+					tag = Types.union_alternative_index(program.types, function.register_types[!ins.dst], payload.type_id)
+				if tag < 0 or Types.type_tag(program.types, function.register_types[!ins.dst]) != Types.TYPE_TAG_UNION
+					return mir_failure("invalid union payload", steps)
+				let alternatives = program.types.entries[!function.register_types[!ins.dst]].fields
+				if tag >= len(alternatives) or alternatives[!tag].kind != payload.type_id or (ins.second >= 0 and alternatives[!tag].name == "")
 					return mir_failure("invalid union payload", steps)
 				heap = mir_heap_copy(program.types, heap, payload)
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
@@ -215,6 +220,8 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				else
 					let payload = fields[!1]
 					if payload.type_id != function.register_types[!ins.dst]
+						return mir_failure("union variant mismatch", steps)
+					if ins.second >= 0 and fields[!0].bits != ins.second
 						return mir_failure("union variant mismatch", steps)
 					heap = mir_heap_copy(program.types, heap, payload)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
