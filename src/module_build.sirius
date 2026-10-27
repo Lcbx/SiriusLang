@@ -86,7 +86,7 @@ def module_build_specialization(units: Array[ModuleScan.ModuleScanUnit], library
 
 # Finish a module after all its imports. Dependency order and public interface
 # validation are shared by source modules and serialized generic packages.
-def module_build_visit_imports(root: string, name: string, path: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, requirements: Array[MirGeneric.MirGenericDependency], packaged: bool, legacy_interfaces: bool, visiting: Array[string], state: ModuleScan.ModuleScanCached, bundles: Array[MirBundle.MirBundlePackage]) -> ModuleScan.ModuleScanCached
+def module_build_visit_imports(root: string, name: string, path: string, tree: Parser.ParseState, declarations: Hir.HirModuleDecl, requirements: Array[MirGeneric.MirGenericDependency], packaged: bool, visiting: Array[string], state: ModuleScan.ModuleScanCached, bundles: Array[MirBundle.MirBundlePackage]) -> ModuleScan.ModuleScanCached
 	var current = state
 	let stack = visiting.append(name)
 	for imported in declarations.imports
@@ -100,9 +100,7 @@ def module_build_visit_imports(root: string, name: string, path: string, tree: P
 			var verified = false
 			for unit in current.result.units
 				if unit.name == requirement.name
-					var actual = MirGeneric.mir_generic_interface(unit)
-					if legacy_interfaces
-						actual = MirGeneric.mir_generic_interface_legacy(unit)
+					let actual = MirGeneric.mir_generic_interface(unit)
 					if actual != requirement.signature
 						return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(current.result.visited, "generic package dependency interface mismatch: " + name + " -> " + requirement.name, current.result.units), current.cache)
 					verified = true
@@ -134,7 +132,7 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 		if parsed.error != ""
 			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, parsed.error, previous.units), parsed.cache)
 		let source = parsed.cache.sources[!parsed.index]
-		return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGeneric.MirGenericDependency](), false, false, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), bundles)
+		return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGeneric.MirGenericDependency](), false, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), bundles)
 	let package_path = source_path.slice(0, len(source_path) - 7) + ".smirg"
 	var serialized = read_text(package_path) or ""
 	if serialized == ""
@@ -173,7 +171,7 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 	var available = bundles
 	for package in archive.packages
 		available = available.append(package)
-	return module_build_visit_imports(root, name, package_path, loaded.tree, declarations, loaded.dependencies, true, loaded.legacy_interfaces, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), available)
+	return module_build_visit_imports(root, name, package_path, loaded.tree, declarations, loaded.dependencies, true, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), available)
 
 # A single build-local visit replaces repeated full-root scans and package
 # preparation retries. Each module is completed only after its dependencies.

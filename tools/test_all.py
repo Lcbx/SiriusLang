@@ -20,7 +20,7 @@ GROUP_PATTERNS = {
 	'smoke': ('test_tool_utils', 'test_fixture_layout', 'test_docs', 'test_compiler_layout'),
 	'frontend': ('test_tokenizer', 'test_parser', 'test_types', 'test_hir_*', 'test_compiler*'),
 	'mir': ('test_mir', 'test_mir_*'),
-	'modules': ('test_module_*', 'test_source_modules'),
+	'modules': ('test_module_*', 'test_source_modules', 'test_long_module_symbols'),
 	'language': ('test_callback_*', 'test_constructor_*', 'test_contextual_*',
 		'test_function_*', 'test_generic_*', 'test_multistage_*',
 		'test_union_*', 'test_stdlib_callbacks'),

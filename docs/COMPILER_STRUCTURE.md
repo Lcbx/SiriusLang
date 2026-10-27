@@ -58,8 +58,7 @@ The largest remaining candidates for *future*, separately tested extraction are:
 
 Do not combine HIR analysis, MIR verification and C emission solely to reduce
 file count: their distinct responsibilities allow interpreter/native parity
-and independently tested ownership proofs. Similarly, avoid converting a
-historical serialization compatibility fixture into compiler source.
+and independently tested ownership proofs.
 
 ## Checks
 

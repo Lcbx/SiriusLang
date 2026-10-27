@@ -122,27 +122,25 @@ A purely native application performs required monomorphization at build/link tim
 
 A single common specialization registry is a useful implementation goal, but its exact ownership and persistence are not settled.
 
-**Implemented experimental artifacts:** `SIRIUS-MIR-GENERIC/1`,
-`SIRIUS-MIR-GENERIC/2`, and `SIRIUS-MIR-GENERIC/3` (`.smirg`)
-retain an AST token/node arena and a validated HIR declaration/type/constant
-snapshot, rather than concrete MIR instructions. The compiler can
+**Implemented experimental artifact:** `SIRIUS-MIR-GENERIC/3` (`.smirg`)
+retains an AST token/node arena and a validated HIR declaration/type/constant
+snapshot, rather than concrete MIR instructions. Dependency-free packages
+encode an explicit zero dependency count; `/1` and `/2` are no longer read. The compiler can
 instantiate a named exported generic for supplied canonical type signatures
 (`i64`, `Array[i64]`, `Dict[string,i64]`, `Record{1:x=i64;}`, etc.), producing
 ordinary `SIRIUS-MIR-LIB/2` with the same mangled symbol naming used by
 source-driven specialization. The defining source is not needed after packaging.
 It can retain explicit `extern def` imports which are resolved later by the
-normal MIR linker. Version 2 packages retain the direct imports' canonical
-public type/function/constructor signatures and exported constant values in
-source-declaration order. Version 3 writes order-independent public interface
-fingerprints and pins named re-export target symbols; version 2 artifacts remain
-readable with their original comparison rule.
+normal MIR linker. Packages with imports pin their direct dependencies' order-independent
+public interfaces (including constant values and named re-export target symbols).
+Previously generated packages must be regenerated when upgrading the compiler.
 Packaging an importing module requires a source root argument and a resolvable
 dependency graph. `--build-modules` resolves those imports recursively from
 source or `.smirg` packages, verifies the pinned interfaces, and specializes
 functions into ordinary MIR before linking. Dependency packages are separate artifacts by default. Optionally,
 `--bundle-generic input.smirg output.smirg source-root` wraps an existing
 package and its transitive **`.smirg`-only** dependency closure into a
-`SIRIUS-MIR-BUNDLE/1` archive. Its entries preserve existing v1/v2/v3
+`SIRIUS-MIR-BUNDLE/1` archive. Its entries preserve the current `/3`
 `.smirg` bytes and their interface fingerprints. The module builder loads
 embedded packages only if neither source nor external package exists; it
 still verifies interfaces and detects import cycles. The archive is canonical,

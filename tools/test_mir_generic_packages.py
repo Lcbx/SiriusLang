@@ -90,7 +90,7 @@ def main() -> None:
 			('twice', ['Record{1:x=i64;}']), ('size', ['Array[unknown]']),
 			('size', ['Record{1:x=i64;1:x=i64;}'])]:
 			assert run(runner, '--specialize-generic', str(package), name, str(specialized), *types).returncode != 0, (name, types)
-		for bad_bytes in (b'', first[:-1], first + b'extra', first.replace(b'SIRIUS-MIR-GENERIC/1', b'SIRIUS-MIR-GENERIC/2', 1),
+		for bad_bytes in (b'', first[:-1], first + b'extra', first.replace(b'SIRIUS-MIR-GENERIC/3', b'SIRIUS-MIR-GENERIC/1', 1),
 			first.replace(b'5\ntwice\n', b'5\nwrong\n', 1)):
 			bad = work / 'bad.smirg'
 			bad.write_bytes(bad_bytes)

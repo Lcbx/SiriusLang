@@ -92,7 +92,7 @@ def main() -> None:
 
 		original = root / 'Library/Ops.smirg'
 		good = original.read_bytes()
-		for invalid in (good[:-10], good.replace(b'SIRIUS-MIR-GENERIC/1', b'SIRIUS-MIR-GENERIC/9', 1)):
+		for invalid in (good[:-10], good.replace(b'SIRIUS-MIR-GENERIC/3', b'SIRIUS-MIR-GENERIC/9', 1)):
 			original.write_bytes(invalid)
 			bad = run(runner, '--build-modules', str(root), 'App', str(library))
 			assert bad.returncode == 2 and b'invalid generic package' in bad.stderr, bad

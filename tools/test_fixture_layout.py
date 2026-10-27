@@ -41,8 +41,6 @@ def main() -> None:
 		raise AssertionError(f'C references without Sirius fixtures: {sorted(references - golden)}')
 	check_json_cases(language / 'runtime_errors', '.c')
 	check_json_cases(language / 'proposed_negative', '.sirius')
-	if not (TESTS / 'modules/artifacts/legacy_wrapped_v2.smirg').is_file():
-		raise AssertionError('Missing package compatibility artifact')
 	negative = {path.stem for path in (TESTS / 'compiler/negative').glob('*.sirius')}
 	if negative != set(ERRORS):
 		raise AssertionError(f'Compiler diagnostics inventory mismatch: '

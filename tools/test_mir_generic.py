@@ -34,7 +34,7 @@ def main() -> None:
 		package = work / 'Ops.smirg'
 		checked(runner, '--emit-generic', 'Ops', package, provider)
 		first = package.read_bytes()
-		assert first.startswith(b'SIRIUS-MIR-GENERIC/1\n')
+		assert first.startswith(b'SIRIUS-MIR-GENERIC/3\n')
 		checked(runner, '--emit-generic', 'Ops', package, provider)
 		assert package.read_bytes() == first
 		provider.unlink()
@@ -75,7 +75,8 @@ def main() -> None:
 			result = run(runner, '--specialize-generic', package, symbol, concrete, *types)
 			assert result.returncode != 0, (symbol, types, result)
 		for bad_data in (b'', first[:-1], first + b'garbage',
-			first.replace(b'SIRIUS-MIR-GENERIC/1', b'SIRIUS-MIR-GENERIC/2', 1)):
+			first.replace(b'SIRIUS-MIR-GENERIC/3', b'SIRIUS-MIR-GENERIC/2', 1),
+			first.replace(b'SIRIUS-MIR-GENERIC/3', b'SIRIUS-MIR-GENERIC/1', 1)):
 			bad = work / 'bad.smirg'
 			bad.write_bytes(bad_data)
 			assert run(runner, '--specialize-generic', bad, 'twice', concrete, 'i64').returncode != 0

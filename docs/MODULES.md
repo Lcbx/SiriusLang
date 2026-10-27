@@ -59,8 +59,13 @@ Concrete exported overloads use deterministic, length-prefixed type-signature
 mangling (the `_O` symbol suffix), while non-overloaded public names keep
 their existing ABI names. Both qualified imports and named re-exports resolve
 by parameter types. Existing on-demand generic specializations retain the
-separate `_G` symbol suffix. Concrete overload bodies belong in linked
-`.smirl` libraries; source-free `.smirg` packages do not carry them.
+separate `_G` symbol suffix. Full type encodings remain unambiguous and
+TypeId-independent. MIR import/export names can now be up to 4096 characters
+(previously 256), accommodating larger structural signatures without changing
+existing names or the `SIRIUS-MIR-LIB/2` wire format. Libraries using longer
+symbols require a compiler with the increased acceptance bound. Concrete
+overload bodies belong in linked `.smirl` libraries; source-free `.smirg`
+packages do not carry them.
 
 Concrete exported functions require explicit parameter and return types.
 Generic exports with at least one unannotated parameter may omit the return
@@ -131,8 +136,9 @@ interfaces recursively, including named re-export targets and exported
 constant values. External `.sirius` and `.smirg` files take precedence over
 embedded copies. Nested bundles and unresolved dependencies are rejected.
 
-The current packages are `SIRIUS-MIR-GENERIC/3` (older `/1` and `/2` still
-readable where supported); bundles use `SIRIUS-MIR-BUNDLE/1`. The bundle has a
+The only supported package format is `SIRIUS-MIR-GENERIC/3`, including
+dependency-free packages (with a zero dependency count). Older `/1` and `/2`
+artifacts must be regenerated. Bundles use `SIRIUS-MIR-BUNDLE/1`. The bundle has a
 64 MiB size limit and a 256-package limit. Standalone
 `--specialize-generic` is restricted to dependency-free packages; for
 package imports use the module builder. Concrete non-generic function bodies

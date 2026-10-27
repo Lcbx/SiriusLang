@@ -20,7 +20,7 @@ export def mir_function_signature(program: Mir.MirProgram, id: i64) -> string
 	return "".join(parts) + ")->" + Module.mir_type_signature(program.types, function.return_type)
 
 export def mir_library_name_valid(name: string) -> bool
-	if len(name) == 0 or len(name) > 256
+	if len(name) == 0 or len(name) > 4096
 		return false
 	for i in 0..len(name)
 		let byte = name.byte_at(i) or 0

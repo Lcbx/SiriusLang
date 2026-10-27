@@ -81,7 +81,7 @@ The worklist compiles their combined reachable call graph, including functions
 called by multiple roots. Selection for direct CLI execution additionally
 requires return type `i64`. The loader verifies unique export names, function
 indices and the stored signatures against reconstructed MIR types before any
-execution. `SIRIUS-MIR-EXEC/1` remains readable by the current runner. Neither
+execution. `SIRIUS-MIR-EXEC/1` is the current executable format. Neither
 artifact format is a public compatibility commitment; breaking changes are
 allowed while Sirius is experimental.
 

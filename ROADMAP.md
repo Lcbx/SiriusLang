@@ -34,6 +34,13 @@ see the [October 25, 2026 roadmap snapshot](docs/history/ROADMAP_20261025.md).
 The legacy AST-to-C emitter, Python compiler, and flat source manifest are
 retired. MIR is the sole C backend.
 
+Serialized generic packages now use only `SIRIUS-MIR-GENERIC/3`, including
+packages without dependencies. Historical `/1` and `/2` readers and
+compatibility fixtures have been removed; old packages must be rebuilt.
+Concrete MIR libraries, executable MIR, bundles and internal snapshots retain
+their current independent formats. No cross-version artifact compatibility is
+promised while the language is experimental.
+
 ## Priorities
 
 1. **Complete language features in tested slices.** Improve generic and

@@ -18,7 +18,6 @@ separation avoids copying compiler setup code into each test directory.
 | `compiler/runtime_errors/` | Runtime failures used by targeted compiler regression drivers | Relevant `test_*.py` driver |
 | `parser/`, `tokenizer/` | Golden fixtures, expected output and Sirius test drivers | `test_parser.py`, `test_tokenizer.py` |
 | `hir/`, `mir/`, `types/` | Component-level Sirius drivers, MIR artifacts and input programs | Corresponding focused drivers |
-| `modules/artifacts/` | Stored compatibility fixtures for package tests | `test_module_package_dependencies.py` |
 | `deferred/` | Explicitly deferred module experiments | Not included in the default test suite |
 
 Use `python tools/test_all.py --group smoke` for inexpensive structural checks,
