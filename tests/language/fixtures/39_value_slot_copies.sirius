@@ -1,0 +1,22 @@
+# A container owns each element, and indexing creates another owned value.
+# Shared child buffers still require independent ARC credits and CoW.
+rec Entry(name: string, values: Array[i64])
+
+def main() -> i64
+	var entries = [Entry("old", [10, 20])]
+	let snapshot = entries
+	let first = entries[!0]
+	let second = entries[!0]
+	entries[!0] = Entry("new", [30])
+	print(snapshot[!0].name)
+	print(first.name)
+	print(len(second.values))
+	let saved = Dict[i64, Entry]().insert(7, first)
+	let from_dict = saved.get(7) or Entry("missing", [0])
+	print(from_dict.name)
+	var other = from_dict.values
+	let shared = other
+	other[!0] = 99
+	print(shared[!0])
+	print(other[!0])
+	return 0

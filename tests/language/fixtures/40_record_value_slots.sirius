@@ -1,0 +1,36 @@
+# Array elements own values; indexing makes an independently owned record.
+rec Sample(x: i64, y: f64, ok: bool)
+rec One(x: i64)
+rec Samples(values: Array[Sample])
+
+def read_first(items: Array[Sample]) -> Sample
+	return items[!0]
+
+def main() -> i64
+	let first = Sample(10, 1.5, true)
+	var samples = [first, Sample(20, 2.5, false)]
+	let snapshot = samples
+	let copy = samples[!0]
+	samples[!0] = Sample(30, 3.5, false)
+	samples = samples.append(copy)
+	print(snapshot[!0].x)
+	print(samples[!0].x)
+	print(samples[!-1].x)
+	print(samples[!1].ok)
+	print((samples[?2] or Sample(-1, 0.0, false)).x)
+	print((samples[?9] or Sample(-1, 0.0, false)).x)
+	print(read_first(snapshot).y)
+	var container = Samples([Sample(7, 4.5, true)])
+	container.values = container.values.append(Sample(8, 6.5, false))
+	print(container.values[!1].x)
+	var single = [One(1)]
+	single = single.append(One(2))
+	print(single[!1].x)
+	let repeats = [first, first]
+	print(repeats[!1].x)
+	var empty = Array[Sample]()
+	let empty_copy = empty
+	empty = empty.append(Sample(50, 7.5, true))
+	print(len(empty_copy))
+	print(empty[!0].x)
+	return 0

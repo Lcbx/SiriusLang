@@ -1,0 +1,47 @@
+# Scalar-record registers are values. Heap containers keep an independent copy.
+rec Scalar(a: i64, b: f64, flag: bool)
+rec Holder(value: Scalar, history: Array[Scalar])
+rec Stored(key: i64)
+rec Callback(operation: Fn[i64,i64], factor: i64)
+rec Wide(a: i64, b: i64, c: i64, d: i64, e: i64)
+
+def double(x: i64) -> i64
+	return x * 2
+
+def change(item: Scalar, delta: i64) -> Scalar
+	var next = item
+	next.a = next.a + delta
+	return next
+
+def repeated(item: Scalar) -> i64
+	let copy = item
+	return item.a + copy.a
+
+def main() -> i64
+	let first = Scalar(7, 1.5, true)
+	let second = change(first, 4)
+	print(first.a)
+	print(second.a)
+	print(second.b)
+	print(repeated(second))
+	var values = [first, second]
+	let original = values
+	let taken = values[!0]
+	values[!0] = change(taken, 10)
+	values = values.append(taken)
+	print(original[!0].a)
+	print(values[!0].a)
+	print(values[!2].a)
+	print((values[?8] or second).a)
+	let holder = Holder(second, values)
+	print(holder.value.a)
+	print(holder.history[!1].a)
+	var dictionary = Dict[i64,Stored]()
+	dictionary = dictionary.insert(3, Stored(7))
+	print((dictionary.get(3) or Stored(9)).key)
+	print((dictionary.get(4) or Stored(9)).key)
+	let callback = Callback(double, 4)
+	print(callback.operation(6))
+	let wide = Wide(1, 2, 3, 4, 5)
+	print(wide.e)
+	return 0

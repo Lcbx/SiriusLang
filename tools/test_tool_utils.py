@@ -61,6 +61,7 @@ def main() -> None:
 		assert [path.name for path in select_scripts(root, groups=('mir',))] == ['test_mir_ownership.py']
 		assert select_scripts(root, ('test_a',), groups=('mir',)) == []
 		assert groups_for(root / 'test_mir_ownership.py') == ('mir',)
+		assert groups_for(root / 'test_enum_empty_opt.py') == ('mir',)
 		assert groups_for(root / 'test_a.py') == ()
 		assert 'smoke' in GROUP_PATTERNS
 		fixtures = root / 'fixtures'

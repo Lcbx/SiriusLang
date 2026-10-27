@@ -19,7 +19,8 @@ from time import perf_counter
 GROUP_PATTERNS = {
 	'smoke': ('test_tool_utils', 'test_fixture_layout', 'test_docs', 'test_compiler_layout'),
 	'frontend': ('test_tokenizer', 'test_parser', 'test_types', 'test_hir_*', 'test_compiler*'),
-	'mir': ('test_mir', 'test_mir_*', 'test_negative_array_index', 'test_integer_edges'),
+	'mir': ('test_mir', 'test_mir_*', 'test_enum_empty_opt',
+		'test_negative_array_index', 'test_integer_edges'),
 	'modules': ('test_module_*', 'test_source_modules', 'test_long_module_symbols'),
 	'language': ('test_callback_*', 'test_constructor_*', 'test_contextual_*',
 		'test_function_*', 'test_generic_*', 'test_multistage_*',

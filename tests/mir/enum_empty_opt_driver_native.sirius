@@ -74,8 +74,15 @@ def main() -> i64
 		if Verify.mir_verify(other) != "" or Ownership.mir_check_balance(other) != ""
 			return 14
 		let unchanged = Opt.mir_optimize_unchecked(other).program
-		if unchanged.functions[!0].blocks[!0].instructions[!0].op != Mir.MIR_RECORD_NEW
+		# Heterogeneous payloads must remain materialized. An unshared
+		# constructor may instead use the existing fused allocation opcode.
+		let first_op = unchanged.functions[!0].blocks[!0].instructions[!0].op
+		if first_op != Mir.MIR_RECORD_NEW and first_op != Mir.MIR_RECORD_NEW_FUSED
 			return 15
+		if reuse and first_op != Mir.MIR_RECORD_NEW
+			return 15
+		if Verify.mir_verify(unchanged) != "" or Ownership.mir_check_balance(unchanged) != ""
+			return 18
 		if Verify.mir_verify_instruction(other, other.functions[!0], Mir.mir_union_new_empty(1, 0)) == ""
 			return 16
 	let shared = Opt.mir_optimize_unchecked(fixture(true, false)).program
