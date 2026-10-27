@@ -346,8 +346,15 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid collection type\");\n\t}\n")
 	parts = parts.append("\ts_mir_record_release(record); return copy;\n}\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_unique_owned(S_MirRecord *record) { return s_mir_record_unique_owned_reserved(record, 0); }\n\n")
+	# Signed indexing is normalized only after validating it, avoiding i64::MIN
+	# negation overflow. Positive indices retain the existing fast path.
+	parts = parts.append("static inline bool s_mir_array_index_valid(const S_MirRecord *array, int64_t index) {\n")
+	parts = parts.append("\treturn index >= 0 ? (uint64_t)index < array->length : (uint64_t)(-(index + 1)) < array->length;\n}\n")
+	parts = parts.append("static inline size_t s_mir_array_index(const S_MirRecord *array, int64_t index) {\n")
+	parts = parts.append("\treturn index >= 0 ? (size_t)index : array->length - (size_t)(-(index + 1)) - 1;\n}\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_array_set_owned(S_MirRecord *array, int64_t index, S_MirField owned) {\n")
-	parts = parts.append("\tif (index < 0 || (uint64_t)index >= array->length) s_panic(\"array index out of bounds\");\n")
+	parts = parts.append("\tif (!s_mir_array_index_valid(array, index)) s_panic(\"array index out of bounds\");\n")
+	parts = parts.append("\tsize_t position = s_mir_array_index(array, index);\n")
 	parts = parts.append("\tarray = s_mir_record_unique_owned(array);\n")
 	parts = parts.append("\tswitch (array->type_id) {\n")
 	for i in 0..len(types.entries)
@@ -355,7 +362,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 		if desc.tag == Types.TYPE_TAG_ARRAY
 			parts = parts.append("\tcase " + str(i) + ":\n")
 			if Common.mir_common_managed(types, desc.first)
-				var field = "array->fields[index]"
+				var field = "array->fields[position]"
 				if Types.runtime_ownership(types, desc.first) == Types.TYPE_OWNERSHIP_STRING
 					field = field + ".text"
 				else
@@ -363,7 +370,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				parts = parts.append("\t\t" + mir_c_release_value(types, desc.first, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n")
-	parts = parts.append("\tarray->fields[index] = owned; return array;\n}\n\n")
+	parts = parts.append("\tarray->fields[position] = owned; return array;\n}\n\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_array_append_owned(S_MirRecord *array, S_MirField owned) {\n")
 	parts = parts.append("\tif (array->length >= (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField)) s_panic(\"collection too large\");\n")
 	parts = parts.append("\tarray = s_mir_record_unique_owned_reserved(array, 1);\n")
@@ -513,7 +520,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 	if op == Mir.MIR_DIV_NO_OVERFLOW_I64
 		return result + "\t" + dst + " = !(" + first + " == INT64_MIN && " + second + " == -1)" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_ARRAY_INDEX_VALID
-		return result + "\t" + dst + " = (" + second + " >= 0 && (uint64_t)" + second + " < " + first + "->length)" + mir_c_mark_init(instruction.dst, checked) + "\n"
+		return result + "\t" + dst + " = s_mir_array_index_valid(" + first + ", " + second + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_OPTIONAL_HAS
 		return result + "\t" + dst + " = (" + first + "->length != 0)" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_OPTIONAL_UNWRAP
@@ -610,12 +617,12 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return result + "\t" + dst + " = (int64_t)" + first + "->length" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_ARRAY_GET_OPTIONAL
 		# The helper retains the array element using the canonical Optional type.
-		return result + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_optional_from_field((" + second + " >= 0 && (uint64_t)" + second + " < " + first + "->length) ? &" + first + "->fields[" + second + "] : NULL, " + str(dst_type) + ")", checked)
+		return result + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_optional_from_field(s_mir_array_index_valid(" + first + ", " + second + ") ? &" + first + "->fields[s_mir_array_index(" + first + ", " + second + ")] : NULL, " + str(dst_type) + ")", checked)
 	if op == Mir.MIR_ARRAY_GET
 		if checked or instruction.text != "__mir_guarded"
-			result = result + "\tif (" + second + " < 0 || (uint64_t)" + second + " >= " + first + "->length) s_panic(\"array index out of bounds\");\n"
+			result = result + "\tif (!s_mir_array_index_valid(" + first + ", " + second + ")) s_panic(\"array index out of bounds\");\n"
 		let field = mir_c_field_name(types, dst_type)
-		let value = first + "->fields[" + second + "]." + field
+		let value = first + "->fields[s_mir_array_index(" + first + ", " + second + ")]." + field
 		if Common.mir_common_managed(types, dst_type)
 			return result + mir_c_store_owned(types, instruction.dst, dst_type, mir_c_retain_value(types, dst_type, value), checked)
 		return result + "\t" + dst + " = " + value + "" + mir_c_mark_init(instruction.dst, checked) + "\n"

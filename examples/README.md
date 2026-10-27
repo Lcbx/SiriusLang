@@ -29,8 +29,9 @@ operations local to the example: a flat `Array[f64]` in row-major order,
 explicit shape checks, ordinary nested loops, and fresh result arrays. It
 demonstrates rectangular products and invalid-dimension results. Since `str()`
 currently formats only `i64`, it prints each `f64` result on its own line
-(matrix entries in row-major order). Native 2D arrays and broadcasting are
-not assumed.
+(matrix entries in row-major order). `Std.Numeric` now provides a reusable flat rank-2 wrapper with
+singleton-axis broadcast addition; standalone examples continue to exercise
+their own representations without requiring imports.
 
 `game_of_life.sirius` shows a 5×5 blinker through two generations; it uses
 only **new value construction**, not shared mutable state. The examples
@@ -121,8 +122,8 @@ implementations for comparison.
 
 | Example | Potential feature or library improvement | Expected benefit |
 | --- | --- | --- |
-| `matrix_multiplication.sirius` | Native multidimensional arrays, slicing, vectorized matrix operations and broadcasting | Replace the example-local row-major implementation once those features exist; compare correctness, performance and CoW behavior |
-| `game_of_life.sirius` | Native 2D arrays, slicing/neighbor shifts, elementwise operations and broadcasting | Express neighbor counts and generation updates as array operations instead of nested loops; benchmark allocation costs and performance |
+| `matrix_multiplication.sirius` | Library matrix operations (`Std.Numeric`), generalized shape/rank APIs and optimized kernels | Compare the example-local row-major implementation with library `matmul` for correctness, performance and CoW behavior |
+| `game_of_life.sirius` | Library-defined 2D arrays, neighbor shifts, elementwise operations and broadcasting | Express neighbor counts and generation updates as library array operations instead of nested loops; benchmark allocation costs and performance |
 | `prime_sieve.sirius` | Array generation, slices and bulk Boolean-mask updates | Replace repeated element updates with concise bulk operations; check CoW behavior |
 | `word_frequencies.sirius` | Standard-library string splitting, normalization and tokenization | Process raw text or file contents instead of an already-tokenized word array |
 | `filesystem_walk.sirius` | Use `Std.Filesystem.walk_files_result` with exhaustive matching | Report directory-listing and metadata failures instead of silently ignoring them; the best-effort example remains a baseline |

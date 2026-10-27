@@ -5,7 +5,7 @@
 > **Implementation note:** `i64` bitwise `&`, `|`, `<<`, and `>>` are now
 supported. This is distinct from `|` in type-union expressions.
 
-> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is deferred. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md).
+> **Clarifications:** The initial bootstrap was written in Python; dictionaries are `Dict` (not `Map`); structural records have lexicographically ordered fields. Negative array indexing is supported for checked and optional array access. For proposed modules, shared MIR execution, libraries, and FFI, see [MIR_MODULES_AND_FFI.md](docs/MIR_MODULES_AND_FFI.md).
 
 ## 1. Core Philosophy
 
@@ -152,7 +152,7 @@ construction, including re-exports. The portable subset also resolves defining-m
 transitive local helper calls hygienically: referenced values and helper bodies
 are copied into private, owner-qualified bindings before HIR analysis. Source-free
 packages retain the same dependencies and include them in interface fingerprints.
-Unknown free names are rejected; general closure capture remains unsupported.
+Unknown free names are rejected; constructors do not capture enclosing local bindings.
 
 **Methods:** Ordinary functions whose first parameter is named `this`, invoked with dot syntax.
 
@@ -317,20 +317,27 @@ def __add__(a: {x: f32, y: f32}, b: {x: f32, y: f32})
 
 ## 7. Arrays and Vectorization
 
-`Array[T, N]` is a homogeneous multidimensional standard-library type, inspired by Codon-NumPy. Element type `T` and rank `N` are static; shapes are dynamic. `Array[T]` is shorthand for `Array[T, 1]`.
+**Library-first design:** the built-in `Array[T]` remains a rank-1 CoW
+buffer. Multidimensional arrays are library values containing shape metadata
+and flat storage (as the existing `Std.Numeric.Matrix` does). A future generic
+`NDArray[T, N]` may give rank `N` static type identity while retaining dynamic
+axis lengths; this spelling and value-parameter support are not implemented.
+There is no current requirement for native ranked `S_Array` descriptors or a
+built-in `Array[T, N]` type.
 
 ```sirius
-let x = [1.0, 2.0, 3.0]
-let y = x * 2.0 + 1.0
-let mask = y > 3.0
+# Illustrative proposed library operations, not currently valid syntax.
+let x = NDArray[f64, 1].from_array([1.0, 2.0, 3.0])
+let y = add(mul(x, 2.0), 1.0)
+let mask = greater(y, 3.0)
 let result = where(mask, y, 0.0)
 ```
 
 ### Storage
 
-* Dense contiguous row-major buffers with reference-counted CoW.
-* Rectangular multidimensional literals.
-* Arbitrary statically representable element types, including records.
+* Dense contiguous row-major rank-1 buffers with reference-counted CoW, wrapped by library-defined shapes.
+* Multidimensional construction and rectangular literal ergonomics are library/API work; no special literal syntax is committed.
+* Arbitrary statically representable element types, including records, are a future goal.
 * `reshape` may share storage; transpose initially copies.
 * No arbitrary strided views or advanced indexing initially.
 
@@ -338,7 +345,7 @@ let result = where(mask, y, 0.0)
 
 * Dimensions align from the right; dimensions must match or have size 1.
 * Scalars broadcast to compatible arrays.
-* Invalid shapes trigger runtime panics.
+* Shape mismatches must be reported explicitly. `Std.Numeric` currently returns `ShapeError`; a future higher-level API may use checked results or panics, but this is not decided.
 * Matrix multiplication uses a separate operation.
 * `&`, `|`, `~` operate elementwise on boolean arrays.
 * Conditions require scalar booleans.
@@ -355,17 +362,25 @@ let result = where(mask, y, 0.0)
 
 Functions accept compatible scalars or arrays. Reductions initially operate over all elements. Reduction order is preserved initially; parallel reductions require explicitly defined numerical semantics. `where` evaluates arguments eagerly.
 
+**Current numerical slice:** `Std.Numeric` offers `Matrix(rows, cols, data)`
+with a flat row-major `Array[f64]` and shape-checked `make`, `reshape`,
+`transpose`, `matmul`, and singleton-axis broadcasting `add`, returning tagged
+results. `reshape` reuses CoW storage; arithmetic and transpose produce new
+arrays. Zero-sized axes are supported. Generic element types, static rank
+parameters and compiler-recognized numerical kernels remain future work.
+
 ### Functional transformations
 
 The minimal collection API consists of:
 
 * `map`: Pure elementwise transformation, preserving array shape.
 * `filter`: Pure selection, initially 1D, preserving relative element order.
-* `generate`: Pure construction from indices and a statically ranked shape.
+* `generate`: Pure construction from indices and a library-defined shape.
 
 ```sirius
-let doubled = values.map(fn(x) x * 2)
-let positive = values.filter(fn(x) x > 0)
+# Illustrative future API; multidimensional generate is not implemented.
+let doubled = map(values, fn(x) x * 2)
+let positive = filter(values, fn(x) x > 0)
 let grid = generate((100, 100), fn(i, j) i*i + j*j)
 ```
 
@@ -383,13 +398,24 @@ Callbacks must be pure:
 
 Functions and non-capturing lambdas are first-class values with concrete signatures. Compatible non-capturing functions can be stored as typed function pointers. Qualified references to exported functions and their named re-exports use the same function types as local functions.
 
-**Current implementation:** `Fn[parameters...,return]` values support indirect calls, named functions and expression-bodied noncapturing lambdas (`fn(x: i64) x + 1`). Lambda parameters and unannotated generic named functions can be specialized from a contextual `Fn` type in bindings, arguments, returns, assignments and typed arrays; otherwise annotate the parameters explicitly. Qualified imports, named re-exports and source-free `.smirg` generic declarations support contextual specialization; some cross-module lambda arguments may still require explicit annotations. No captures of enclosing local variables or transitive purity checking are implemented. `Std.Functional` has one generic `fold(values, initial, callback)` which infers the accumulator/result type per specialization, including cross-module and source-free `.smirg` cases. `count_if`, `any`, `all`, and `find_index` also specialize on input types. `map`, `filter` and `generate` now return generically typed arrays, including empty arrays, using `empty_array_like(array_or_callback)` to infer an element type from an array or a concrete callback result. `enumerate` now returns generic structural indexed records for any array element type, including managed, nested and empty arrays; legacy named record types remain available for compatibility. Generic helper calls can infer the input types of unannotated lambdas and named generic callbacks from concrete arguments and how their callee uses them (such as array elements, indices or accumulators). Independently typed arguments may precede or follow the callback, including nested generic array results; type-only lookahead does not change runtime argument evaluation order. A bounded multi-stage pass also infers callback signatures that depend on another callback's result, provided an independently typed argument seeds the chain. Callback forwarding through local generic functions can infer parameter types from independently typed arguments preceding or following the forwarded callback, including through multiple forwarding layers and branch bodies. The probe also follows callback aliases in local bindings, nested record-field paths and straight-line mutable assignments; overwritten aliases are invalidated. Conditional assignments retain callback aliases only if every branch preserves them; an `if` without `else` includes the unchanged path, and loop joins account for zero iterations. Callback requirements found in separate branches must agree. Exhaustive `match` arms merge only aliases from continuing paths, with pattern-bound fields available to local callback constraints; `return`, `recur`, `break`, `continue` and guard exits stop or bypass alias propagation as appropriate. Nested record copies, projections and assignments preserve tracked callback paths; assigning to an enclosing field invalidates its descendants. Imported generic bodies preserve defining-module match constructors, allowing pattern-bound values to constrain callbacks across source and source-free `.smirg` imports. A record literal passed into a generic can also infer unannotated callback fields from the callee's invocation of those fields, including nested literal paths, when concrete arguments seed each signature; unrelated fields and ambiguous constraints do not count. Inference remains conservative when no unique callback type can be established. Function-valued record fields can be called directly, including nested fields (`holder.inner.callback(x)`); they use the same checked indirect call as local `Fn` values. This is conservative, not full higher-order constraint solving: an explicit `Fn` binding is still required when no types can seed the dependency chain or a unique signature cannot be determined. The compiler distinguishes conflicting callback signatures, recursive forwarding dependencies without a usable type seed, and underdetermined callbacks. Conflicts report the first mismatching parameter type or arity and the defining-body call lines, including through generic forwarding; cycles report the bounded forwarding chain. Source-free generic imports use the same diagnostics. These traces are not a complete source-file-aware constraint explanation.
+**Current implementation:** `Fn[parameters...,return]` values support indirect calls, named functions and expression-bodied noncapturing lambdas (`fn(x: i64) x + 1`). Lambda parameters and unannotated generic named functions can be specialized from a contextual `Fn` type in bindings, arguments, returns, assignments and typed arrays; otherwise annotate the parameters explicitly. Qualified imports, named re-exports and source-free `.smirg` generic declarations support contextual specialization; some cross-module lambda arguments may still require explicit annotations. No captures of enclosing local variables or transitive purity checking are implemented. `Std.Functional` has one generic `fold(values, initial, callback)` which infers the accumulator/result type per specialization, including cross-module and source-free `.smirg` cases. `count_if`, `any`, `all`, and `find_index` also specialize on input types. `map`, `filter` and `generate` now return generically typed arrays, including empty arrays, using `empty_array_like(array_or_callback)` to infer an element type from an array or a concrete callback result. `partition` splits a generic array into stable matched/unmatched groups with a single predicate call per element. `enumerate` now returns generic structural indexed records for any array element type, including managed, nested and empty arrays, via a one-pass `map_indexed(values, callback)` helper; legacy named record types remain available for compatibility. Generic helper calls can infer the input types of unannotated lambdas and named generic callbacks from concrete arguments and how their callee uses them (such as array elements, indices or accumulators). Independently typed arguments may precede or follow the callback, including nested generic array results; type-only lookahead does not change runtime argument evaluation order. A bounded multi-stage pass also infers callback signatures that depend on another callback's result, provided an independently typed argument seeds the chain. Callback forwarding through local generic functions can infer parameter types from independently typed arguments preceding or following the forwarded callback, including through multiple forwarding layers and branch bodies. The probe also follows callback aliases in local bindings, nested record-field paths and straight-line mutable assignments; overwritten aliases are invalidated. Conditional assignments retain callback aliases only if every branch preserves them; an `if` without `else` includes the unchanged path, and loop joins account for zero iterations. Callback requirements found in separate branches must agree. Exhaustive `match` arms merge only aliases from continuing paths, with pattern-bound fields available to local callback constraints; `return`, `recur`, `break`, `continue` and guard exits stop or bypass alias propagation as appropriate. Nested record copies, projections and assignments preserve tracked callback paths; assigning to an enclosing field invalidates its descendants. Imported generic bodies preserve defining-module match constructors, allowing pattern-bound values to constrain callbacks across source and source-free `.smirg` imports. A record literal passed into a generic can also infer unannotated callback fields from the callee's invocation of those fields, including nested literal paths, when concrete arguments seed each signature; unrelated fields and ambiguous constraints do not count. Inference remains conservative when no unique callback type can be established. Function-valued record fields can be called directly, including nested fields (`holder.inner.callback(x)`); they use the same checked indirect call as local `Fn` values. This is conservative, not full higher-order constraint solving: an explicit `Fn` binding is still required when no types can seed the dependency chain or a unique signature cannot be determined. The compiler distinguishes conflicting callback signatures, recursive forwarding dependencies without a usable type seed, and underdetermined callbacks. Conflicts report the first mismatching parameter type or arity and the defining-body call lines, including through generic forwarding; cycles report the bounded forwarding chain. Source-free generic imports use the same diagnostics. Imported generic callback diagnostics identify the defining module as well as the relevant body lines. These traces are not a complete source-file-aware constraint explanation.
 
-**Capturing closures are not supported.** Higher-order functions accept optional explicit context arguments.
+Lambdas are deliberately **noncapturing**: they cannot access surrounding
+local bindings. `Fn` values are unowned function references, not closures.
+Stateful transformations use explicit parameters, such as
+`Std.Functional.map_with_context(values, context, callback)`, whose callback
+receives `(element, context)`. This preserves explicit value ownership and
+CoW semantics; lexical capturing closures are not part of the language plan.
 
 ```sirius
-let ctx = {scale = 3, offset = 2}
-let result = values.map(fn(x, ctx) x * ctx.scale + ctx.offset, ctx)
+import Std.Functional alias F
+
+def main() -> i64
+	let values = [1, 2]
+	let ctx = {scale = 3, offset = 2}
+	let result = F.map_with_context(values, ctx, fn(x, env) x * env.scale + env.offset)
+	# result is [5, 8]
+	return result[!0] + result[!1]
 ```
 
 Module constants may be referenced without captures. Bound receiver objects are not implicit.
@@ -403,7 +429,16 @@ a[!i]      # Runtime-checked; panics if out of bounds
 optional!   # Unbox Optional[T]; panics if absent
 ```
 
-Only straightforward static bounds checks are required. Multidimensional indexing uses `a[i, j]`; partial indexing produces lower-rank arrays.
+For `a[?i]` and `a[!i]`, negative indices count backward: `-1` selects
+the final element, `-len(a)` the first, and anything smaller is out of
+bounds. Empty arrays have no valid indices. The same rule applies to checked
+CoW writes (`a[!i] = value`), including nested updates. Index calculations
+avoid overflowing `i64` even for its minimum value.
+
+Only straightforward static bounds checks are required. Multiple-index
+syntax `a[i, j]` and lower-rank partial indexing remain *possible* library
+indexing/overloading extensions; ordinary library `get(a, i, j)` works without
+a new native array type. Neither proposed syntax nor slicing is implemented.
 
 ```sirius
 let value = a[?i] or 0
@@ -468,14 +503,16 @@ The standard library provides concatenation, comparison, searching, slicing, spl
 
 ### Array execution
 
-Numerical operations use compiler/runtime primitives rather than dynamic NumPy-like dispatch.
+Numerical operations start as standard-library functions over flat CoW
+arrays. Profiling representative workloads should identify which kernels, if
+any, warrant compiler intrinsics or MIR operations; introducing a native ranked
+array descriptor is **not** a prerequisite. Potential optimizations include:
 
-* Specialized kernels by element type and rank.
-* Contiguous loops and broadcasting through zero strides.
-* Runtime shape validation.
+* Specialized, contiguous kernels by element type and rank, if justified.
+* Shape validation once per operation; broadcasts can use zero strides internally.
 * Safe CoW reuse, including overlapping inputs.
-* Pure elementwise expressions eligible for fusion and parallel execution.
-* Initial SIMD through C compiler autovectorization.
+* Pure elementwise expression fusion or parallel execution after purity analysis.
+* SIMD through C compiler autovectorization.
 
 Fusion, scheduling, and reuse are optimizations, not observable semantics.
 
@@ -545,6 +582,9 @@ Portable MIR formats, registration/dispatch ABIs, and C interoperability are sep
 
 ## 14. Future Improvements
 
+These are long-term design possibilities, **not an implementation priority order**.
+The active priorities and prerequisite decisions are tracked in [ROADMAP.md](ROADMAP.md).
+
 ### High priority
 
 * Array fusion, SIMD lowering, and parallel transformations.
@@ -558,7 +598,6 @@ Portable MIR formats, registration/dispatch ABIs, and C interoperability are sep
 ### Medium priority
 
 * Strided views, slicing, and advanced indexing.
-* **Python-style negative array indexing** (`a[?-1]` accesses the final element), including checked reads and CoW writes.
 * Axis-specific reductions and richer linear algebra.
 * Richer reflection and serialization.
 * String builders and advanced Unicode operations.
@@ -568,7 +607,6 @@ Portable MIR formats, registration/dispatch ABIs, and C interoperability are sep
 
 ### Low priority / potentially unnecessary
 
-* Capturing closures.
 * Full row-polymorphic constraint solver.
 * Conditional constructor fields.
 * General automatic tail-call optimization.

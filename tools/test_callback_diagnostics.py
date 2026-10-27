@@ -73,10 +73,15 @@ def verify_compiler(compiler: Path, folder: Path, cc: BuildCache) -> None:
 	for name, (expression, fragments) in CASES.items():
 		output = folder / f'{name}.c'
 		result = run(compiler, '--module-root', folder, name, output)
-		assert result.returncode != 0 and all(part in result.stderr for part in fragments), (name, result)
+		assert result.returncode != 0 and all(part in result.stderr for part in (*fragments, b"defined in module 'Provider'")), (name, result)
 	generated = folder / 'Good.c'
 	result = run(compiler, '--module-root', folder, 'Good', generated)
 	assert result.returncode == 0, result
+	# Qualify nested module declarations, but not local callback errors.
+	result = run(compiler, '--module-root', folder, 'NestedCase', folder / 'NestedCase.c')
+	assert result.returncode != 0 and b"defined in module 'Nested.Provider'" in result.stderr, result
+	result = run(compiler, '--module-root', folder, 'Local', folder / 'Local.c')
+	assert result.returncode != 0 and b"in 'conflict'" in result.stderr and b'defined in module' not in result.stderr, result
 	run_result = run(compile_native(cc, generated))
 	assert run_result.returncode == 42 and run_result.stderr == b'', run_result
 
@@ -84,23 +89,32 @@ def verify_compiler(compiler: Path, folder: Path, cc: BuildCache) -> None:
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--native-only', action='store_true')
+	parser.add_argument('--compiler', type=Path, help='Use a rebuilt compiler before bootstrap regeneration')
 	parser.add_argument('--package-runner', type=Path)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc())
+	compiler = args.compiler.resolve() if args.compiler else cache.seed()
 	with tempfile.TemporaryDirectory(prefix='sirius-callback-diagnostics-') as tmp:
 		root = Path(tmp)
 		(root / 'Provider.sirius').write_text(PROVIDER)
 		(root / 'Good.sirius').write_text(GOOD)
+		(root / 'Nested').mkdir()
+		(root / 'Nested' / 'Provider.sirius').write_text(PROVIDER)
+		(root / 'NestedCase.sirius').write_text('import Nested.Provider alias P\n\ndef main() -> i64\n\treturn P.conflict(fn(x) x * 2, true)\n')
+		(root / 'Local.sirius').write_text(PROVIDER + '\ndef main() -> i64\n\treturn conflict(fn(x) x * 2, true)\n')
 		for name, (expression, _) in CASES.items():
 			(root / f'{name}.sirius').write_text(f'import Provider alias P\n\ndef main() -> i64\n\treturn {expression}\n')
-		verify_compiler(cache.seed(), root, cache)
+		verify_compiler(compiler, root, cache)
 		if not args.native_only:
 			runner = args.package_runner or cache.native_tool('run_cli')
 			package = root / 'Provider.smirg'
 			result = run(runner, '--emit-generic', 'Provider', package, root / 'Provider.sirius', root)
 			assert result.returncode == 0, result
+			result = run(runner, '--emit-generic', 'Nested.Provider', root / 'Nested' / 'Provider.smirg', root / 'Nested' / 'Provider.sirius', root)
+			assert result.returncode == 0, result
 			(root / 'Provider.sirius').unlink()
-			verify_compiler(cache.seed(), root, cache)
+			(root / 'Nested' / 'Provider.sirius').unlink()
+			verify_compiler(compiler, root, cache)
 	print('PASS callback diagnostics: conflict types/arity/locations, forwarding, cycles and underdetermined')
 
 

@@ -21,7 +21,7 @@ see the [October 25, 2026 roadmap snapshot](docs/history/ROADMAP_20261025.md).
 - Exported generic results are inferred per concrete specialization, including
   arrays, structural records, named re-exports and source-free `.smirg`
   packages. Recursive inferred results still require annotations.
-- `Std.Functional.map`, `filter`, `generate`, `fold`, `zip` and `zip_with` have generic
+- `Std.Functional.map`, `map_indexed`, `filter`, `generate`, `fold`, `zip` and `zip_with` have generic
   implementations. `empty_array_like` infers empty-array element types from
   an array or a callback. Concrete generic callee arguments can supply
   omitted callback parameter types, including independently typable later
@@ -79,14 +79,16 @@ function and recommending explicit annotations. Conflicts now identify the
 first incompatible callback parameter types or arities and the defining-body
 call-site lines; forwarding preserves that evidence. Cycles report the
 bounded, human-readable forwarding chain, including for `.smirg` imports.
-A full source-file-aware explanation of all higher-order constraints remains
-future work. Direct calls through function-valued record fields use
+Imported generic callback failures now name the defining module as well as
+the relevant callback body lines (including source-free packages); a complete
+source-file-aware explanation of all constraints remains future work.
+Direct calls through function-valued record fields use
 existing MIR indirect calls, including nested field projections. Defining-module `match` constructors in imported generic
 bodies now resolve correctly, including from source-free packages. Truly underdetermined callbacks still require an explicit `Fn` annotation.
 
-The generic `enumerate` implementation currently uses `map` followed by a
-second pass to set indexes; consider a one-pass indexed transform only if
-measurements justify additional machinery.
+`enumerate` now uses `map_indexed(values, callback)` to build indexed records
+in one pass without array-element rewrites. No compiler or runtime changes
+were required. See the measured comparison below.
 
 ## Resolved module regression (October 26, 2026)
 
@@ -114,11 +116,82 @@ callback interpreter/source-free package regression now pass. Sequential
 while `zip` builds generic structural pairs on top of it; both truncate to the
 shorter array. The two-array helpers require no new compiler inference rules.
 
-Next: investigate a concrete nested inference limitation: a generic function
-which calls `map(values, fn(x) box.apply(x))` cannot currently infer an
-unannotated `apply` callback inside a record literal at its call site. Keep
-this separate from direct `map(values, box.apply)`, which already works.
-Retain native/interpreter parity, diagnostics and the self-hosting fixed point.
+The previously proposed case `map(values, fn(x) box.apply(x))` is
+not a callback-inference gap: it attempts a lexical capture, which Sirius
+intentionally excludes. The equivalent `map(values, box.apply)` works with
+function-valued fields. Do not pursue lexical capture support as a roadmap
+task; use explicit callback context where needed.
+
+`Std.Functional.partition` additionally splits arrays in one traversal, calling
+its predicate once per element and preserving both groups' order and CoW
+semantics. It is a library-only change, not a step toward lexical captures.
+
+`Std.Functional.enumerate` now delegates to one-pass `map_indexed`: in a
+repeated 2,048-element workload (3,000 runs), Clang `-O2` improved from
+248 ms to 120 ms median, and GCC `-O2` from 190 ms to 95 ms (six timed
+executions after warm-up, same executable workload and array runtime).
+These are workload-specific measurements, not proof of a general 2x benefit.
+The new helper is tested through native C, MIR interpretation, source-free
+`.smirg` packaging, linked C and ARC auditing. No native array type is needed.
+
+`Std.Functional.map_with_context(values, context, callback)` passes state
+explicitly to noncapturing callbacks, including state with managed values and
+function-valued fields. Tests cover native, MIR, ARC and source-free packages.
+The MIR-only test in `tools/test_mir_closure_environment.py` independently
+exercises an owned record holding a function reference and explicit
+state across C, interpreter and serialization. These are supported value
+composition techniques, not work toward capturing closures.
+
+## Negative array indexing (October 27, 2026)
+
+Checked and optional array indexes now accept negative values, counting back
+from the end (`-1` is last, `-len(a)` is first). Out-of-range optional reads
+return absence; out-of-range checked reads and writes panic. The interpreter
+and C emitter use the same bounds semantics for MIR array operations, including
+negative `i64` minimum without overflow. Source tests cover CoW snapshots,
+nested writes, managed elements, and empty arrays. Plain unguarded `a[i]`
+remains subject to compile-time bounds proof.
+
+## Numerical-array groundwork (October 27, 2026)
+
+`Std.Numeric` now exposes an initial **rank-2 `f64` matrix wrapper** backed by
+flat, row-major `Array[f64]` storage. Checked `make`, `reshape`, `transpose`,
+`matmul`, and singleton-axis broadcast `add` return tagged shape results. Storage sharing follows existing CoW
+semantics; transpose and multiplication create fresh arrays. Shape checks avoid
+signed product overflow, and multiplication and addition check result size.
+Focused native/MIR, emitted-library and ARC-audited tests cover valid/invalid
+shapes, zero dimensions and independent array snapshots.
+
+This is intentionally **library-first**, using `Array[f64]` and record-based
+shape metadata. `Std.Numeric.add` validates broadcast compatibility and
+zero-axis behavior. No native
+`Array[T, 2]` representation, generic element types, vectorized kernels or
+strided views are introduced.
+
+Initial compiled Sirius benchmarks (`tools/benchmark_stdlib_numeric.py`)
+compared the library against shape-specialized flat-array loops using the same
+array runtime. Clang `-O2` before/after measurements (five-run medians, 128x128
+addition at 512 repetitions and 64x64 multiplication at 64 repetitions) were:
+
+| Operation | Original matrix | Hoisted input arrays | Flat baseline |
+| --- | ---: | ---: | ---: |
+| Elementwise add | 59.9 ms | 27.0 ms | 27.6 ms |
+| Broadcast add | 57.9 ms | 30.7 ms | 28.9 ms |
+| Matmul | 68.0 ms | 16.6 ms | 15.2 ms |
+
+Repeated `matrix.data` projections inside loops induced per-element ownership
+traffic in emitted C. Binding the input arrays locally once after shape checks
+removed most of that cost without compiler or runtime changes. GCC `-O2` and
+Clang `-O0` also improved. The CoW snapshot comparison remained close to the
+flat baseline. Timings are local workload measurements, not general speedup
+claims: the flat loops specialize shapes at source level, and the benchmark
+includes allocation, checksums, and process startup, but not compilation time
+(which is reported separately). No evidence yet justifies native ranked arrays,
+new MIR kernels, or an allocation-lifetime redesign for these operations.
+
+Next, extend the standard library only for concrete numerical use cases and
+measure any future kernel change against both the library and an equivalent
+flat-array baseline.
 
 ## Allocation-lifetime investigation (experimental; October 26, 2026)
 
@@ -148,6 +221,43 @@ arbitrary ARC-managed values must account for child release and CoW aliasing;
 do **not** reset it as if it contained plain bytes. Require a real workload
 improvement before exposing any allocator-selection API.
 
+## Design commitments and decision gates
+
+The [language design](LANGUAGE_DESIGN.md) is authoritative for semantics;
+its long-term feature list is **not** the implementation queue. In particular:
+
+- **Already chosen:** no capturing closures or mutable shared objects;
+  local mutation preserves CoW value semantics. Errors use ordinary results or
+  fatal process traps, not exception unwinding. Built-in arrays remain rank-1;
+  multidimensional shapes are library values. Noncapturing function values and
+  explicit callback contexts are sufficient for current higher-order APIs.
+- **Modules:** private-by-default, qualified, acyclic imports, and
+  path-derived names are the design. Module-level `let` is intended for
+  compile-time evaluation, not runtime initialization; general compile-time
+  expression execution and native registration remain separate milestones.
+- **Before widening numerical semantics:** decide signed overflow, division,
+  conversions, and floating-point edge behavior, then cover native and
+  interpreted execution. Do not silently infer such guarantees from the C
+  backend's implementation details.
+- **Before broad equality/hashing or nominal variants:** decide structural
+  equality for aggregate/numerical types and whether same-shaped constructors
+  can ever be distinct union alternatives. Preserve today's structural union
+  restriction in the meantime.
+- **Before operator overloading across modules:** specify how imported
+  operators enter scope and how ambiguity is reported. Existing exact-typed
+  named-function overloads do not settle this.
+- **Before parallel functional operations:** implement and verify transitive
+  effect/purity checking, including indirect callbacks; specify deterministic
+  output order and floating-point reduction behavior. Atomic RC, task
+  scheduling, and concurrency primitives are exploratory, not promises.
+- **Before native/interpreted mixed libraries:** specify exported type identity,
+  registration, specialization, ownership, and host/target ABI adaptation.
+  `.smirg` packages are not a stable native ABI.
+
+Possible language conveniences such as `var` record destructuring,
+`a[i, j]` indexing syntax, static rank parameters, and optional namespaces
+remain proposals, not required dependencies of the current roadmap.
+
 ## Deferred architecture
 
 - **MIR compile-time execution:** reuse the existing MIR interpreter to
@@ -155,10 +265,13 @@ improvement before exposing any allocator-selection API.
 - **Native registration and FFI:** type representation, specialization across
   native/interpreted boundaries, and host ABI adapters require an explicit
   contract. The current `.smirg` format is not that ABI.
-- **Numerical execution:** multidimensional shapes, broadcasting, slicing,
-  SIMD and eventually parallel pure transforms need further design and tests.
-- **Concurrency:** no capturing closures, global-mutability model, or
-  concurrent-map implementation is currently promised.
+- **Numerical execution:** library-defined multidimensional arrays and
+  broadcasting first; evaluate generic ranks, slicing and higher-level APIs.
+  SIMD, fusion and parallel pure transforms may require compiler-recognized
+  operations, subject to measured benefits. Native ranked descriptors are not
+  an implementation priority.
+- **Concurrency:** a global-mutability model, sharing rules, and a
+  concurrent-map implementation are not currently promised.
 
 See [modules/FFI architecture](docs/MIR_MODULES_AND_FFI.md) and the
 [IR design](docs/IR_DESIGN.md) for detailed constraints. Historical unchecked

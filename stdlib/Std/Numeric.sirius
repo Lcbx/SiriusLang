@@ -1,0 +1,114 @@
+# Initial rank-2 numerical abstraction over existing rank-1 f64 storage.
+# Data is contiguous and row-major; shapes are checked at every operation
+# because callers can also construct Matrix records directly.
+# This is not native Array[T, 2]; only add supports rank-2 broadcasting.
+
+export rec Matrix(rows: i64, cols: i64, data: Array[f64])
+	pub rows
+	pub cols
+	pub data
+
+export rec MatrixOk(value: Matrix)
+	pub value
+
+export rec ShapeError(message: string)
+	pub message
+
+export let MatrixResult = MatrixOk | ShapeError
+
+# Check the product without overflowing i64; len(data) bounds the product.
+export def valid_shape(rows: i64, cols: i64, data: Array[f64]) -> bool
+	if rows < 0 or cols < 0
+		return false
+	if rows == 0 or cols == 0
+		return len(data) == 0
+	if cols > len(data) / rows
+		return false
+	return rows * cols == len(data)
+
+export def make(rows: i64, cols: i64, data: Array[f64]) -> MatrixResult
+	if not valid_shape(rows, cols, data)
+		return ShapeError("matrix data does not match shape")
+	return MatrixOk(Matrix(rows, cols, data))
+
+# Reshape leaves the original snapshot and its backing array intact.
+# Both result and input share data until a later CoW update.
+export def reshape(matrix: Matrix, rows: i64, cols: i64) -> MatrixResult
+	if not valid_shape(matrix.rows, matrix.cols, matrix.data)
+		return ShapeError("invalid source matrix shape")
+	if not valid_shape(rows, cols, matrix.data)
+		return ShapeError("matrix data does not match shape")
+	return MatrixOk(Matrix(rows, cols, matrix.data))
+
+# Transpose copies into a fresh row-major array (no strided views).
+export def transpose(matrix: Matrix) -> MatrixResult
+	if not valid_shape(matrix.rows, matrix.cols, matrix.data)
+		return ShapeError("invalid source matrix shape")
+	if matrix.rows == 0 or matrix.cols == 0
+		return MatrixOk(Matrix(matrix.cols, matrix.rows, Array[f64]()))
+	var data = Array[f64]()
+	for col in 0..matrix.cols
+		for row in 0..matrix.rows
+			data = data.append(matrix.data[!(row * matrix.cols + col)])
+	return MatrixOk(Matrix(matrix.cols, matrix.rows, data))
+
+export def matmul(left: Matrix, right: Matrix) -> MatrixResult
+	if not valid_shape(left.rows, left.cols, left.data) or not valid_shape(right.rows, right.cols, right.data)
+		return ShapeError("invalid source matrix shape")
+	if left.cols != right.rows
+		return ShapeError("incompatible matrix dimensions")
+	# No allocation proportional to the result happens until sizes fit i64.
+	if left.rows > 0 and right.cols > 0 and right.cols > 9223372036854775807 / left.rows
+		return ShapeError("matrix result is too large")
+	if left.rows == 0 or right.cols == 0
+		return MatrixOk(Matrix(left.rows, right.cols, Array[f64]()))
+	let left_data = left.data
+	let right_data = right.data
+	var data = Array[f64]()
+	for row in 0..left.rows
+		for col in 0..right.cols
+			var sum = 0.0
+			for k in 0..left.cols
+				sum += left_data[!(row * left.cols + k)] * right_data[!(k * right.cols + col)]
+			data = data.append(sum)
+	return MatrixOk(Matrix(left.rows, right.cols, data))
+
+# Elementwise addition with singleton-axis broadcasting. An axis with length
+# zero can broadcast against one, yielding zero output elements along that
+# axis; two different non-singleton axis lengths are incompatible.
+export def add(left: Matrix, right: Matrix) -> MatrixResult
+	if not valid_shape(left.rows, left.cols, left.data) or not valid_shape(right.rows, right.cols, right.data)
+		return ShapeError("invalid source matrix shape")
+	if left.rows != right.rows and left.rows != 1 and right.rows != 1
+		return ShapeError("incompatible broadcast dimensions")
+	if left.cols != right.cols and left.cols != 1 and right.cols != 1
+		return ShapeError("incompatible broadcast dimensions")
+	var rows = left.rows
+	if rows == 1
+		rows = right.rows
+	var cols = left.cols
+	if cols == 1
+		cols = right.cols
+	if rows > 0 and cols > 0 and cols > 9223372036854775807 / rows
+		return ShapeError("matrix result is too large")
+	if rows == 0 or cols == 0
+		return MatrixOk(Matrix(rows, cols, Array[f64]()))
+	let left_data = left.data
+	let right_data = right.data
+	var data = Array[f64]()
+	for row in 0..rows
+		var li = row
+		if left.rows == 1
+			li = 0
+		var ri = row
+		if right.rows == 1
+			ri = 0
+		for col in 0..cols
+			var lj = col
+			if left.cols == 1
+				lj = 0
+			var rj = col
+			if right.cols == 1
+				rj = 0
+			data = data.append(left_data[!(li * left.cols + lj)] + right_data[!(ri * right.cols + rj)])
+	return MatrixOk(Matrix(rows, cols, data))

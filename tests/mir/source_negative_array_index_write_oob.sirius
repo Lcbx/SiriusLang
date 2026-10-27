@@ -1,0 +1,4 @@
+def main() -> i64
+	var values = [10, 20, 30]
+	values[!-4] = 99
+	return 0

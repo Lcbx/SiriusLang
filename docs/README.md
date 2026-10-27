@@ -7,7 +7,7 @@ otherwise. For a first build, start with the [top-level README](../README.md).
 
 | Document | Scope |
 | --- | --- |
-| [Usage](USAGE.md) | Compile, run, interpret, and use the standard library |
+| [Usage](USAGE.md) | Compile, run, interpret, and use the callback and numerical libraries |
 | [Modules and packages](MODULES.md) | Source modules, re-exports, MIR libraries, generic packages |
 | [Development](DEVELOPMENT.md) | Bootstrap, builds, test runners, diagnostics |
 | [Language design](../LANGUAGE_DESIGN.md) | Intended syntax and semantics (including unimplemented features) |

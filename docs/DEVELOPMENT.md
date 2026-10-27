@@ -87,7 +87,20 @@ See [Compiler structure](COMPILER_STRUCTURE.md) for module boundaries and
 - Benchmark compiler stages via `tools/profile_mir.py` and MIR allocations via
   `tools/profile_mir_allocations.py`; for dictionary workloads use
   `tools/profile_runtime_dict.py` or `tools/benchmark_dictionaries.py`.
-  Single microbenchmarks are not whole-compiler performance evidence.
+  Run `python tools/benchmark_stdlib_numeric.py --runs 5 --opt 2` to compare
+  emitted-C `Std.Numeric` matrix operations with hand-written, shape-specialized
+  flat-array loops. With `--baseline-numeric path/to/old/Numeric.sirius`, it
+  also compares library changes against the previous implementation. The tool
+  reports source generation and C build times separately from native execution,
+  validates equal checksums, and alternates execution order after warm-up.
+  Results include allocations, bounds checks and process startup; the flat
+  loops do not perform general shape validation, so ratios do not isolate
+  record overhead alone. Single microbenchmarks are not whole-compiler
+  performance evidence.
+  Run `python tools/benchmark_stdlib_enumerate.py --runs 5 --opt 2` to compare
+  the current one-pass `enumerate` against the previous two-pass algorithm
+  under the same compiler and array runtime. It includes startup and result
+  checks, so it is a workload comparison rather than an isolated instruction cost.
 - `python tools/test_runtime_scratch_arena.py` validates an isolated
   POD-only scratch allocator experiment; use `--benchmark` for synthetic
   allocation-count and CPU-time comparisons, and `--sanitize` to test with

@@ -423,26 +423,31 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 				let index = registers[!ins.second]
 				if index.type_id == Types.TYPE_TAG_INVALID
 					return mir_failure("uninitialized array index", steps)
+				# Negative indices count back from the end. Adding a nonnegative
+				# length to a negative i64 cannot overflow, even for i64::MIN.
+				var position = index.bits
+				if position < 0
+					position += len(array.fields)
 				if ins.op == Mir.MIR_ARRAY_INDEX_VALID
 					var valid = 0
-					if index.bits >= 0 and index.bits < len(array.fields)
+					if position >= 0 and position < len(array.fields)
 						valid = 1
 					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, valid, "")
 					continue
 				if ins.op == Mir.MIR_ARRAY_GET_OPTIONAL
 					var fields = Array[Mir.MirValue]()
-					if index.bits >= 0 and index.bits < len(array.fields)
-						let payload = array.fields[!index.bits]
+					if position >= 0 and position < len(array.fields)
+						let payload = array.fields[!position]
 						heap = mir_heap_copy(program.types, heap, payload)
 						fields = fields.append(payload)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
 					heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
 					continue
-				if index.bits < 0 or index.bits >= len(array.fields)
+				if position < 0 or position >= len(array.fields)
 					return mir_failure("array index out of bounds", steps)
 				if ins.op == Mir.MIR_ARRAY_GET
-					let element = array.fields[!index.bits]
+					let element = array.fields[!position]
 					heap = mir_heap_copy(program.types, heap, element)
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = element
@@ -460,8 +465,8 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					heap = heap.append(Mir.MirHeapRecord(owner.type_id, array.fields, 1))
 					heap = mir_heap_release(program.types, heap, owner.bits)
 				var changed = heap[!result_index]
-				heap = mir_heap_drop(program.types, heap, changed.fields[!index.bits])
-				changed.fields[!index.bits] = value
+				heap = mir_heap_drop(program.types, heap, changed.fields[!position])
+				changed.fields[!position] = value
 				heap[!result_index] = changed
 				registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
 				if ins.dst != ins.first

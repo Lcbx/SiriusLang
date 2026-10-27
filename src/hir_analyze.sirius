@@ -575,36 +575,57 @@ def hir_body_overloaded_call(state: HirBodyState, id: i64, name: string) -> HirB
 		return hir_body_error(state, id, "ambiguous overload for '" + name + "'")
 	return hir_body_error(state, id, "no matching overload for '" + name + "'")
 
-# Imported declarations use length-prefixed internal names; report the source
-# function name, preserving embedded underscores in user diagnostics.
-def hir_callback_display_name(name: string) -> string
+# Imported functions use length-prefixed names that preserve dotted module
+# components and embedded underscores. Decode once for error reporting;
+# internal names that do not follow this scheme remain unchanged.
+rec HirCallbackIdentity(name: string, module: string)
+
+def hir_callback_identity(name: string) -> HirCallbackIdentity
 	var readable = name
 	if readable.starts_with("__SiriusConstructorCapture_")
 		readable = readable.slice(len("__SiriusConstructorCapture_"), len(readable))
 	if not readable.starts_with("M_")
-		return readable
+		return HirCallbackIdentity(readable, "")
 	var i = 2
-	var last = ""
+	var parts = Array[string]()
 	while i < len(readable)
 		var size = 0
 		var digits = false
 		while i < len(readable) and (readable.byte_at(i) or 0) != 95
 			let digit = (readable.byte_at(i) or 0) - 48
 			if digit < 0 or digit > 9
-				return readable
+				return HirCallbackIdentity(readable, "")
 			digits = true
 			size = size * 10 + digit
 			i += 1
 		if not digits or i >= len(readable) or size > len(readable) - i - 1
-			return readable
+			return HirCallbackIdentity(readable, "")
 		i += 1
-		last = readable.slice(i, i + size)
+		parts = parts.append(readable.slice(i, i + size))
 		i += size
 		if i < len(readable)
 			if (readable.byte_at(i) or 0) != 95
-				return readable
+				return HirCallbackIdentity(readable, "")
 			i += 1
-	return last
+	if len(parts) < 2
+		return HirCallbackIdentity(readable, "")
+	var module = ""
+	for part in 0..len(parts) - 1
+		if module != ""
+			module += "."
+		module += parts[!part]
+	return HirCallbackIdentity(parts[!len(parts) - 1], module)
+
+def hir_callback_display_name(name: string) -> string
+	return hir_callback_identity(name).name
+
+# Body line numbers in callback conflicts refer to the defining module, not
+# the consumer's call site. Keep plain local callback errors unqualified.
+def hir_callback_origin(name: string) -> string
+	let identity = hir_callback_identity(name)
+	if identity.module == ""
+		return ""
+	return " (defined in module '" + identity.module + "')"
 
 # Infer the input side of an unannotated callback from concrete arguments and
 # the generic callee's uses of that callback. The probe is deliberately
@@ -1418,7 +1439,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 							if result.tree.nodes[!child].kind == Ast.NODE_RECORD
 								let record = hir_callback_record_hints(arguments.state, function, i - 1, arguments.arguments, child, "")
 								if record.conflict != ""
-									return hir_body_error(result, child, "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "': " + record.conflict)
+									return hir_body_error(result, child, "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'" + hir_callback_origin(name) + ": " + record.conflict)
 								if len(record.fields) > 0
 									result.types = record.state.types
 									result = hir_body_record(result, child, record.fields)
@@ -1426,7 +1447,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 									break
 							let hint = hir_generic_callback_parameters(arguments.state, function, i - 1, arguments.arguments, 0, Array[i64]())
 							if hint.ambiguous
-								var message = "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'"
+								var message = "conflicting generic callback parameter types in '" + hir_callback_display_name(name) + "'" + hir_callback_origin(name)
 								if hint.conflict != ""
 									message += ": " + hint.conflict
 								return hir_body_error(result, child, message)
@@ -1443,11 +1464,11 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 										needs_context = true
 								if needs_context
 									if hint.cyclic
-										var message = "cyclic callback dependency in '" + hir_callback_display_name(name) + "'"
+										var message = "cyclic callback dependency in '" + hir_callback_display_name(name) + "'" + hir_callback_origin(name)
 										if hint.cycle_trace != ""
 											message += ": " + hint.cycle_trace
 										return hir_body_error(result, child, message + "; annotate the callback parameters")
-									return hir_body_error(result, child, "underdetermined callback parameters in '" + hir_callback_display_name(name) + "'; annotate the callback parameters")
+									return hir_body_error(result, child, "underdetermined callback parameters in '" + hir_callback_display_name(name) + "'" + hir_callback_origin(name) + "; annotate the callback parameters")
 							break
 				if not inferred
 					result = hir_body_expression(result, child)

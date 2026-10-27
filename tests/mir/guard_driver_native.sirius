@@ -90,7 +90,7 @@ def main() -> i64
 	programs = programs.append(guard_division_program((-9223372036854775807 - 1), -1, false))
 	programs = programs.append(guard_division_program(42, 4, true))
 	programs = programs.append(guard_array_program(0))
-	programs = programs.append(guard_array_program(-1))
+	programs = programs.append(guard_array_program(-2))  # -1 now selects the last element
 	programs = programs.append(guard_array_set_program(0))
 	programs = programs.append(guard_array_set_program(3))
 	programs = programs.append(guard_optional_program(true))

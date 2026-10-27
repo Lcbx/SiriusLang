@@ -1,0 +1,131 @@
+import types alias Types
+import mir alias Mir
+import mir_verify alias Verify
+import mir_ownership alias Ownership
+import mir_interpreter alias Interpreter
+import mir_emit_c alias Emit
+import mir_wire alias Wire
+import mir_link alias Link
+import mir_library alias Library
+
+# MIR-level closure-conversion prototype. The callable is an ordinary owned
+# record {code: Fn[Env, i64, i64], env: Env}, not a source-level Fn value.
+def closure_program() -> Mir.MirProgram
+	let array = Types.intern_array_type(Types.new_type_table(), Types.TYPE_TAG_I64)
+	let env = Types.intern_record_type(array.table, [Types.RecordField("numbers", array.id), Types.RecordField("offset", Types.TYPE_TAG_I64), Types.RecordField("prefix", Types.TYPE_TAG_STRING)])
+	let code = Types.intern_function_type(env.table, [env.id, Types.TYPE_TAG_I64], Types.TYPE_TAG_I64, Types.FUNCTION_EFFECT_UNCHECKED)
+	let closure = Types.intern_record_type(code.table, [Types.RecordField("code", code.id), Types.RecordField("env", env.id)])
+
+	# The lifted body reads managed captures from its explicit environment.
+	let lifted = Mir.MirFunction(2, Types.TYPE_TAG_I64,
+		[env.id, Types.TYPE_TAG_I64, array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64],
+		[Mir.MirBlock([
+			Mir.mir_record_get(2, 0, 0),
+			Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0),
+			Mir.mir_array_get(4, 2, 3),
+			Mir.mir_record_get(5, 0, 1),
+			Mir.mir_record_get(7, 0, 2),
+			Mir.mir_op(Mir.MIR_STRING_LENGTH, 8, 7, -1, 0),
+			Mir.mir_op(Mir.MIR_ADD_I64, 9, 1, 4, 0),
+			Mir.mir_op(Mir.MIR_ADD_I64, 10, 9, 5, 0),
+			Mir.mir_op(Mir.MIR_ADD_I64, 11, 10, 8, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 7, 7, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0),
+		], Mir.mir_return(11))], 0)
+
+	# A factory creates the context and transfers its ownership into a
+	# returned closure. The scalar code index remains unowned.
+	let maker = Mir.MirFunction(0, closure.id,
+		[Types.TYPE_TAG_I64, array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, env.id, code.id, closure.id, array.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, array.id],
+		[Mir.MirBlock([
+			Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 5),
+			Mir.mir_array_new(1, [0]),
+			Mir.mir_op(Mir.MIR_COPY, 7, 1, -1, 0),
+			Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 7),
+			Mir.mir_string(3, "abc"),
+			Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, 4, [1, 2, 3], [1, 3]),
+			# The environment owns the original array snapshot; mutating the
+			# shared external copy must not modify its captured contents.
+			Mir.mir_op(Mir.MIR_CONST_I64, 8, -1, -1, 0),
+			Mir.mir_op(Mir.MIR_CONST_I64, 9, -1, -1, 99),
+			Mir.mir_array_set(10, 7, 8, 9),
+			Mir.mir_op(Mir.MIR_RELEASE, 10, 10, -1, 0),
+			Mir.mir_function_ref(5, 2),
+			Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, 6, [5, 4], [4]),
+		], Mir.mir_return(6))], 0)
+
+	# Escape the factory, copy the owned callable, release the original,
+	# extract its captures and call the relocated lifted function.
+	let main = Mir.MirFunction(0, Types.TYPE_TAG_I64,
+		[closure.id, closure.id, code.id, env.id, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64],
+		[Mir.MirBlock([
+			Mir.mir_call(0, 1, Array[i64]()),
+			Mir.mir_op(Mir.MIR_COPY, 1, 0, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0),
+			Mir.mir_record_get(2, 1, 0),
+			Mir.mir_record_get(3, 1, 1),
+			Mir.mir_op(Mir.MIR_CONST_I64, 4, -1, -1, 27),
+			Mir.mir_call_indirect(5, 2, [3, 4]),
+			Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0),
+			Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0),
+		], Mir.mir_return(5))], 0)
+	return Mir.mir_program_with_types([main, maker, lifted], closure.table)
+
+def matches(program: Mir.MirProgram, entry: i64) -> bool
+	let execution = Interpreter.mir_execute(program, entry, Array[Mir.MirValue](), 1000, 12)
+	if execution.error != "" or execution.value.bits != 42
+		print("execution: " + execution.error)
+		return false
+	for record in execution.heap
+		if record.refs != 0
+			print("leaked MIR heap record")
+			return false
+	return true
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 2
+		return 2
+	let program = closure_program()
+	let verified = Verify.mir_verify(program)
+	if verified != ""
+		print("verify: " + verified)
+		return 3
+	let ownership = Ownership.mir_check_balance(program)
+	if ownership != ""
+		print("ownership: " + ownership)
+		return 4
+	if not matches(program, 0)
+		return 5
+	# Changing the closure's code reference to its zero-argument factory
+	# must be rejected before either backend can run the malformed MIR.
+	var invalid = closure_program()
+	var factory = invalid.functions[!1]
+	var block = factory.blocks[!0]
+	block.instructions[!10] = Mir.mir_function_ref(5, 1)
+	factory.blocks[!0] = block
+	invalid.functions[!1] = factory
+	if Verify.mir_verify(invalid) != "function reference signature mismatch"
+		return 10
+	let saved = Wire.mir_serialize_program(program, 0)
+	if saved.error != ""
+		return 6
+	let loaded = Wire.mir_deserialize_program(saved.text)
+	if loaded.error != "" or not matches(loaded.program, loaded.entry)
+		return 7
+	let dummy = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 1)], Mir.mir_return(0))], 0)
+	let prefix = Mir.mir_program_with_types([dummy], Types.new_type_table())
+	let linked = Link.mir_link_libraries([
+		Library.MirLibraryLoad(prefix, [Mir.MirNamedExport("other", 0)], "", Array[Mir.MirNamedImport]()),
+		Library.MirLibraryLoad(loaded.program, [Mir.MirNamedExport("entry", 0)], "", Array[Mir.MirNamedImport]())
+	])
+	if linked.error != "" or not matches(linked.program, 1)
+		print("link: " + linked.error)
+		return 8
+	let emitted = Emit.mir_emit_c_reachable(linked.program, 1)
+	if emitted.error != "" or not write_text(args[!1], emitted.code)
+		print("emit: " + emitted.error)
+		return 9
+	print("PASS owned closure environment: interpreter, ownership, wire, relocation, C")
+	return 0

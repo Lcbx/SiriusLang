@@ -20,6 +20,9 @@ separation avoids copying compiler setup code into each test directory.
 | `hir/`, `mir/`, `types/` | Component-level Sirius drivers, MIR artifacts and input programs | Corresponding focused drivers |
 | `deferred/` | Explicitly deferred module experiments | Not included in the default test suite |
 
+`tools/test_stdlib_numeric.py` exercises the experimental `Std.Numeric` rank-2
+wrapper (including broadcast addition and degenerate axes) through native, MIR, linked-C, and ARC-audited execution.
+
 Use `python tools/test_all.py --group smoke` for inexpensive structural checks,
 including `test_fixture_layout.py`. Test drivers run sequentially, but some
 run their internal cases concurrently using the shared build cache. The

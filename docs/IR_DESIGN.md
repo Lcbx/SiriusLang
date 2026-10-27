@@ -205,6 +205,20 @@ HIR generic specialization lookup and lifecycle, symbol binding metadata and str
 
 Canonical `TYPE_TAG_FUNCTION` signatures record parameter types, return type and an effect flag (currently unchecked). `Fn[parameters...,return]` annotations and named or qualified exported function references lower to `MIR_FUNCTION_REF`; `MIR_CALL_INDIRECT` invokes function-typed scalar IDs. Source expression-bodied, noncapturing lambdas lower to private functions, with contextual parameter-type inference. The interpreter, native C emitter, serialized MIR and linked libraries support these values with relocation of referenced function IDs. Imported concrete functions must be exported and have available bodies; source-free `.smirg` packages cannot provide concrete bodies. Function references have no ARC credit. Contextual generic function references reuse the ordinary HIR named-call specialization worklist when an expected `Fn` signature is available, including source-free `.smirg` generic declarations. Generic callback combinators, source-free concrete bodies and transitive purity/effect enforcement are deferred.
 
+**No implicit captures.** `Fn` is a scalar function ID with no ARC
+credit. Source lambda bodies have independent lexical scopes, so attempting
+to reference an enclosing local is a type-checking error. There is no hidden
+environment argument in either backend, and capturing closures are not a
+planned feature of Sirius.
+
+The explicit-context model is exercised by `Std.Functional.map_with_context`.
+The MIR regression in `tools/test_mir_closure_environment.py` also verifies
+that an ordinary owned record `{code: Fn[Env, i64, i64], env: Env}` can cross
+function boundaries, retain managed fields, preserve CoW, survive MIR wire
+format and linking, and invoke its code with `env` supplied explicitly. This
+uses existing record and function-reference instructions; it is not a new
+`Fn` representation or lexical capture mechanism.
+
 ## Implemented experimental dictionary MIR
 
 `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, `MIR_DICT_LENGTH`, `MIR_DICT_NEXT`, `MIR_DICT_KEY`, and `MIR_DICT_VALUE` operate on canonical `Dict[K,V]` descriptors. `K` may be `i64`, `bool`, `f64`, `string`, or a canonical record recursively containing hashable fields; `V` can be any MIR-supported type, including managed arrays/records/dictionaries. Native MIR C uses the shared runtime's open-addressed `S_Dict` through an owned `S_MirRecord` wrapper; the interpreter retains list-based storage. `MIR_DICT_INSERT` consumes its owner, reuses unique storage, or clones shared dictionary entries while retaining nested values. Existing keys are replaced without changing entry count. Structural record hashing and equality inspect each canonical field recursively; signed floating zero hashes identically. The verifier checks key/value/result types. `MIR_DICT_GET_OR` accepts an already evaluated fallback register, **not** an `Optional` result, and must not be used as a direct lowering of lazy source `or`. Read-only cursor operations enumerate dictionary entries for nested value coercions without modifying the source. Source `Dict[K,V]()`, `.insert`, and `len(dict)` are supported experimentally; source `.get` now lowers through Optional and CFG control flow.

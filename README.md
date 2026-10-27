@@ -43,23 +43,36 @@ covers imports, linking, `.smirl` and source-free `.smirg` packages.
 
 ## A small program
 
+Sirius supports ordinary loops, first-class functions and value-based array
+updates. This standalone example applies a function and then changes one
+snapshot without affecting another:
+
 ```sirius
-def double(x)
+def twice(x)
 	return x * 2
 
-def apply(f: Fn[i64,i64], x: i64) -> i64
-	return f(x)
+def transform(values: Array[i64], f: Fn[i64,i64]) -> Array[i64]
+	var result = Array[i64]()
+	for value in values
+		result = result.append(f(value))
+	return result
 
 def main() -> i64
-	let callback: Fn[i64,i64] = double
-	print(apply(callback, 21))
+	let numbers = [1, 2, 3]
+	let doubled = transform(numbers, twice)
+	var changed = doubled
+	changed[!0] = 99
+	print(numbers[!0])  # 1
+	print(doubled[!0])  # 2
+	print(changed[!0])  # 99
 	return 0
 ```
 
-Generic named functions specialize from an expected `Fn` signature. The
-compiler supports named callbacks (including imported functions) and
-noncapturing, expression-bodied lambdas. Capturing closures and transitive
-purity checking are **not yet implemented**.
+`twice` is specialized from the expected `Fn[i64,i64]` callback signature;
+`changed[!0]` uses checked indexing and CoW preserves the earlier values.
+`Std.Functional.map` provides a generic version of `transform` in the standard
+library. Noncapturing expression-bodied lambdas (`fn(x) x * 2`) work too;
+lambdas cannot capture enclosing local bindings by design.
 
 ## What's implemented?
 
@@ -67,13 +80,16 @@ purity checking are **not yet implemented**.
   dictionaries, optionals, and tagged unions with exhaustive `match`.
 - Inferred and annotated functions, concrete generic specialization,
   noncapturing function values, recursion / `recur`, loops, and local mutation.
-- CoW array and record updates, checked indexing, and some statically proven
+- CoW array and record updates, checked and negative indexing, and some statically proven
   plain indexing; filesystem operations and opt-in `Result` wrappers.
 - Path-based source imports, public constructors/constants, named re-exports,
   MIR libraries, portable generic declaration packages, and a MIR interpreter.
+- `Std.Numeric` provides a checked, row-major 2D `f64` matrix wrapper over
+  rank-1 arrays, including elementwise singleton-axis broadcasting. Multidimensional
+  support is library-first; native ranked descriptors are not planned as a prerequisite.
 
-**Not implemented:** general compile-time MIR execution, multidimensional
-vectorized operations/broadcasting, capturing closures, general effect/purity
+**Not implemented:** general compile-time MIR execution, general-purpose
+N-dimensional arrays, fused/vectorized numerical execution, general effect/purity
 inference, parallel mapping, and native/interpreted FFI registration. Features
 and restrictions are listed with runnable examples in
 [examples/README.md](examples/README.md).

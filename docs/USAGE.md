@@ -51,7 +51,10 @@ The [examples](../examples/README.md) give runnable illustrations of `let`,
 
 Checked indexing is `a[!i]`; optional indexing is `a[?i]`. Plain `a[i]`
 requires the compiler to prove bounds statically (for supported immutable
-array shapes). Nested updates preserve CoW snapshots:
+array shapes). Negative indices in checked and optional array indexing count
+from the end (`a[!-1]` is the last element); an empty array or an index below
+`-len(a)` is out of bounds. Checked writes accept negative indices and nested
+updates preserve CoW snapshots:
 
 ```sirius
 var state = {items=[{value=1}]}
@@ -95,9 +98,46 @@ value needs an expected `Fn` type; neither return type alone nor implicit
 coercion distinguishes overloads. Duplicate signatures and unmatched calls
 are compile-time errors. Overloading generic, extern or constructor declarations
 is not yet supported. All overloads in a source module must share export visibility.
-Noncapturing expression-bodied lambdas are supported; capturing closures are
-not. For tagged unions and exhaustive matching, see the
+Expression-bodied lambdas are noncapturing by design. For tagged unions and exhaustive matching, see the
 [language design](../LANGUAGE_DESIGN.md#constructor-based-tagged-unions).
+
+## Standard library: initial numerical matrices
+
+`Std.Numeric` provides a **rank-2 `f64` matrix wrapper**, not built-in
+`Array[T, 2]`. `Matrix(rows, cols, data)` contains a flat row-major
+`Array[f64]`: entry `(row, col)` is `data[!(row * cols + col)]`.
+`make` returns `MatrixResult` (`MatrixOk` or `ShapeError`) after checking
+nonnegative dimensions and element count. `reshape`, `transpose`, and
+`matmul` and `add` return the same result type and validate their inputs, including
+matrices constructed directly without `make`. `reshape` shares its original
+data under CoW; transpose and multiplication allocate new arrays. Shapes
+with zero-sized axes are permitted. Products of dimensions that overflow
+`i64` are rejected instead of evaluated.
+
+```sirius
+import Std.Numeric alias N
+
+def main() -> i64
+	match N.matmul(N.Matrix(1, 2, [2.0, 3.0]), N.Matrix(2, 1, [4.0, 5.0]))
+		N.MatrixOk(product)
+			print(product.data[!0])  # 23
+		N.ShapeError(message)
+			print(message)
+	return 0
+```
+
+`add` supports rank-2 elementwise broadcasting: axis lengths must agree or
+one must be 1. It returns `ShapeError` for incompatible axes, and permits
+0 against 1, producing a zero-sized axis. For example, adding a 1-by-2 row
+to a 2-by-2 matrix broadcasts that row to both rows. Results are fresh
+arrays; the inputs remain unchanged.
+
+Generic element types, general N-dimensional broadcasting, strided views
+and SIMD are **not** part of this helper. A native ranked array descriptor is
+not required or currently prioritized. See
+[language design](../LANGUAGE_DESIGN.md#7-arrays-and-vectorization) for the
+intended eventual operations and `tools/test_stdlib_numeric.py` for executable
+edge cases. Imported modules must be visible under the configured module root.
 
 ## Standard library: callbacks
 
@@ -108,7 +148,10 @@ for `Std/` to be present under your chosen module root. Functions operate on
 | Name | Supported signatures |
 | --- | --- |
 | `map`, `filter` | Generic input and output element types; preserves element order |
+| `map_indexed` | Generic transform with `(index: i64, element: T)` callback in one pass; index starts at zero |
+| `map_with_context` | Generic transform with `(element: T, context: C)` callback; passes an explicit immutable context to every invocation |
 | `generate` | Generic callback result type (including empty arrays) |
+| `partition` | Single-pass predicate split into `{matched: Array[T], unmatched: Array[T]}`; stable ordering |
 | `fold` | Generic over the array element and accumulator/result types |
 | `scan` | Generic prefix accumulation; returns the initial state followed by each accumulated state |
 | `zip_with` | Pairwise transform of two arrays of any element types; callback result determines the output type |
@@ -142,8 +185,26 @@ expected `Fn` type when one is available. Generic helpers can also infer
 callback **parameter** types from their own concrete inputs and uses of the
 callback (for example, an array element in `map` or an index in `generate`).
 Independently typable arguments may appear before or after a callback, including
-nested calls such as `map(values, fn(x) x + 1)`. The compiler inspects their
-types ahead of time without changing runtime evaluation order. The callback's
+nested calls such as `map(values, fn(x) x + 1)`. A lambda cannot capture
+outer locals: `map(values, fn(x) box.run(x))` is unsupported even with `x`
+annotated; pass `box.run` directly when no other state is needed, or use
+`map_with_context` to pass a runtime context explicitly:
+
+```sirius
+import Std.Functional alias F
+
+def apply_box(box, values)
+	return F.map_with_context(values, box, fn(x, ctx) ctx.run(x))
+```
+
+This passes `box` as an ordinary argument on each
+callback invocation. It works with managed record fields and source-free generic
+packages, and returns correctly typed empty arrays. Context is immutable from
+the callback's perspective; existing CoW semantics still apply. A callback
+parameter whose type cannot be inferred requires an annotation.
+
+The compiler inspects callback argument types ahead of time without changing
+runtime evaluation order. The callback's
 return type is then inferred from its body. Multi-stage callback-result chains
 are also supported when an independently typed argument seeds the chain,
 for example `pipeline(fn(s) len(s), fn(x) str(x), [7, 12])` when `pipeline`
@@ -208,13 +269,19 @@ a concrete `Fn` callback. It evaluates its argument once, but does not invoke
 the callback. `map`, `filter`, and `generate` use it internally; no new runtime
 representation is required.
 
+`partition(values, predicate)` evaluates the predicate once for each input value,
+returning stable `matched` and `unmatched` arrays of the original element
+type. Empty inputs, empty partitions, and managed element types are supported.
+The source array is not mutated; ordinary CoW semantics apply.
+
 `enumerate` accepts any array element type and returns records with `.index`
 (zero-based) and `.value` fields. Empty input yields a correctly typed empty
 array. The old `IndexedI64`, `IndexedF64`, and `IndexedString` record types
 remain exported for source compatibility; records returned by `enumerate` are
-structurally compatible with them. Its current library implementation maps
-values to records and then fills indexes in a second pass. `find_index` returns `-1` if there is no
-match; `any` delegates to it and both short-circuit. Generic named callbacks
+structurally compatible with them. It uses `map_indexed` to populate indexes
+in a single traversal. `map_indexed` also supports any result element type,
+including correctly typed empty outputs. `find_index` returns `-1` if there is
+no match; `any` delegates to it and both short-circuit. Generic named callbacks
 specialize from a contextual `Fn` where one is available. If a generic
 callback cannot be inferred, bind it to a typed `Fn` first. The helpers are
 sequential, and callback purity is not enforced. Run

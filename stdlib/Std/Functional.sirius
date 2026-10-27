@@ -23,6 +23,15 @@ export def map(values, callback)
 		result = result.append(callback(value))
 	return result
 
+# Explicit environment passing for callbacks that would otherwise need a
+# lexical capture. The environment is a normal CoW value; no closure heap or
+# implicit capture is involved. The callback takes (environment, element).
+export def map_with_context(values, context, callback)
+	var result = empty_array_like(callback)
+	for value in values
+		result = result.append(callback(value, context))
+	return result
+
 export def filter(values, predicate)
 	var result = empty_array_like(values)
 	for value in values
@@ -71,14 +80,33 @@ export def zip_with(left, right, callback)
 export def zip(left, right)
 	return zip_with(left, right, fn(a, b) {left = a, right = b})
 
-# Convert elements to structural records without capturing a mutable index.
-# Fill indexes in a second pass; map provides the correct result type even
-# when values is empty, without requiring a named record per element type.
-export def enumerate(values)
-	var result = map(values, fn(value) {index = 0, value = value})
-	for i in 0..len(result)
-		result[!i].index = i
+# Partition in one traversal, evaluating the predicate once per element.
+# Both results preserve input order and retain the input element type, even
+# when one or both outputs are empty. Values follow ordinary array CoW rules.
+export def partition(values, predicate)
+	var matched = empty_array_like(values)
+	var unmatched = empty_array_like(values)
+	for value in values
+		if predicate(value)
+			matched = matched.append(value)
+		else
+			unmatched = unmatched.append(value)
+	return {matched = matched, unmatched = unmatched}
+
+# Apply a binary callback to each element together with its zero-based index.
+# A single traversal also works for empty arrays: the callback determines the
+# result element type even when no values are present.
+export def map_indexed(values, callback)
+	var result = empty_array_like(callback)
+	var index = 0
+	for value in values
+		result = result.append(callback(index, value))
+		index += 1
 	return result
+
+# Index every element in one pass using generic structural records.
+export def enumerate(values)
+	return map_indexed(values, fn(index, value) {index = index, value = value})
 
 # These predicates specialize on both the collection and the Fn argument.
 # Explicitly type the callback value when its generic parameter types cannot

@@ -13,6 +13,10 @@ from project_paths import ROOT
 PROGRAM = '''import Std.Functional alias F
 import Helpers alias H
 
+# An explicit context parameter removes the need for lexical captures.
+def apply_box(box, values)
+	return F.map_with_context(values, box, fn(value, state) state.run(value))
+
 def main() -> i64
 	let values = F.generate(4, fn(i: i64) i + 1)
 	let twice: Fn[i64,i64] = H.twice
@@ -94,6 +98,17 @@ def main() -> i64
 		return 21
 	if F.fold([1, 2], "", fn(a: string, value: i64) a + str(value)) != "12"
 		return 22
+	# Indexed mapping is generic in the element and result type, with an
+	# inferred i64 index, and returns correctly typed empty arrays.
+	let indexed_sums = F.map_indexed([10, 20, 30], fn(index, value) index + value)
+	if len(indexed_sums) != 3 or indexed_sums[!0] != 10 or indexed_sums[!2] != 32
+		return 57
+	let indexed_lengths = F.map_indexed(["a", "xyz"], fn(index, word) {index = index, size = len(word)})
+	if indexed_lengths[!1].index != 1 or indexed_lengths[!1].size != 3
+		return 58
+	let empty_indexed = F.map_indexed(Array[bool](), fn(index, flag) {index = index, value = flag})
+	if len(empty_indexed) != 0
+		return 59
 	let numbered = F.enumerate([4, 8, 12])
 	if len(numbered) != 3 or numbered[!0].index != 0 or numbered[!2].value != 12
 		return 23
@@ -182,6 +197,49 @@ def main() -> i64
 	let empty_mapped = F.zip_with(Array[i64](), Array[string](), fn(a, b) str(a) + b)
 	if len(empty_pairs) != 0 or len(empty_mapped) != 0
 		return 51
+	# One-pass partition preserves element type, order and CoW snapshots.
+	let source = [1, 2, 3, 4, 5]
+	let grouped = F.partition(source, fn(value) value % 2 == 0)
+	if len(grouped.matched) != 2 or grouped.matched[!0] != 2 or grouped.matched[!1] != 4
+		return 60
+	if len(grouped.unmatched) != 3 or grouped.unmatched[!0] != 1 or grouped.unmatched[!2] != 5
+		return 61
+	if len(source) != 5 or source[!1] != 2
+		return 62
+	let word_groups = F.partition(["a", "bb", "ccc"], fn(word) len(word) > 1)
+	if len(word_groups.matched) != 2 or word_groups.matched[!1] != "ccc" or word_groups.unmatched[!0] != "a"
+		return 63
+	let record_groups = F.partition([{x = 1}, {x = 3}, {x = 2}], fn(pair) pair.x > 1)
+	if record_groups.matched[!0].x != 3 or record_groups.unmatched[!0].x != 1
+		return 64
+	let nested_groups = F.partition([[1, 2], [3], [4, 5]], fn(xs) len(xs) == 2)
+	if len(nested_groups.matched) != 2 or nested_groups.matched[!1][!1] != 5 or nested_groups.unmatched[!0][!0] != 3
+		return 65
+	let none = F.partition(Array[string](), fn(word) len(word) > 0)
+	if len(none.matched) != 0 or len(none.unmatched) != 0
+		return 66
+	let all_match = F.partition([true, true], fn(x) x)
+	if len(all_match.matched) != 2 or len(all_match.unmatched) != 0
+		return 67
+	# Explicit state lets a noncapturing callback use a runtime value.
+	let offset = 7
+	let shifted = F.map_with_context([1, 2, 3], offset, fn(x, base) base + x)
+	if shifted[!0] != 8 or shifted[!2] != 10
+		return 68
+	let box = {run = twice, name = "managed"}
+	let applied = apply_box(box, [2, 3])
+	if applied[!0] != 4 or applied[!1] != 6 or box.name != "managed"
+		return 69
+	let empty = F.map_with_context(Array[i64](), box, fn(x, state) state.name + str(x))
+	if len(empty) != 0
+		return 70
+	let context = {offset = 3, payload = [10, 20]}
+	let snapshot = context
+	let with_managed = F.map_with_context([1, 2], context, fn(x, env) x + env.offset + env.payload[!0])
+	if with_managed[!0] != 14 or with_managed[!1] != 15
+		return 71
+	if snapshot.payload[!1] != 20 or context.payload[!0] != 10
+		return 72
 	return 42
 '''
 
@@ -261,6 +319,38 @@ def main() -> i64
 		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
 
 def main() -> i64
+	let values = F.map_indexed([1, 2], fn(index: string, value: i64) len(index) + value)
+	return len(values)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let values = F.partition([1, 2], fn(value: string) len(value) > 0)
+	return len(values.matched)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let values = F.map_with_context([1, 2], 4, fn(x: i64, state: string) state)
+	return len(values)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"lambda parameter type does not match inferred callback type" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
+	let values = F.partition([1, 2], fn(value: i64) value + 1)
+	return len(values.matched)
+''')
+		invalid = run(cache.seed(), '--module-root', root, 'Invalid', root / 'Invalid.c')
+		assert invalid.returncode != 0 and b"branch condition must be bool" in invalid.stderr, invalid
+		(root / 'Invalid.sirius').write_text('''import Std.Functional alias F
+
+def main() -> i64
 	let values = F.scan([1, 2], 0, fn(acc: string, x: i64) acc)
 	return len(values)
 ''')
@@ -332,6 +422,11 @@ def main() -> i64
 		return 8
 	if not F.any([0, 2], fn(x) x == 2) or not F.all([1, 2], fn(x) x > 0)
 		return 9
+	let indexed_pairs = F.map_indexed(["hi", "world"], fn(i, word) {index = i, size = len(word)})
+	if indexed_pairs[!0].index != 0 or indexed_pairs[!1].size != 5
+		return 16
+	if len(F.map_indexed(Array[bool](), fn(i, flag) {index = i, value = flag})) != 0
+		return 17
 	let indexed = F.enumerate([true, false])
 	if indexed[!1].index != 1 or indexed[!1].value
 		return 10
@@ -350,6 +445,18 @@ def main() -> i64
 	let empty_scan = F.scan(Array[string](), "seed", fn(acc, word) acc + word)
 	if len(empty_scan) != 1 or empty_scan[!0] != "seed"
 		return 15
+	let split = F.partition(["one", "", "two"], fn(word) len(word) > 0)
+	if len(split.matched) != 2 or split.matched[!1] != "two" or split.unmatched[!0] != ""
+		return 18
+	let empty_split = F.partition(Array[i64](), fn(value) value > 0)
+	if len(empty_split.matched) != 0 or len(empty_split.unmatched) != 0
+		return 19
+	let ctx = {step = 3, names = ["a", "b"]}
+	let contextual = F.map_with_context([1, 2], ctx, fn(x, env) x + env.step + len(env.names))
+	if contextual[!0] != 6 or contextual[!1] != 7
+		return 20
+	if len(F.map_with_context(Array[i64](), ctx, fn(x, env) env.names[!0] + str(x))) != 0
+		return 21
 	return 42
 ''')
 		linked = root / 'packaged-stdlib.smirl'
@@ -363,7 +470,7 @@ def main() -> i64
 		native = run(compile_native(cache, generated))
 		assert (native.returncode, native.stdout, native.stderr) == (42, b'', b''), native
 
-	print('PASS Std.Functional: generic array callbacks, zip/zip_with, scan, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
+	print('PASS Std.Functional: generic array callbacks, zip/zip_with, scan, partition, folds, enumerations, predicates, native/MIR, source-free packages and empty arrays')
 
 
 if __name__ == '__main__':
