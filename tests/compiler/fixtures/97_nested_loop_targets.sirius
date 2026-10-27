@@ -1,0 +1,30 @@
+def main() -> i64
+	var total = 0
+	for i in 0..3
+		var j = 0
+		while j < 4
+			j += 1
+			if j == 2
+				continue
+			if j == 4
+				break
+			total += i * 10 + j
+		if i == 1
+			continue
+		total += 100
+	var k = 0
+	while k < 3
+		k += 1
+		for x in 0..4
+			if x == 1
+				continue
+			if x == 3
+				break
+			total += x
+		if k == 2
+			continue
+		total += 10
+	if total != 298
+		return 1
+	print("ok")
+	return 0

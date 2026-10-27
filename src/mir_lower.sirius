@@ -57,6 +57,19 @@ def mir_lower_end(state: MirBuilder, term: Mir.MirTerminator) -> MirBuilder
 	next.blocks[!next.active] = Mir.MirBlock(block.instructions, term)
 	return next
 
+# Restore the loop control stack after leaving a `for` or `while` body.
+# Keep the outer targets, including nested loop targets, in their source order.
+def mir_lower_leave_loop(state: MirBuilder) -> MirBuilder
+	var next = state
+	var breaks = Array[i64]()
+	var continues = Array[i64]()
+	for i in 0..len(next.break_targets) - 1
+		breaks = breaks.append(next.break_targets[!i])
+		continues = continues.append(next.continue_targets[!i])
+	next.break_targets = breaks
+	next.continue_targets = continues
+	return next
+
 def mir_lower_register(state: MirBuilder, type_id: i64) -> MirBuilder
 	var next = state
 	next.register_types = next.register_types.append(type_id)
@@ -1613,13 +1626,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		for j in 0..initial
 			saved = saved.append(next.bindings[!j])
 		next.bindings = saved
-		var previous_breaks = Array[i64]()
-		var previous_continues = Array[i64]()
-		for j in 0..len(next.break_targets) - 1
-			previous_breaks = previous_breaks.append(next.break_targets[!j])
-			previous_continues = previous_continues.append(next.continue_targets[!j])
-		next.break_targets = previous_breaks
-		next.continue_targets = previous_continues
+		next = mir_lower_leave_loop(next)
 		if not mir_lower_ended(next)
 			next = mir_lower_end(next, Mir.mir_jump(step_block))
 		next.active = step_block
@@ -1652,13 +1659,7 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		next.continue_targets = next.continue_targets.append(condition_block)
 		next = mir_lower_statements(next, context, Hir.hir_ast_child(context.tree, id, 1))
 		next.error == "" else return next
-		var previous_breaks = Array[i64]()
-		var previous_continues = Array[i64]()
-		for j in 0..len(next.break_targets) - 1
-			previous_breaks = previous_breaks.append(next.break_targets[!j])
-			previous_continues = previous_continues.append(next.continue_targets[!j])
-		next.break_targets = previous_breaks
-		next.continue_targets = previous_continues
+		next = mir_lower_leave_loop(next)
 		if not mir_lower_ended(next)
 			next = mir_lower_end(next, Mir.mir_jump(condition_block))
 		next.active = exit_block

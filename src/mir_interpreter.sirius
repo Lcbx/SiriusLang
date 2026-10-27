@@ -9,9 +9,7 @@ def mir_failure(error: string, steps: i64) -> Mir.MirOutcome
 	return Mir.new_mir_outcome(Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, ""), error, steps)
 
 def mir_success(value: Mir.MirValue, steps: i64, heap: Array[Mir.MirHeapRecord]) -> Mir.MirOutcome
-	var result = Mir.new_mir_outcome(value, "", steps)
-	result.heap = heap
-	return result
+	return Mir.MirOutcome(value, "", steps, heap)
 
 def mir_heap_retain(heap: Array[Mir.MirHeapRecord], index: i64) -> Array[Mir.MirHeapRecord]
 	var next = heap
@@ -57,9 +55,7 @@ def mir_list_dir_values(path: string) -> MirDirectoryValues
 
 # The interpreter stores floating values separately from i64 handles/integers.
 def mir_real_value(value: f64) -> Mir.MirValue
-	var result = Mir.new_mir_value(Types.TYPE_TAG_F64, 0, "")
-	result.real = value
-	return result
+	return Mir.MirValue(Types.TYPE_TAG_F64, 0, "", value)
 
 def mir_dict_equal(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], a: Mir.MirValue, b: Mir.MirValue) -> bool
 	if a.type_id != b.type_id

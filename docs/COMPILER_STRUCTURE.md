@@ -37,6 +37,22 @@ the canonical `Types.runtime_ownership()` classification through
 `mir_managed_type`. The isolated floating-point literal parser has moved out of the interpreter without
 changing its parsing algorithm or the MIR wire format.
 
+## Using current Sirius constructs
+
+Prefer constructing records directly when all fields are available, and use
+record spreads for updates that must preserve other fields. In particular,
+module-qualified name rewriting now shares one AST update path: conversions
+from attributes to names discard child edges, while type and `match` patterns
+retain their existing children and bindings.
+
+Sirius `match` is exhaustive dispatch on **tagged union values**, not a switch
+on arbitrary `i64` tags. MIR opcodes, terminator kinds and AST node kinds are
+currently integer constants; rewriting their dispatch into `match` would first
+require a representation change. Keep those checks explicit unless that change
+has a separate demonstrated benefit. Also avoid adding record spreads to hot
+interpreter heap-reference updates solely for syntax: retain/drop costs and CoW
+ownership require separate validation.
+
 ## Refactoring boundaries
 
 Keep the following files separate, despite small sizes: `compile_common.sirius`

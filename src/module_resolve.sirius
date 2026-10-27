@@ -13,13 +13,20 @@ def hir_module_export_target(declarations: Hir.HirModuleDecl, name: string) -> s
 			return alias.target
 	return name
 
-def hir_module_replace_name(tree: Parser.ParseState, node: i64, target: string, line: i64) -> Parser.ParseState
+# Rewrite an imported name without rebuilding the original node's children.
+# Qualified call/value attributes become plain names; type and match patterns
+# retain their type arguments and constructor bindings respectively.
+def hir_module_replace_name(tree: Parser.ParseState, node: i64, target: string, line: i64, kind: i64) -> Parser.ParseState
 	var next = tree
 	let start = len(next.source)
 	next.source += target
 	let token_id = len(next.tokens)
 	next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, start, len(next.source), line, 0))
-	next.nodes[!node] = Parser.Node(Parser.NODE_NAME, token_id, 0, 0)
+	if kind == Parser.NODE_NAME
+		next.nodes[!node] = Parser.Node(kind, token_id, 0, 0)
+	else
+		let original = next.nodes[!node]
+		next.nodes[!node] = {original.*, token = token_id}
 	return next
 
 export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.HirModuleDecl) -> HirModuleResolution
@@ -47,11 +54,7 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 					found = true
 			if not found
 				return HirModuleResolution(tree, "type " + name + " is not exported", Hir.hir_ast_line(next, i))
-			let position = len(next.source)
-			next.source += target
-			let token = len(next.tokens)
-			next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, position, len(next.source), Hir.hir_ast_line(next, i), 0))
-			next.nodes[!i] = Parser.Node(Parser.NODE_TYPE, token, node.first, node.count)
+			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i), Parser.NODE_TYPE)
 			break
 		if not matched
 			for j in 0..len(name)
@@ -79,7 +82,7 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 						found = true
 				if not found
 					return HirModuleResolution(tree, "function " + receiver + "." + name + " is not exported", Hir.hir_ast_line(tree, callee_id))
-				next = hir_module_replace_name(next, callee_id, target, Hir.hir_ast_line(tree, callee_id))
+				next = hir_module_replace_name(next, callee_id, target, Hir.hir_ast_line(tree, callee_id), Parser.NODE_NAME)
 				break
 	# Match alternatives are constructor patterns, not calls. Preserve the
 	# NODE_CASE children and pattern bindings while resolving their type names.
@@ -98,12 +101,7 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 					found = true
 			if not found
 				return HirModuleResolution(tree, "match constructor " + name + " is not exported", Hir.hir_ast_line(next, i))
-			let position = len(next.source)
-			next.source += target
-			let token = len(next.tokens)
-			next.tokens = next.tokens.append(Tokenizer.Token(Tokenizer.TOKEN_NAME, position, len(next.source), Hir.hir_ast_line(next, i), 0))
-			let node = next.nodes[!i]
-			next.nodes[!i] = Parser.Node(Parser.NODE_CASE, token, node.first, node.count)
+			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i), Parser.NODE_CASE)
 			break
 	# Qualified function values use the same imported declaration as direct
 	# calls. Resolve the namespace before HIR creates a function reference.
@@ -131,6 +129,6 @@ export def hir_resolve_module_calls(tree: Parser.ParseState, declarations: Hir.H
 					found = true
 			if not found
 				return HirModuleResolution(tree, "symbol " + receiver + "." + name + " is not exported", Hir.hir_ast_line(next, i))
-			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i))
+			next = hir_module_replace_name(next, i, target, Hir.hir_ast_line(next, i), Parser.NODE_NAME)
 			break
 	return HirModuleResolution(next, "", 0)
