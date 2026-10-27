@@ -740,6 +740,8 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 			elif ins.op == Mir.MIR_DIV_I64 or ins.op == Mir.MIR_REM_I64
 				if right.bits == 0
 					return mir_failure("division by zero", steps)
+				if left.bits == (-9223372036854775807 - 1) and right.bits == -1
+					return mir_failure("integer overflow", steps)
 				if ins.op == Mir.MIR_DIV_I64
 					answer = left.bits / right.bits
 				else

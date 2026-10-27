@@ -783,7 +783,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			expr = "false"
 	elif op == Mir.MIR_COPY
 		expr = first
-	elif op == Mir.MIR_NEG_I64 or op == Mir.MIR_NEG_F64
+	elif op == Mir.MIR_NEG_I64
+		expr = "s_mir_i64_wrap(-(uint64_t)" + first + ")"
+	elif op == Mir.MIR_NEG_F64
 		expr = "(-" + first + ")"
 	elif op == Mir.MIR_NOT_BOOL
 		expr = "(!" + first + ")"
@@ -833,6 +835,8 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			expr = "(int64_t)((uint64_t)" + first + " << " + second + ")"
 		elif op == Mir.MIR_SHR_I64
 			expr = "(int64_t)((uint64_t)" + first + " >> " + second + ")"
+		elif op == Mir.MIR_ADD_I64 or op == Mir.MIR_SUB_I64 or op == Mir.MIR_MUL_I64
+			expr = "s_mir_i64_wrap((uint64_t)" + first + " " + symbol + " (uint64_t)" + second + ")"
 		else
 			expr = "(" + first + " " + symbol + " " + second + ")"
 	if Common.mir_common_managed(types, dst_type)
@@ -1191,6 +1195,8 @@ def mir_emit_c_internal(program: Mir.MirProgram, entry: i64, checked: bool) -> M
 			return MirCResult("", "dictionary key type is not hashable")
 	var parts = Array[string]()
 	parts = parts.append("#include <stdint.h>\n#include <stdbool.h>\n#include <stdio.h>\n#include <limits.h>\n#include <stdlib.h>\n#include <string.h>\n#include <math.h>\n#include \"sirius_runtime.h\"\n\n")
+	# Reinterpret modulo-2^64 results without out-of-range unsigned-to-signed casts.
+	parts = parts.append("static inline int64_t s_mir_i64_wrap(uint64_t bits) { int64_t value; memcpy(&value, &bits, sizeof(value)); return value; }\n")
 	parts = parts.append(mir_c_record_runtime(program.types))
 	for i in 0..len(program.functions)
 		parts = parts.append(mir_c_signature(program.types, program.functions[!i], i) + ";\n")

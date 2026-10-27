@@ -152,6 +152,19 @@ negative `i64` minimum without overflow. Source tests cover CoW snapshots,
 nested writes, managed elements, and empty arrays. Plain unguarded `a[i]`
 remains subject to compile-time bounds proof.
 
+## Numerical scalar edge semantics (October 27, 2026)
+
+`i64` scalar addition, subtraction, multiplication and negation now have
+deterministic two's-complement wrapping semantics, rather than inheriting
+C11 signed-overflow undefined behavior. Generated C computes with `uint64_t`
+and copies the resulting bit pattern into `int64_t`; interpreter execution uses
+the same wrapped MIR operators. Integer division/remainder truncate toward
+zero and guard zero divisors and `INT64_MIN / -1` (including remainder).
+Unchecked raw MIR interpretation also checks that last overflow case.
+
+These decisions do not imply checked arithmetic, saturating arithmetic,
+implicit conversions, or a complete IEEE-754 numerical contract.
+
 ## Numerical-array groundwork (October 27, 2026)
 
 `Std.Numeric` now exposes an initial **rank-2 `f64` matrix wrapper** backed by
@@ -235,10 +248,16 @@ its long-term feature list is **not** the implementation queue. In particular:
   path-derived names are the design. Module-level `let` is intended for
   compile-time evaluation, not runtime initialization; general compile-time
   expression execution and native registration remain separate milestones.
-- **Before widening numerical semantics:** decide signed overflow, division,
-  conversions, and floating-point edge behavior, then cover native and
-  interpreted execution. Do not silently infer such guarantees from the C
-  backend's implementation details.
+- **Numerical semantics:** `i64` addition, subtraction, multiplication and
+  negation now wrap at 64 bits; division/remainder truncate toward zero and
+  trap on zero or the minimum-value / `-1` case. Continue with explicit
+  conversions and floating-point edge behavior as separately decided work.
+  Explicit `f64(x)` / `i64(x)` casts are not implemented; no conversion
+  opcodes currently exist. MIR decimal parsing retains the established
+  short-literal path and normalizes unusually long literals so compensating
+  exponents do not lose finite values to intermediate overflow/underflow.
+  Correctly rounded native/interpreter literal parity remains unproven.
+  Keep native and interpreted execution in agreement.
 - **Before broad equality/hashing or nominal variants:** decide structural
   equality for aggregate/numerical types and whether same-shaped constructors
   can ever be distinct union alternatives. Preserve today's structural union

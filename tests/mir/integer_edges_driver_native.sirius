@@ -1,0 +1,29 @@
+import mir alias Mir
+import mir_interpreter alias Interpreter
+import types alias Types
+
+# Directly execute unchecked MIR to cover the interpreter's defensive path.
+def raw_division(dividend: i64, divisor: i64, remainder: bool) -> Mir.MirProgram
+	let first = Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, dividend)
+	let second = Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, divisor)
+	var opcode = Mir.MIR_DIV_I64
+	if remainder
+		opcode = Mir.MIR_REM_I64
+	let operation = Mir.mir_op(opcode, 2, 0, 1, 0)
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock([first, second, operation], Mir.mir_return(2))], 0)])
+
+def main() -> i64
+	let minimum = -9223372036854775807 - 1
+	for remainder in [false, true]
+		let overflow = Interpreter.mir_execute(raw_division(minimum, -1, remainder), 0, Array[Mir.MirValue](), 100, 8)
+		if overflow.error != "integer overflow"
+			return 1
+		let zero = Interpreter.mir_execute(raw_division(1, 0, remainder), 0, Array[Mir.MirValue](), 100, 8)
+		if zero.error != "division by zero"
+			return 2
+	let quotient = Interpreter.mir_execute(raw_division(-7, 3, false), 0, Array[Mir.MirValue](), 100, 8)
+	let rest = Interpreter.mir_execute(raw_division(-7, 3, true), 0, Array[Mir.MirValue](), 100, 8)
+	if quotient.error != "" or rest.error != "" or quotient.value.bits != -2 or rest.value.bits != -1
+		return 3
+	print("PASS raw MIR integer division checks")
+	return 0

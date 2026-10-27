@@ -1,10 +1,20 @@
 # Decimal decoding for MIR floating-point literals.
-# Kept separate from interpreter heap and frame semantics.
+# The short path preserves existing rounding behavior. For unusually long
+# decimal literals, a bounded significand and scale avoid intermediate
+# overflow/underflow that would lose values with compensating exponents.
+# Neither path promises correctly rounded decimal-to-binary conversion;
+# native/interpreter bitwise parity is not yet specified.
 
-# Parse the decimal spelling carried by MIR_CONST_F64, including exponents.
+export def mir_parse_real(source: string) -> f64
+	if len(source) < 300
+		return mir_parse_real_short(source)
+	return mir_parse_real_long(source)
+
+# Keep ordinary decimal handling unchanged.
+
 # This needs no native C dependency, but decimal rounding parity with strtod
 # at extreme magnitudes remains to be verified separately.
-export def mir_parse_real(source: string) -> f64
+def mir_parse_real_short(source: string) -> f64
 	var value = 0.0
 	var i = 0
 	while i < len(source)
@@ -46,6 +56,69 @@ export def mir_parse_real(source: string) -> f64
 			else
 				value = value * 10.0
 	return value
+
+
+# Normalize the significand and decimal scale before applying the exponent.
+def mir_parse_real_long(source: string) -> f64
+	var significand = 0.0
+	var scale = 0
+	var digits = 0
+	var fraction = false
+	var i = 0
+	while i < len(source)
+		let character = source.byte_at(i) or -1
+		if character == 46 and not fraction
+			fraction = true
+			i += 1
+			continue
+		if character < 48 or character > 57
+			break
+		let digit = character - 48
+		if digits == 0 and digit == 0
+			if fraction
+				scale -= 1
+		elif digits < 17
+			significand = significand * 10.0 + mir_float_digit(digit)
+			digits += 1
+			if fraction
+				scale -= 1
+		elif not fraction
+			scale += 1
+		i += 1
+	if digits == 0
+		return 0.0
+	if i < len(source)
+		i += 1  # e or E (guaranteed by the source lexer)
+		var negative = false
+		if i < len(source) and (source.byte_at(i) or -1) == 45
+			negative = true
+			i += 1
+		elif i < len(source) and (source.byte_at(i) or -1) == 43
+			i += 1
+		var exponent = 0
+		while i < len(source)
+			let digit = (source.byte_at(i) or -1) - 48
+			# Large exponents cannot produce finite f64 values unless the
+			# decimal mantissa carries a compensating scale.
+			if exponent < 100000
+				exponent = exponent * 10 + digit
+			i += 1
+		if negative
+			scale -= exponent
+		else
+			scale += exponent
+	if scale > 400
+		return 1.0 / 0.0
+	if scale < -400
+		return 0.0
+	if scale > 0
+		for j in 0..scale
+			significand = significand * 10.0
+	else
+		for j in 0..-scale
+			significand = significand / 10.0
+	return significand
+
 
 # No i64-to-f64 conversion intrinsic is available yet.
 def mir_float_digit(digit: i64) -> f64

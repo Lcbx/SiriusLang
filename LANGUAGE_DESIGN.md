@@ -52,7 +52,9 @@ while y > 20
 * `0..n` is half-open.
 * `and`, `or`, `not` short-circuit on scalar booleans.
 * Strict numeric typing: no implicit promotion; literals may adopt contextual types. Without context, integer literals default to `i64`, floating literals to `f64`.
-* Explicit conversions (`f32(x)`, `i64(x)`, etc.), with defined conversion and overflow semantics (details still to be specified).
+* `i64` `+`, `-`, `*`, and unary `-` wrap modulo 2^64 (interpreted as signed two's-complement). Signed `/` truncates toward zero and `%` has the dividend's sign. Both trap on zero divisors or `i64` minimum divided/remainder by `-1`.
+* Explicit scalar numeric conversions (`f64(x)`, `i64(x)`) are not implemented; those calls are currently rejected. Their syntax, rounding and out-of-range behavior remain design decisions. No implicit numeric promotion is supported.
+* Floating-point arithmetic generally follows IEEE-754, but MIR decimal-literal parsing does not yet guarantee correctly rounded, bit-identical values across native and interpreted execution.
 
 ## 3. Immutable Values and Local Mutation
 
@@ -255,8 +257,9 @@ include every constructor parameter.
   documented numeric sentinels avoid mandatory wrapping of routine operations.
   Default IEEE-754 arithmetic may produce `NaN` (`0.0 / 0.0`, negative `sqrt`)
   or infinity (nonzero finite value divided by zero), without a runtime error.
-  Integer division has no NaN representation; zero divisors and signed
-  overflow currently cause an explicit fatal trap.
+  Integer division has no NaN representation; zero divisors and the
+  `i64` minimum divided or remainder by `-1` cause a fatal trap. Ordinary
+  integer addition, subtraction, multiplication and negation wrap instead.
 * A fatal trap terminates the process rather than returning an error union.
   Process exit may discard live ARC frames; no language-level cleanup or
   destructors are promised after a fatal trap. Invalid MIR, out-of-memory
@@ -573,7 +576,7 @@ Portable library metadata must expose exported type/signature identities and gen
 
 These remain **unresolved**, not implied guarantees:
 
-* Numeric overflow, division/remainder, conversion, and floating-point corner cases.
+* Explicit numeric conversions, floating-point edge behavior, and any future checked or saturating integer operations. Basic `i64` wrapping and division/remainder semantics are specified above.
 * Structural equality and hashing for all types (especially floats and arrays with elementwise `==`).
 * Whether future nominal variant identity should distinguish union alternatives with identical structural record shapes (currently indistinguishable).
 * Imported-operator overload visibility and explicit compile-time evaluation syntax/staging.

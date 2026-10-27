@@ -79,6 +79,12 @@ def main() -> i64
 
 Unannotated generic function values require an expected `Fn` signature.
 
+Scalar `i64` addition, subtraction, multiplication and negation wrap modulo
+2^64, including `-(-9223372036854775807 - 1)`. Integer division truncates
+toward zero, and `%` follows the dividend's sign (`-7 % 3` is `-1`).
+Division or remainder by zero, and the minimum `i64` value with divisor `-1`,
+trap. Numeric conversion rules remain under design.
+
 Functions may share a name when their annotated **parameter types differ**:
 
 ```sirius

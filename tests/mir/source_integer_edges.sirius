@@ -1,0 +1,36 @@
+# Wrapping arithmetic and signed truncating division, exercised at run time.
+def add(a: i64, b: i64) -> i64
+	return a + b
+
+def sub(a: i64, b: i64) -> i64
+	return a - b
+
+def mul(a: i64, b: i64) -> i64
+	return a * b
+
+def neg(a: i64) -> i64
+	return -a
+
+def divide(a: i64, b: i64) -> i64
+	return a / b
+
+def remainder(a: i64, b: i64) -> i64
+	return a % b
+
+def main() -> i64
+	let minimum = -9223372036854775807 - 1
+	let maximum = 9223372036854775807
+	if add(maximum, 1) != minimum or add(minimum, -1) != maximum
+		return 1
+	if sub(minimum, 1) != maximum or sub(maximum, -1) != minimum
+		return 2
+	if mul(maximum, 2) != -2 or mul(minimum, -1) != minimum
+		return 3
+	if neg(minimum) != minimum or neg(maximum) != -maximum
+		return 4
+	if divide(-7, 3) != -2 or remainder(-7, 3) != -1
+		return 5
+	if divide(7, -3) != -2 or remainder(7, -3) != 1
+		return 6
+	print("PASS integer arithmetic edges")
+	return 0
