@@ -368,6 +368,10 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 						return ModuleScanCapture(next, updated, required, "")
 	if node.kind == Parser.NODE_TYPE
 		let name = Hir.hir_ast_text(next, id)
+		for alias in owner.declarations.type_aliases
+			if alias.name == name
+				next = module_scan_rename(next, id, Module.hir_module_symbol(owner.name, name))
+				break
 		for imported in owner.declarations.imports
 			let prefix = imported.alias + "."
 			if name.starts_with(prefix)
@@ -395,6 +399,10 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 				updated.constants = updated.constants.append(Hir.HirModuleConstant(symbol, copied.index, updated.values[!copied.index].type_id))
 			next = module_scan_rename(next, id, symbol)
 			return ModuleScanCapture(next, updated, required, "")
+		for alias in owner.declarations.type_aliases
+			if alias.name == name
+				next = module_scan_rename(next, id, Module.hir_module_symbol(owner.name, name))
+				return ModuleScanCapture(next, updated, required, "")
 		for function in owner.declarations.functions
 			if function.name == name and function.constructor
 				next = module_scan_rename(next, id, Module.hir_module_symbol(owner.name, name))

@@ -116,6 +116,8 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
 	# Type descriptors determine the active field; a union avoids storing four unused payloads.
 	parts = parts.append("typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; S_Dict *dict; } S_MirField;\n")
+	# Only fixed-size record payloads and their union wrappers use the experimental
+	# high-bit capacity marker. Growable arrays always have an ordinary capacity.
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	parts = parts.append("#ifdef SIRIUS_ARC_AUDIT\n")
 	parts = parts.append("static inline void s_mir_record_arc_scan(const void *object, S_ArcAuditVisit visit, void *context) {\n")
@@ -145,8 +147,28 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tif (fields > (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField)) s_panic(\"collection too large\");\n")
 	parts = parts.append("\tS_MirRecord *r = calloc(1, sizeof(S_MirRecord) + fields * sizeof(S_MirField));\n")
 	parts = parts.append("\tif (!r) s_panic(\"out of memory\");\n\tr->type_id = id; r->refs = 1; s_arc_audit_new(r, r->refs); s_arc_audit_watch(r, s_mir_record_arc_scan); r->length = fields; r->capacity = fields; return r;\n}\n")
+	# A fixed-size record and its union wrapper share an allocation, but keep
+	# separate ARC identities. When the wrapper dies first the payload retains
+	# the slab; when the payload dies last it frees the slab.
+	parts = parts.append("#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n")
+	parts = parts.append("#define S_MIR_FUSED_BIT ((size_t)1 << (sizeof(size_t) * CHAR_BIT - 1))\n")
+	parts = parts.append("static inline bool s_mir_is_fused(const S_MirRecord *r) { return (r->capacity & S_MIR_FUSED_BIT) != 0; }\n")
+	parts = parts.append("#define S_MIR_FUSED_OFFSET (sizeof(S_MirRecord) + 2 * sizeof(S_MirField))\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_record_new_fused(int64_t record_type, size_t count, int64_t union_type) {\n")
+	parts = parts.append("\tif (count > (SIZE_MAX - S_MIR_FUSED_OFFSET - sizeof(S_MirRecord)) / sizeof(S_MirField)) s_panic(\"collection too large\");\n")
+	parts = parts.append("\tS_MirRecord *wrapper = calloc(1, S_MIR_FUSED_OFFSET + sizeof(S_MirRecord) + count * sizeof(S_MirField));\n")
+	parts = parts.append("\tif (!wrapper) s_panic(\"out of memory\");\n")
+	parts = parts.append("\tS_MirRecord *payload = (S_MirRecord *)((unsigned char *)wrapper + S_MIR_FUSED_OFFSET);\n")
+	parts = parts.append("\twrapper->type_id = union_type; wrapper->refs = 1; wrapper->length = 2; wrapper->capacity = 2 | S_MIR_FUSED_BIT;\n")
+	parts = parts.append("\tpayload->type_id = record_type; payload->refs = 1; payload->length = count; payload->capacity = count | S_MIR_FUSED_BIT;\n")
+	parts = parts.append("\twrapper->fields[1].record = payload;\n")
+	parts = parts.append("\ts_arc_audit_new(wrapper, wrapper->refs); s_arc_audit_watch(wrapper, s_mir_record_arc_scan);\n")
+	parts = parts.append("\ts_arc_audit_new(payload, payload->refs); s_arc_audit_watch(payload, s_mir_record_arc_scan);\n\treturn payload;\n}\n")
+	parts = parts.append("static inline S_MirRecord *s_mir_fused_wrapper(S_MirRecord *payload) { return (S_MirRecord *)((unsigned char *)payload - S_MIR_FUSED_OFFSET); }\n")
+	parts = parts.append("#endif\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_retain(S_MirRecord *r) { if (r) { ++r->refs; s_arc_audit_retain(r, r->refs); } return r; }\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_record_reserve_owned(S_MirRecord *r, size_t need) {\n")
+	parts = parts.append("#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n\tif (s_mir_is_fused(r)) s_panic(\"cannot grow coallocated fixed-size record\");\n#endif\n")
 	parts = parts.append("\tif (need <= r->capacity) return r;\n")
 	parts = parts.append("\tconst size_t limit = (SIZE_MAX - sizeof(S_MirRecord)) / sizeof(S_MirField);\n")
 	parts = parts.append("\tif (need > limit) s_panic(\"collection too large\");\n")
@@ -278,7 +300,9 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				parts = parts.append("\t\tif (r->length) " + mir_c_release_value(types, type_desc.first, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
 		elif type_desc.tag == Types.TYPE_TAG_UNION
-			parts = parts.append("\tcase " + str(i) + ": s_mir_record_release(r->fields[1].record); break;\n")
+			parts = parts.append("\tcase " + str(i) + ":\n")
+			parts = parts.append("#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n\t\tif (s_mir_is_fused(r)) { s_mir_record_release(r->fields[1].record); return; }\n#endif\n")
+			parts = parts.append("\t\ts_mir_record_release(r->fields[1].record); break;\n")
 		elif type_desc.tag == Types.TYPE_TAG_DICT
 			parts = parts.append("\tcase " + str(i) + ": s_dict_release(r->fields[0].dict); break;\n")
 		elif type_desc.tag == Types.TYPE_TAG_ARRAY
@@ -292,7 +316,9 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 					field = field + ".record"
 				parts = parts.append("\t\tfor (size_t j = 0; j < r->length; ++j) " + mir_c_release_value(types, element_type, field) + ";\n")
 			parts = parts.append("\t\tbreak;\n")
-	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n\tfree(r);\n}\n\n")
+	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n")
+	parts = parts.append("#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n\tif (s_mir_is_fused(r)) { free((unsigned char *)r - S_MIR_FUSED_OFFSET); return; }\n#endif\n")
+	parts = parts.append("\tfree(r);\n}\n\n")
 	parts = parts.append("static inline void s_mir_string_store(S_String **slot, S_String *owned) { S_String *old = *slot; *slot = owned; s_string_release(old); }\n")
 	parts = parts.append("static inline void s_mir_record_store(S_MirRecord **slot, S_MirRecord *owned) { S_MirRecord *old = *slot; *slot = owned; s_mir_record_release(old); }\n\n")
 	# Shared CoW cloning for records, optionals, arrays, and dictionaries.
@@ -401,11 +427,14 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 	let op = instruction.op
 	var result = ""
 	if checked and op != Mir.MIR_CONST_I64 and op != Mir.MIR_CONST_BOOL and op != Mir.MIR_CONST_STRING and op != Mir.MIR_CONST_F64 and op != Mir.MIR_ARGUMENTS and op != Mir.MIR_FILESYSTEM_ERROR_KIND and op != Mir.MIR_FILESYSTEM_ERROR_CODE and op != Mir.MIR_RELEASE_IF_INIT and op != Mir.MIR_FUNCTION_REF
-		if op == Mir.MIR_CALL or op == Mir.MIR_CALL_MOVE or op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_ARRAY_NEW or op == Mir.MIR_ARRAY_NEW_MOVE or op == Mir.MIR_DICT_NEW or op == Mir.MIR_OPTIONAL_NONE
+		if op == Mir.MIR_CALL or op == Mir.MIR_CALL_MOVE or op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE or op == Mir.MIR_ARRAY_NEW or op == Mir.MIR_ARRAY_NEW_MOVE or op == Mir.MIR_DICT_NEW or op == Mir.MIR_OPTIONAL_NONE
 			for arg in instruction.inputs
 				result = result + mir_c_check(arg, checked)
 		else
-			result = result + mir_c_check(instruction.first, checked)
+			# Payload-free enums encode the alternative in `second` and have no
+			# source register; do not emit an invalid `init-1` check.
+			if instruction.first >= 0
+				result = result + mir_c_check(instruction.first, checked)
 			if op == Mir.MIR_WRITE_TEXT
 				result = result + mir_c_check(instruction.second, checked)
 			if op == Mir.MIR_DICT_INSERT
@@ -498,7 +527,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			tag = Types.union_alternative_index(types, dst_type, function.register_types[!instruction.first])
 		if Types.union_is_enum(types, dst_type)
 			return result + "\t" + dst + " = " + str(tag) + mir_c_mark_init(instruction.dst, checked) + "\n"
-		let code = result + "\t{ S_MirRecord *variant = s_mir_record_new(" + str(dst_type) + ", 2);\n"
+		var code = result + "\t{ S_MirRecord *variant;\n"
+		let code_fused = "#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n\t\tvariant = s_mir_is_fused(" + first + ") ? s_mir_fused_wrapper(" + first + ") : s_mir_record_new(" + str(dst_type) + ", 2);\n#else\n\t\tvariant = s_mir_record_new(" + str(dst_type) + ", 2);\n#endif\n"
+		code = code + code_fused
 		return code + "\t\tvariant->fields[0].bits = " + str(tag) + ";\n\t\tvariant->fields[1].record = s_mir_record_retain(" + first + ");\n" + mir_c_store_owned(types, instruction.dst, dst_type, "variant", checked) + "\t}\n"
 	if op == Mir.MIR_UNION_TAG
 		if Types.union_is_enum(types, function.register_types[!instruction.first])
@@ -690,8 +721,14 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if instruction.dst == instruction.first
 			return code + "\t\t" + dst + " = updated" + mir_c_mark_init(instruction.dst, checked) + " }\n"
 		return code + mir_c_store_owned(types, instruction.dst, dst_type, "updated", checked) + "\t}\n"
-	if op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE
-		var code = result + "\t{ S_MirRecord *record = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
+	if op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+		var code = result + "\t{ S_MirRecord *record;\n"
+		if op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+			let union_type = function.register_types[!instruction.immediate]
+			code = code + "#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n\t\trecord = s_mir_record_new_fused(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ", " + str(union_type) + ");\n#else\n"
+		code = code + "\t\trecord = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
+		if op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+			code = code + "#endif\n"
 		for i in 0..len(instruction.inputs)
 			let arg = instruction.inputs[!i]
 			let kind = function.register_types[!arg]
@@ -1100,13 +1137,13 @@ def mir_c_compact_scalar_function(types: Types.TypeTable, function: Mir.MirFunct
 			for reg in ins.inputs
 				inputs = inputs.append(mir_c_remap(reg, physical))
 			var immediate = ins.immediate
-			if ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_STRING_SLICE
+			if ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_STRING_SLICE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
 				immediate = mir_c_remap(immediate, physical)
 			var second = ins.second
 			# Move-input instructions use second as an argument-position bitmask.
 			# For labeled union construction/extraction it is an alternative tag,
 			# not a register even if its integer happens to equal a read register.
-			if ins.op != Mir.MIR_CALL_MOVE and ins.op != Mir.MIR_RECORD_NEW_MOVE and ins.op != Mir.MIR_ARRAY_NEW_MOVE and ins.op != Mir.MIR_UNION_NEW and ins.op != Mir.MIR_UNION_GET
+			if ins.op != Mir.MIR_CALL_MOVE and ins.op != Mir.MIR_RECORD_NEW_MOVE and ins.op != Mir.MIR_ARRAY_NEW_MOVE and ins.op != Mir.MIR_RECORD_NEW_FUSED and ins.op != Mir.MIR_RECORD_NEW_FUSED_MOVE and ins.op != Mir.MIR_UNION_NEW and ins.op != Mir.MIR_UNION_GET
 				for reg in Cfg.mir_instruction_reads(ins)
 					if reg == ins.second
 						second = mir_c_remap(second, physical)

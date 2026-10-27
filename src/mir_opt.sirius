@@ -34,6 +34,26 @@ def mir_optimize_function(types: Types.TypeTable, function: Mir.MirFunction) -> 
 						instructions = instructions.append(Mir.mir_union_new_empty(wrapped.dst, alternative))
 						i += 3
 						continue
+			# Fuse only a fresh fixed-size record immediately injected into a
+			# payload-bearing union and then released. The source register has no
+			# opportunity to escape between these adjacent instructions. Keep
+			# UNION_NEW/RELEASE unchanged; interpretation uses normal semantics.
+			if (ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE) and i + 2 < len(block.instructions)
+				let wrapped = block.instructions[!i + 1]
+				let released = block.instructions[!i + 2]
+				if wrapped.op == Mir.MIR_UNION_NEW and wrapped.first == ins.dst and released.op == Mir.MIR_RELEASE and released.first == ins.dst and not Types.union_is_enum(types, function.register_types[!wrapped.dst])
+					let union_type = function.register_types[!wrapped.dst]
+					var alternative = wrapped.second
+					if alternative == -1
+						alternative = Types.union_alternative_index(types, union_type, function.register_types[!ins.dst])
+					let members = types.entries[!union_type].fields
+					if alternative >= 0 and alternative < len(members) and members[!alternative].kind == function.register_types[!ins.dst]
+						var fused_op = Mir.MIR_RECORD_NEW_FUSED
+						if ins.op == Mir.MIR_RECORD_NEW_MOVE
+							fused_op = Mir.MIR_RECORD_NEW_FUSED_MOVE
+						instructions = instructions.append(Mir.MirInstruction(fused_op, ins.dst, ins.first, ins.second, wrapped.dst, ins.inputs, ""))
+						i += 1
+						continue
 			# Lifetime releases immediately following a call or constructor allow
 			# direct ownership transfer. Capture every eligible distinct managed input
 			# before consuming those releases; retain all other arguments.
@@ -62,7 +82,29 @@ def mir_optimize_function(types: Types.TypeTable, function: Mir.MirFunction) -> 
 					if ins.op == Mir.MIR_CALL
 						instructions = instructions.append(Mir.mir_call_moves(ins.dst, ins.immediate, ins.inputs, sources))
 					elif ins.op == Mir.MIR_RECORD_NEW
-						instructions = instructions.append(Mir.mir_constructor_moves(Mir.MIR_RECORD_NEW_MOVE, ins.dst, ins.inputs, sources))
+						var next_op = Mir.MIR_RECORD_NEW_MOVE
+						var union_dst = -1
+						# The ownership pass may place child releases between a
+						# fresh managed record and its wrapping union. Once moved
+						# into the record, these releases disappear, making the
+						# pair eligible for the same safe coallocation.
+						if len(remaining) == 0 and j + 1 < len(block.instructions)
+							let wrapped = block.instructions[!j]
+							let released = block.instructions[!j + 1]
+							if wrapped.op == Mir.MIR_UNION_NEW and wrapped.first == ins.dst and released.op == Mir.MIR_RELEASE and released.first == ins.dst and not Types.union_is_enum(types, function.register_types[!wrapped.dst])
+								let union_type = function.register_types[!wrapped.dst]
+								var alternative = wrapped.second
+								if alternative == -1
+									alternative = Types.union_alternative_index(types, union_type, function.register_types[!ins.dst])
+								let members = types.entries[!union_type].fields
+								if alternative >= 0 and alternative < len(members) and members[!alternative].kind == function.register_types[!ins.dst]
+									next_op = Mir.MIR_RECORD_NEW_FUSED_MOVE
+									union_dst = wrapped.dst
+						let moved = Mir.mir_constructor_moves(next_op, ins.dst, ins.inputs, sources)
+						if next_op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+							instructions = instructions.append(Mir.MirInstruction(next_op, ins.dst, moved.first, moved.second, union_dst, ins.inputs, ""))
+						else
+							instructions = instructions.append(moved)
 					else
 						instructions = instructions.append(Mir.mir_constructor_moves(Mir.MIR_ARRAY_NEW_MOVE, ins.dst, ins.inputs, sources))
 					for release in remaining

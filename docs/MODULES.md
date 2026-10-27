@@ -141,9 +141,19 @@ dependency-free packages (with a zero dependency count). Older `/1` and `/2`
 artifacts must be regenerated. Bundles use `SIRIUS-MIR-BUNDLE/1`. The bundle has a
 64 MiB size limit and a 256-package limit. Standalone
 `--specialize-generic` is restricted to dependency-free packages; for
-package imports use the module builder. Concrete non-generic function bodies
-are **not** transported by `.smirg` packages: use sources or compiled
-`.smirl` libraries for them.
+package imports use the module builder. Generic function bodies may use payload-free `enum` alternatives and
+explicit `Union.Label(record)` construction even after the defining source is
+removed. Defining-module type aliases and constructors retain their original
+identity across imports. `tools/test_module_enum_packages.py` exercises this
+through linked MIR, the interpreter, native C and ARC auditing. This also
+works for heterogeneous union alternatives with different payload sizes and
+managed fields (strings and arrays), including same-shaped labels, explicit
+construction from compatible records, arrays, dictionaries and CoW. The
+source-free regression `tools/test_module_heterogeneous_union_packages.py`
+checks native/MIR parity, ARC auditing, deterministic artifacts, and rejection
+of attempts to relabel tagged values or construct from incompatible records.
+Concrete non-generic function bodies are **not** transported by `.smirg`
+packages: use sources or compiled `.smirl` libraries for them.
 
 ## Validation
 
@@ -152,6 +162,7 @@ python tools/test_source_modules.py
 python tools/test_mir_library.py
 python tools/test_mir_link.py
 python tools/test_module_packages.py
+python tools/test_module_heterogeneous_union_packages.py
 python tools/test_module_package_dependencies.py
 python tools/test_module_capture_imports.py
 python tools/test_module_bundles.py

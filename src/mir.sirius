@@ -94,6 +94,9 @@ export let MIR_DICT_KEY = 88
 export let MIR_DICT_VALUE = 89
 export let MIR_FUNCTION_REF = 90
 export let MIR_CALL_INDIRECT = 91
+# Experimental native coallocation hint: like RECORD_NEW; immediate names the union destination register.
+export let MIR_RECORD_NEW_FUSED = 92
+export let MIR_RECORD_NEW_FUSED_MOVE = 93
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2
@@ -125,7 +128,7 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(false, false, true)
 	if op == MIR_DICT_NEXT or op == MIR_DICT_KEY or op == MIR_DICT_VALUE
 		return MirFailureInfo(false, true, false)
-	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_CALL_INDIRECT or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW
+	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_CALL_INDIRECT or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW or op == MIR_RECORD_NEW_FUSED or op == MIR_RECORD_NEW_FUSED_MOVE
 		return MirFailureInfo(false, true, false)
 	return MirFailureInfo(false, false, false)
 
@@ -134,7 +137,8 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 # register indices; UNION_NEW/UNION_GET use second as an alternative tag when
 # it is nonnegative. An enum UNION_NEW may use first=-1 to construct a
 # payload-free alternative directly; the verifier requires a valid enum tag.
-# Other unused operands are -1.
+# Other unused operands are -1. RECORD_NEW_FUSED encodes the future union
+# destination register in immediate; interpreters treat it as RECORD_NEW.
 export rec MirInstruction(op: i64, dst: i64, first: i64, second: i64, immediate: i64, inputs: Array[i64], text: string)
 export rec MirTerminator(kind: i64, operand: i64, target: i64, alternative: i64, message: string)
 export rec MirBlock(instructions: Array[MirInstruction], terminator: MirTerminator)
@@ -201,7 +205,7 @@ export def mir_constructor_moves(op: i64, dst: i64, inputs: Array[i64], sources:
 	return MirInstruction(op, dst, call.first, call.second, 0, inputs, "")
 
 export def mir_input_move_at(ins: MirInstruction, position: i64) -> bool
-	if ins.op != MIR_CALL_MOVE and ins.op != MIR_RECORD_NEW_MOVE and ins.op != MIR_ARRAY_NEW_MOVE
+	if ins.op != MIR_CALL_MOVE and ins.op != MIR_RECORD_NEW_MOVE and ins.op != MIR_RECORD_NEW_FUSED_MOVE and ins.op != MIR_ARRAY_NEW_MOVE
 		return false
 	if ins.inputs[!position] == ins.first
 		return true

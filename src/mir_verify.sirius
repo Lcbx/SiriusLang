@@ -231,7 +231,7 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if not mir_register_valid(types, ins.second, desc.first) or not mir_register_valid(types, ins.immediate, desc.second) or dst_type != desc.second
 			return "dictionary get-or signature mismatch"
 		return ""
-	if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE
+	if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
 		if program.types.entries[!dst_type].tag != Types.TYPE_TAG_RECORD
 			return "record construction requires record destination"
 		let fields = program.types.entries[!dst_type].fields
@@ -240,7 +240,20 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		for i in 0..len(fields)
 			if not mir_register_valid(types, ins.inputs[!i], fields[!i].kind)
 				return "record constructor field type mismatch"
-		if ins.op == Mir.MIR_RECORD_NEW_MOVE
+		if ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+			if ins.immediate < 0 or ins.immediate >= len(types)
+				return "invalid fused union destination"
+			let union_type = types[!ins.immediate]
+			if program.types.entries[!union_type].tag != Types.TYPE_TAG_UNION or Types.union_is_enum(program.types, union_type)
+				return "fused record requires payload-bearing union"
+			let alternatives = program.types.entries[!union_type].fields
+			var compatible = false
+			for member in alternatives
+				if member.kind == dst_type
+					compatible = true
+			if not compatible
+				return "fused record type not in union"
+		if ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
 			return mir_verify_input_moves(program, function, ins)
 		return ""
 	if ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE
@@ -619,7 +632,17 @@ export def mir_verify(program: Mir.MirProgram) -> string
 		if function.entry < 0 or function.entry >= len(function.blocks)
 			return "invalid entry block"
 		for block in function.blocks
-			for ins in block.instructions
+			for position in 0..len(block.instructions)
+				let ins = block.instructions[!position]
+				# Fused allocation cannot be exposed as a standalone record.
+				# Require the exact wrapping and release sequence in one block.
+				if ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+					if position + 2 >= len(block.instructions)
+						return "fused record missing union construction"
+					let wrapped = block.instructions[!position + 1]
+					let released = block.instructions[!position + 2]
+					if wrapped.op != Mir.MIR_UNION_NEW or wrapped.first != ins.dst or wrapped.dst != ins.immediate or released.op != Mir.MIR_RELEASE or released.first != ins.dst
+						return "fused record requires adjacent union and release"
 				let error = mir_verify_instruction(program, function, ins)
 				if error != ""
 					return error

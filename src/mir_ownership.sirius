@@ -101,7 +101,7 @@ export def mir_ownership_effects(block: Mir.MirBlock) -> MirOwnershipEffects
 		if Cfg.mir_consumes_source(ins)
 			registers = registers.append(ins.first)
 			values = values.append(0)
-		if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+		if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 			for i in 0..len(ins.inputs)
 				if ins.inputs[!i] != ins.first and Mir.mir_input_move_at(ins, i)
 					registers = registers.append(ins.inputs[!i])
@@ -133,7 +133,7 @@ export def mir_ownership_after(ins: Mir.MirInstruction, before: Array[i64]) -> A
 	var after = before
 	if Cfg.mir_consumes_source(ins)
 		after = mir_ownership_set(after, ins.first, 0)
-	if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+	if ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 		for i in 0..len(ins.inputs)
 			if ins.inputs[!i] != ins.first and Mir.mir_input_move_at(ins, i)
 				after = mir_ownership_set(after, ins.inputs[!i], 0)
@@ -304,7 +304,7 @@ def mir_credit_call(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir
 def mir_credit_children(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
 	let dst_type = function.register_types[!ins.dst]
 	let desc = program.types.entries[!dst_type]
-	if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+	if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 		for i in 0..len(ins.inputs)
 			var kind = desc.first
 			if desc.tag == Types.TYPE_TAG_RECORD
@@ -395,7 +395,7 @@ def mir_credit_heap_function(program: Mir.MirProgram, function: Mir.MirFunction,
 				var error = ""
 				if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_CALL_INDIRECT
 					error = mir_credit_call(program, function, ins, before, after, shapes)
-				elif ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
+				elif ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
 					error = mir_credit_children(program, function, ins, before, after, shapes)
 				elif ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_GET or ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
 					error = mir_credit_projection(program, function, ins, before, after, shapes)

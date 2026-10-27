@@ -60,7 +60,7 @@ export def mir_cfg_state_equal(left: Array[i64], right: Array[i64]) -> bool
 # Consuming instructions invalidate their source register. Shared by
 # forward ownership and backward lifetime analyses.
 export def mir_consumes_source(ins: Mir.MirInstruction) -> bool
-	return ins.op == Mir.MIR_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_DICT_INSERT or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RELEASE or ins.op == Mir.MIR_RELEASE_IF_INIT
+	return ins.op == Mir.MIR_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_DICT_INSERT or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RELEASE or ins.op == Mir.MIR_RELEASE_IF_INIT
 
 # Register operands read by an instruction. Literal immediates are excluded.
 # Shared by backward liveness and forward definite-initialization analyses.
@@ -88,7 +88,7 @@ export def mir_instruction_reads(ins: Mir.MirInstruction) -> Array[i64]
 		return reads
 	if ins.op == Mir.MIR_WRITE_TEXT
 		return [ins.first, ins.second]
-	if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
+	if ins.op == Mir.MIR_CALL or ins.op == Mir.MIR_CALL_MOVE or ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_ARRAY_NEW_MOVE
 		return ins.inputs
 	var reads = [ins.first]
 	if ins.op == Mir.MIR_DICT_INSERT

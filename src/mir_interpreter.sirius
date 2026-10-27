@@ -501,7 +501,7 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = Mir.new_mir_value(owner.type_id, result_index, "")
 				continue
-			if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE
+			if ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
 				var fields = Array[Mir.MirValue]()
 				for input in ins.inputs
 					let field = registers[!input]

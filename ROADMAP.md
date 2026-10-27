@@ -91,11 +91,24 @@ The mixed-size `Array[Union]` native/MIR and ARC regression confirms that
 each element stores a fixed-size tagged wrapper referring to separately sized
 payload records, not a largest-variant inline buffer.
 
-**Next:** verify explicit construction through source-free packages, and extend
-contextual constructor selection to remaining nested expressions where real
-examples justify it. Then named pattern binders and refutable bindings remain
-possible ergonomic improvements. No new nominal `variant` or special payload
-type is planned.
+**Verified source-free path:** payload-free enum declarations, constructor
+selection, matching, and `Union.Label(record)` in exported generic bodies now
+survive `.smirg` deserialization, specialization, linked `.smirl`, native C
+emission, MIR interpretation and ARC auditing. The generic AST reader accepts
+`NODE_ENUM`, and copied bodies bind defining-module union aliases rather than
+same-named caller declarations. `tools/test_module_enum_packages.py` covers
+these paths, deterministic builds and corrupted package rejection. Source-free
+heterogeneous unions are also covered: `tools/test_module_heterogeneous_union_packages.py`
+exercises different-size and managed payloads, same-shaped labels, explicit
+construction, arrays/dictionaries, CoW, native/MIR execution, ARC auditing,
+and invalid relabeling/structure cases. The path passed without compiler
+changes; this closes the source-free package validation gap, but does not
+change the allocation-heavy representation of payload-bearing unions.
+
+**Next:** extend contextual constructor selection to remaining nested
+expressions where real examples justify it. Named pattern binders and
+refutable bindings remain possible ergonomic improvements. No new nominal
+`variant` or special payload type is planned.
 
 **Compact enum storage (implemented):** A union whose alternatives are all
 empty records now uses an unowned `i64` tag instead of a heap wrapper. Arrays,
@@ -141,6 +154,167 @@ payload storage is unchanged. Inline storage for other alternatives requires
 type-directed array/dictionary/register layout and ownership rules, plus
 native/MIR parity and end-to-end benchmarks. Do not assume the largest-
 alternative inline layout is universally beneficial.
+
+A generated-Sirius follow-up tested only **last-use payload ownership
+transfer** (not allocation fusion): `tools/benchmark_union_transfer.py`
+compiles real union-heavy Sirius source, then experimentally rewrites the
+adjacent wrapper retain plus record release in emitted C. Both versions pass
+native output checks; reduced-size runs also pass native ARC auditing. With
+400,000 alternating payload-bearing union values and 13 timed runs at `-O2`,
+Clang reported transferred/baseline ratios of 0.948 (scalar fields) and
+0.998 (managed string); GCC reported 1.073 and 0.998 respectively. This
+optimization removes an ARC retain/release pair but **neither allocation**;
+the cross-compiler result does not justify a production MIR transfer mode.
+The benchmark changes only temporary generated C; the compiler, runtime,
+serialized MIR and language semantics are unchanged. A genuine coallocated
+wrapper/payload representation must first define lifetime handling when a
+matched record remains referenced after its union wrapper is released,
+including ARC credits, independent payload extraction, and CoW.
+
+**Coallocated wrapper/payload ownership experiment (not implemented):**
+`tools/bench_union_coallocation.c` and
+`tools/benchmark_union_coallocation.py` test a *single allocation containing
+both a union wrapper and its fixed-size record payload*. The two values retain
+independent reference counts. The wrapper owns one payload credit, and the
+allocation remains live while an extracted payload remains referenced after
+the wrapper dies. A detached CoW record gets a separate allocation and retains
+its managed members. The standalone C11 model exercises managed strings and
+numerical arrays, escaped records, record CoW, shared union wrappers and CoW
+array snapshots. Clang and GCC `-O2`, with 80,000 values, 48 scans and 16
+CoW copies (separate seven-run and eleven-run sessions), reported these
+median fused/current ranges: **0.80–0.91** (Clang scalar), **0.79–0.93**
+(Clang managed), **0.81–0.82** (GCC scalar) and **0.83** (GCC managed).
+The allocation count fell from 160,050 to 80,034 for scalar and
+from 240,082 to 160,066 for managed values. Requested payload bytes and
+modeled peak bytes were unchanged; allocator overhead is not counted.
+ASan/UBSan correctness runs passed for both representations under both C
+compilers. These figures are **standalone C-model results, not generated
+Sirius performance**, and ARC audit integration and self-hosting were not
+attempted. The prototype marks coallocated fixed-size nodes using a reserved
+capacity sentinel; it is *not* safe to generalize that marker to growable
+arrays. Before adopting: design typed MIR construction fusion and emitted-C
+lifetime/free policy (including ARC shadow credits for the two interior
+objects), validate record extraction, field mutation, CoW and package paths,
+then benchmark actual generated Sirius workloads. No production representation
+change follows from this model alone.
+
+**Generated-C construction fusion follow-up (experimental, not shipped):**
+`tools/benchmark_union_fusion.py` compiles real Sirius code, then rewrites
+only adjacent `RECORD_NEW -> UNION_NEW -> RELEASE(record)` sequences in the
+emitted C. It places the record and union header in one allocation, maintains
+independent ARC credits (including the existing retain/release operations),
+and delays freeing the slab until a matched record's last reference dies.
+It uses two reserved `capacity` sentinels for *fixed-size* coallocated
+objects; generalizing this to resizable arrays is unsafe. Baseline and
+rewritten C pass native result checks, ARC auditing, and ASan/UBSan with
+Clang and GCC. An additional managed record/array CoW snapshot and match
+regression passes in both compilers. At 80,000 values, `-O2`, the first
+seven-run medians gave fused/current timings of 0.858/0.811 (Clang
+scalar/managed) and 0.799/0.801 (GCC). A second nine-run session gave
+0.716/0.804 (Clang) and 0.712/0.845 (GCC). **These are generated Sirius
+workloads with an external C rewrite, not production compiler output.**
+Execution time includes construction, traversal, and cleanup but excludes
+compilation, startup granularity is material, and workloads are
+construction-heavy. The evidence justifies a real compiler-side prototype,
+not switching the default representation yet. Such an implementation must
+replace the exact-text C rewrite with a MIR-level non-escaping constructor
+pattern, encode coallocation in the generated runtime without overloading
+resizable capacity semantics, preserve package/type metadata, and validate
+ownership with escaped payloads, record CoW, managed nested fields, native
+and interpreted parity, and Windows GCC. Compiler rebuild and total
+compilation overhead also need measurement.
+
+
+**Typed MIR coallocation prototype (opt-in, not the default):** The optimizer
+now marks fresh record constructors injected directly into a payload-bearing
+union, including constructors that move owned field inputs, with
+`MIR_RECORD_NEW_FUSED` / `MIR_RECORD_NEW_FUSED_MOVE`. Adjacent union wrapping
+and record release are mandatory; MIR verification rejects unsupported forms.
+The MIR interpreter retains its existing logical record behavior. The native C
+emitter uses one allocation for the wrapper and record only when compiled with
+`-DSIRIUS_EXPERIMENTAL_UNION_COALLOC`; otherwise it uses the original two
+allocations. The original experimental version used an explicit
+`allocation_kind` header field, costing an additional word on every record.
+That layout was the one measured in the initial and mixed-workload benchmarks
+below; it is preserved here as historical context. Wrapper/payload ARC
+identities remain separate.
+The generated-Sirius comparison in `tools/benchmark_union_compiler_coallocation.py`
+uses the *same emitted C* with and without this flag, no C rewriting. At
+400,000 alternating payloads and nine timed native executions (`-O2`),
+coallocated/current median times were **0.780x scalar / 0.779x managed**
+with Clang and **0.820x scalar / 0.834x managed** with GCC. CoW and
+128-element scalar/managed tests passed ARC auditing and ASan/UBSan in both
+configurations. These workloads heavily favor fresh construction and do not
+measure compile time or general application performance. Compiler fixtures
+(98 programs / 49 expected errors), bootstrap fixed point, and source-free
+heterogeneous union packages passed. Keep this **experimental** pending
+representative workloads, compile-time cost measurements, Windows GCC, and
+more escape/ownership tests. Do not treat these figures as a general speedup.
+
+**Mixed workload follow-up (October 27; opt-in remains off):**
+`tools/benchmark_union_coallocation_workloads.py` uses the same emitted C
+under both configurations. It covers repeated matching/traversal, detached
+CoW array appends, a managed `Array[i64]` field escaping its union wrapper,
+and a *no-union* record/array control to detect the metadata cost. Each case
+checks expected results, audits small inputs under both representations, and
+reports Sirius source-to-C time, native C build time, and nine-run median
+native execution separately (plus sample spread). Optional `--sanitize`
+adds ASan/UBSan to the bounded ARC checks.
+
+At 60,000 elements and 64 repetitions on Linux, two separate Clang `-O2`
+sessions gave coallocated/current ratios of **1.08–1.19** for traversal,
+**0.96–1.03** for CoW, **0.87–0.95** for escaped managed fields, and
+**0.90–0.96** for the no-union control. A GCC session gave **0.94**, **1.02**,
+**1.00**, and an anomalous **2.13** respectively; a repeated GCC control
+run returned **1.02**, so the anomalous timing is not reproducible. A separate
+Clang traversal repeat gave **0.97**. These variations are material,
+not a credible universal performance gain or regression. An independent C11
+`sizeof` probe confirms a 32-byte baseline record header versus 40 bytes
+under the opt-in flag (64-bit target, 8-byte `S_MirField`). Thus a one-field
+wrapper+payload pair requests 88 bytes in two blocks normally, versus
+104 bytes in one coallocated block, before allocator bookkeeping. This extra
+16-byte logical footprint plus the 8-byte header cost for unrelated records
+is a plausible traversal/cache downside, not a measured explanation of the
+timing variance. Emitting Sirius C
+for these small fixtures took approximately 6–12 ms; the opt-in switch acts
+at C compilation time, so this alone does not measure MIR optimization
+compile-time overhead. Individual C-build durations also varied substantially,
+precluding a reliable overhead claim from these runs.
+
+**Decision:** keep the feature disabled by default. Construction-heavy wins
+are repeatable, but there is no consistent gain in workloads dominated by
+traversal, CoW, or record-header overhead. Before reconsidering the default,
+measure representative end-to-end programs under controlled CPU conditions
+and obtain stable native compilation and memory measurements; also validate
+Windows GCC and whole-record (not just managed-field) escape in full Sirius.
+
+
+**Fixed-size coallocation header experiment (October 27; still opt-in):**
+The experimental C runtime no longer adds `allocation_kind` to every
+`S_MirRecord`. Instead, **only fused fixed-size records and their fixed-size
+union wrappers** set the top bit of their existing `capacity` word. The marker
+is disjoint from any allocated collection capacity: maximum allocation checks
+bound field counts well below this bit. Growable arrays, dictionaries and
+ordinary records retain the original 32-byte header, normal capacity, and
+resizing behavior. `s_mir_record_reserve_owned` explicitly rejects resizing
+a fused node. The independent wrapper/payload ARC credits and the `MIR_RECORD_NEW_FUSED`
+selection are unchanged; the C flag still defaults off. On the tested 64-bit
+layout, a one-field coallocated union pair requests 88 rather than 104 bytes,
+and ordinary record headers are 32 rather than 40 bytes under the flag.
+These are **layout calculations**, not evidence of an application speedup.
+The earlier benchmark ratios above refer to the previous 40-byte experimental
+header and must not be attributed to this new layout. A focused generated-C
+regression (`tools/test_union_coallocation_header.py`) checks the unchanged
+ordinary header, extraction of a retained record after its wrapper is freed,
+and ARC auditing with Clang/GCC ASan/UBSan. Both compilers passed. Scalar,
+managed, and CoW benchmark correctness tests passed, as did the 98 native
+compiler fixtures and 49 expected diagnostics and the generation-three
+bootstrap fixed point. A five-run 20,000-element construction test reported
+coallocated/current ratios of 0.99/0.81 (Clang scalar/managed) and
+0.89/0.78 (GCC), but a no-union control and an escaped-field workload were
+1.09x and 1.14x under Clang, with material sample spread. These short runs
+are insufficient to attribute timing differences to the header change or to
+justify enabling coallocation by default. Windows GCC remains untested.
 
 ## Completed higher-order constraint diagnostics
 
