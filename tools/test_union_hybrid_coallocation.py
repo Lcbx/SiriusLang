@@ -110,9 +110,10 @@ def main() -> None:
             counts[name] = int(match.group(1))
         # Small payloads have no separate live allocation in any mode.
         # Full coallocation still saves the four boxed fallback allocations.
-        # Fresh scalar construction saves 253 calls versus the previous
-        # default's 1022; payload projection still materializes records.
-        assert counts['default'] == 769, counts
+        # Two array buffers (including CoW), two managed payload/array/wrapper
+        # triples, and two large payload/wrapper pairs. Scalar construction
+        # and matching allocate nothing, down from the previous 769 calls.
+        assert counts['default'] == 12, counts
         if counts['default'] != counts['hybrid'] or counts['hybrid'] - counts['all'] != 4:
             raise AssertionError(counts)
         print('PASS hybrid union: allocation selection, large/managed fallback, '

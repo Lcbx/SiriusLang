@@ -122,7 +122,7 @@ def evaluate(compiler: Path, cc: str, case: str, count: int, repeats: int,
         src_ms = run([str(compiler), str(sirius), str(generated)])
         emitted = generated.read_text(encoding='utf-8')
         sites = emitted.count('record = s_mir_record_new_fused(')
-        if (case != 'control' and sites == 0 and 'memmove(variant->fields + 1' not in emitted) or (case == 'control' and sites != 0):
+        if (case != 'control' and sites == 0 and 'memmove(variant->fields + 1' not in emitted and 'value = {0}; value.tag = ' not in emitted) or (case == 'control' and sites != 0):
             raise AssertionError(f'{case}: unexpected fused constructor sites: {sites}')
 
         # Independently validate ownership on a smaller, bounded program.

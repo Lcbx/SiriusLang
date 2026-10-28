@@ -127,8 +127,13 @@ fallbacks with two independent ARC identities. The historical hybrid flag has
 no additional effect on scalar alternatives, which inline by default.
 
 Native arrays pack eligible scalar union alternatives into tag-plus-payload
-slots and retain wrapper pointers for boxed fallbacks. Reading an inline slot
-allocates one wrapper. All-empty-record unions avoid wrappers entirely
+slots and retain wrapper pointers for boxed fallbacks. Nonescaping native
+union locals can instead snapshot a slot by value, retaining only its boxed
+fallback through the normal register root. Scalar payload locals used only for
+field reads and inline injection need no ARC identity. Direct construction and
+matching then allocate no scalar wrapper or payload; escaping uses keep the
+ordinary representation. Snapshot bytes and owned fallback edges remain valid
+after the source array is updated or released. All-empty-record unions avoid wrappers entirely
 (although extracting an empty record payload materializes a record). `Fn`
 values are noncapturing references and need no closure environment or ARC.
 The runtime also has generic `S_Array` and scalar-specialized helpers; those

@@ -47,7 +47,7 @@ def check_case(compiler: Path, cc: str, code: str, expected: int, label: str,
         execute([str(compiler), str(src), str(emitted)])
         text = emitted.read_text(encoding='utf-8')
         sites = text.count('record = s_mir_record_new_fused(')
-        if sites == 0 and 'memmove(variant->fields + 1' not in text:
+        if sites == 0 and 'memmove(variant->fields + 1' not in text and 'value = {0}; value.tag = ' not in text:
             raise AssertionError('expected coallocation or default scalar union allocation reuse')
         if sites == 0:
             print(f'{label}: scalar unions already inline; coallocation flag has no effect')

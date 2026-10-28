@@ -1,0 +1,24 @@
+import parser alias Ast
+import hir_declarations alias Decl
+import mir_program alias Program
+import mir_emit_c alias Emit
+
+# Exercise the same source with defensive init checks and no slot compaction.
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		return 1
+	let source = read_text(args[!1]) else return 2
+	let parsed = Ast.parse_module(source)
+	if parsed.state.error != ""
+		return 3
+	let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != ""
+		return 4
+	let lowered = Program.mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	if lowered.error != ""
+		return 5
+	let emitted = Emit.mir_emit_c_reachable(lowered.program, lowered.entry)
+	if emitted.error != "" or not write_text(args[!2], emitted.code)
+		return 6
+	return 0

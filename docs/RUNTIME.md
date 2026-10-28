@@ -128,15 +128,28 @@ alternatives retain the record pointer in `fields[1]`. Type-directed scanning,
 dropping, cloning, equality, and hashing distinguish these layouts by type and
 tag. Fresh scalar constructors reserve one extra slot so consuming injection
 can reuse the allocation. Borrowed injections copy the scalar fields; projection
-materializes an independent owned payload record. Reading an inline array slot
-now allocates just its wrapper. The MIR interpreter retains its logical boxed
-representation. Scalar payload projection still allocates, and registers and
-non-array containers still require a wrapper.
+materializes an independent owned payload record when it escapes.
+
+The C emitter scalar-replaces nonescaping union locals used only by array
+operations, tag tests, payload projections, copies/moves, and drops. These
+locals hold slot snapshots, and their normal pointer register roots only the
+boxed fallback. Scalar payload locals used only by field reads and inline
+union injection also stay in stack fields. Construction writes those fields
+into a slot directly; matching reads a slot snapshot without constructing a
+wrapper or payload record. Copying the slot bytes and retaining any fallback
+edge makes the snapshot independent of later array updates and releases.
+Arguments, returns, general calls, other containers, and unsupported uses keep
+the existing pointer ABI. The MIR interpreter retains its logical boxed
+representation; MIR instructions and ownership contracts do not change.
 `python tools/test_mir_inline_unions.py` validates scalar tags, managed/large
 fallback, non-array containers, CoW, optional indexing, equality, hashing, ARC,
 and native/MIR parity. The allocation fixture in
-`tools/test_union_hybrid_coallocation.py` drops from 1022 to 769 generated-record
-allocations versus the array-only representation; scalar projection still allocates.
+`tools/test_union_hybrid_coallocation.py` drops from 769 to 12 generated-record
+allocations with local scalar replacement. `tools/test_mir_union_slots.py`
+checks checked/verified emission, snapshot lifetimes, boxed fallback ARC, and
+one array-buffer allocation at both 8 and 256 scalar elements, with no union
+or payload allocations during construction and matching. Escaping values and
+structural array equality can still materialize wrappers.
 
 ## Generated field helpers
 

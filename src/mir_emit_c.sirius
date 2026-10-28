@@ -620,6 +620,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	for i in 0..len(types.entries)
 		if mir_c_inline_union(types, i)
 			let desc = types.entries[!i]
+			parts = parts.append("static inline S_MirArrayUnion" + str(i) + " s_mir_array_union_copy" + str(i) + "(S_MirArrayUnion" + str(i) + " slot) { if (slot.tag == -1) s_mir_record_retain(slot.payload.boxed); return slot; }\n")
 			parts = parts.append("static inline S_MirArrayUnion" + str(i) + " s_mir_array_union_pack" + str(i) + "(S_MirRecord *owned) {\n")
 			parts = parts.append("\tS_MirArrayUnion" + str(i) + " slot = {0}; int64_t tag = owned->fields[0].bits;\n\tswitch (tag) {\n")
 			for j in 0..len(desc.fields)
@@ -712,7 +713,158 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
 	return "".join(parts)
 
-def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, program: Mir.MirProgram, checked: bool, fresh_payload: bool) -> string
+# Emission-only scalar replacement. Escaping values keep the normal pointer
+# ABI. Local union snapshots own only their boxed fallback through rN; local
+# scalar payloads have no edges. Copies form a closed set across the CFG.
+rec MirCSlots(unions: Array[bool], payloads: Array[bool])
+
+def mir_c_local_slots(types: Types.TypeTable, function: Mir.MirFunction) -> MirCSlots
+	var unions = Array[bool]()
+	var payloads = Array[bool]()
+	for r in 0..len(function.register_types)
+		let kind = function.register_types[!r]
+		unions = unions.append(r >= function.argument_count and mir_c_inline_union(types, kind))
+		payloads = payloads.append(r >= function.argument_count and mir_c_union_small_payload(types, kind) and not mir_c_inline_record(types, kind))
+	var changed = true
+	while changed
+		changed = false
+		for block in function.blocks
+			if block.terminator.kind == Mir.MIR_RETURN
+				let r = block.terminator.operand
+				if unions[!r] or payloads[!r]
+					unions[!r] = false
+					payloads[!r] = false
+					changed = true
+			for ins in block.instructions
+				let op = ins.op
+				let dst = ins.dst
+				let copy = op == Mir.MIR_COPY or op == Mir.MIR_RETAIN or op == Mir.MIR_MOVE
+				let drop = op == Mir.MIR_RELEASE or op == Mir.MIR_RELEASE_IF_INIT
+				if dst >= 0 and unions[!dst]
+					var allowed = drop or op == Mir.MIR_ARRAY_GET or op == Mir.MIR_UNION_NEW or op == Mir.MIR_UNION_NEW_MOVE
+					if copy
+						allowed = unions[!ins.first]
+					if not allowed
+						unions[!dst] = false
+						changed = true
+				if dst >= 0 and payloads[!dst]
+					var allowed = drop or op == Mir.MIR_UNION_GET or op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+					if copy
+						allowed = payloads[!ins.first]
+					if not allowed
+						payloads[!dst] = false
+						changed = true
+				for r in Cfg.mir_instruction_reads(ins)
+					if r >= 0 and unions[!r]
+						var allowed = drop or op == Mir.MIR_UNION_TAG or op == Mir.MIR_UNION_GET or op == Mir.MIR_ARRAY_APPEND or op == Mir.MIR_ARRAY_SET or op == Mir.MIR_ARRAY_NEW or op == Mir.MIR_ARRAY_NEW_MOVE or op == Mir.MIR_RECORD_ARRAY_APPEND
+						if copy
+							allowed = unions[!dst]
+						if not allowed
+							unions[!r] = false
+							changed = true
+					if r >= 0 and payloads[!r]
+						var allowed = drop or op == Mir.MIR_RECORD_GET
+						if op == Mir.MIR_UNION_NEW or op == Mir.MIR_UNION_NEW_MOVE
+							allowed = unions[!dst]
+						if copy
+							allowed = payloads[!dst]
+						if not allowed
+							payloads[!r] = false
+							changed = true
+	return MirCSlots(unions, payloads)
+
+def mir_c_union_slot(register: i64) -> string
+	return "u" + str(register)
+
+def mir_c_payload_slot(register: i64) -> string
+	return "p" + str(register)
+
+def mir_c_union_slot_value(types: Types.TypeTable, kind: i64, register: i64, move: bool, slots: MirCSlots) -> string
+	if slots.unions[!register]
+		if move
+			return mir_c_union_slot(register)
+		return "s_mir_array_union_copy" + str(kind) + "(" + mir_c_union_slot(register) + ")"
+	var value = mir_c_register(register)
+	if not move
+		value = mir_c_retain_value(types, kind, value)
+	return "s_mir_array_union_pack" + str(kind) + "(" + value + ")"
+
+# Empty means the instruction still uses ordinary emission. Slot snapshots
+# copy bytes before any owner can be released or a CoW array can be updated.
+def mir_c_local_instruction(ins: Mir.MirInstruction, function: Mir.MirFunction, types: Types.TypeTable, checked: bool, slots: MirCSlots) -> string
+	let op = ins.op
+	let dst = ins.dst
+	let kind = function.register_types[!dst]
+	let name = mir_c_register(dst)
+	let first = mir_c_register(ins.first)
+	let copy = op == Mir.MIR_COPY or op == Mir.MIR_RETAIN or op == Mir.MIR_MOVE
+	if copy and slots.unions[!dst]
+		var code = "\t{ S_MirArrayUnion" + str(kind) + " value = " + mir_c_union_slot(ins.first) + "; S_MirRecord *slot_owner = " + mir_c_retain_value(types, kind, first) + ";\n"
+		if op == Mir.MIR_MOVE
+			code = "\t{ S_MirArrayUnion" + str(kind) + " value = " + mir_c_union_slot(ins.first) + "; S_MirRecord *slot_owner = " + first + "; " + first + " = NULL" + mir_c_mark_uninit(ins.first, checked) + "\n"
+		return code + mir_c_store_owned(types, dst, kind, "slot_owner", checked) + "\t" + mir_c_union_slot(dst) + " = value; }\n"
+	if copy and slots.payloads[!dst]
+		var code = "\tmemmove(" + mir_c_payload_slot(dst) + ", " + mir_c_payload_slot(ins.first) + ", sizeof(" + mir_c_payload_slot(dst) + "));\n"
+		if op == Mir.MIR_MOVE
+			code = code + "\t" + first + " = NULL" + mir_c_mark_uninit(ins.first, checked) + "\n"
+		return code + "\t" + name + " = NULL" + mir_c_mark_init(dst, checked) + "\n"
+	if slots.payloads[!dst] and (op == Mir.MIR_RECORD_NEW or op == Mir.MIR_RECORD_NEW_MOVE or op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE)
+		var code = ""
+		for i in 0..len(ins.inputs)
+			let field = mir_c_field_name(types, types.entries[!kind].fields[!i].kind)
+			code = code + "\t" + mir_c_payload_slot(dst) + "[" + str(i) + "]." + field + " = " + mir_c_register(ins.inputs[!i]) + ";\n"
+		return code + "\t" + name + " = NULL" + mir_c_mark_init(dst, checked) + "\n"
+	if op == Mir.MIR_RECORD_GET and slots.payloads[!ins.first]
+		return "\t" + name + " = " + mir_c_payload_slot(ins.first) + "[" + str(ins.immediate) + "]." + mir_c_field_name(types, kind) + mir_c_mark_init(dst, checked) + "\n"
+	if op == Mir.MIR_ARRAY_GET and slots.unions[!dst]
+		var code = ""
+		if checked or ins.text != "__mir_guarded"
+			code = "\tif (!s_mir_array_index_valid(" + first + ", " + mir_c_register(ins.second) + ")) s_panic(\"array index out of bounds\");\n"
+		code = code + "\t{ S_MirArrayUnion" + str(kind) + " value; memcpy(&value, s_mir_array_at(" + first + ", s_mir_array_index(" + first + ", " + mir_c_register(ins.second) + ")), sizeof(value));\n"
+		return code + mir_c_store_owned(types, dst, kind, "value.tag == -1 ? s_mir_record_retain(value.payload.boxed) : NULL", checked) + "\t" + mir_c_union_slot(dst) + " = value; }\n"
+	if op == Mir.MIR_UNION_TAG and slots.unions[!ins.first]
+		let slot = mir_c_union_slot(ins.first)
+		return "\t" + name + " = " + slot + ".tag == -1 ? " + first + "->fields[0].bits : " + slot + ".tag" + mir_c_mark_init(dst, checked) + "\n"
+	if op == Mir.MIR_UNION_NEW or op == Mir.MIR_UNION_NEW_MOVE
+		if slots.unions[!dst] and mir_c_union_small_payload(types, function.register_types[!ins.first])
+			let payload = function.register_types[!ins.first]
+			var tag = ins.second
+			if tag == -1
+				tag = Types.union_alternative_index(types, kind, payload)
+			var fields = first + "->fields"
+			if slots.payloads[!ins.first]
+				fields = mir_c_payload_slot(ins.first)
+			var code = "\t{ S_MirArrayUnion" + str(kind) + " value = {0}; value.tag = " + str(tag) + "; memcpy(value.payload.fields, " + fields + ", " + str(len(types.entries[!payload].fields)) + " * sizeof(S_MirField));\n"
+			if op == Mir.MIR_UNION_NEW_MOVE
+				code = code + "\ts_mir_record_release(" + first + "); " + first + " = NULL" + mir_c_mark_uninit(ins.first, checked) + "\n"
+			return code + mir_c_store_owned(types, dst, kind, "NULL", checked) + "\t" + mir_c_union_slot(dst) + " = value; }\n"
+	if op == Mir.MIR_UNION_GET
+		let union_type = function.register_types[!ins.first]
+		if slots.unions[!ins.first] or slots.payloads[!dst]
+			var member = ins.second
+			if member == -1
+				member = Types.union_alternative_index(types, union_type, kind)
+			var tag = first + "->fields[0].bits"
+			var fields = first + "->fields + 1"
+			if Types.union_is_enum(types, union_type)
+				tag = first
+			elif slots.unions[!ins.first]
+				let slot = mir_c_union_slot(ins.first)
+				tag = "(" + slot + ".tag == -1 ? " + first + "->fields[0].bits : " + slot + ".tag)"
+				fields = slot + ".payload.fields"
+			var code = "\tif (" + tag + " != " + str(member) + ") s_panic(\"union variant mismatch\");\n"
+			if mir_c_union_small_payload(types, kind)
+				let count = len(types.entries[!kind].fields)
+				if slots.payloads[!dst]
+					if count > 0
+						code = code + "\tmemcpy(" + mir_c_payload_slot(dst) + ", " + fields + ", " + str(count) + " * sizeof(S_MirField));\n"
+					return code + "\t" + name + " = NULL" + mir_c_mark_init(dst, checked) + "\n"
+				code = code + "\t{ S_MirRecord *payload = s_mir_record_new(" + str(kind) + ", " + str(count) + "); memcpy(payload->fields, " + fields + ", " + str(count) + " * sizeof(S_MirField));\n"
+				return code + mir_c_store_owned(types, dst, kind, "payload", checked) + "\t}\n"
+			return code + mir_c_store_owned(types, dst, kind, "s_mir_record_retain(" + first + "->fields[1].record)", checked)
+	return ""
+
+def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, program: Mir.MirProgram, checked: bool, fresh_payload: bool, slots: MirCSlots) -> string
 	let types = program.types
 	let op = instruction.op
 	var result = ""
@@ -741,6 +893,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 	let first = mir_c_register(instruction.first)
 	let second = mir_c_register(instruction.second)
 	let dst_type = function.register_types[!instruction.dst]
+	let local = mir_c_local_instruction(instruction, function, types, checked, slots)
+	if local != ""
+		return result + local
 	if op == Mir.MIR_FUNCTION_REF
 		return result + "\t" + dst + " = " + str(instruction.immediate) + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_CALL_INDIRECT
@@ -865,7 +1020,10 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if op == Mir.MIR_UNION_NEW_MOVE
 			payload = first
 			invalidate = "\t\t" + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + "\n"
-		return code + "\t\tvariant->fields[0].bits = " + str(tag) + ";\n\t\tvariant->fields[1].record = " + payload + ";\n" + invalidate + mir_c_store_owned(types, instruction.dst, dst_type, "variant", checked) + "\t}\n"
+		var snapshot = ""
+		if slots.unions[!instruction.dst]
+			snapshot = "\t" + mir_c_union_slot(instruction.dst) + ".tag = -1; " + mir_c_union_slot(instruction.dst) + ".payload.boxed = " + dst + ";\n"
+		return code + "\t\tvariant->fields[0].bits = " + str(tag) + ";\n\t\tvariant->fields[1].record = " + payload + ";\n" + invalidate + mir_c_store_owned(types, instruction.dst, dst_type, "variant", checked) + snapshot + "\t}\n"
 	if op == Mir.MIR_UNION_TAG
 		if Types.union_is_enum(types, function.register_types[!instruction.first])
 			return result + "\t" + dst + " = " + first + mir_c_mark_init(instruction.dst, checked) + "\n"
@@ -990,7 +1148,8 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			if Common.mir_common_managed(types, kind) and not Mir.mir_input_move_at(instruction, i)
 				value = mir_c_retain_value(types, kind, value)
 			if mir_c_inline_union(types, kind)
-				code = code + "\t\t{ S_MirArrayUnion" + str(kind) + " element = s_mir_array_union_pack" + str(kind) + "(" + value + "); memcpy(s_mir_array_at(array, " + str(i) + "), &element, sizeof(element)); }\n"
+				let slot = mir_c_union_slot_value(types, kind, arg, Mir.mir_input_move_at(instruction, i), slots)
+				code = code + "\t\t{ S_MirArrayUnion" + str(kind) + " element = " + slot + "; memcpy(s_mir_array_at(array, " + str(i) + "), &element, sizeof(element)); }\n"
 			elif mir_c_inline_record(types, kind)
 				code = code + "\t\t{ S_MirArrayInline" + str(kind) + " element = {0}; element.value = " + value + "; memcpy(s_mir_array_at(array, " + str(i) + "), &element, sizeof(element)); }\n"
 			else
@@ -1034,7 +1193,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			value = mir_c_retain_value(types, element_type, value)
 		var code = result
 		if mir_c_inline_union(types, element_type)
-			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = " + mir_c_union_slot_value(types, element_type, instruction.second, false, slots) + ";\n"
 		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " added = {0}; added.value = " + value + ";\n"
 		else
@@ -1053,7 +1212,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			value = mir_c_retain_value(types, element_type, value)
 		var code = result
 		if mir_c_inline_union(types, element_type)
-			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " replacement = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " replacement = " + mir_c_union_slot_value(types, element_type, instruction.immediate, false, slots) + ";\n"
 		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " replacement = {0}; replacement.value = " + value + ";\n"
 		else
@@ -1073,7 +1232,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		let at = str(instruction.immediate)
 		var code = result
 		if mir_c_inline_union(types, element_type)
-			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = " + mir_c_union_slot_value(types, element_type, instruction.second, false, slots) + ";\n"
 		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " added = {0}; added.value = " + value + ";\n"
 		else
@@ -1570,6 +1729,7 @@ def mir_c_definition(function: Mir.MirFunction, index: i64, program: Mir.MirProg
 
 def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.MirProgram, checked: bool) -> string
 	let types = program.types
+	let slots = mir_c_local_slots(types, function)
 	var parts = Array[string]()
 	parts = parts.append(mir_c_signature(types, function, index) + "\n{\n")
 	for i in 0..len(function.register_types)
@@ -1579,6 +1739,13 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.
 		if mir_c_inline_record(types, function.register_types[!i])
 			initial = "{0}"
 		parts = parts.append("\t" + mir_c_type(types, function.register_types[!i]) + " " + mir_c_register(i) + " = " + initial + ";\n")
+		if slots.unions[!i]
+			parts = parts.append("\tS_MirArrayUnion" + str(function.register_types[!i]) + " " + mir_c_union_slot(i) + " = {0}; (void)" + mir_c_union_slot(i) + ";\n")
+		if slots.payloads[!i]
+			var count = len(types.entries[!function.register_types[!i]].fields)
+			if count == 0
+				count = 1
+			parts = parts.append("\tS_MirField " + mir_c_payload_slot(i) + "[" + str(count) + "] = {0}; (void)" + mir_c_payload_slot(i) + ";\n")
 		if checked
 			parts = parts.append("\tbool init" + str(i) + " = false;\n")
 			parts = parts.append("\t(void)" + mir_c_register(i) + "; (void)init" + str(i) + ";\n")
@@ -1632,7 +1799,7 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.
 				else
 					parts = parts.append("\t" + prefix + "i64(" + mir_c_register(instruction.first) + ");\n")
 			else
-				parts = parts.append(mir_c_instruction(instruction, function, program, checked, fresh_payload))
+				parts = parts.append(mir_c_instruction(instruction, function, program, checked, fresh_payload, slots))
 		# At the end of a basic block, no partially constructed heap values remain.
 		# Audit all active frame roots and scanned heap edges, independently of retains.
 		parts = parts.append("\ts_arc_audit_check_frames();\n")

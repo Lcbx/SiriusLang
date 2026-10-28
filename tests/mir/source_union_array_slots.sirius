@@ -1,0 +1,91 @@
+rec One(value: i64)
+rec Alias(value: i64)
+rec Mixed(value: i64, weight: f64, valid: bool)
+rec Empty()
+rec Large(a: i64, b: i64, c: i64, d: i64)
+rec Managed(text: string, data: Array[i64])
+let Choice = One | Alias | Mixed | Empty | Large | Managed
+rec Bucket(values: Array[Choice])
+
+def scalar_snapshot() -> i64
+	var xs: Array[Choice] = [One(7)]
+	let first = xs[!-1]
+	let copy = first
+	xs[!0] = Choice.Alias(Alias(99))
+	match copy
+		One(n)
+			return n
+		Alias(n)
+			return 100
+		Mixed(n, weight, valid)
+			return 100
+		Empty()
+			return 100
+		Large(a, b, c, d)
+			return 100
+		Managed(text, data)
+			return 100
+
+def managed_snapshot() -> i64
+	var xs: Array[Choice] = [Managed("alive", [2, 3])]
+	let first = xs[!0]
+	let copy = first
+	xs[!0] = Choice.Empty(Empty())
+	match copy
+		Managed(text, data)
+			return len(text) + data[!0] + data[!1]
+		One(n)
+			return 100
+		Alias(n)
+			return 100
+		Mixed(n, weight, valid)
+			return 100
+		Empty()
+			return 100
+		Large(a, b, c, d)
+			return 100
+
+def main() -> i64
+	if scalar_snapshot() != 7 or managed_snapshot() != 10
+		return 1
+	var xs: Array[Choice] = [One(1), Alias(2), Mixed(3, 2.5, true), Empty(), Large(1, 2, 3, 4), Managed("ok", [5])]
+	let saved = xs
+	xs[!0] = xs[!1]
+	xs[!1] = Choice.One(One(9))
+	var bucket = Bucket(xs)
+	let old_bucket = bucket
+	bucket.values = bucket.values.append(Choice.Mixed(Mixed(4, 2.5, true)))
+	if len(saved) != 6 or len(old_bucket.values) != 6 or len(bucket.values) != 7
+		return 2
+	var total = 0
+	for value in bucket.values
+		match value
+			One(n)
+				total += n
+			Alias(n)
+				total += n * 2
+			Mixed(n, weight, valid)
+				if not valid or weight != 2.5
+					return 3
+				total += n
+			Empty()
+				total += 0
+			Large(a, b, c, d)
+				total += a + b + c + d
+			Managed(text, data)
+				total += len(text) + data[!0]
+	if total != 37
+		return 4
+	match saved[!0]
+		One(n)
+			return n - 1
+		Alias(n)
+			return 5
+		Mixed(n, weight, valid)
+			return 5
+		Empty()
+			return 5
+		Large(a, b, c, d)
+			return 5
+		Managed(text, data)
+			return 5

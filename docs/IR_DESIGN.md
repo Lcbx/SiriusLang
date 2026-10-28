@@ -188,9 +188,14 @@ or panic).
   least one eligible scalar alternative now use strided slots containing a
   declaration-order tag and up to three unmanaged scalar fields; large/managed
   alternatives use a boxed-wrapper fallback (`tag == -1`). Copy/drop and ARC
-  scanning use the active physical representation. Ordinary reads reconstruct
-  wrappers for inline alternatives so MIR and interpreter values are unchanged;
-  this still allocates during extraction. The isolated POD-only C11 comparison
+  scanning use the active physical representation. An emission-only escape
+  analysis scalar-replaces local union slots and small scalar payloads whose
+  uses are limited to array operations, matching, copies/moves and drops.
+  Slot reads snapshot bytes and retain only boxed fallback edges; scalar
+  construction and matching avoid wrappers and payload allocations. Escaping
+  values still materialize the ordinary owned representation; MIR instructions,
+  verification, serialization and interpreter behavior stay unchanged.
+  The isolated POD-only C11 comparison
   in `tools/benchmark_union_storage.py` predates this implementation and is
   not an end-to-end Sirius performance result.
 * Experimental native coallocation (`SIRIUS_EXPERIMENTAL_UNION_COALLOC`) preserves the
