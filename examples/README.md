@@ -1,49 +1,48 @@
 # Sirius examples
 
-These are **working programs for the current self-hosted MIR compiler**, not
-proposals for the future language. `filesystem_walk.sirius` was already present;
-the other examples have checked-in expected output and are exercised by
-`python tools/test_examples.py` (also selected by `tools/test_all.py`).
+These are working programs for the current self-hosted compiler. The twelve
+argument-free programs have checked-in golden outputs, validated by
+`python tools/test_examples.py`. The directory walker is exercised separately
+by `python tools/test_filesystem.py`. No standard-library imports are needed.
 
 ## Programs
 
 | Program | Demonstrates |
 | --- | --- |
-| [`fizzbuzz.sirius`](fizzbuzz.sirius) | `for` ranges, `if`/`elif`, remainder and printing |
+| [`fizzbuzz.sirius`](fizzbuzz.sirius) | Ranges, conditionals, remainder and printing |
 | [`fibonacci.sirius`](fibonacci.sirius) | Functions, sequential loops and mutable locals |
-| [`prime_sieve.sirius`](prime_sieve.sirius) | Sieve of Eratosthenes, checked indexing, recoverable `SieveResult` union and exhaustive `match` |
-| [`game_of_life.sirius`](game_of_life.sirius) | Conway's Game of Life, nested arrays, value-based generations |
-| [`insertion_sort.sirius`](insertion_sort.sirius) | Sorting, indexed updates, copy-on-write snapshots |
-| [`word_frequencies.sirius`](word_frequencies.sirius) | Dictionaries, optional lookup, and `Found`/`Missing` tagged-union results |
-| [`cow_nested.sirius`](cow_nested.sirius) | Record constructors, nested CoW updates, destructuring |
-| [`generic_choose.sirius`](generic_choose.sirius) | Compile-time specialization of one function for three types |
-| [`geometry.sirius`](geometry.sirius) | `f64`, records, `sqrt`, and exhaustive shape dispatch using `match` |
-| [`matrix_multiplication.sirius`](matrix_multiplication.sirius) | Locally defined row-major `Matrix`, matrix–vector, vector–matrix, matrix–matrix products, and shape errors via tagged unions |
-| [`event_log.sirius`](event_log.sirius) | Typed heterogeneous `Array[Event]`, three union variants, and `match` in a loop |
-| [`bitwise_rgb.sirius`](bitwise_rgb.sirius) | `i64` bitwise operations and shifts |
-| [`filesystem_walk.sirius`](filesystem_walk.sirius) | Recursive directory traversal, command-line args and filesystem optionals |
+| [`prime_sieve.sirius`](prime_sieve.sirius) | Checked indexing, guards, recoverable errors and exhaustive matching |
+| [`game_of_life.sirius`](game_of_life.sirius) | Nested arrays and value-based generations of a 5x5 blinker |
+| [`insertion_sort.sirius`](insertion_sort.sirius) | Sorting, CoW snapshots, string conversion and joining |
+| [`word_frequencies.sirius`](word_frequencies.sirius) | Dictionaries, lazy Optional defaults and `Found`/`Missing` results |
+| [`cow_nested.sirius`](cow_nested.sirius) | Nested CoW updates, negative indexing and record destructuring |
+| [`generic_choose.sirius`](generic_choose.sirius) | One generic function specialized for numbers, strings, and structural records |
+| [`geometry.sirius`](geometry.sirius) | Same-shaped union alternatives, shared bindings, tag inspection and `f64` arithmetic |
+| [`matrix_multiplication.sirius`](matrix_multiplication.sirius) | Flat row-major matrices, matrix/vector products and checked shape errors |
+| [`event_log.sirius`](event_log.sirius) | Heterogeneous `Array[Event]`, payload matching and grouped tag-only classification |
+| [`bitwise_rgb.sirius`](bitwise_rgb.sirius) | Bitwise packing and exhaustive dispatch over an enum of RGB channels |
+| [`filesystem_walk.sirius`](filesystem_walk.sirius) | Breadth-first traversal, arguments, guards and filesystem optionals |
 
-All standalone examples have `main() -> i64` and return zero on success.
-`matrix_multiplication.sirius` keeps the entire matrix representation and
-operations local to the example: a flat `Array[f64]` in row-major order,
-explicit shape checks, ordinary nested loops, and fresh result arrays. It
-demonstrates rectangular products and invalid-dimension results. Since `str()`
-currently formats only `i64`, it prints each `f64` result on its own line
-(matrix entries in row-major order). `Std.Numeric` now provides a reusable flat rank-2 wrapper with
-singleton-axis broadcast addition; standalone examples continue to exercise
-their own representations without requiring imports.
+All programs use `main() -> i64` and return zero on success. The walker requires
+one directory argument and returns 2 for invalid arguments or a failed listing.
 
-`game_of_life.sirius` shows a 5×5 blinker through two generations; it uses
-only **new value construction**, not shared mutable state. The examples
-`event_log`, `geometry`, `prime_sieve`, `word_frequencies`, and
-`matrix_multiplication` show different uses of constructor-based tagged unions:
-typed mixed collections, shape dispatch, recoverable errors,
-optional-to-result conversion, and dimension-checked numerical results.
-Every `match` handles all alternatives.
+`geometry.sirius` gives `Rectangle` and `Triangle` the same `width`/`height`
+payload shape. Their union labels remain distinct. One shared binding list
+reads the dimensions, and `Shape.index` distinguishes their area rules.
+`event_log.sirius` uses `Joined | Left` to count membership changes without
+extracting either payload.
+
+The matrix example keeps its representation local: flat `Array[f64]` storage,
+shape checks that guard multiplication against overflow, ordinary loops, and
+fresh result arrays. It prints each floating-point result separately because
+`str()` currently accepts only `i64`. For reusable module-based numerical
+operations, `Std.Numeric` provides a rank-2 matrix wrapper with `matmul`,
+transpose, reshape, and singleton-axis broadcast addition. Native ranked arrays
+are not a prerequisite. See [Standard library](../docs/STDLIB.md).
 
 ## Running
 
-From the project root, build the compiler and compile any example:
+From the project root:
 
 ```sh
 python tools/build_compiler.py
@@ -53,112 +52,67 @@ cc -std=c11 -I runtime game_of_life.c runtime/sirius_runtime.c -lm -o game_of_li
 python tools/test_examples.py
 ```
 
-To also check the same golden outputs through the MIR interpreter after
-building `sirius-run`:
+To check every golden output in both native and interpreted execution:
 
 ```sh
 python tools/build_mir_runner.py
 python tools/test_examples.py --runner ./sirius-run
 ```
 
-On Windows, use `sirius.exe` / `game_of_life.exe`, and use the appropriate C
-linker flags for your toolchain. The test script selects the native C compiler
-and linker flags using `tools/build_support.py`.
-
-If you built `sirius-run` with `python tools/build_mir_runner.py`, you can also
-run a source directly through the **MIR interpreter**:
+The runner can also execute a source directly:
 
 ```sh
 ./sirius-run examples/game_of_life.sirius
+./sirius-run examples/filesystem_walk.sirius .
+python tools/test_filesystem.py --runner ./sirius-run
 ```
 
-`filesystem_walk.sirius` takes a directory argument and is tested separately
-by `python tools/test_filesystem.py`.
+On Windows, use `.exe` executable names and the linker flags appropriate to
+your C toolchain. The test scripts select the C compiler and linker flags using
+`tools/build_support.py`.
 
-## Implemented language features (checked against source tests)
+## Supported features and restrictions
 
-- **Core:** `let`/`var`, annotated and inferred functions, `return`, generic
-  specialization, ordinary recursion and `recur`; `if`/`elif`/`else`, `while`,
-  `for`, `break`/`continue`, guards and short-circuit Boolean expressions.
-- **Values:** `i64`, `f64`, `bool`, UTF-8 strings; `rec` constructors and
-  structural records with spreads/deletion; local `let` record destructuring.
-- **Collections:** homogeneous arrays (including nested arrays), typed
-  dictionaries, immutable snapshots with CoW, record/array nested updates,
-  iteration, optional lookups, unwrap/fallback and checked indexing.
-- **Tagged unions:** constructor-derived union aliases, injected return values,
-  exhaustive `match` with field bindings, and mixed-variant typed arrays.
-- **Runtime:** printing, string concatenation and basic string methods,
-  file I/O and directory listing, argument access, bitwise integer operations.
-- **Toolchain:** source modules/imports, specialized generic packages,
-  C11 emission, MIR interpretation and MIR serialization are exercised by
-  dedicated tests under `tools/`.
+- **Values and control flow:** `let`/`var`, structural records, local record
+  destructuring, arrays, dictionaries, loops, guards, recursion and `recur`.
+  Updates preserve immutable snapshots through CoW.
+- **Functions:** inferred and annotated functions, concrete generic
+  specialization, first-class `Fn` values and noncapturing lambdas. Capturing
+  closures are excluded by design; `Std.Functional.map_with_context` provides
+  explicit context passing. Generic callback inference works where a concrete
+  signature can be established; explicit `Fn` annotations handle other cases.
+- **Unions:** alternatives are distinguished by constructor label, including
+  identical payload shapes. Matching is exhaustive. Bare tags discard payloads;
+  `A | B` shares a tag-only branch and `(A | B)(value)` shares compatible
+  bindings. Stored structural records lose their constructor label, so ambiguous
+  injection requires explicit `Union.Label(record)` construction.
+- **Collections:** array elements have one static type, which can itself be a
+  union. Mixed-variant literals require an expected type such as
+  `Array[Event]`; unannotated literals remain homogeneous. Typed appends and
+  dictionary inserts preserve direct constructor labels.
+- **Optionals:** `or` defaults run only on absence and receive the optional's
+  payload type as context. `else return` can exit early instead. Absence is
+  independent of the payload's truthiness.
+- **Indexing:** `[!i]` is checked, `[?i]` returns an Optional, and negative
+  indices count from the end. Plain `[i]` requires a supported compile-time
+  bounds proof; use checked or optional access when bounds are unknown.
+- **Numerics:** explicit `f64(i64)` conversion rounds to nearest, ties to even;
+  `i64(f64)` truncates toward zero and traps for nonfinite or out-of-range
+  values. There is no implicit numeric promotion. Integer addition,
+  subtraction, multiplication and negation wrap at 64 bits.
+- **Calls and strings:** ordinary functions and calls through `Fn`-valued
+  record fields work; general user-defined extension-method syntax is not
+  supported. String helpers include slicing, searching, UTF-8 byte access and
+  joining. General splitting, normalization and formatting APIs remain limited.
+- **Execution:** functional array helpers are sequential and purity is not
+  enforced. General compile-time MIR execution, runtime `Any`/reflection,
+  general N-dimensional arrays, numerical fusion and parallel mapping remain
+  future work. Artifact formats and native/interpreted FFI are not stable ABIs.
 
-### Not yet implemented / relevant restrictions
+Source modules, named re-exports, MIR libraries, and source-free generic
+packages are covered by dedicated tests. See [Usage](../docs/USAGE.md) and
+[Modules and packages](../docs/MODULES.md) for module-based programs.
 
-- **Tagged unions and exhaustive `match`** work in standalone sources and
-  modules, including `Std.Filesystem` `Result` wrappers. Variants are
-  distinguished by structural record shape, not constructor name: two
-  constructors with identical published field types cannot be separate union
-  alternatives. Mixed-variant array literals need an expected type such as
-  `let events: Array[Event] = [...]`; unannotated literals remain homogeneous.
-- General `comptime`, `Any` with runtime descriptor access, vectorized
-  NumPy-like computation, parallel `map`, and capturing closures are future
-  features, not suitable for current executable examples.
-- Use `a[!index]` for checked array access and `a[?index]` for optional
-  lookup. Plain `a[index]` is supported for immutable `let` arrays with proven lengths, including array literals, aliases, empty `Array[T]()` constructors and fixed `.append(...)` chains. Elements may be computed at runtime; rectangular row shapes survive immutable aliases and shape-compatible appends, so `len(a[i])` can be proven inside a loop. Mutable arrays, unknown-length function results, unproven ragged dimensions and negative indices require checked/optional access.
-- Calls to ordinary named functions work. User-defined `value.method(...)`
-  extension-call syntax is not yet supported consistently by the MIR emitter;
-  `geometry.sirius` deliberately calls `distance(origin, point)` instead.
-- Program entry points are zero-argument functions returning `i64`; use
-  `arguments()` for command-line parameters. Floating-point-to-integer
-  conversion is not currently provided as a general intrinsic.
-
-## Potential improvements (not yet implemented)
-
-The examples deliberately use the **supported language subset**. These are
-opportunities to revisit them as new features become available, not syntax that
-can be used today. Changes should preserve the current examples as reference
-implementations for comparison.
-
-| Example | Potential feature or library improvement | Expected benefit |
-| --- | --- | --- |
-| `matrix_multiplication.sirius` | Library matrix operations (`Std.Numeric`), generalized shape/rank APIs and optimized kernels | Compare the example-local row-major implementation with library `matmul` for correctness, performance and CoW behavior |
-| `game_of_life.sirius` | Library-defined 2D arrays, neighbor shifts, elementwise operations and broadcasting | Express neighbor counts and generation updates as library array operations instead of nested loops; benchmark allocation costs and performance |
-| `prime_sieve.sirius` | Array generation, slices and bulk Boolean-mask updates | Replace repeated element updates with concise bulk operations; check CoW behavior |
-| `word_frequencies.sirius` | Standard-library string splitting, normalization and tokenization | Process raw text or file contents instead of an already-tokenized word array |
-| `filesystem_walk.sirius` | Use `Std.Filesystem.walk_files_result` with exhaustive matching | Report directory-listing and metadata failures instead of silently ignoring them; the best-effort example remains a baseline |
-| `geometry.sirius` | Consistent user-defined extension-method calls | Allow `point.distance(other)` as an ergonomic alternative to a named function |
-| `insertion_sort.sirius` | Negative indexing and improved array slicing | Simplify indexing and enable comparison with alternative sorting approaches |
-| `cow_nested.sirius` | More expressive nested-update APIs | Make immutable updates easier to write while testing structural sharing and ARC |
-| `generic_choose.sirius` | Broader structural polymorphism and generic diagnostics | Exercise specialization with richer record shapes and clearer errors |
-| `fizzbuzz.sirius`, `fibonacci.sirius`, `bitwise_rgb.sirius` | No essential missing feature | Keep as simple baseline examples for control flow, arithmetic and bitwise operations |
-
-### Suggested implementation and example order
-
-1. **Checked filesystem example.** Adapt the standalone walker to use
-   `Std.Filesystem.walk_files_result` in a module build; retain the original
-   implementation as a baseline for comparison.
-2. **Multidimensional arrays and vector operations.** Revisit Game of Life and
-   the prime sieve. Compare readability, allocation counts, native performance
-   and MIR-interpreter parity against their imperative versions.
-3. **String-processing standard library.** Extend word frequencies to read and
-   tokenize real text. This should not require new core language semantics.
-4. **Collection transformations.** Build on the current sequential
-   `Std.Functional` array-producing helpers by implementing element-type
-   polymorphic array construction and checking callback purity. Only after that should
-   `map`/`filter` be considered order-independent and parallelizable; use
-   `for` for ordered effects such as FizzBuzz printing.
-5. **Extension methods and indexing ergonomics.** Update geometry and sorting
-   once the MIR backend supports them consistently.
-
-Other planned capabilities—general compile-time execution, dynamic `Any`,
-reflection and parallel transformations—have little immediate benefit for these
-small examples and need not block their evolution.
-
-When revising an example, update its checked-in golden output and run native
-and (when available) interpreter parity tests. For optimization-oriented rewrites, retain the original or a
-baseline variant so behavior and resource use can be compared meaningfully.
-
-For the **target** semantics (which may be broader), see
-[`LANGUAGE_DESIGN.md`](../LANGUAGE_DESIGN.md). For the current compiler and
-its roadmap, see [`README.md`](../README.md) and [`ROADMAP.md`](../docs/history/ROADMAP_20261025.md).
+For intended semantics, see [Language design](../LANGUAGE_DESIGN.md). For the
+current implementation and open priorities, see [README](../README.md) and
+[Roadmap](../ROADMAP.md).

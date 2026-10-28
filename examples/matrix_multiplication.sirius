@@ -1,4 +1,4 @@
-# A small row-major matrix, implemented locally until Sirius has native 2D arrays.
+# A small row-major matrix, kept local so this example needs no module imports.
 # data[row * cols + col] stores one element; multiplication builds fresh arrays.
 rec Matrix(rows: i64, cols: i64, data: Array[f64])
 rec VectorProduct(values: Array[f64])
@@ -9,7 +9,11 @@ let VectorResult = VectorProduct | ShapeError
 let MatrixResult = MatrixProduct | ShapeError
 
 def valid_matrix(matrix: Matrix) -> bool
-	return matrix.rows >= 0 and matrix.cols >= 0 and len(matrix.data) == matrix.rows * matrix.cols
+	if matrix.rows < 0 or matrix.cols < 0
+		return false
+	if matrix.rows == 0 or matrix.cols == 0
+		return len(matrix.data) == 0
+	return matrix.cols <= len(matrix.data) / matrix.rows and len(matrix.data) == matrix.rows * matrix.cols
 
 def matvec(matrix: Matrix, vector: Array[f64]) -> VectorResult
 	if not valid_matrix(matrix) or matrix.cols != len(vector)

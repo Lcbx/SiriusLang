@@ -4,8 +4,7 @@ rec InvalidLimit(message: string)
 let SieveResult = Primes | InvalidLimit
 
 def primes_up_to(limit: i64) -> SieveResult
-	if limit < 2
-		return InvalidLimit("limit must be at least 2")
+	limit >= 2 else return InvalidLimit("limit must be at least 2")
 	var composite = Array[bool]()
 	for _ in 0..(limit + 1)
 		composite = composite.append(false)

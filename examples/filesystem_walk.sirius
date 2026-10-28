@@ -1,14 +1,12 @@
 # Standalone filesystem walker; run with a single directory argument.
 def main() -> i64
 	let args = arguments()
-	if len(args) != 2
-		return 2
+	len(args) == 2 else return 2
 	let root = args[!1]
 	let names = list_dir(root) else return 2
 	for name in names
 		print(name)
-	var pending = Array[string]()
-	pending = pending.append(root)
+	var pending = [root]
 	var i = 0
 	while i < len(pending)
 		let directory = pending[!i]

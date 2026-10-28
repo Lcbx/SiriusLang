@@ -1,11 +1,25 @@
 # i64 shifts and bitwise operators can pack small integer fields.
+enum Channel
+	Red
+	Green
+	Blue
+
 def pack_rgb(red: i64, green: i64, blue: i64) -> i64
 	return (red << 16) | (green << 8) | blue
+
+def component(pixel: i64, channel: Channel) -> i64
+	match channel
+		Red
+			return (pixel >> 16) & 255
+		Green
+			return (pixel >> 8) & 255
+		Blue
+			return pixel & 255
 
 def main() -> i64
 	let pixel = pack_rgb(18, 52, 86)
 	print(pixel)
-	print((pixel >> 16) & 255)
-	print((pixel >> 8) & 255)
-	print(pixel & 255)
+	print(component(pixel, Red()))
+	print(component(pixel, Green()))
+	print(component(pixel, Blue()))
 	return 0

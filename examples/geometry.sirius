@@ -1,7 +1,7 @@
-# Geometry using records, f64 arithmetic, and an exhaustive tagged-union match.
+# Same-shaped shape payloads retain distinct tags and share dimension bindings.
 rec Point(x: f64, y: f64)
 rec Rectangle(width: f64, height: f64)
-rec Triangle(base: f64, height: f64)
+rec Triangle(width: f64, height: f64)
 
 let Shape = Rectangle | Triangle
 
@@ -12,10 +12,11 @@ def distance(a: Point, b: Point) -> f64
 
 def area(shape: Shape) -> f64
 	match shape
-		Rectangle(width, height)
-			return width * height
-		Triangle(base, height)
-			return base * height / 2.0
+		(Rectangle | Triangle)(width, height)
+			let product = width * height
+			if Shape.index(shape) == Shape.index(Triangle)
+				return product / 2.0
+			return product
 
 def main() -> i64
 	let origin = Point(0.0, 0.0)

@@ -11,12 +11,10 @@ def sorted(values: Array[i64]) -> Array[i64]
 	return result
 
 def format_numbers(values: Array[i64]) -> string
-	var text = ""
+	var parts = Array[string]()
 	for value in values
-		if len(text) > 0
-			text += ", "
-		text += str(value)
-	return text
+		parts = parts.append(str(value))
+	return ", ".join(parts)
 
 def main() -> i64
 	let input = [9, 3, 7, 1, 5, 3]

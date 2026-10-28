@@ -4,9 +4,19 @@ rec Scored(name: string, points: i64)
 rec Left(name: string, reason: string)
 let Event = Joined | Scored | Left
 
+def membership_event(event: Event) -> bool
+	match event
+		Joined | Left
+			return true
+		Scored
+			return false
+
 def show_events(events: Array[Event]) -> i64
 	var total = 0
+	var membership_changes = 0
 	for event in events
+		if membership_event(event)
+			membership_changes += 1
 		match event
 			Joined(name)
 				print(name + " joined")
@@ -16,6 +26,7 @@ def show_events(events: Array[Event]) -> i64
 			Left(name, reason)
 				print(name + " left (" + reason + ")")
 	print("Total points: " + str(total))
+	print("Membership changes: " + str(membership_changes))
 	return 0
 
 def main() -> i64

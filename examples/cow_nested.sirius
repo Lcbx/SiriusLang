@@ -4,11 +4,11 @@ rec Player(name: string, scores: Array[i64])
 def main() -> i64
 	var state = {players = [Player("Ada", [10, 20]), Player("Lin", [7, 8])]}
 	let snapshot = state
-	state.players[!0].scores[!1] += 5
-	state.players[!1].name = "Linus"
+	state.players[!0].scores[!-1] += 5
+	state.players[!-1].name = "Linus"
 	let {players = .players} = state
-	print(snapshot.players[!0].scores[!1])
-	print(players[!0].scores[!1])
-	print(snapshot.players[!1].name)
-	print(players[!1].name)
+	print(snapshot.players[!0].scores[!-1])
+	print(players[!0].scores[!-1])
+	print(snapshot.players[!-1].name)
+	print(players[!-1].name)
 	return 0

@@ -77,20 +77,29 @@ lambdas cannot capture enclosing local bindings by design.
 ## What's implemented?
 
 - `i64`, `f64`, `bool`, `string`, structural records, homogeneous arrays,
-  dictionaries, optionals, and tagged unions with exhaustive `match`.
+  dictionaries, optionals, enums, and labeled unions. Same-shaped alternatives
+  retain distinct labels; exhaustive `match` supports grouped tags and shared
+  payload bindings such as `(Error1 | Error2)(message)`.
 - Inferred and annotated functions, concrete generic specialization,
   noncapturing function values, recursion / `recur`, loops, and local mutation.
 - CoW array and record updates, checked and negative indexing, and some statically proven
   plain indexing; filesystem operations and opt-in `Result` wrappers.
+- Lazy Optional defaults with contextual constructor, array, and callback
+  typing; explicit `f64(i64)` and checked `i64(f64)` scalar conversions.
 - Path-based source imports, public constructors/constants, named re-exports,
   MIR libraries, portable generic declaration packages, and a MIR interpreter.
 - `Std.Numeric` provides a checked, row-major 2D `f64` matrix wrapper over
   rank-1 arrays, including elementwise singleton-axis broadcasting. Multidimensional
   support is library-first; native ranked descriptors are not planned as a prerequisite.
 
-**Not implemented:** general compile-time MIR execution, general-purpose
-N-dimensional arrays, fused/vectorized numerical execution, general effect/purity
-inference, parallel mapping, and native/interpreted FFI registration. Features
+`Std.Functional` provides generic sequential array transformations; callback
+purity is not checked. Capturing closures are excluded by design; callbacks can
+receive explicit context instead.
+
+**Not implemented:** general compile-time MIR execution, user-facing reflection
+and dynamic `Any`, general-purpose N-dimensional arrays, Sirius-level numerical
+fusion/vectorization, general effect/purity inference, parallel mapping, and
+native/interpreted FFI registration. Features
 and restrictions are listed with runnable examples in
 [examples/README.md](examples/README.md).
 
