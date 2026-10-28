@@ -1,0 +1,51 @@
+# Inline array elements are independently copied on read and on array CoW.
+# Cover byte strides of 8, 16, 24 and 32 and managed containers nearby.
+rec Duo(a: i64, b: i64)
+rec Quad(a: i64, b: i64, c: i64, d: i64)
+rec Flag(ok: bool)
+rec Mixed(number: i64, weight: f64, valid: bool)
+rec Holder(items: Array[Duo], title: string)
+rec Envelope(items: Array[Mixed])
+
+def main() -> i64
+	let first = Duo(1, 2)
+	var pairs = [first, Duo(3, 4)]
+	let original = pairs
+	let value = pairs[!0]
+	pairs[!0] = Duo(7, 8)
+	pairs = pairs.append(value)
+	if original[!0].a != 1 or pairs[!0].b != 8 or pairs[!-1].a != 1
+		return 1
+	if (pairs[?2] or Duo(0, 0)).b != 2 or (pairs[?8] or Duo(0, 0)).a != 0
+		return 2
+	let copied = pairs[!1]
+	if copied != Duo(3, 4)
+		return 3
+	var flags = [Flag(true), Flag(false)]
+	let old_flags = flags
+	flags = flags.append(Flag(true))
+	flags[!0] = Flag(false)
+	if not old_flags[!0].ok or flags[!0].ok or not flags[!-1].ok
+		return 4
+	var wide = Array[Quad]().append(Quad(1, 2, 3, 4))
+	wide = wide.append(Quad(5, 6, 7, 8))
+	let wide_copy = wide
+	wide[!1] = Quad(9, 10, 11, 12)
+	if wide_copy[!1].d != 8 or wide[!1].d != 12
+		return 5
+	let initial = Mixed(11, 2.5, true)
+	var mixed = [initial, Mixed(12, 3.5, false)]
+	let saved = mixed
+	mixed = mixed.append(initial)
+	mixed[!0] = Mixed(19, 4.5, false)
+	if saved[!0].number != 11 or mixed[!0].weight != 4.5 or not mixed[!-1].valid
+		return 6
+	let one = Envelope([initial, Mixed(12, 3.5, false)])
+	let two = Envelope([Mixed(11, 2.5, true), Mixed(12, 3.5, false)])
+	if one != two or one == Envelope([Mixed(20, 2.5, true)])
+		return 7
+	var holder = Holder([Duo(4, 5)], "ok")
+	holder.items = holder.items.append(Duo(6, 7))
+	if holder.items[!1].b != 7
+		return 8
+	return 0

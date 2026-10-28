@@ -44,8 +44,9 @@ The target is **not** "a refcount in every register", "a refcount in every
 array element", or mandatory SoA metadata arrays. Array/dictionary slots
 logically hold complete values. Whether a particular value is inline or boxed
 is an internal layout choice, to be validated for both copy costs and memory
-usage. Inline record and union storage in containers remains a future
-step; current heap slots store boxed records.
+usage. The native C backend now stores eligible scalar-only records directly in
+array slots. Inline records with managed children, tagged-union values, and
+records in dictionary/record fields still use boxed container storage.
 
 ### Current abstract ownership contract
 
@@ -65,14 +66,14 @@ step; current heap slots store boxed records.
   parent adds only a reference to the parent, not to all its children.
   Future inline values with managed fields would own those fields directly.
 
-For example, copying an `Array[Record]` handle normally increments **the
-array buffer's** count, not every element's count. Indexing an ordinary
-boxed-record element copies its fields into an inline scalar-only
-register where eligible, or retains its boxed record handle otherwise. Even
-scalar-only record elements currently occupy separate boxes in arrays. If a
-future inline managed-record element is copied, its inline bytes and managed
-child handles would be copied/retained instead. In all cases the
-original array remains unchanged and the extracted value may outlive it.
+For example, copying an `Array[Record]` handle increments **the array
+buffer's** count, not every element's count. An eligible scalar-only record
+occupies a value-sized slot inside that buffer; indexing copies its fields
+into an independent C register aggregate without allocating a record object.
+A noneligible record remains a boxed pointer and indexing retains it.
+If a future inline managed-record element is copied, its inline bytes and
+managed child handles would need copying/retention. In all cases the original
+array remains unchanged and the extracted value may outlive it.
 
 * When the last reference to an allocation is released, its children are
   dropped using the type descriptor. CoW cloning retains every managed child
@@ -93,17 +94,22 @@ original array remains unchanged and the extracted value may outlive it.
 | `string` | Pointer to `S_String` with its own non-atomic refcount and UTF-8 bytes |
 | Eligible scalar-only record in a native register | C aggregate `S_MirInline<TypeId>`; **no register-level record allocation/refcount** |
 | Other record registers, boxed records in heap slots | `S_MirRecord*`, with `type_id`, `refs`, `length`, `capacity`, and `S_MirField[]` |
-| `Array[T]` (ordinary) | Refcounted `S_MirRecord` array buffer; one `S_MirField` slot per element; managed elements hold owned handles (records often separately boxed) |
-| `Array[T]` of scalar-only records | One refcounted array buffer containing separate refcounted record objects; array elements are **not** packed inline |
+| `Array[T]` (ordinary) | Refcounted `S_MirRecord` array buffer; each type descriptor defines the byte stride. Scalar/string/boxed-object slots remain `S_MirField`; managed elements hold owned handles |
+| `Array[T]` of eligible scalar-only records | Refcounted array buffer with inline, padded C aggregate slots (`S_MirArrayInline<TypeId>`); **no per-element record allocation or ARC identity** |
 | `Dict[K,V]` | Refcounted MIR wrapper owning a separate refcounted `S_Dict` hash table; table entries have type-directed key/value copy/drop hooks |
 | `Optional[T]` | Managed MIR wrapper with zero or one owned payload slot (even for scalar payloads at present) |
 | Tagged union with payload | Managed tag-plus-owned-record wrapper; heterogeneous alternative payload sizes are supported through separate record objects |
 
-The current *inline-register* eligibility test is intentionally narrow:
+The current *inline-record* eligibility test is intentionally narrow:
 records with **1–4 fields** of `i64`, `f64`, or `bool` only. Union
 alternatives and record types serving as dictionary keys/values are excluded.
-Eligible records are boxed when stored in heap containers, including arrays;
-indexed reads unbox them into inline C aggregates. This is an
+Eligible records are stored inline in arrays but boxed in other heap
+containers (e.g. record fields and dictionary entries). The array buffer
+retains the existing `S_MirRecord` header and stores stride-indexed inline
+bytes in its flexible trailing region; an alignment union ensures a slot is
+at least `sizeof(S_MirField)`. CoW uses raw byte copies for these unmanaged
+slots. Optional array indexing still boxes the selected record inside the
+Optional wrapper; ordinary array indexing does not. This is an
 **implementation-specific specialization**, not a universal record ABI:
 current eligibility also depends on other types appearing in the compiled
 program.
@@ -115,8 +121,9 @@ allocation **with two independent ARC identities**, but is opt-in and not the
 default layout. The opt-in `SIRIUS_EXPERIMENTAL_UNION_HYBRID`
 variant coallocates only fresh scalar-record alternatives with at most three
 fields and leaves wider/managed alternatives separately boxed. It retains
-two ARC identities, the existing union pointer ABI and the current array
-element storage; it is not a true inline-array representation. All-empty-record unions avoid the wrapper entirely (although extracting
+two ARC identities and the existing union pointer ABI: union elements in
+arrays remain pointers even though eligible standalone record elements can
+now be stored inline. All-empty-record unions avoid the wrapper entirely (although extracting
 an empty record payload currently materializes a record). `Fn`
 values are noncapturing references and need no closure environment or ARC.
 The runtime also has generic `S_Array` and scalar-specialized helpers; those
@@ -194,10 +201,10 @@ These are implemented, not merely proposed:
 * **Unique-root CoW:** native records/arrays and dictionaries reuse owned
   storage when its refcount is one. Shared versions clone the modified
   parent/path and retain the child edges copied into the new storage.
-  Scalar-only record array elements are still boxed and refcounted.
+  Eligible scalar-only array elements copy inline bytes without child ARC.
 * **Inline scalar records:** eligible scalar-only records use native
-  aggregate registers, with boxing/unboxing at heap-container boundaries.
-  Managed-field records and array elements remain boxed.
+  aggregate registers and type-strided array slots. Other heap boundaries
+  still box records; managed-field records and union elements remain boxed.
 * **Type-directed native slot helpers:** `mir_c_slot_copy`,
   `mir_c_slot_retain`, `mir_c_slot_drop`, plus generated scalar-record
   box/unbox routines, connect logical value operations to current C layouts.
@@ -279,8 +286,9 @@ runtime. Native C now has an **opt-in dynamic shadow-credit audit**:
   update the object's address. The auditor rejects credit mismatches.
 * The emitted MIR C registers a **type-directed scanner** for managed
   records, arrays, optionals, payload-bearing union wrappers and dictionary
-  wrappers. Scalar-only record elements are boxed and scanned as record
-  child edges; payload-free enums have no ARC root. Generic MIR dictionaries
+  wrappers. Eligible inline scalar-only array elements have no child edges;
+  boxed record elements are scanned as owned children. Payload-free enums
+  have no ARC root. Generic MIR dictionaries
   register key/value
   managedness with the native hash table, and CoW clones preserve these
   scanner settings. Each occupied dictionary entry and repeated child is
@@ -371,8 +379,9 @@ heap-wide static alias/reference-count proof would need a stronger heap model.
   nested containers, CoW, call frames and injected leaks/credit mismatches.
 - `python tools/test_mir_guard.py`, `test_mir_failure_contract.py`:
   guarded failures and known non-unwinding failures.
-- `python tools/test_mir_scalar_slots.py`, `test_mir_value_slot_reads.py`:
-  inline record registers, owned reads and CoW behavior.
+- `python tools/test_mir_scalar_slots.py`, `test_mir_value_slot_reads.py`,
+  `test_mir_inline_arrays.py`: inline record registers and array slots, owned
+  reads, CoW and native/interpreter parity.
 - `python tools/test_union_scalar_enums.py`, `test_union_coallocation_header.py`:
   scalar enums and optional coallocated wrapper/payload layout.
 - `python tools/test_bootstrap.py`: self-hosting and compiler fixtures.

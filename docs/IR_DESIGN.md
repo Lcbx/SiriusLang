@@ -182,8 +182,8 @@ or panic).
   verifier restricts this source-free form to valid labeled, payload-free enums. No
   record is allocated by either native execution or MIR interpretation for that form.
   Unions with any nonempty alternative still use an `S_MirRecord*` tagged wrapper
-  (`fields[0]` tag, `fields[1]` retained record pointer). Arrays and dictionaries keep
-  fixed-size `S_MirField` slots (8 bytes on tested 64-bit targets), not an inline buffer
+  (`fields[0]` tag, `fields[1]` retained record pointer). Union elements in arrays and dictionaries keep
+  pointer-sized `S_MirField` slots (8 bytes on tested 64-bit targets), not an inline buffer
   of the largest alternative. A proposed max-payload-width inline layout would require
   type-dependent strides, active-alternative retain/drop, managed-field handling, and
   safe extraction of independently owned records after matching. The isolated POD-only
@@ -345,17 +345,24 @@ credit.
 
 An `S_MirRecord` contains a reference count, local numeric type index, length,
 capacity and `S_MirField` union slots. Records use one fixed slot per field in
-canonical name order; arrays use `length` variable slots; optionals use zero
-or one; dictionary wrappers use one slot holding `S_Dict *`. Unions with
+canonical name order; arrays use `length` variable, type-strided slots;
+optionals use zero or one; dictionary wrappers use one slot holding `S_Dict *`. Unions with
 only empty-record alternatives use zero heap slots: their value is the scalar
 alternative index. Other unions use two fixed slots (alternative index and a
 retained pointer to a separately allocated record payload), so `Array[Union]`
 can mix arbitrarily different payload sizes without changing its element slot
 size.
-Eligible scalar-only native record registers may use inline C aggregates;
-heap-container record slots remain boxed (see [Ownership](OWNERSHIP.md)).
-The C emitter
-selects union members, retains and releases by the canonical descriptor.
+
+Eligible scalar-only records use inline C aggregates in registers and padded
+`S_MirArrayInline<TypeId>` slots in native arrays. Array layout metadata selects
+element type, byte stride and ownership policy; reads copy fields with `memcpy`
+without creating a record object. CoW copies these unmanaged slots as bytes.
+Record fields, dictionary entries and optional payloads still box records;
+optional array indexing boxes the selected element. Managed-field records and
+union alternatives retain boxed storage. See [Ownership](OWNERSHIP.md) and
+`tools/test_mir_inline_arrays.py`.
+
+The C emitter selects union members, retains and releases by the canonical descriptor.
 `sizeof(S_MirField)`, alignment and header offsets remain target-ABI-dependent.
 The interpreter uses its own heap representation but the same static ownership
 classification. Type IDs inside `S_MirRecord` are local to the executable,

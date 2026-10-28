@@ -214,3 +214,20 @@ On modular self-compilation, generated MIR allocation calls fell from
 Revisiting a block repeats the instruction walk; profile on workloads with
 highly iterative CFGs before assuming a speed improvement. See
 [MIR_PROFILE.md](MIR_PROFILE.md) for measurement details.
+
+## Inline scalar-record arrays (2026-10-28)
+
+Integrated `SiriusLang-inline-record-arrays-step2.patch` against revision
+`c685414`, adapting its documentation to the current reference layout.
+On `tests/mir/source_inline_array_allocations.sirius` (512 two-field `Pair`
+values), native `-O0` execution made 513 MIR record-allocation calls before
+and 1 after. Both programs returned zero with no stdout. Counts came from an
+identical temporary counter at `s_mir_record_new` in generated fixture C;
+each compiler was built from its corresponding bootstrap. These counts exclude
+strings, reallocations and allocations internal to dictionaries. No timing or
+whole-compiler speedup is claimed.
+
+Native/MIR inline-array tests, ARC auditing, CoW, optional indexing, structural
+equality, related regressions and the bootstrap fixture suite passed. The
+bootstrap reproduced exactly at generation 2. ASan/UBSan validation could not
+link with the installed Windows Clang: `clang_rt.asan.lib` is missing.

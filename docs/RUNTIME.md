@@ -13,7 +13,7 @@ Dated benchmarks and allocator experiments are in
 | `S_Array` | Refcounted descriptor + homogeneous contiguous allocation; callbacks for managed elements | Clone shared values, consume owner on append | Growth/capacity, avoiding temporary buffers and unnecessary clones |
 | `S_Dict` | Refcounted open-addressed entries with one aligned allocation per key/value pair | Clone all entries on shared update | Consider slot-local payloads/slabs; preserve hashing and callback semantics |
 | `S_Array_i64`, `S_Dict_i64_i64` | Older specialized layouts | Separate CoW implementation | Consolidate carefully after auditing legacy/bootstrap callers |
-| MIR generated records/arrays | Eligible scalar record registers are inline; heap slots use type-directed `S_MirRecord` fields emitted by `mir_emit_c.sirius` | MIR ownership operations + runtime primitives | Preserve wrapper/array ABI |
+| MIR generated records/arrays | Eligible scalar records are inline in registers and strided array slots; other record slots remain boxed | MIR ownership operations + runtime primitives | Preserve wrapper/array ABI |
 | MIR generated dictionaries | `S_MirRecord` owner containing the generic `S_Dict` hash table | `S_Dict` callback-owned entries; wrapper and table have CoW | Benchmark hashing/allocations on compiler workloads |
 
 ## Compiler-visible runtime layout metadata
@@ -23,11 +23,13 @@ The canonical `src/types.sirius` table now exposes a target-neutral
 `S_MirField` slot counts. These properties drive MIR C scalar/pointer types,
 field selection and retain/release dispatch, and shared interpreter ownership.
 For records, field slot indices follow canonical name sorting. Arrays use a
-variable number of slots; optionals use zero or one; dictionary wrappers hold
+variable number of slots, with native byte strides specialized for eligible
+scalar-only record elements; optionals use zero or one; dictionary wrappers hold
 one `S_Dict *`. This metadata does **not** provide portable byte offsets or
 an emitted runtime registration table. The C target controls union size and
 alignment, and emitted `S_MirRecord.type_id` remains executable-local.
-Neither the C runtime ABI nor the on-disk `.smir` format changed.
+These emitter-specific layouts do not change the standalone C runtime API or
+the on-disk `.smir` format. The interpreter keeps its logical heap layout.
 
 ## C collection APIs
 
@@ -92,6 +94,21 @@ storage. See `tools/test_structural_equality.py`.
 Validation: `python tools/test_mir_compiler.py` includes shared managed-record,
 array and dictionary snapshots. `python tools/test_mir_selfhost.py` verifies
 native fixed-point self-hosting.
+
+### Inline scalar-record arrays
+
+The native emitter uses inline array slots for records with 1-4 fields of
+`i64`, `f64` or `bool`, subject to the exclusions in
+[Ownership](OWNERSHIP.md#current-native-representation-generated-mir_emit_csirius).
+Array allocation, indexing, append, update and CoW use the descriptor's stride.
+Inline slots need no per-element allocation or ARC identity; pointer-valued
+slots retain their existing copy/drop behavior. Optional projection still boxes
+the selected record. Nested structural equality reads each scalar field rather
+than comparing padding bytes.
+
+`python tools/test_mir_inline_arrays.py` checks widths of 8, 16, 24 and 32 bytes,
+CoW snapshots, optional access, nested equality, ARC auditing and MIR parity.
+`--sanitize` adds AddressSanitizer and UndefinedBehaviorSanitizer where supported.
 
 ## Generated field helpers
 

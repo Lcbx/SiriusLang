@@ -1,0 +1,10 @@
+# Allocation-count benchmark: no per-element record allocation is necessary.
+rec Pair(left: i64, right: i64)
+
+def main() -> i64
+	var entries = Array[Pair]()
+	for index in 0..512
+		entries = entries.append(Pair(index, index + 1))
+	if len(entries) != 512 or entries[!0].left != 0 or entries[!-1].right != 512
+		return 1
+	return 0

@@ -33,8 +33,8 @@ def main() -> None:
         c = work / 'arrays.c'
         check([str(compiler), str(source), str(c)], 0)
         emitted = c.read_text(encoding='utf-8')
-        # The metadata must be emitted for each array specialization, and
-        # the current ABI must explicitly keep a full S_MirField per element.
+        # Noninline elements still use the full S_MirField ABI; eligible
+        # scalar-record arrays instead use their own inline element widths.
         layouts = re.findall(r'case \d+: return \(S_MirArrayLayout\)\{\d+, sizeof\(S_MirField\), (S_MIR_ELEMENT_\w+)\};', emitted)
         for expected in ('S_MIR_ELEMENT_POD', 'S_MIR_ELEMENT_STRING', 'S_MIR_ELEMENT_OBJECT'):
             assert expected in layouts, (expected, layouts)
