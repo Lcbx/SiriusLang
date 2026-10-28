@@ -97,6 +97,9 @@ export let MIR_CALL_INDIRECT = 91
 # Experimental native coallocation hint: like RECORD_NEW; immediate names the union destination register.
 export let MIR_RECORD_NEW_FUSED = 92
 export let MIR_RECORD_NEW_FUSED_MOVE = 93
+export let MIR_I64_TO_F64 = 94
+export let MIR_F64_TO_I64 = 95
+export let MIR_F64_TO_I64_VALID = 96
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2
@@ -114,6 +117,8 @@ export rec MirFailureInfo(guarded: bool, abort: bool, in_band: bool)
 export rec MirFailureAudit(error: string, guarded: i64, aborts: i64, in_band: i64)
 
 export def mir_failure_info(op: i64) -> MirFailureInfo
+	if op == MIR_F64_TO_I64
+		return MirFailureInfo(true, false, false)
 	if op == MIR_DIV_I64 or op == MIR_REM_I64 or op == MIR_SHL_I64 or op == MIR_SHR_I64 or op == MIR_ARRAY_GET or op == MIR_OPTIONAL_UNWRAP
 		return MirFailureInfo(true, false, false)
 	if op == MIR_ARRAY_SET

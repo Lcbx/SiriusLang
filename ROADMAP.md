@@ -506,9 +506,9 @@ its long-term feature list is **not** the implementation queue. In particular:
   negation now wrap at 64 bits; division/remainder truncate toward zero and
   trap on zero or the minimum-value / `-1` case. Continue with explicit
   conversions and floating-point edge behavior as separately decided work.
-  Explicit `f64(x)` / `i64(x)` casts are not implemented; no conversion
-  opcodes currently exist. MIR decimal parsing retains the established
-  short-literal path and normalizes unusually long literals so compensating
+  Explicit scalar `f64(i64)` / `i64(f64)` conversions now lower to typed
+  MIR opcodes; the narrowing operation has a checked CFG panic edge.
+  MIR decimal parsing retains the established short-literal path and normalizes unusually long literals so compensating
   exponents do not lose finite values to intermediate overflow/underflow.
   Correctly rounded native/interpreter literal parity remains unproven.
   Keep native and interpreted execution in agreement.

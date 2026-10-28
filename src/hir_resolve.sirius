@@ -53,7 +53,7 @@ export def hir_call_arguments(types: Types.TypeTable, actual: Array[i64], expect
 	return HirCallCheck(types, result, "")
 
 export def hir_is_builtin(name: string) -> bool
-	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "path_kind" or name == "filesystem_error_kind" or name == "filesystem_error_code" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt" or name == "empty_array_like"
+	return name == "arguments" or name == "read_text" or name == "write_text" or name == "list_dir" or name == "is_dir" or name == "path_kind" or name == "filesystem_error_kind" or name == "filesystem_error_code" or name == "print" or name == "eprint" or name == "len" or name == "str" or name == "sqrt" or name == "f64" or name == "i64" or name == "empty_array_like"
 
 export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: Array[i64]) -> HirCallCheck
 	if name == "empty_array_like"
@@ -92,6 +92,10 @@ export def resolve_hir_builtin_call(types: Types.TypeTable, name: string, args: 
 		if len(args) != 1 or args[!0] != Types.TYPE_TAG_I64
 			return HirCallCheck(types, Types.TYPE_TAG_INVALID, "str expects one i64 argument")
 		return HirCallCheck(types, Types.TYPE_TAG_STRING, "")
+	if name == "f64"
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_I64], Types.TYPE_TAG_F64, "f64 expects one i64 argument")
+	if name == "i64"
+		return hir_call_arguments(types, args, [Types.TYPE_TAG_F64], Types.TYPE_TAG_I64, "i64 expects one f64 argument")
 	if name == "sqrt"
 		return hir_call_arguments(types, args, [Types.TYPE_TAG_F64], Types.TYPE_TAG_F64, "sqrt expects one argument")
 	if name == "print" or name == "eprint"

@@ -193,6 +193,20 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				let kind = types.entries[!i].fields[!j].kind
 				parts = parts.append(mir_c_type(types, kind) + " f" + str(j) + "; ")
 			parts = parts.append("} " + mir_c_inline_name(i) + ";\n")
+	# C11 leaves the direction of an inexact integer->double cast implementation-defined.
+	# Round discarded low bits explicitly, so conversion always uses ties-to-even.
+	# The final cast is exact (at most 53 significand bits) and ldexp scales
+	# by an exact power of two within the binary64 exponent range.
+	parts = parts.append("static inline double s_mir_i64_to_f64(int64_t value) {\n")
+	parts = parts.append("\tuint64_t magnitude = value < 0 ? (uint64_t)(-(value + 1)) + UINT64_C(1) : (uint64_t)value;\n")
+	parts = parts.append("\tif (magnitude <= UINT64_C(9007199254740992)) return (double)value;\n")
+	parts = parts.append("\tuint64_t mantissa = magnitude; unsigned shift = 0;\n")
+	parts = parts.append("\twhile (mantissa > UINT64_C(9007199254740991)) { mantissa >>= 1; ++shift; }\n")
+	parts = parts.append("\tuint64_t remainder = magnitude & ((UINT64_C(1) << shift) - 1);\n")
+	parts = parts.append("\tuint64_t halfway = UINT64_C(1) << (shift - 1);\n")
+	parts = parts.append("\tif (remainder > halfway || (remainder == halfway && (mantissa & 1))) ++mantissa;\n")
+	parts = parts.append("\tdouble rounded = ldexp((double)mantissa, (int)shift);\n")
+	parts = parts.append("\treturn value < 0 ? -rounded : rounded;\n}\n")
 	parts = parts.append("typedef struct S_MirRecord S_MirRecord;\n")
 	# Type descriptors determine the active field; a union avoids storing four unused payloads.
 	parts = parts.append("typedef union { int64_t bits; double real; S_String *text; S_MirRecord *record; S_Dict *dict; } S_MirField;\n")
@@ -576,6 +590,15 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return mir_c_store_owned(types, instruction.dst, Types.TYPE_TAG_STRING, "s_string_from_bytes(" + mir_c_string(instruction.text) + ", " + str(len(instruction.text)) + ")", checked)
 	if op == Mir.MIR_CONST_F64
 		return "\t" + dst + " = " + instruction.text + "" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_I64_TO_F64
+		return result + "\t" + dst + " = s_mir_i64_to_f64(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_F64_TO_I64_VALID
+		return result + "\t" + dst + " = (" + first + " >= -0x1p63 && " + first + " < 0x1p63)" + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_F64_TO_I64
+		var code = result
+		if checked or instruction.text != "__mir_guarded"
+			code = code + "\tif (!(" + first + " >= -0x1p63 && " + first + " < 0x1p63)) s_panic(\"floating-point value cannot be represented as i64\");\n"
+		return code + "\t" + dst + " = (int64_t)" + first + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_SQRT_F64
 		return result + "\t" + dst + " = sqrt(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_UNION_NEW

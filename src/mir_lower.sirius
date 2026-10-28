@@ -893,6 +893,24 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			next = mir_lower_register(next, type_id)
 			next = mir_lower_emit(next, Mir.mir_array_new(dst, Array[i64]()))
 			return MirLowerExpr(next, dst)
+		if context.tree.nodes[!callee].kind == Ast.NODE_NAME and (Hir.hir_ast_text(context.tree, callee) == "f64" or Hir.hir_ast_text(context.tree, callee) == "i64") and node.count == 2
+			let name = Hir.hir_ast_text(context.tree, callee)
+			let operand = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
+			next = operand.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			var source = Types.TYPE_TAG_I64
+			var target = Types.TYPE_TAG_F64
+			var opcode = Mir.MIR_I64_TO_F64
+			if name == "i64"
+				source = Types.TYPE_TAG_F64
+				target = Types.TYPE_TAG_I64
+				opcode = Mir.MIR_F64_TO_I64
+			if next.register_types[!operand.slot] != source or mir_lower_type(context, id, Resolve.HIR_CALL) != target
+				return MirLowerExpr(mir_lower_error(next, "invalid numeric conversion"), -1)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, target)
+			next = mir_lower_emit(next, Mir.mir_op(opcode, dst, operand.slot, -1, 0))
+			return MirLowerExpr(next, dst)
 		if context.tree.nodes[!callee].kind == Ast.NODE_NAME and Hir.hir_ast_text(context.tree, callee) == "sqrt" and node.count == 2
 			let operand = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
 			next = operand.state

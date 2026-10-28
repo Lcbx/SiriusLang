@@ -53,7 +53,7 @@ while y > 20
 * `and`, `or`, `not` short-circuit on scalar booleans.
 * Strict numeric typing: no implicit promotion; literals may adopt contextual types. Without context, integer literals default to `i64`, floating literals to `f64`.
 * `i64` `+`, `-`, `*`, and unary `-` wrap modulo 2^64 (interpreted as signed two's-complement). Signed `/` truncates toward zero and `%` has the dividend's sign. Both trap on zero divisors or `i64` minimum divided/remainder by `-1`.
-* Explicit scalar numeric conversions (`f64(x)`, `i64(x)`) are not implemented; those calls are currently rejected. Their syntax, rounding and out-of-range behavior remain design decisions. No implicit numeric promotion is supported.
+* Explicit scalar numeric conversions are `f64(i64)` (round to nearest, ties to even) and `i64(f64)` (truncate toward zero; trap for NaN, infinity or values outside `[-2^63, 2^63)`). There is no implicit numeric promotion.
 * Floating-point arithmetic generally follows IEEE-754, but MIR decimal-literal parsing does not yet guarantee correctly rounded, bit-identical values across native and interpreted execution.
 
 ## 3. Immutable Values and Local Mutation

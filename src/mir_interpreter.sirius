@@ -109,6 +109,27 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 			if ins.op == Mir.MIR_CONST_F64
 				registers[!ins.dst] = mir_real_value(Float.mir_parse_real(ins.text))
 				continue
+			if ins.op == Mir.MIR_I64_TO_F64
+				let value = registers[!ins.first]
+				if value.type_id != Types.TYPE_TAG_I64
+					return mir_failure("invalid integer conversion operand", steps)
+				registers[!ins.dst] = mir_real_value(f64(value.bits))
+				continue
+			if ins.op == Mir.MIR_F64_TO_I64_VALID or ins.op == Mir.MIR_F64_TO_I64
+				let value = registers[!ins.first]
+				if value.type_id != Types.TYPE_TAG_F64
+					return mir_failure("invalid floating conversion operand", steps)
+				let valid = value.real >= -9223372036854775808.0 and value.real < 9223372036854775808.0
+				if ins.op == Mir.MIR_F64_TO_I64_VALID
+					var bit = 0
+					if valid
+						bit = 1
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, bit, "")
+				else
+					if not valid
+						return mir_failure("floating-point value cannot be represented as i64", steps)
+					registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_I64, i64(value.real), "")
+				continue
 			if ins.op == Mir.MIR_NEG_F64 or ins.op == Mir.MIR_SQRT_F64
 				let value = registers[!ins.first]
 				if value.type_id != Types.TYPE_TAG_F64

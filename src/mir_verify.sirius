@@ -117,6 +117,18 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if dst_type != Types.TYPE_TAG_F64 or ins.text == ""
 			return "floating constant destination must be f64"
 		return ""
+	if ins.op == Mir.MIR_I64_TO_F64
+		if dst_type != Types.TYPE_TAG_F64 or not mir_register_valid(types, ins.first, Types.TYPE_TAG_I64) or ins.second != -1
+			return "i64 to f64 conversion type mismatch"
+		return ""
+	if ins.op == Mir.MIR_F64_TO_I64
+		if dst_type != Types.TYPE_TAG_I64 or not mir_register_valid(types, ins.first, Types.TYPE_TAG_F64) or ins.second != -1
+			return "f64 to i64 conversion type mismatch"
+		return ""
+	if ins.op == Mir.MIR_F64_TO_I64_VALID
+		if dst_type != Types.TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, Types.TYPE_TAG_F64) or ins.second != -1
+			return "f64 to i64 guard type mismatch"
+		return ""
 	if ins.op == Mir.MIR_SHIFT_VALID
 		if dst_type != Types.TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, Types.TYPE_TAG_I64)
 			return "shift guard type mismatch"
@@ -514,6 +526,8 @@ def mir_guarded_instruction(function: Mir.MirFunction, predecessors: Array[Array
 	# No operand definition may intervene between the guard and its use.
 	if position != 0
 		return false
+	if ins.op == Mir.MIR_F64_TO_I64
+		return mir_guarded_predecessors(function, predecessors, block_id, Mir.MIR_F64_TO_I64_VALID, ins.first, -1, -1, -1, -1, len(function.blocks))
 	if ins.op == Mir.MIR_DIV_I64 or ins.op == Mir.MIR_REM_I64
 		return mir_guarded_predecessors(function, predecessors, block_id, Mir.MIR_DIV_NO_OVERFLOW_I64, ins.first, ins.second, Mir.MIR_NONZERO_I64, ins.second, -1, len(function.blocks))
 	if ins.op == Mir.MIR_SHL_I64 or ins.op == Mir.MIR_SHR_I64

@@ -1,0 +1,50 @@
+import mir alias Mir
+import mir_interpreter alias Interpreter
+import mir_guard alias Guard
+import mir_verify alias Verify
+import types alias Types
+
+# MIR interpreter must match C's exact int->double rounding.
+def main() -> i64
+	let round = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_F64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 9007199254740993), Mir.mir_op(Mir.MIR_I64_TO_F64, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_F64_TO_I64, 2, 1, -1, 0)], Mir.mir_return(2))], 0)
+	let result = Interpreter.mir_execute(Mir.new_mir_program([round]), 0, Array[Mir.MirValue](), 1000, 10)
+	if result.error != "" or result.value.bits != 9007199254740992
+		return 1
+	let minimum = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_F64, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, -9223372036854775807 - 1), Mir.mir_op(Mir.MIR_I64_TO_F64, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_F64_TO_I64_VALID, 2, 1, -1, 0), Mir.mir_op(Mir.MIR_F64_TO_I64, 3, 1, -1, 0)], Mir.mir_return(3))], 0)
+	let low = Interpreter.mir_execute(Mir.new_mir_program([minimum]), 0, Array[Mir.MirValue](), 1000, 10)
+	if low.error != "" or low.value.bits != (-9223372036854775807 - 1)
+		return 2
+	let nan = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_F64, Types.TYPE_TAG_F64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.MirInstruction(Mir.MIR_CONST_F64, 0, -1, -1, 0, Array[i64](), "0.0"), Mir.mir_op(Mir.MIR_DIV_F64, 1, 0, 0, 0), Mir.mir_op(Mir.MIR_F64_TO_I64, 2, 1, -1, 0)], Mir.mir_return(2))], 0)
+	let failed = Interpreter.mir_execute(Mir.new_mir_program([nan]), 0, Array[Mir.MirValue](), 1000, 10)
+	if failed.error != "floating-point value cannot be represented as i64"
+		return 3
+	let half = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_F64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.MirInstruction(Mir.MIR_CONST_F64, 0, -1, -1, 0, Array[i64](), "0.5"), Mir.mir_op(Mir.MIR_F64_TO_I64, 1, 0, -1, 0)], Mir.mir_return(1))], 0)
+	let positive_half = Interpreter.mir_execute(Mir.new_mir_program([half]), 0, Array[Mir.MirValue](), 1000, 10)
+	if positive_half.error != "" or positive_half.value.bits != 0
+		return 9
+	let negative_half = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_F64, Types.TYPE_TAG_F64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.MirInstruction(Mir.MIR_CONST_F64, 0, -1, -1, 0, Array[i64](), "0.5"), Mir.mir_op(Mir.MIR_NEG_F64, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_F64_TO_I64, 2, 1, -1, 0)], Mir.mir_return(2))], 0)
+	let neg = Interpreter.mir_execute(Mir.new_mir_program([negative_half]), 0, Array[Mir.MirValue](), 1000, 10)
+	if neg.error != "" or neg.value.bits != 0
+		return 10
+	let upper = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_I64, Types.TYPE_TAG_F64, Types.TYPE_TAG_I64], [Mir.MirBlock([Mir.mir_op(Mir.MIR_CONST_I64, 0, -1, -1, 9223372036854775807), Mir.mir_op(Mir.MIR_I64_TO_F64, 1, 0, -1, 0), Mir.mir_op(Mir.MIR_F64_TO_I64, 2, 1, -1, 0)], Mir.mir_return(2))], 0)
+	let over = Interpreter.mir_execute(Mir.new_mir_program([upper]), 0, Array[Mir.MirValue](), 1000, 10)
+	if over.error != "floating-point value cannot be represented as i64"
+		return 11
+	# A cast cannot claim to be checked without a matching CFG guard.
+	let raw = Mir.new_mir_program([nan])
+	if Verify.mir_audit_failures(raw).error != "unguarded MIR runtime failure"
+		return 4
+	let checked = Guard.mir_insert_guards(raw)
+	if checked.error != "" or checked.guards != 1
+		return 5
+	let audit = Verify.mir_audit_failures(checked.program)
+	if audit.error != "" or audit.guarded != 1
+		return 6
+	let again = Guard.mir_insert_guards(checked.program)
+	if again.error != "" or again.guards != 0
+		return 7
+	let forged_ins = Mir.MirInstruction(Mir.MIR_F64_TO_I64, 2, 1, -1, 0, Array[i64](), "__mir_guarded")
+	let forged_fn = Mir.MirFunction(0, Types.TYPE_TAG_I64, nan.register_types, [Mir.MirBlock([Mir.MirInstruction(Mir.MIR_CONST_F64, 0, -1, -1, 0, Array[i64](), "0.0"), Mir.mir_op(Mir.MIR_DIV_F64, 1, 0, 0, 0), forged_ins], Mir.mir_return(2))], 0)
+	if Verify.mir_audit_failures(Mir.new_mir_program([forged_fn])).error != "guarded MIR runtime failure lacks matching CFG guard"
+		return 8
+	return 0
