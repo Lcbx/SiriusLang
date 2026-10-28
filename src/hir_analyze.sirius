@@ -394,7 +394,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 	match selected.outcome
 		HirOverloadFound(index)
 			function_index = index
-		HirOverloadAbsent()
+		HirOverloadAbsent
 			return result
 		HirOverloadRejected(message)
 			return hir_body_error(result, id, message)
@@ -499,7 +499,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 				return result
 			let edit = Resolve.hir_constructor_publish(fields, field_name, field_type)
 			match edit.outcome
-				Resolve.HirRecordUpdated(index)
+				Resolve.HirRecordUpdated
 					fields = edit.fields
 				Resolve.HirRecordEditError(message)
 					return hir_body_error(result, pub_id, message)
@@ -583,9 +583,7 @@ def hir_body_overloaded_call(state: HirBodyState, id: i64, name: string) -> HirB
 		match selected.outcome
 			HirOverloadFound(index)
 				exact_candidate = index == candidate
-			HirOverloadAbsent()
-				exact_candidate = false
-			HirOverloadRejected(message)
+			HirOverloadAbsent | HirOverloadRejected
 				exact_candidate = false
 		if not exact_candidate
 			continue
@@ -954,13 +952,9 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 		if union_id != Types.TYPE_TAG_INVALID
 			let checked = Resolve.check_exhaustive_match_indices(observed.state.types, union_id, alternatives)
 			match checked
-				Resolve.HirMatchComplete()
+				Resolve.HirMatchComplete
 					exhaustive = true
-				Resolve.HirMatchInvalid(message)
-					exhaustive = false
-				Resolve.HirMatchRepeated(alternative)
-					exhaustive = false
-				Resolve.HirMatchMissing(alternative)
+				Resolve.HirMatchInvalid | Resolve.HirMatchRepeated | Resolve.HirMatchMissing
 					exhaustive = false
 		if not exhaustive
 			if has_path
@@ -1202,11 +1196,7 @@ def hir_callback_argument_hints(state: HirBodyState, function: Hir.HirFunctionDe
 						result.types = typed.types
 						known[!i - 1] = typed.last_type
 						changed = true
-				HirCallbackUnderdetermined()
-					continue
-				HirCallbackConflicting(detail)
-					continue
-				HirCallbackCyclic(trace)
+				HirCallbackUnderdetermined | HirCallbackConflicting | HirCallbackCyclic
 					continue
 	return HirCallbackArgumentHints(result, known)
 
@@ -1245,9 +1235,7 @@ def hir_callback_record_hints(state: HirBodyState, function: Hir.HirFunctionDecl
 				HirCallbackConflicting(detail)
 					if result.conflict == ""
 						result.conflict = detail
-				HirCallbackUnderdetermined()
-					continue
-				HirCallbackCyclic(trace)
+				HirCallbackUnderdetermined | HirCallbackCyclic
 					continue
 	return result
 
@@ -1282,7 +1270,7 @@ def hir_body_record(state: HirBodyState, id: i64, hints: Array[HirCallbackFieldH
 			elif complete
 				let edit = Resolve.hir_record_put(fields, name, result.last_type)
 				match edit.outcome
-					Resolve.HirRecordUpdated(index)
+					Resolve.HirRecordUpdated
 						fields = edit.fields
 					Resolve.HirRecordEditError(message)
 						return hir_body_error(result, field_id, message)
@@ -1293,14 +1281,14 @@ def hir_body_record(state: HirBodyState, id: i64, hints: Array[HirCallbackFieldH
 			elif complete
 				let edit = Resolve.hir_record_spread(result.types, fields, symbol.type_id)
 				match edit.outcome
-					Resolve.HirRecordUpdated(index)
+					Resolve.HirRecordUpdated
 						fields = edit.fields
 					Resolve.HirRecordEditError(message)
 						return hir_body_error(result, field_id, message)
 		elif field.kind == Ast.NODE_DELETE and complete
 			let edit = Resolve.hir_record_delete(fields, name)
 			match edit.outcome
-				Resolve.HirRecordUpdated(index)
+				Resolve.HirRecordUpdated
 					fields = edit.fields
 				Resolve.HirRecordEditError(message)
 					return hir_body_error(result, field_id, message)
@@ -1610,7 +1598,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 										if trace != ""
 											message += ": " + trace
 										return hir_body_error(result, child, message + "; annotate the callback parameters")
-								HirCallbackUnderdetermined()
+								HirCallbackUnderdetermined
 									if needs_context
 										return hir_body_error(result, child, "underdetermined callback parameters in '" + hir_callback_display_name(name) + "'" + hir_callback_origin(name) + "; annotate the callback parameters")
 							break
@@ -1823,7 +1811,7 @@ def hir_body_function_value_expected(state: HirBodyState, id: i64, expected: i64
 	match selected.outcome
 		HirOverloadFound(index)
 			function_index = index
-		HirOverloadAbsent()
+		HirOverloadAbsent
 			return hir_body_expression(state, id)
 		HirOverloadRejected(message)
 			return hir_body_error(result, id, message)
@@ -1875,7 +1863,7 @@ def hir_body_callback_value(state: HirBodyState, id: i64, parameters: Array[i64]
 	match selected.outcome
 		HirOverloadFound(index)
 			function_index = index
-		HirOverloadAbsent()
+		HirOverloadAbsent
 			return hir_body_expression(state, id)
 		HirOverloadRejected(message)
 			return hir_body_error(state, id, message)
@@ -2083,13 +2071,13 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 			result.depth -= 1
 		let checked = Resolve.check_exhaustive_match_indices(result.types, union_id, alternatives)
 		match checked
-			Resolve.HirMatchComplete()
+			Resolve.HirMatchComplete
 				return result
 			Resolve.HirMatchInvalid(message)
 				return hir_body_error(result, id, message)
-			Resolve.HirMatchRepeated(alternative)
+			Resolve.HirMatchRepeated
 				return hir_body_error(result, id, "duplicate match alternative")
-			Resolve.HirMatchMissing(alternative)
+			Resolve.HirMatchMissing
 				return hir_body_error(result, id, "non-exhaustive match")
 	if node.kind == Ast.NODE_DESTRUCTURE
 		let initializer = Hir.hir_ast_child(state.tree, id, 0)

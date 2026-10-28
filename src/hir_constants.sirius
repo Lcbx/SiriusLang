@@ -67,7 +67,7 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 		match hir_decode_string(value)
 			HirStringDecoded(decoded)
 				return hir_constant_push_text(types, values, Types.TYPE_TAG_STRING, 0, Array[i64](), decoded)
-			HirStringDecodeError(message)
+			HirStringDecodeError
 				return hir_constant_invalid(types, values)
 	if node.kind == Ast.NODE_ARRAY
 		var current_types = types
@@ -80,7 +80,7 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 			match evaluated.outcome
 				Hir.HirConstantFound(index)
 					evaluated_index = index
-				Hir.HirConstantUnavailable()
+				Hir.HirConstantUnavailable
 					return evaluated
 			current_types = evaluated.table
 			current_values = evaluated.values
@@ -104,7 +104,7 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 		match owner.outcome
 			Hir.HirConstantFound(index)
 				owner_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return owner
 		let parent = owner.values[!owner_index]
 		if Types.type_tag(owner.table, parent.type_id) != Types.TYPE_TAG_RECORD
@@ -120,14 +120,14 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 		match owner.outcome
 			Hir.HirConstantFound(index)
 				owner_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return owner
 		let selected = hir_eval_constant(owner.table, owner.values, tree, Hir.hir_ast_child(tree, id, 1), constants)
 		var selected_index = -1
 		match selected.outcome
 			Hir.HirConstantFound(index)
 				selected_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return selected
 		let container = selected.values[!owner_index]
 		let index = selected.values[!selected_index]
@@ -144,7 +144,7 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 			match argument.outcome
 				Hir.HirConstantFound(index)
 					argument_index = index
-				Hir.HirConstantUnavailable()
+				Hir.HirConstantUnavailable
 					return argument
 			let item = argument.values[!argument_index]
 			if item.type_id == Types.TYPE_TAG_STRING
@@ -158,7 +158,7 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 		match inner.outcome
 			Hir.HirConstantFound(index)
 				inner_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return inner
 		let element = inner.values[!inner_index]
 		if value == "not" and element.type_id == Types.TYPE_TAG_BOOL
@@ -174,14 +174,14 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 		match left.outcome
 			Hir.HirConstantFound(index)
 				left_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return left
 		let right = hir_eval_constant(left.table, left.values, tree, Hir.hir_ast_child(tree, id, 1), constants)
 		var right_index = -1
 		match right.outcome
 			Hir.HirConstantFound(index)
 				right_index = index
-			Hir.HirConstantUnavailable()
+			Hir.HirConstantUnavailable
 				return right
 		let first = right.values[!left_index]
 		let second = right.values[!right_index]
@@ -207,9 +207,9 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 			if field_node.kind == Ast.NODE_DELETE
 				let edit = Resolve.hir_record_delete(members, field_name)
 				match edit.outcome
-					Resolve.HirRecordUpdated(index)
+					Resolve.HirRecordUpdated
 						members = edit.fields
-					Resolve.HirRecordEditError(message)
+					Resolve.HirRecordEditError
 						return hir_constant_invalid(current_types, current_values)
 				continue
 			if field_node.kind == Ast.NODE_SPREAD
@@ -227,9 +227,9 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 					let member = source_fields[!j]
 					let edit = Resolve.hir_record_put(members, member.name, member.kind)
 					match edit.outcome
-						Resolve.HirRecordUpdated(index)
+						Resolve.HirRecordUpdated
 							members = edit.fields
-						Resolve.HirRecordEditError(message)
+						Resolve.HirRecordEditError
 							return hir_constant_invalid(current_types, current_values)
 					fields = fields.append(Hir.HirConstantField(member.name, spread.fields[!j]))
 				continue
@@ -240,16 +240,16 @@ export def hir_eval_constant(types: Types.TypeTable, values: Array[Hir.HirConsta
 			match evaluated.outcome
 				Hir.HirConstantFound(index)
 					evaluated_index = index
-				Hir.HirConstantUnavailable()
+				Hir.HirConstantUnavailable
 					return evaluated
 			current_types = evaluated.table
 			current_values = evaluated.values
 			let field_type = current_values[!evaluated_index].type_id
 			let edit = Resolve.hir_record_put(members, field_name, field_type)
 			match edit.outcome
-				Resolve.HirRecordUpdated(index)
+				Resolve.HirRecordUpdated
 					members = edit.fields
-				Resolve.HirRecordEditError(message)
+				Resolve.HirRecordEditError
 					return hir_constant_invalid(current_types, current_values)
 			fields = fields.append(Hir.HirConstantField(field_name, evaluated_index))
 		let canonical = Types.intern_record_type(current_types, members)

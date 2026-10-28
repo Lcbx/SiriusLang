@@ -156,7 +156,7 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 			match evaluated.outcome
 				Hir.HirConstantFound(index)
 					evaluated_index = index
-				Hir.HirConstantUnavailable()
+				Hir.HirConstantUnavailable
 					return hir_declaration_error(functions, constants, "unsupported module constant initializer", Hir.hir_ast_line(tree, id))
 			types = evaluated.table
 			values = evaluated.values

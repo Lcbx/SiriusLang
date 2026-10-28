@@ -17,22 +17,22 @@ export let TOKEN_UNCLOSED_STRING = -3
 export let TOKEN_INVALID_BRACKET = -4
 export let TOKEN_UNCLOSED_BRACKET = -5
 
-export rec TkName()
-export rec TkInt()
-export rec TkFloat()
-export rec TkString()
-export rec TkOperator()
-export rec TkNewline()
-export rec TkIndent()
-export rec TkDedent()
-export rec TkEof()
-export rec TkInvalidChar()
-export rec TkInvalidIndent()
-export rec TkUnclosedString()
-export rec TkInvalidBracket()
-export rec TkUnclosedBracket()
-export rec TkUnknown()
-export let TokenKind = TkName | TkInt | TkFloat | TkString | TkOperator | TkNewline | TkIndent | TkDedent | TkEof | TkInvalidChar | TkInvalidIndent | TkUnclosedString | TkInvalidBracket | TkUnclosedBracket | TkUnknown
+export enum TokenKind
+	TkName
+	TkInt
+	TkFloat
+	TkString
+	TkOperator
+	TkNewline
+	TkIndent
+	TkDedent
+	TkEof
+	TkInvalidChar
+	TkInvalidIndent
+	TkUnclosedString
+	TkInvalidBracket
+	TkUnclosedBracket
+	TkUnknown
 
 export def token_kind_from_code(code: i64) -> TokenKind
 	if code == TOKEN_NAME
@@ -67,101 +67,75 @@ export def token_kind_from_code(code: i64) -> TokenKind
 
 export def token_kind_code(kind: TokenKind) -> i64
 	match kind
-		TkName()
+		TkName
 			return TOKEN_NAME
-		TkInt()
+		TkInt
 			return TOKEN_INT
-		TkFloat()
+		TkFloat
 			return TOKEN_FLOAT
-		TkString()
+		TkString
 			return TOKEN_STRING
-		TkOperator()
+		TkOperator
 			return TOKEN_OP
-		TkNewline()
+		TkNewline
 			return TOKEN_NEWLINE
-		TkIndent()
+		TkIndent
 			return TOKEN_INDENT
-		TkDedent()
+		TkDedent
 			return TOKEN_DEDENT
-		TkEof()
+		TkEof
 			return TOKEN_EOF
-		TkInvalidChar()
+		TkInvalidChar
 			return TOKEN_INVALID_CHAR
-		TkInvalidIndent()
+		TkInvalidIndent
 			return TOKEN_INVALID_INDENT
-		TkUnclosedString()
+		TkUnclosedString
 			return TOKEN_UNCLOSED_STRING
-		TkInvalidBracket()
+		TkInvalidBracket
 			return TOKEN_INVALID_BRACKET
-		TkUnclosedBracket()
+		TkUnclosedBracket
 			return TOKEN_UNCLOSED_BRACKET
-		TkUnknown()
+		TkUnknown
 			return 0
 
 export def token_is_error(kind: TokenKind) -> bool
 	match kind
-		TkName()
+		TkName | TkInt | TkFloat | TkString | TkOperator | TkNewline | TkIndent | TkDedent | TkEof
 			return false
-		TkInt()
-			return false
-		TkFloat()
-			return false
-		TkString()
-			return false
-		TkOperator()
-			return false
-		TkNewline()
-			return false
-		TkIndent()
-			return false
-		TkDedent()
-			return false
-		TkEof()
-			return false
-		TkInvalidChar()
-			return true
-		TkInvalidIndent()
-			return true
-		TkUnclosedString()
-			return true
-		TkInvalidBracket()
-			return true
-		TkUnclosedBracket()
-			return true
-		TkUnknown()
+		TkInvalidChar | TkInvalidIndent | TkUnclosedString | TkInvalidBracket | TkUnclosedBracket | TkUnknown
 			return true
 
 export def token_label(kind: TokenKind) -> string
 	match kind
-		TkName()
+		TkName
 			return "NAME"
-		TkInt()
+		TkInt
 			return "INT"
-		TkFloat()
+		TkFloat
 			return "FLOAT"
-		TkString()
+		TkString
 			return "STRING"
-		TkOperator()
+		TkOperator
 			return "OP"
-		TkNewline()
+		TkNewline
 			return "NEWLINE"
-		TkIndent()
+		TkIndent
 			return "INDENT"
-		TkDedent()
+		TkDedent
 			return "DEDENT"
-		TkEof()
+		TkEof
 			return "EOF"
-		TkInvalidChar()
+		TkInvalidChar
 			return "INVALID_CHAR"
-		TkInvalidIndent()
+		TkInvalidIndent
 			return "INVALID_INDENT"
-		TkUnclosedString()
+		TkUnclosedString
 			return "UNCLOSED_STRING"
-		TkInvalidBracket()
+		TkInvalidBracket
 			return "INVALID_BRACKET"
-		TkUnclosedBracket()
+		TkUnclosedBracket
 			return "UNCLOSED_BRACKET"
-		TkUnknown()
+		TkUnknown
 			return "UNKNOWN"
 
 export rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)

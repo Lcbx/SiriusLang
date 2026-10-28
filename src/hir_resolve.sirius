@@ -220,7 +220,7 @@ export def hir_record_spread(types: Types.TypeTable, fields: Array[Types.RecordF
 	for field in descriptor.fields
 		let edit = hir_record_put(result, field.name, field.kind)
 		match edit.outcome
-			HirRecordUpdated(index)
+			HirRecordUpdated
 				result = edit.fields
 			HirRecordEditError(message)
 				return HirRecordEdit(result, HirRecordEditError(message))

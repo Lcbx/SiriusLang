@@ -209,7 +209,7 @@ export def hir_instantiate_parametric(tree: Ast.ParseState, plan: HirParametricB
 				let value_type = hir_parametric_node_type(nodes, Hir.hir_ast_child(tree, field_id, 0))
 				let edit = Resolve.hir_record_put(fields, Hir.hir_ast_text(tree, field_id), value_type)
 				match edit.outcome
-					Resolve.HirRecordUpdated(index)
+					Resolve.HirRecordUpdated
 						fields = edit.fields
 					Resolve.HirRecordEditError(message)
 						return Spec.HirConcreteBody(Array[Hir.HirNode](), Array[Analyze.HirSpecializationRequest](), current_types, Types.TYPE_TAG_INVALID, message, Hir.hir_ast_line(tree, field_id))

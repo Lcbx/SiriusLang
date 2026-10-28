@@ -29,14 +29,16 @@ compiler uses the concrete HIR specialization path. Historical versioned artifac
 
 ## Token-kind union boundary
 
-`tokenizer.TokenKind` is an exhaustive, labeled union used when classifying
-lexical kinds and reporting errors. The tokenizer retains `Token.kind: i64`
+`tokenizer.TokenKind` is an exported enum used for lexical classification
+and error reporting. The tokenizer retains `Token.kind: i64`
 for now: its signed codes are part of the existing token and generic-AST
 serialization contract, and numeric field access remains pervasive in parser,
 module scanning and HIR lowering. `token_kind_from_code` converts numeric
 codes into the tagged view, while `token_kind_code` maps back explicitly. An
 unrecognized code maps to `TkUnknown`, not to a valid source token.
-`token_is_error` and `token_label` use exhaustive matches.
+`token_is_error` groups normal and error tags into two exhaustive branches;
+`token_label` matches individual bare tags. Compiler outcome matches likewise
+use tag-only patterns when their payload is unused and group identical bodies.
 
 The zero-based `TokenKind.index(TkName)` discriminant is **not** the old
 `TOKEN_NAME` numeric code. Do not serialize a union discriminant in place of
