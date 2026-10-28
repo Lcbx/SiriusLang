@@ -1333,14 +1333,23 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		for i in 1..node.count
 			let arm = Hir.hir_ast_child(context.tree, id, i)
 			let case = context.tree.nodes[!arm]
-			if case.kind == Ast.NODE_CASE_GROUP
+			if case.kind == Ast.NODE_CASE_GROUP or case.kind == Ast.NODE_CASE_BIND_GROUP
+				let first = Hir.hir_ast_child(context.tree, arm, 0)
+				var common = Array[i64]()
+				if case.kind == Ast.NODE_CASE_BIND_GROUP
+					for j in 0..context.tree.nodes[!first].count
+						let binding = Hir.hir_ast_child(context.tree, first, j)
+						let kind = mir_lower_type(context, binding, Analyze.HIR_BINDING)
+						common = common.append(len(next.register_types))
+						next = mir_lower_register(next, kind)
 				let condition = next.active
 				next = mir_lower_block(next)
 				let matched = next.active
 				next = mir_lower_block(next)
 				let following = next.active
 				next.active = condition
-				# Each tag branches to the same body; no payload is extracted.
+				# Each tag extracts its own layout into the shared binding slots,
+				# then enters one body. Tag-only groups need no extraction.
 				for j in 0..case.count - 1
 					let pattern = Hir.hir_ast_child(context.tree, arm, j)
 					let annotation = Hir.hir_annotation_find(context.hir, context.annotation_index, pattern, Hir.HIR_MATCH_CASE)
@@ -1354,16 +1363,44 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 					next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
 					next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_EQ_I64, equals, tag, label, 0))
 					let test = next.active
+					var target = matched
+					if len(common) != 0
+						next = mir_lower_block(next)
+						target = next.active
 					var missed = following
 					if j + 1 < case.count - 1
 						next = mir_lower_block(next)
 						missed = next.active
 					next.active = test
-					next = mir_lower_end(next, Mir.mir_branch(equals, matched, missed))
+					next = mir_lower_end(next, Mir.mir_branch(equals, target, missed))
+					if len(common) != 0
+						next.active = target
+						let record_type = context.hir[!annotation].type_id
+						let record = len(next.register_types)
+						next = mir_lower_register(next, record_type)
+						next = mir_lower_emit(next, Mir.mir_union_get_labeled(record, subject.slot, alternative))
+						let fields = context.types.entries[!record_type].fields
+						for k in 0..len(common)
+							var field_index = -1
+							for constructor in context.functions
+								if constructor.name == Hir.hir_ast_text(context.tree, pattern) and constructor.constructor
+									field_index = Resolve.hir_match_field_index(fields, constructor.parameters, k)
+							if field_index < 0 or fields[!field_index].kind != next.register_types[!common[!k]]
+								return mir_lower_error(next, "missing typed match binding")
+							next = mir_lower_emit(next, Mir.mir_record_get(common[!k], record, field_index))
+						next = mir_lower_end(next, Mir.mir_jump(matched))
 					next.active = missed
 				next.active = matched
+				let previous = len(next.bindings)
+				for j in 0..len(common)
+					let binding = Hir.hir_ast_child(context.tree, first, j)
+					next.bindings = next.bindings.append(MirSourceBinding(Hir.hir_ast_text(context.tree, binding), common[!j], next.depth + 1))
 				next = mir_lower_statements(next, context, Hir.hir_ast_child(context.tree, arm, case.count - 1))
 				next.error == "" else return next
+				var scoped = Array[MirSourceBinding]()
+				for j in 0..previous
+					scoped = scoped.append(next.bindings[!j])
+				next.bindings = scoped
 				if not mir_lower_ended(next)
 					let arm_end = next.active
 					if after < 0

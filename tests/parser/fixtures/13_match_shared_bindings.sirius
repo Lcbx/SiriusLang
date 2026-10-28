@@ -1,0 +1,4 @@
+def message(result: Result) -> i64
+	match result
+		(Error1 | Error2)(msg)
+			return len(msg)

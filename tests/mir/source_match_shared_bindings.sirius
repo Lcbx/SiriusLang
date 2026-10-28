@@ -1,0 +1,60 @@
+rec First(z: i64, a: string)
+rec Second(a: i64, z: string)
+let Layout = First | Second
+rec ManagedFirst(z: Array[i64], a: string)
+rec ManagedSecond(a: Array[i64], z: string)
+let Managed = ManagedFirst | ManagedSecond
+rec One(value: i64)
+rec Alias(value: i64)
+let Scalar = One | Alias
+
+enum Color
+	Red
+	Green
+	Blue
+
+def score(item: Layout) -> i64
+	match item
+		(First | Second)(code, msg)
+			return code + len(msg)
+
+def managed_score(item: Managed) -> i64
+	match item
+		(ManagedFirst | ManagedSecond)(data, msg)
+			let before = data[!0]
+			var copy = data
+			copy[!0] = before + 1
+			if data[!0] != before
+				return 99
+			return data[!0] + copy[!0] + len(msg)
+
+def singleton(item: Scalar) -> i64
+	match item
+		(One)(n)
+			return n
+		Alias(n)
+			return n * 2
+
+def main() -> i64
+	if score(First(2, "hello")) != 7 or score(Second(5, "x")) != 6
+		return 1
+	if managed_score(ManagedFirst([2], "abc")) != 8 or managed_score(ManagedSecond([4], "z")) != 10
+		return 2
+	let values: Array[Scalar] = [One(1), Alias(2), One(3)]
+	var total = 0
+	for value in values
+		match value
+			(One | Alias)(n)
+				total += n
+	if total != 6 or singleton(One(4)) != 4 or singleton(Alias(4)) != 8
+		return 3
+	let colors: Array[Color] = [Red(), Green(), Blue()]
+	for color in colors
+		match color
+			(Red | Green)()
+				total += 1
+			(Blue)
+				total += 10
+	if total != 18
+		return 4
+	return 0

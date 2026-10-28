@@ -170,6 +170,11 @@ or panic).
   branch to the shared body and performs no payload extraction for that group.
   Bare single tags use the same representation. Generic packages preserve these
   syntax nodes and defining-module constructor names.
+  `(Error1 | Error2)(msg)` uses `NODE_CASE_BIND_GROUP`: its case nodes share
+  the binding syntax nodes. HIR validates arity and identical binding types
+  for every alternative and types the body once. Each MIR tag-success edge
+  extracts its own payload layout into common binding registers, then jumps
+  to the shared body. Generic packages retain this additional AST kind.
 * Canonical labeled union descriptors retain alternatives in declaration order and
   preserve them through module type translation and MIR serialization.
   `MIR_UNION_NEW`/`MIR_UNION_GET` use the existing `second` field as a nonnegative label

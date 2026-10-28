@@ -905,7 +905,7 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			let case = tree.nodes[!arm]
 			var path = probe
 			path = hir_callback_constraints(path, observed)
-			if case.kind == Ast.NODE_CASE_GROUP
+			if case.kind == Ast.NODE_CASE_GROUP or case.kind == Ast.NODE_CASE_BIND_GROUP
 				for j in 0..case.count - 1
 					let pattern = Hir.hir_ast_child(tree, arm, j)
 					let case_type = hir_module_type_reference_with_constants(path.state.types, tree, pattern, path.state.functions, path.state.module_constants, path.state.type_aliases)
@@ -915,6 +915,12 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 						if path.state.types.entries[!union_id].fields[!0].name != ""
 							alternative = Resolve.hir_union_constructor_alternative_index(path.state.types, union_id, Hir.hir_ast_text(tree, pattern), case_type.type_id)
 						alternatives = alternatives.append(alternative)
+						if j == 0 and case.kind == Ast.NODE_CASE_BIND_GROUP
+							let bindings = hir_match_pattern_bindings(path.state, pattern, case_type.type_id)
+							if bindings.error == ""
+								for k in 0..len(bindings.kinds)
+									let binding = Hir.hir_ast_child(tree, pattern, k)
+									path.state = hir_body_binding(path.state, binding, Hir.hir_ast_text(tree, binding), bindings.kinds[!k], false)
 			else
 				let case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
 				path.state.types = case_type.table
@@ -1957,6 +1963,25 @@ export def hir_body_block(state: HirBodyState, id: i64) -> HirBodyState
 	result.depth -= 1
 	return result
 
+rec HirMatchBindings(kinds: Array[i64], error: string)
+
+def hir_match_pattern_bindings(state: HirBodyState, pattern: i64, record_type: i64) -> HirMatchBindings
+	var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
+	for function in state.functions
+		if function.name == Hir.hir_ast_text(state.tree, pattern) and function.constructor
+			constructor = function
+	let fields = state.types.entries[!record_type].fields
+	let bound = state.tree.nodes[!pattern].count
+	if bound < len(constructor.parameters) or bound > len(fields)
+		return HirMatchBindings(Array[i64](), "match pattern requires constructor parameters, followed by optional published fields")
+	var kinds = Array[i64]()
+	for j in 0..bound
+		let field = Resolve.hir_match_field_index(fields, constructor.parameters, j)
+		if field < 0
+			return HirMatchBindings(kinds, "match pattern field is missing")
+		kinds = kinds.append(fields[!field].kind)
+	return HirMatchBindings(kinds, "")
+
 def hir_body_match_tag(state: HirBodyState, union_id: i64, arm_id: i64) -> HirBodyState
 	var result = state
 	let case_type = hir_module_type_reference_with_constants(result.types, result.tree, arm_id, result.functions, result.module_constants, result.type_aliases)
@@ -1988,13 +2013,41 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 		for i in 1..node.count
 			let arm_id = Hir.hir_ast_child(state.tree, id, i)
 			let case = state.tree.nodes[!arm_id]
-			if case.kind == Ast.NODE_CASE_GROUP
+			if case.kind == Ast.NODE_CASE_GROUP or case.kind == Ast.NODE_CASE_BIND_GROUP
+				var kinds = Array[i64]()
 				for j in 0..case.count - 1
-					result = hir_body_match_tag(result, union_id, Hir.hir_ast_child(state.tree, arm_id, j))
+					let pattern = Hir.hir_ast_child(state.tree, arm_id, j)
+					result = hir_body_match_tag(result, union_id, pattern)
 					result.error == "" else return result
-					alternatives = alternatives.append(result.nodes[!len(result.nodes) - 1].field_index)
+					let typed = result.nodes[!len(result.nodes) - 1]
+					alternatives = alternatives.append(typed.field_index)
+					if case.kind == Ast.NODE_CASE_BIND_GROUP
+						let bindings = hir_match_pattern_bindings(result, pattern, typed.type_id)
+						if bindings.error != ""
+							return hir_body_error(result, pattern, bindings.error)
+						if j == 0
+							kinds = bindings.kinds
+						else
+							for k in 0..len(kinds)
+								if kinds[!k] != bindings.kinds[!k]
+									return hir_body_error(result, pattern, "grouped match binding types must agree")
+				let previous = len(result.symbols)
+				result.depth += 1
+				let first = Hir.hir_ast_child(state.tree, arm_id, 0)
+				for j in 0..len(kinds)
+					let binding = Hir.hir_ast_child(state.tree, first, j)
+					result = hir_body_binding(result, binding, Hir.hir_ast_text(state.tree, binding), kinds[!j], false)
+					result.error == "" else return result
 				result = hir_body_block(result, Hir.hir_ast_child(state.tree, arm_id, case.count - 1))
 				result.error == "" else return result
+				var scoped = Array[Hir.SymbolInfo]()
+				var facts = Array[HirStaticFact]()
+				for j in 0..previous
+					scoped = scoped.append(result.symbols[!j])
+					facts = facts.append(result.facts[!j])
+				result.symbols = scoped
+				result.facts = facts
+				result.depth -= 1
 				continue
 			result = hir_body_match_tag(result, union_id, arm_id)
 			result.error == "" else return result

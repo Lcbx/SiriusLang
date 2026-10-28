@@ -256,9 +256,22 @@ match result
 		return false
 ```
 
-A bare tag can also form a branch on its own. Grouped tags bind no payload
-names; use a separate constructor pattern when fields are needed. Duplicate
+A bare tag can also form a branch on its own. These tag-only groups bind no
+payload names. Duplicate
 alternatives and exhaustiveness are checked across all tags in all branches.
+
+Put the tag group in parentheses to apply one shared binding list:
+
+```sirius
+match result
+	(Error1 | Error2)(msg)
+		return len(msg)
+```
+
+The binding list must satisfy each constructor pattern's arity rules, and
+corresponding bindings must have identical static types. Bindings follow each
+constructor's own parameter order, so field names and physical layouts may
+differ. Each alternative extracts its fields before entering one shared body.
 
 ### Structural records and labeled union alternatives
 

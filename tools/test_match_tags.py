@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Grouped tag-only match branches: scopes, exhaustiveness, modules and ARC."""
+"""Grouped match tags and shared bindings: typing, scopes, modules and ARC."""
 import argparse
 from pathlib import Path
 import subprocess
@@ -26,11 +26,26 @@ INVALID = (
     ('bound later pattern', 'Error1 | Error2(message) | Error3', 'grouped match tags cannot bind payloads'),
     ('binding scope', 'Error1 | Error2 | Error3\n\t\t\tlet ignored = value', "unknown name 'value'"),
     ('trailing separator', 'Error1 |', 'variant name'),
+    ('incompatible bindings', '(Error1 | Error3)(msg)', 'grouped match binding types must agree'),
+    ('missing bindings', '(Error1 | Error2)()', 'match pattern requires constructor parameters'),
+    ('too many bindings', '(Error1 | Error2)(msg, extra)', 'match pattern requires constructor parameters'),
+    ('shared missing tag', '(Error1 | Error2)(msg)', 'non-exhaustive match'),
+    ('shared duplicate tag', '(Error1 | Error1 | Error2)(msg)', 'duplicate match alternative'),
 )
 PROVIDER = '''export rec Success(value: f64)
 export rec Error1(message: string)
 export rec Error2(message: string)
 export let Result = Success | Error1 | Error2
+
+def msg() -> i64
+    return 99
+
+export def error_size(result: Result, callback) -> i64
+    match result
+        Success(value)
+            return 0
+        (Error1 | Error2)(msg)
+            return callback(msg)
 
 export def apply(result: Result, callback) -> bool
     match result
@@ -51,6 +66,13 @@ def positive(result: P.Result) -> bool
         P.Error1 | P.Error2
             return false
 
+def error_size(result: P.Result) -> i64
+    match result
+        P.Success(value)
+            return 0
+        (P.Error1 | P.Error2)(msg)
+            return len(msg)
+
 def main() -> i64
     let good: P.Result = P.Success(0.75)
     let first: P.Result = P.Error1("one")
@@ -59,6 +81,10 @@ def main() -> i64
         return 1
     if not P.apply(good, fn(x) x > 0.5) or P.apply(first, fn(x) x > 0.5) or P.apply(second, fn(x) x > 0.5)
         return 2
+    if error_size(first) != 3 or error_size(second) != 3
+        return 3
+    if P.error_size(first, fn(text) len(text)) != 3 or P.error_size(second, fn(text) len(text)) != 3
+        return 4
     return 0
 '''
 
@@ -77,6 +103,17 @@ def native(cache, source, binary):
     run(binary)
 
 
+def reject(compiler, runner, source, output, diagnostic):
+    for tool in (compiler, runner):
+        command = [str(tool), str(source)]
+        if tool == compiler:
+            output.unlink(missing_ok=True)
+            command.append(str(output))
+        result = subprocess.run(command, capture_output=True, timeout=180)
+        assert result.returncode != 0 and diagnostic.encode() in result.stdout + result.stderr, (source.read_text(), result)
+    assert not output.exists()
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--compiler', type=Path)
@@ -89,24 +126,26 @@ def main():
         root = Path(temp)
         output = root / 'match.c'
         binary = executable_path(root / 'match')
-        fixture = ROOT / 'tests/mir/source_match_tags.sirius'
-        run(compiler, fixture, output)
-        native(cache, output, binary)
-        run(runner, fixture)
+        for name in ('source_match_tags', 'source_match_shared_bindings'):
+            fixture = ROOT / 'tests/mir' / f'{name}.sirius'
+            run(compiler, fixture, output)
+            native(cache, output, binary)
+            run(runner, fixture)
         for name, tags, diagnostic in INVALID:
             source = root / 'invalid.sirius'
             source.write_text(HEADER + 'def test(result: Result) -> bool\n\tmatch result\n'
                               '\t\tSuccess(value)\n\t\t\treturn value > 0.5\n'
                               '\t\t' + tags + '\n\t\t\treturn false\n'
                               'def main() -> i64\n\tlet x = test(Success(0.75))\n\treturn 0\n')
-            for tool in (compiler, runner):
-                command = [str(tool), str(source)]
-                if tool == compiler:
-                    output.unlink(missing_ok=True)
-                    command.append(str(output))
-                result = subprocess.run(command, capture_output=True, timeout=180)
-                assert result.returncode != 0 and diagnostic.encode() in result.stdout + result.stderr, (name, result)
-            assert not output.exists(), name
+            reject(compiler, runner, source, output, diagnostic)
+        for pattern, second_type, diagnostic in (
+            ('n, n', 'string', "duplicate binding 'n'"),
+            ('n, msg', 'bool', 'grouped match binding types must agree'),
+        ):
+            source.write_text('rec A(x: i64, y: string)\nrec B(x: i64, y: ' + second_type + ')\n'
+                              'let Pair = A | B\ndef main() -> i64\n\tlet p: Pair = A(1, "two")\n'
+                              '\tmatch p\n\t\t(A | B)(' + pattern + ')\n\t\t\treturn 0\n')
+            reject(compiler, runner, source, output, diagnostic)
         for name, text in (('Provider', PROVIDER), ('App', APP)):
             (root / f'{name}.sirius').write_text(text.replace('    ', '\t'))
         for packaged in (False, True):

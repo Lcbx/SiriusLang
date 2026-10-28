@@ -28,9 +28,7 @@ def main() -> i64
     var total = 0
     for value in xs
         match value
-            One(n)
-                total += n
-            Alias(n)
+            (One | Alias)(n)
                 total += n
             Mixed(n, weight, valid)
                 if not valid or weight != 2.5

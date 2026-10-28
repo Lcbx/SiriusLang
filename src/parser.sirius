@@ -55,6 +55,7 @@ export let NODE_EXPORT = 48
 export let NODE_REEXPORT = 49
 export let NODE_ENUM = 50
 export let NODE_CASE_GROUP = 51
+export let NODE_CASE_BIND_GROUP = 52
 
 export def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -81,6 +82,8 @@ export def node_kind_name(kind: i64) -> string
 		return "case"
 	if kind == NODE_CASE_GROUP
 		return "case_group"
+	if kind == NODE_CASE_BIND_GROUP
+		return "case_bind_group"
 	if kind == NODE_CHECKED_INDEX
 		return "checked_index"
 	if kind == NODE_CONTINUE
@@ -706,6 +709,10 @@ def parse_statement(p: ParseState) -> ParseResult
 			var positions = Array[i64]()
 			var names = Array[i64]()
 			var grouped = false
+			let parenthesized = is_token(next, "(")
+			if parenthesized
+				next = expect(next, "(")
+				grouped = true
 			while next.error == ""
 				var position = next.index
 				let line = next.tokens[!position].line
@@ -721,7 +728,7 @@ def parse_statement(p: ParseState) -> ParseResult
 						position = len(next.tokens)
 						next.tokens = next.tokens.append(Lex.Token(Lex.TOKEN_NAME, start, len(next.source), line, 0))
 				positions = positions.append(position)
-				if is_token(next, "(")
+				if not parenthesized and is_token(next, "(")
 					next = expect(next, "(")
 					while next.error == "" and not is_token(next, ")")
 						let name = next.index
@@ -737,18 +744,38 @@ def parse_statement(p: ParseState) -> ParseResult
 					grouped = true
 				if is_token(next, "|")
 					grouped = true
-				if grouped and len(names) != 0
+				if not parenthesized and grouped and len(names) != 0
 					return ParseResult(fail(next, "grouped match tags cannot bind payloads"), -1)
 				if not is_token(next, "|")
 					break
 				next = expect(next, "|")
+			var shared = false
+			if parenthesized
+				next = expect(next, ")")
+				if is_token(next, "(")
+					shared = true
+					next = expect(next, "(")
+					while next.error == "" and not is_token(next, ")")
+						let name = next.index
+						next = expect_kind(next, Lex.TOKEN_NAME, "bound name")
+						let binding = leaf(next, NODE_BINDING, name)
+						next = binding.state
+						names = names.append(binding.node)
+						if not is_token(next, ",")
+							break
+						next = expect(next, ",")
+					next = expect(next, ")")
 			let body = parse_block(next)
 			next = body.state
 			var kind = NODE_CASE
 			if grouped
 				kind = NODE_CASE_GROUP
+				if shared
+					kind = NODE_CASE_BIND_GROUP
+				let bindings = names
+				names = Array[i64]()
 				for position in positions
-					let tag = append_node(next, NODE_CASE, position, Array[i64]())
+					let tag = append_node(next, NODE_CASE, position, bindings)
 					next = tag.state
 					names = names.append(tag.node)
 			names = names.append(body.node)
