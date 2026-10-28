@@ -51,6 +51,27 @@ def mir_c_union_small_payload(types: Types.TypeTable, record_type: i64) -> bool
 			return false
 	return true
 
+# Array-only union slots have an inline tag and up to three unmanaged
+# scalar fields. Alternatives that do not fit retain a boxed union wrapper.
+# Registers, dictionaries, record fields and the MIR interpreter keep their
+# existing pointer ABI.
+def mir_c_inline_union(types: Types.TypeTable, id: i64) -> bool
+	if Types.type_tag(types, id) != Types.TYPE_TAG_UNION or Types.union_is_enum(types, id)
+		return false
+	for alternative in types.entries[!id].fields
+		if mir_c_union_small_payload(types, alternative.kind)
+			return true
+	return false
+
+def mir_c_union_inline_capacity(types: Types.TypeTable, id: i64) -> i64
+	var capacity = 0
+	for alternative in types.entries[!id].fields
+		if mir_c_union_small_payload(types, alternative.kind)
+			let count = len(types.entries[!alternative.kind].fields)
+			if count > capacity
+				capacity = count
+	return capacity
+
 def mir_c_inline_name(id: i64) -> string
 	return "S_MirInline" + str(id)
 
@@ -232,13 +253,22 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	for i in 0..len(types.entries)
 		if mir_c_inline_record(types, i)
 			parts = parts.append("typedef union { " + mir_c_inline_name(i) + " value; S_MirField alignment; } S_MirArrayInline" + str(i) + ";\n")
+	# A negative index means an owned boxed wrapper. Other indices identify
+	# inline scalar alternatives in source declaration order.
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			let count = mir_c_union_inline_capacity(types, i)
+			var slots = count
+			if slots == 0
+				slots = 1
+			parts = parts.append("typedef struct { int64_t tag; union { S_MirRecord *boxed; S_MirField fields[" + str(slots) + "]; } payload; } S_MirArrayUnion" + str(i) + ";\n")
 	# Only fixed-size record payloads and their union wrappers use the experimental
 	# high-bit capacity marker. Growable arrays always have an ordinary capacity.
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
 	# Arrays share the S_MirRecord header, but their trailing storage is a
 	# byte-addressed buffer: element widths can differ from S_MirField.
 	# Scalar-only records have value slots; objects/strings keep pointer slots.
-	parts = parts.append("enum { S_MIR_ELEMENT_POD, S_MIR_ELEMENT_STRING, S_MIR_ELEMENT_OBJECT, S_MIR_ELEMENT_INLINE };\n")
+	parts = parts.append("enum { S_MIR_ELEMENT_POD, S_MIR_ELEMENT_STRING, S_MIR_ELEMENT_OBJECT, S_MIR_ELEMENT_INLINE, S_MIR_ELEMENT_UNION };\n")
 	parts = parts.append("typedef struct { int64_t element_type; size_t stride; int ownership; } S_MirArrayLayout;\n")
 	parts = parts.append("static inline S_MirArrayLayout s_mir_array_layout(int64_t array_type) {\n\tswitch (array_type) {\n")
 	for i in 0..len(types.entries)
@@ -254,6 +284,9 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 			if mir_c_inline_record(types, desc.first)
 				stride = "sizeof(S_MirArrayInline" + str(desc.first) + ")"
 				policy = "S_MIR_ELEMENT_INLINE"
+			if mir_c_inline_union(types, desc.first)
+				stride = "sizeof(S_MirArrayUnion" + str(desc.first) + ")"
+				policy = "S_MIR_ELEMENT_UNION"
 			parts = parts.append("\tcase " + str(i) + ": return (S_MirArrayLayout){" + str(desc.first) + ", " + stride + ", " + policy + "};\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid array type\");\n\t}\n}\n")
 	parts = parts.append("static inline size_t s_mir_record_stride(int64_t type_id) {\n\tswitch (type_id) {\n")
@@ -264,6 +297,11 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("static inline S_MirField *s_mir_array_at(S_MirRecord *r, size_t index) {\n")
 	parts = parts.append("\tS_MirArrayLayout layout = s_mir_array_layout(r->type_id);\n")
 	parts = parts.append("\treturn (S_MirField *)((unsigned char *)r->fields + index * layout.stride);\n}\n")
+	# Slot decoders are defined after record release; equality and indexing
+	# call them through these declarations.
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			parts = parts.append("static inline S_MirRecord *s_mir_array_union_read" + str(i) + "(const S_MirArrayUnion" + str(i) + " *slot);\n")
 	# memcpy avoids aliasing and alignment assumptions when reading byte slots.
 	for i in 0..len(types.entries)
 		if mir_c_inline_record(types, i)
@@ -295,6 +333,9 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 			parts = parts.append("\t\t    const S_MirField *slot = s_mir_array_at((S_MirRecord *)r, j);\n")
 			parts = parts.append("\t\t    if (layout.ownership == S_MIR_ELEMENT_STRING) visit(slot->text, context);\n")
 			parts = parts.append("\t\t    else if (layout.ownership == S_MIR_ELEMENT_OBJECT) visit(slot->record, context);\n")
+			for u in 0..len(types.entries)
+				if mir_c_inline_union(types, u)
+					parts = parts.append("\t\t    else if (layout.element_type == " + str(u) + ") { const S_MirArrayUnion" + str(u) + " *v = (const void *)slot; if (v->tag == -1) visit(v->payload.boxed, context); }\n")
 			parts = parts.append("\t\t  } } break;\n")
 		elif desc.tag == Types.TYPE_TAG_UNION
 			parts = parts.append("\tcase " + str(i) + ": visit(r->fields[1].record, context); break;\n")
@@ -385,12 +426,22 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tcase S_MIR_ELEMENT_POD: case S_MIR_ELEMENT_INLINE: break;\n")
 	parts = parts.append("\tcase S_MIR_ELEMENT_STRING: slot->text = s_string_retain(slot->text); break;\n")
 	parts = parts.append("\tcase S_MIR_ELEMENT_OBJECT: slot->record = s_mir_record_retain(slot->record); break;\n")
+	parts = parts.append("\tcase S_MIR_ELEMENT_UNION: switch (layout.element_type) {\n")
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			parts = parts.append("\tcase " + str(i) + ": { S_MirArrayUnion" + str(i) + " *v = (void *)slot; if (v->tag == -1) v->payload.boxed = s_mir_record_retain(v->payload.boxed); break; }\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid union array type\"); } break;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid element ownership\");\n\t}\n}\n")
 	parts = parts.append("static inline void s_mir_array_element_drop(S_MirArrayLayout layout, S_MirField *slot) {\n")
 	parts = parts.append("\tswitch (layout.ownership) {\n")
 	parts = parts.append("\tcase S_MIR_ELEMENT_POD: case S_MIR_ELEMENT_INLINE: break;\n")
 	parts = parts.append("\tcase S_MIR_ELEMENT_STRING: s_string_release(slot->text); break;\n")
 	parts = parts.append("\tcase S_MIR_ELEMENT_OBJECT: s_mir_record_release(slot->record); break;\n")
+	parts = parts.append("\tcase S_MIR_ELEMENT_UNION: switch (layout.element_type) {\n")
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			parts = parts.append("\tcase " + str(i) + ": { S_MirArrayUnion" + str(i) + " *v = (void *)slot; if (v->tag == -1) s_mir_record_release(v->payload.boxed); break; }\n")
+	parts = parts.append("\tdefault: s_panic(\"invalid union array type\"); } break;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid element ownership\");\n\t}\n}\n")
 	parts = parts.append("static inline void s_mir_drop_record(void *value) { s_mir_record_release(((S_MirField *)value)->record); }\n")
 	parts = parts.append("static inline uint64_t s_mir_hash_i64(const void *key) { return s_hash_i64_key(&((const S_MirField *)key)->bits); }\n")
@@ -428,6 +479,13 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 					else
 						parts = parts.append("if (lhs.f" + str(j) + " != rhs.f" + str(j) + ") return false;\n")
 				parts = parts.append("}\nreturn true;\n")
+			elif mir_c_inline_union(types, desc.first)
+				let id = str(desc.first)
+				parts = parts.append("for (size_t j = 0; j < a.record->length; ++j) {\n")
+				parts = parts.append("S_MirRecord *left = s_mir_array_union_read" + id + "((const void *)s_mir_array_at(a.record, j));\n")
+				parts = parts.append("S_MirRecord *right = s_mir_array_union_read" + id + "((const void *)s_mir_array_at(b.record, j));\n")
+				parts = parts.append("bool equal = s_mir_value_equal(" + id + ", (S_MirField){.record = left}, (S_MirField){.record = right}, key_comparison);\n")
+				parts = parts.append("s_mir_record_release(left); s_mir_record_release(right); if (!equal) return false; }\nreturn true;\n")
 			else
 				parts = parts.append("for (size_t j = 0; j < a.record->length; ++j) if (!s_mir_value_equal(" + str(desc.first) + ", *s_mir_array_at(a.record, j), *s_mir_array_at(b.record, j), key_comparison)) return false;\nreturn true;\n")
 		elif desc.tag == Types.TYPE_TAG_OPTIONAL and Types.type_supports_equality(types, i)
@@ -535,6 +593,29 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n")
 	parts = parts.append("#if defined(SIRIUS_EXPERIMENTAL_UNION_COALLOC) || defined(SIRIUS_EXPERIMENTAL_UNION_HYBRID)\n\tif (s_mir_is_fused(r)) { free((unsigned char *)r - S_MIR_FUSED_OFFSET); return; }\n#endif\n")
 	parts = parts.append("\tfree(r);\n}\n\n")
+	# Array-only packed union helpers. Packing consumes one ownership credit;
+	# a small scalar alternative is copied then both original wrappers are
+	# released. Other alternatives transfer their boxed pointer unchanged.
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			let desc = types.entries[!i]
+			parts = parts.append("static inline S_MirArrayUnion" + str(i) + " s_mir_array_union_pack" + str(i) + "(S_MirRecord *owned) {\n")
+			parts = parts.append("\tS_MirArrayUnion" + str(i) + " slot = {0}; int64_t tag = owned->fields[0].bits;\n\tswitch (tag) {\n")
+			for j in 0..len(desc.fields)
+				let alternative = desc.fields[!j].kind
+				if mir_c_union_small_payload(types, alternative)
+					let count = len(types.entries[!alternative].fields)
+					parts = parts.append("\tcase " + str(j) + ": slot.tag = tag; memcpy(slot.payload.fields, owned->fields[1].record->fields, " + str(count) + " * sizeof(S_MirField)); s_mir_record_release(owned); return slot;\n")
+			parts = parts.append("\tdefault: slot.tag = -1; slot.payload.boxed = owned; return slot;\n\t}\n}\n")
+			parts = parts.append("static inline S_MirRecord *s_mir_array_union_read" + str(i) + "(const S_MirArrayUnion" + str(i) + " *slot) {\n")
+			parts = parts.append("\tif (slot->tag == -1) return s_mir_record_retain(slot->payload.boxed);\n\tS_MirRecord *payload;\n\tswitch (slot->tag) {\n")
+			for j in 0..len(desc.fields)
+				let alternative = desc.fields[!j].kind
+				if mir_c_union_small_payload(types, alternative)
+					let count = len(types.entries[!alternative].fields)
+					parts = parts.append("\tcase " + str(j) + ": payload = s_mir_record_new(" + str(alternative) + ", " + str(count) + "); memcpy(payload->fields, slot->payload.fields, " + str(count) + " * sizeof(S_MirField)); break;\n")
+			parts = parts.append("\tdefault: s_panic(\"invalid inline union tag\");\n\t}\n")
+			parts = parts.append("\tS_MirRecord *wrapper = s_mir_record_new(" + str(i) + ", 2); wrapper->fields[0].bits = slot->tag; wrapper->fields[1].record = payload; return wrapper;\n}\n")
 	parts = parts.append("static inline void s_mir_string_store(S_String **slot, S_String *owned) { S_String *old = *slot; *slot = owned; s_string_release(old); }\n")
 	parts = parts.append("static inline void s_mir_record_store(S_MirRecord **slot, S_MirRecord *owned) { S_MirRecord *old = *slot; *slot = owned; s_mir_record_release(old); }\n\n")
 	# Shared CoW cloning for records, optionals, arrays, and dictionaries.
@@ -868,7 +949,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			var value = mir_c_register(arg)
 			if Common.mir_common_managed(types, kind) and not Mir.mir_input_move_at(instruction, i)
 				value = mir_c_retain_value(types, kind, value)
-			if mir_c_inline_record(types, kind)
+			if mir_c_inline_union(types, kind)
+				code = code + "\t\t{ S_MirArrayUnion" + str(kind) + " element = s_mir_array_union_pack" + str(kind) + "(" + value + "); memcpy(s_mir_array_at(array, " + str(i) + "), &element, sizeof(element)); }\n"
+			elif mir_c_inline_record(types, kind)
 				code = code + "\t\t{ S_MirArrayInline" + str(kind) + " element = {0}; element.value = " + value + "; memcpy(s_mir_array_at(array, " + str(i) + "), &element, sizeof(element)); }\n"
 			else
 				value = mir_c_box_value(types, kind, value)
@@ -880,6 +963,11 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		return result + "\t" + dst + " = (int64_t)" + first + "->length" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_ARRAY_GET_OPTIONAL
 		let elem_type = types.entries[!dst_type].first
+		if mir_c_inline_union(types, elem_type)
+			var code = result + "\t{ bool valid = s_mir_array_index_valid(" + first + ", " + second + ");\n"
+			code = code + "\t\tS_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", valid ? 1 : 0);\n"
+			code = code + "\t\tif (valid) optional->fields[0].record = s_mir_array_union_read" + str(elem_type) + "((const void *)s_mir_array_at(" + first + ", s_mir_array_index(" + first + ", " + second + ")));\n"
+			return code + mir_c_store_owned(types, instruction.dst, dst_type, "optional", checked) + "\t}\n"
 		if mir_c_inline_record(types, elem_type)
 			var code = result + "\t{ bool valid = s_mir_array_index_valid(" + first + ", " + second + ");\n"
 			code = code + "\t\tS_MirRecord *optional = s_mir_record_new(" + str(dst_type) + ", valid ? 1 : 0);\n"
@@ -891,7 +979,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if checked or instruction.text != "__mir_guarded"
 			result = result + "\tif (!s_mir_array_index_valid(" + first + ", " + second + ")) s_panic(\"array index out of bounds\");\n"
 		var value = mir_c_slot_copy(types, dst_type, "(*s_mir_array_at(" + first + ", s_mir_array_index(" + first + ", " + second + ")))")
-		if mir_c_inline_record(types, dst_type)
+		if mir_c_inline_union(types, dst_type)
+			value = "s_mir_array_union_read" + str(dst_type) + "((const void *)s_mir_array_at(" + first + ", s_mir_array_index(" + first + ", " + second + ")))"
+		elif mir_c_inline_record(types, dst_type)
 			value = "s_mir_array_read" + str(dst_type) + "(" + first + ", s_mir_array_index(" + first + ", " + second + "))"
 		if Common.mir_common_managed(types, dst_type)
 			return result + mir_c_store_owned(types, instruction.dst, dst_type, value, checked)
@@ -903,7 +993,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if Common.mir_common_managed(types, element_type)
 			value = mir_c_retain_value(types, element_type, value)
 		var code = result
-		if mir_c_inline_record(types, element_type)
+		if mir_c_inline_union(types, element_type)
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " added = {0}; added.value = " + value + ";\n"
 		else
 			value = mir_c_box_value(types, element_type, value)
@@ -920,7 +1012,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if Common.mir_common_managed(types, element_type)
 			value = mir_c_retain_value(types, element_type, value)
 		var code = result
-		if mir_c_inline_record(types, element_type)
+		if mir_c_inline_union(types, element_type)
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " replacement = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " replacement = {0}; replacement.value = " + value + ";\n"
 		else
 			value = mir_c_box_value(types, element_type, value)
@@ -938,7 +1032,9 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			value = mir_c_retain_value(types, element_type, value)
 		let at = str(instruction.immediate)
 		var code = result
-		if mir_c_inline_record(types, element_type)
+		if mir_c_inline_union(types, element_type)
+			code = code + "\t{ S_MirArrayUnion" + str(element_type) + " added = s_mir_array_union_pack" + str(element_type) + "(" + value + ");\n"
+		elif mir_c_inline_record(types, element_type)
 			code = code + "\t{ S_MirArrayInline" + str(element_type) + " added = {0}; added.value = " + value + ";\n"
 		else
 			value = mir_c_box_value(types, element_type, value)

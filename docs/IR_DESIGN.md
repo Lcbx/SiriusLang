@@ -182,14 +182,16 @@ or panic).
   verifier restricts this source-free form to valid labeled, payload-free enums. No
   record is allocated by either native execution or MIR interpretation for that form.
   Unions with any nonempty alternative still use an `S_MirRecord*` tagged wrapper
-  (`fields[0]` tag, `fields[1]` retained record pointer). Union elements in arrays and dictionaries keep
-  pointer-sized `S_MirField` slots (8 bytes on tested 64-bit targets), not an inline buffer
-  of the largest alternative. A proposed max-payload-width inline layout would require
-  type-dependent strides, active-alternative retain/drop, managed-field handling, and
-  safe extraction of independently owned records after matching. The isolated POD-only
-  C11 comparison in `tools/benchmark_union_storage.py` documents the tradeoff; it is
-  **not** integrated into MIR or C emission and is not an end-to-end Sirius performance
-  result.
+  (`fields[0]` tag, `fields[1]` retained record pointer). Dictionary union
+  entries remain pointer-valued. Native `Array[Union]` specializations with at
+  least one eligible scalar alternative now use strided slots containing a
+  declaration-order tag and up to three unmanaged scalar fields; large/managed
+  alternatives use a boxed-wrapper fallback (`tag == -1`). Copy/drop and ARC
+  scanning use the active physical representation. Ordinary reads reconstruct
+  wrappers for inline alternatives so MIR and interpreter values are unchanged;
+  this still allocates during extraction. The isolated POD-only C11 comparison
+  in `tools/benchmark_union_storage.py` predates this implementation and is
+  not an end-to-end Sirius performance result.
 * Experimental native coallocation (`SIRIUS_EXPERIMENTAL_UNION_COALLOC`) preserves the
   pointer-based union ABI and independent record/wrapper ARC identities while sharing
   one allocation. Post-cleanup MIR instructions `MIR_RECORD_NEW_FUSED` and
@@ -208,9 +210,9 @@ or panic).
   independent-wrapper/payload ARC headers for fresh alternatives with at most three
   unmanaged scalar fields (24 bytes of field slots). Other alternatives—including wider
   scalar records and records containing managed fields—remain separately allocated
-  unless the full-coallocation flag is enabled. This is an allocation hybrid, **not**
-  inline union elements in arrays: collection slots remain pointers, and payload
-  projections still have independent ownership. The selection is static and does not
+  unless the full-coallocation flag is enabled. Coallocation is independent of
+  array slot packing: the register ABI stays boxed while eligible scalar union
+  alternatives are now stored inline in arrays. The selection is static and does not
   change union tags, MIR serialization, or source semantics. Run
   `tools/test_union_hybrid_coallocation.py` for generated-program allocation, CoW, and
   sanitizer validation.
@@ -349,9 +351,9 @@ canonical name order; arrays use `length` variable, type-strided slots;
 optionals use zero or one; dictionary wrappers use one slot holding `S_Dict *`. Unions with
 only empty-record alternatives use zero heap slots: their value is the scalar
 alternative index. Other unions use two fixed slots (alternative index and a
-retained pointer to a separately allocated record payload), so `Array[Union]`
-can mix arbitrarily different payload sizes without changing its element slot
-size.
+retained pointer to a separately allocated record payload). Native union
+arrays can mix heterogeneous alternatives: their stride is fixed for that
+union specialization, with a boxed fallback for large or managed payloads.
 
 Eligible scalar-only records use inline C aggregates in registers and padded
 `S_MirArrayInline<TypeId>` slots in native arrays. Array layout metadata selects
@@ -359,8 +361,10 @@ element type, byte stride and ownership policy; reads copy fields with `memcpy`
 without creating a record object. CoW copies these unmanaged slots as bytes.
 Record fields, dictionary entries and optional payloads still box records;
 optional array indexing boxes the selected element. Managed-field records and
-union alternatives retain boxed storage. See [Ownership](OWNERSHIP.md) and
-`tools/test_mir_inline_arrays.py`.
+union alternatives use boxed storage outside arrays. Inside union arrays,
+eligible scalar-only alternatives are packed inline and larger/managed ones
+use a pointer fallback. See [Ownership](OWNERSHIP.md),
+`tools/test_mir_inline_arrays.py`, and `tools/test_mir_inline_unions.py`.
 
 The C emitter selects union members, retains and releases by the canonical descriptor.
 `sizeof(S_MirField)`, alignment and header offsets remain target-ABI-dependent.

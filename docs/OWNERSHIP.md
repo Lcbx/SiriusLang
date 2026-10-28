@@ -45,8 +45,9 @@ array element", or mandatory SoA metadata arrays. Array/dictionary slots
 logically hold complete values. Whether a particular value is inline or boxed
 is an internal layout choice, to be validated for both copy costs and memory
 usage. The native C backend now stores eligible scalar-only records directly in
-array slots. Inline records with managed children, tagged-union values, and
-records in dictionary/record fields still use boxed container storage.
+array slots. Tagged-union arrays also pack eligible unmanaged scalar
+alternatives inline, retaining boxed fallback slots for large or managed
+alternatives. Records in dictionary/record fields remain boxed.
 
 ### Current abstract ownership contract
 
@@ -96,6 +97,7 @@ array remains unchanged and the extracted value may outlive it.
 | Other record registers, boxed records in heap slots | `S_MirRecord*`, with `type_id`, `refs`, `length`, `capacity`, and `S_MirField[]` |
 | `Array[T]` (ordinary) | Refcounted `S_MirRecord` array buffer; each type descriptor defines the byte stride. Scalar/string/boxed-object slots remain `S_MirField`; managed elements hold owned handles |
 | `Array[T]` of eligible scalar-only records | Refcounted array buffer with inline, padded C aggregate slots (`S_MirArrayInline<TypeId>`); **no per-element record allocation or ARC identity** |
+| `Array[Union]` with at least one small scalar alternative | `S_MirArrayUnion<TypeId>` slot: declaration-order tag plus up to three `S_MirField` scalar values, or a boxed union pointer marked by tag `-1`. Copy/drop retain and release only the boxed fallback |
 | `Dict[K,V]` | Refcounted MIR wrapper owning a separate refcounted `S_Dict` hash table; table entries have type-directed key/value copy/drop hooks |
 | `Optional[T]` | Managed MIR wrapper with zero or one owned payload slot (even for scalar payloads at present) |
 | Tagged union with payload | Managed tag-plus-owned-record wrapper; heterogeneous alternative payload sizes are supported through separate record objects |
@@ -121,10 +123,15 @@ allocation **with two independent ARC identities**, but is opt-in and not the
 default layout. The opt-in `SIRIUS_EXPERIMENTAL_UNION_HYBRID`
 variant coallocates only fresh scalar-record alternatives with at most three
 fields and leaves wider/managed alternatives separately boxed. It retains
-two ARC identities and the existing union pointer ABI: union elements in
-arrays remain pointers even though eligible standalone record elements can
-now be stored inline. All-empty-record unions avoid the wrapper entirely (although extracting
-an empty record payload currently materializes a record). `Fn`
+two ARC identities and the existing union *register* pointer ABI. When a
+payload-bearing union has any alternative with 0–3 unmanaged scalar fields,
+its native array specialization packs those alternatives into a tag-plus-payload
+slot; larger and managed alternatives remain boxed. Array insertion currently
+constructs and subsequently releases normal wrapper/payload objects for inline
+cases; extraction reconstructs them. This reduces retained heap objects but
+does not remove temporary construction/read allocations. All-empty-record
+unions avoid the wrapper entirely (although extracting an empty record payload
+currently materializes a record). `Fn`
 values are noncapturing references and need no closure environment or ARC.
 The runtime also has generic `S_Array` and scalar-specialized helpers; those
 runtime layouts should not be conflated with the generated MIR-record arrays.
@@ -201,10 +208,12 @@ These are implemented, not merely proposed:
 * **Unique-root CoW:** native records/arrays and dictionaries reuse owned
   storage when its refcount is one. Shared versions clone the modified
   parent/path and retain the child edges copied into the new storage.
-  Eligible scalar-only array elements copy inline bytes without child ARC.
+  Eligible scalar-only record and union alternatives copy inline bytes without
+  child ARC; boxed union fallbacks retain their wrappers.
 * **Inline scalar records:** eligible scalar-only records use native
-  aggregate registers and type-strided array slots. Other heap boundaries
-  still box records; managed-field records and union elements remain boxed.
+  aggregate registers and type-strided array slots. Eligible scalar-only union
+  alternatives are packed into native array slots; managed/large alternatives
+  and non-array union boundaries still use their existing wrapper ABI.
 * **Type-directed native slot helpers:** `mir_c_slot_copy`,
   `mir_c_slot_retain`, `mir_c_slot_drop`, plus generated scalar-record
   box/unbox routines, connect logical value operations to current C layouts.
@@ -287,7 +296,7 @@ runtime. Native C now has an **opt-in dynamic shadow-credit audit**:
 * The emitted MIR C registers a **type-directed scanner** for managed
   records, arrays, optionals, payload-bearing union wrappers and dictionary
   wrappers. Eligible inline scalar-only array elements have no child edges;
-  boxed record elements are scanned as owned children. Payload-free enums
+  packed union slots expose only their boxed fallback edge to the ARC scanner. Payload-free enums
   have no ARC root. Generic MIR dictionaries
   register key/value
   managedness with the native hash table, and CoW clones preserve these
@@ -358,7 +367,8 @@ all possible active heap edges are correct in native code.
 Remaining boundaries: register any additional native/FFI roots and edge
 scanners; expand nested managed-value and union/CoW stress coverage; and
 define and check any future native borrow plans before using them at all.
-Container-inline managed values, fully inline heterogeneous union payloads, and representation
+Container-inline managed values, eliminating union packing/unpacking allocations,
+fully inline managed union payloads, and representation
 across compiled-library boundaries still need layout/ABI design and measured
 validation. Process-fatal unwinding is deliberately not required. A fully
 heap-wide static alias/reference-count proof would need a stronger heap model.

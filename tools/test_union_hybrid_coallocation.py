@@ -3,7 +3,8 @@
 
 Only fresh scalar record alternatives of <=3 S_MirField slots coallocate under
 SIRIUS_EXPERIMENTAL_UNION_HYBRID; large or managed alternatives remain boxed.
-The array ABI, independent ARC credits and MIR semantics remain unchanged.
+The union register ABI, independent ARC credits and MIR semantics remain unchanged.
+Array slots may now pack eligible scalar alternatives independently of this flag.
 """
 import argparse
 import re

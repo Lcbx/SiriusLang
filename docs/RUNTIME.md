@@ -110,6 +110,24 @@ than comparing padding bytes.
 CoW snapshots, optional access, nested equality, ARC auditing and MIR parity.
 `--sanitize` adds AddressSanitizer and UndefinedBehaviorSanitizer where supported.
 
+### Inline tagged-union arrays
+
+For a payload-bearing union with any record alternative of up to three
+unmanaged scalar fields (`i64`, `f64`, `bool`, or an empty record), generated
+native arrays use `S_MirArrayUnion<TypeId>` elements: a declaration-order
+variant tag plus a fixed payload region. Eligible alternatives copy scalar
+fields inline; other alternatives use a boxed-wrapper fallback indicated by
+`tag == -1`. The buffer's byte stride is fixed by the maximum eligible scalar
+payload width, not by the largest managed alternative. CoW and ARC scan/drop
+retain or release only the boxed fallback edges.
+
+Union registers and non-array containers retain their existing pointer ABI.
+Packing an inline alternative currently consumes a preconstructed wrapper;
+reading it reconstructs an owned wrapper and record payload. These transient
+allocations are a limitation despite the smaller live heap graph.
+`python tools/test_mir_inline_unions.py` validates scalar tags, managed/large
+fallback, CoW, optional indexing, equality, ARC, and native/MIR parity.
+
 ## Generated field helpers
 
 The generated `S_MirField` union member is selected by one Sirius helper

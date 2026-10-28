@@ -1,0 +1,50 @@
+# Same-shape labels, empty and mixed-width inline variants, managed and
+# oversized boxed fallback, CoW, optional access, and array reconstruction.
+rec One(value: i64)
+rec Alias(value: i64)
+rec Empty()
+rec Mixed(index: i64, weight: f64, valid: bool)
+rec Huge(a: i64, b: i64, c: i64, d: i64)
+rec Managed(title: string, data: Array[i64])
+let Choice = One | Alias | Empty | Mixed | Huge | Managed
+rec Holding(items: Array[Choice])
+
+def score(value: Choice) -> i64
+	match value
+		One(n)
+			return n
+		Alias(n)
+			return n * 2
+		Empty()
+			return 4
+		Mixed(n, x, b)
+			if b and x == 2.5
+				return n + 5
+			return 0
+		Huge(a, b, c, d)
+			return a + b + c + d
+		Managed(title, data)
+			return len(title) + len(data)
+
+def main() -> i64
+	var items = Array[Choice]().append(One(1)).append(Alias(3)).append(Empty()).append(Mixed(7, 2.5, true)).append(Huge(1, 2, 3, 4)).append(Managed("ok", [5, 6]))
+	let snapshot = items
+	let first = items[!0]
+	items[!0] = Choice.Alias(Alias(11))
+	items[!4] = Choice.One(One(9))
+	items = items.append(Empty())
+	if score(first) != 1 or score(snapshot[!0]) != 1 or score(items[!0]) != 22
+		return 1
+	if score(snapshot[!4]) != 10 or score(items[!4]) != 9
+		return 2
+	if score(items[!1]) != 6 or score(items[!2]) != 4 or score(items[!3]) != 12
+		return 3
+	if score(items[!5]) != 4 or score(items[!-1]) != 4
+		return 4
+	if score(items[?1] or Choice.Empty(Empty())) != 6 or score(items[?99] or Choice.Empty(Empty())) != 4
+		return 5
+	let a = Holding(snapshot)
+	let b = Holding([One(1), Alias(3), Empty(), Mixed(7, 2.5, true), Huge(1, 2, 3, 4), Managed("ok", [5, 6])])
+	if a != b
+		return 6
+	return 0
