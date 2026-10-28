@@ -85,6 +85,10 @@ export def resolve_hir_binary(types: Types.TypeTable, left: i64, right: i64, op:
 			return HirResolution(Types.TYPE_TAG_INVALID, -1, "logical operator requires bool")
 		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
 	if op == "==" or op == "!="
+		if tag == Types.TYPE_TAG_ARRAY
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "array == is reserved for elementwise comparison")
+		if not Types.type_supports_equality(types, left)
+			return HirResolution(Types.TYPE_TAG_INVALID, -1, "equality not supported for this type")
 		return HirResolution(Types.TYPE_TAG_BOOL, -1, "")
 	if op == "<" or op == "<=" or op == ">" or op == ">="
 		if tag != Types.TYPE_TAG_I64 and tag != Types.TYPE_TAG_F64 and tag != Types.TYPE_TAG_STRING

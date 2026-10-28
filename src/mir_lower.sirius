@@ -1168,6 +1168,8 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 				opcode = Mir.MIR_EQ_BOOL
 			elif next.register_types[!first] == Types.TYPE_TAG_STRING
 				opcode = Mir.MIR_EQ_STRING
+			elif next.register_types[!first] != Types.TYPE_TAG_I64
+				opcode = Mir.MIR_EQ_VALUE
 			negate = text == "!="
 		elif text == "<" or text == ">="
 			opcode = Mir.MIR_LT_I64

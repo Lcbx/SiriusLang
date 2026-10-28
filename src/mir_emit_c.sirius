@@ -319,15 +319,46 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("static inline bool s_mir_eq_i64(const void *a, const void *b) { return ((const S_MirField *)a)->bits == ((const S_MirField *)b)->bits; }\n")
 	parts = parts.append("static inline uint64_t s_mir_hash_string(const void *key) { return s_hash_string_key(&((const S_MirField *)key)->text); }\n")
 	parts = parts.append("static inline bool s_mir_eq_string(const void *a, const void *b) { return s_eq_string_key(&((const S_MirField *)a)->text, &((const S_MirField *)b)->text); }\n")
-	parts = parts.append("static inline uint64_t s_mir_hash_f64(const void *key) { double d = ((const S_MirField *)key)->real; uint64_t bits = 0; if (d != 0.0) memcpy(&bits, &d, sizeof(bits)); return s_hash_i64_key(&bits); }\n")
-	parts = parts.append("static inline bool s_mir_eq_f64(const void *a, const void *b) { return ((const S_MirField *)a)->real == ((const S_MirField *)b)->real; }\n")
-	var has_record_keys = false
+	parts = parts.append("static inline uint64_t s_mir_hash_f64(const void *key) { double d = ((const S_MirField *)key)->real; uint64_t bits = 0; if (isnan(d)) bits = UINT64_C(0x7ff8000000000000); else if (d != 0.0) memcpy(&bits, &d, sizeof(bits)); return s_hash_i64_key(&bits); }\n")
+	parts = parts.append("static inline bool s_mir_eq_f64(const void *a, const void *b) { double x = ((const S_MirField *)a)->real, y = ((const S_MirField *)b)->real; return x == y || (isnan(x) && isnan(y)); }\n")
+	# The same immutable structural comparison powers source `==` on records,
+	# optionals and unions and key comparison for composite dictionaries.
+	# Arrays participate when nested in comparable values; direct array == is
+	# deliberately reserved for future elementwise semantics.
+	parts = parts.append("static inline bool s_mir_value_equal(int64_t kind, S_MirField a, S_MirField b, bool key_comparison) { switch (kind) {\n")
+	parts = parts.append("case " + str(Types.TYPE_TAG_I64) + ": case " + str(Types.TYPE_TAG_BOOL) + ": return a.bits == b.bits;\n")
+	parts = parts.append("case " + str(Types.TYPE_TAG_F64) + ": return a.real == b.real || (key_comparison && isnan(a.real) && isnan(b.real));\n")
+	parts = parts.append("case " + str(Types.TYPE_TAG_STRING) + ": return s_string_compare(a.text, b.text) == 0;\n")
+	for i in 0..len(types.entries)
+		let desc = types.entries[!i]
+		if desc.tag == Types.TYPE_TAG_RECORD and Types.type_supports_equality(types, i)
+			parts = parts.append("case " + str(i) + ":\n")
+			for j in 0..len(desc.fields)
+				parts = parts.append("if (!s_mir_value_equal(" + str(desc.fields[!j].kind) + ", a.record->fields[" + str(j) + "], b.record->fields[" + str(j) + "], key_comparison)) return false;\n")
+			parts = parts.append("return true;\n")
+		elif desc.tag == Types.TYPE_TAG_ARRAY and Types.type_supports_equality(types, i)
+			parts = parts.append("case " + str(i) + ": if (a.record->length != b.record->length) return false;\n")
+			parts = parts.append("for (size_t j = 0; j < a.record->length; ++j) if (!s_mir_value_equal(" + str(desc.first) + ", a.record->fields[j], b.record->fields[j], key_comparison)) return false;\nreturn true;\n")
+		elif desc.tag == Types.TYPE_TAG_OPTIONAL and Types.type_supports_equality(types, i)
+			parts = parts.append("case " + str(i) + ": if (a.record->length != b.record->length) return false;\n")
+			parts = parts.append("return a.record->length == 0 || s_mir_value_equal(" + str(desc.first) + ", a.record->fields[0], b.record->fields[0], key_comparison);\n")
+		elif desc.tag == Types.TYPE_TAG_UNION and Types.type_supports_equality(types, i)
+			if Types.union_is_enum(types, i)
+				parts = parts.append("case " + str(i) + ": return a.bits == b.bits;\n")
+			else
+				parts = parts.append("case " + str(i) + ": if (a.record->fields[0].bits != b.record->fields[0].bits) return false;\n")
+				parts = parts.append("switch (a.record->fields[0].bits) {\n")
+				for j in 0..len(desc.fields)
+					parts = parts.append("case " + str(j) + ": return s_mir_value_equal(" + str(desc.fields[!j].kind) + ", a.record->fields[1], b.record->fields[1], key_comparison);\n")
+				parts = parts.append("default: s_panic(\"invalid union alternative\"); }\n")
+	parts = parts.append("default: s_panic(\"unsupported equality type\"); } }\n")
+	var has_composite_keys = false
 	for desc in types.entries
-		if desc.tag == Types.TYPE_TAG_DICT and desc.first >= Types.TYPE_TAG_RECORD
-			has_record_keys = true
-	if has_record_keys
-		# Record keys use structural hashing of their canonical field sequence,
-		# analogous to tuple hashing. This includes recursive record-valued fields.
+		if desc.tag == Types.TYPE_TAG_DICT and Verify.mir_dict_hashable_key(types, desc.first) and desc.first >= Types.TYPE_TAG_RECORD
+			has_composite_keys = true
+	if has_composite_keys
+		# Dictionary keys use the same recursive value representation as `==`.
+		# Structural hashes depend on values and variant labels, never addresses.
 		parts = parts.append("static inline uint64_t s_mir_hash_combine(uint64_t previous, uint64_t value) { return (previous ^ value) * UINT64_C(0x9e3779b185ebca87); }\n")
 		parts = parts.append("static inline uint64_t s_mir_hash_field(int64_t kind, S_MirField field) { switch (kind) {\n")
 		parts = parts.append("case " + str(Types.TYPE_TAG_I64) + ": case " + str(Types.TYPE_TAG_BOOL) + ": return s_hash_i64_key(&field.bits);\n")
@@ -340,27 +371,26 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				for j in 0..len(desc.fields)
 					parts = parts.append("result = s_mir_hash_combine(result, s_mir_hash_field(" + str(desc.fields[!j].kind) + ", field.record->fields[" + str(j) + "]));\n")
 				parts = parts.append("return s_mir_hash_combine(result, " + str(len(desc.fields)) + "); }\n")
-		parts = parts.append("default: s_panic(\"unhashable dictionary key\"); } }\n")
-		parts = parts.append("static inline bool s_mir_equal_field(int64_t kind, S_MirField a, S_MirField b) { switch (kind) {\n")
-		parts = parts.append("case " + str(Types.TYPE_TAG_I64) + ": case " + str(Types.TYPE_TAG_BOOL) + ": return a.bits == b.bits;\n")
-		parts = parts.append("case " + str(Types.TYPE_TAG_F64) + ": return a.real == b.real;\n")
-		parts = parts.append("case " + str(Types.TYPE_TAG_STRING) + ": return s_string_compare(a.text, b.text) == 0;\n")
 		for i in 0..len(types.entries)
 			let desc = types.entries[!i]
-			if desc.tag == Types.TYPE_TAG_RECORD and Verify.mir_dict_hashable_key(types, i)
-				parts = parts.append("case " + str(i) + ": return ")
-				if len(desc.fields) == 0
-					parts = parts.append("true")
-				for j in 0..len(desc.fields)
-					if j > 0
-						parts = parts.append(" && ")
-					parts = parts.append("s_mir_equal_field(" + str(desc.fields[!j].kind) + ", a.record->fields[" + str(j) + "], b.record->fields[" + str(j) + "])")
-				parts = parts.append(";\n")
+			if desc.tag == Types.TYPE_TAG_OPTIONAL and Verify.mir_dict_hashable_key(types, i)
+				parts = parts.append("case " + str(i) + ": { uint64_t hash = UINT64_C(0x345678);\n")
+				parts = parts.append("if (field.record->length == 0) return s_mir_hash_combine(hash, 0);\n")
+				parts = parts.append("return s_mir_hash_combine(s_mir_hash_combine(hash, 1), s_mir_hash_field(" + str(desc.first) + ", field.record->fields[0])); }\n")
+			elif desc.tag == Types.TYPE_TAG_UNION and Verify.mir_dict_hashable_key(types, i)
+				if Types.union_is_enum(types, i)
+					parts = parts.append("case " + str(i) + ": return s_hash_i64_key(&field.bits);\n")
+				else
+					parts = parts.append("case " + str(i) + ": { int64_t tag = field.record->fields[0].bits;\n")
+					parts = parts.append("uint64_t hash = s_mir_hash_combine(UINT64_C(0x345678), s_hash_i64_key(&tag));\nswitch (tag) {\n")
+					for j in 0..len(desc.fields)
+						parts = parts.append("case " + str(j) + ": return s_mir_hash_combine(hash, s_mir_hash_field(" + str(desc.fields[!j].kind) + ", field.record->fields[1]));\n")
+					parts = parts.append("default: s_panic(\"invalid union alternative\"); } }\n")
 		parts = parts.append("default: s_panic(\"unhashable dictionary key\"); } }\n")
 		var emitted_keys = Array[i64]()
 		for i in 0..len(types.entries)
 			let desc = types.entries[!i]
-			if desc.tag == Types.TYPE_TAG_DICT and desc.first >= Types.TYPE_TAG_RECORD and Verify.mir_dict_hashable_key(types, desc.first)
+			if desc.tag == Types.TYPE_TAG_DICT and Verify.mir_dict_hashable_key(types, desc.first) and desc.first >= Types.TYPE_TAG_RECORD
 				var seen = false
 				for key in emitted_keys
 					if key == desc.first
@@ -369,7 +399,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 					let kind = desc.first
 					emitted_keys = emitted_keys.append(kind)
 					parts = parts.append("static inline uint64_t s_mir_hash_key_" + str(kind) + "(const void *key) { return s_mir_hash_field(" + str(kind) + ", *(const S_MirField *)key); }\n")
-					parts = parts.append("static inline bool s_mir_eq_key_" + str(kind) + "(const void *a, const void *b) { return s_mir_equal_field(" + str(kind) + ", *(const S_MirField *)a, *(const S_MirField *)b); }\n")
+					parts = parts.append("static inline bool s_mir_eq_key_" + str(kind) + "(const void *a, const void *b) { return s_mir_value_equal(" + str(kind) + ", *(const S_MirField *)a, *(const S_MirField *)b, true); }\n")
 	parts = parts.append("static inline S_MirRecord *s_mir_dict_new(int64_t id, S_HashKey hash, S_EqualKey eq, S_CopyElem kcopy, S_DropElem kdrop, S_CopyElem vcopy, S_DropElem vdrop) {\n")
 	parts = parts.append("\tS_MirRecord *r = s_mir_record_new(id, 1); r->fields[0].dict = s_dict_new(sizeof(S_MirField), sizeof(S_MirField), kcopy, kdrop, vcopy, vdrop, hash, eq);\n")
 	parts = parts.append("#ifdef SIRIUS_ARC_AUDIT\n\tswitch (id) {\n")
@@ -511,7 +541,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			if op == Mir.MIR_DICT_INSERT
 				for arg in instruction.inputs
 					result = result + mir_c_check(arg, checked)
-			if op >= Mir.MIR_ADD_I64 and op <= Mir.MIR_LE_I64 or op >= Mir.MIR_BIT_AND_I64 and op <= Mir.MIR_SHR_I64 or op == Mir.MIR_EQ_BOOL or op == Mir.MIR_ARRAY_GET or op == Mir.MIR_ARRAY_GET_OPTIONAL or op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_DICT_GET_OPTIONAL or op == Mir.MIR_DICT_NEXT or op == Mir.MIR_DICT_KEY or op == Mir.MIR_DICT_VALUE or op == Mir.MIR_ARRAY_APPEND or op == Mir.MIR_RECORD_SET or op == Mir.MIR_RECORD_ARRAY_APPEND or op == Mir.MIR_DIV_NO_OVERFLOW_I64 or op == Mir.MIR_ARRAY_INDEX_VALID or (op >= Mir.MIR_STRING_SLICE and op <= Mir.MIR_LE_STRING) or (op >= Mir.MIR_ADD_F64 and op <= Mir.MIR_LE_F64)
+			if op >= Mir.MIR_ADD_I64 and op <= Mir.MIR_LE_I64 or op >= Mir.MIR_BIT_AND_I64 and op <= Mir.MIR_SHR_I64 or op == Mir.MIR_EQ_BOOL or op == Mir.MIR_EQ_VALUE or op == Mir.MIR_ARRAY_GET or op == Mir.MIR_ARRAY_GET_OPTIONAL or op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_DICT_GET_OPTIONAL or op == Mir.MIR_DICT_NEXT or op == Mir.MIR_DICT_KEY or op == Mir.MIR_DICT_VALUE or op == Mir.MIR_ARRAY_APPEND or op == Mir.MIR_RECORD_SET or op == Mir.MIR_RECORD_ARRAY_APPEND or op == Mir.MIR_DIV_NO_OVERFLOW_I64 or op == Mir.MIR_ARRAY_INDEX_VALID or (op >= Mir.MIR_STRING_SLICE and op <= Mir.MIR_LE_STRING) or (op >= Mir.MIR_ADD_F64 and op <= Mir.MIR_LE_F64)
 				result = result + mir_c_check(instruction.second, checked)
 			if op == Mir.MIR_ARRAY_SET or op == Mir.MIR_DICT_GET_OR or op == Mir.MIR_STRING_SLICE
 				result = result + mir_c_check(instruction.immediate, checked)
@@ -599,6 +629,22 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if checked or instruction.text != "__mir_guarded"
 			code = code + "\tif (!(" + first + " >= -0x1p63 && " + first + " < 0x1p63)) s_panic(\"floating-point value cannot be represented as i64\");\n"
 		return code + "\t" + dst + " = (int64_t)" + first + mir_c_mark_init(instruction.dst, checked) + "\n"
+	if op == Mir.MIR_EQ_VALUE
+		let source = function.register_types[!instruction.first]
+		if mir_c_inline_record(types, source)
+			var conditions = Array[string]()
+			let fields = types.entries[!source].fields
+			for i in 0..len(fields)
+				conditions = conditions.append(first + ".f" + str(i) + " == " + second + ".f" + str(i))
+			var comparison = "true"
+			if len(conditions) > 0
+				comparison = "(" + " && ".join(conditions) + ")"
+			return result + "\t" + dst + " = " + comparison + mir_c_mark_init(instruction.dst, checked) + "\n"
+		let storage = Types.runtime_storage(types, source)
+		var member = "record"
+		if storage == Types.TYPE_STORAGE_I64
+			member = "bits"
+		return result + "\t" + dst + " = s_mir_value_equal(" + str(source) + ", (S_MirField){." + member + " = " + first + "}, (S_MirField){." + member + " = " + second + "}, false)" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_SQRT_F64
 		return result + "\t" + dst + " = sqrt(" + first + ")" + mir_c_mark_init(instruction.dst, checked) + "\n"
 	if op == Mir.MIR_UNION_NEW
@@ -670,7 +716,7 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if Types.runtime_ownership(types, desc.first) == Types.TYPE_OWNERSHIP_STRING
 			key_copy = "s_mir_copy_string"
 			key_drop = "s_mir_drop_string"
-		elif desc.first >= Types.TYPE_TAG_RECORD
+		elif Common.mir_common_managed(types, desc.first)
 			key_copy = "s_mir_copy_record"
 			key_drop = "s_mir_drop_record"
 		var value_copy = "NULL"

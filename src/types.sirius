@@ -65,6 +65,23 @@ export def union_is_enum(types: TypeTable, id: i64) -> bool
 			return false
 	return true
 
+# A value can be compared recursively without observing ownership or identity.
+# Arrays can be nested in comparable values, but top-level array `==` is
+# reserved for an eventual elementwise operation. Dictionary and Fn values
+# do not currently have structural equality.
+export def type_supports_equality(types: TypeTable, id: i64) -> bool
+	let tag = type_tag(types, id)
+	if tag == TYPE_TAG_I64 or tag == TYPE_TAG_F64 or tag == TYPE_TAG_BOOL or tag == TYPE_TAG_STRING
+		return true
+	if tag == TYPE_TAG_ARRAY or tag == TYPE_TAG_OPTIONAL
+		return type_supports_equality(types, types.entries[!id].first)
+	if tag == TYPE_TAG_RECORD or tag == TYPE_TAG_UNION
+		for field in types.entries[!id].fields
+			if not type_supports_equality(types, field.kind)
+				return false
+		return true
+	return false
+
 export def runtime_storage(types: TypeTable, id: i64) -> i64
 	let tag = type_tag(types, id)
 	if tag == TYPE_TAG_I64 or tag == TYPE_TAG_FUNCTION

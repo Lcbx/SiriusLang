@@ -452,6 +452,14 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if not mir_register_valid(types, ins.first, Types.TYPE_TAG_F64) or not mir_register_valid(types, ins.second, Types.TYPE_TAG_F64)
 			return "floating operand type mismatch"
 		return ""
+	if ins.op == Mir.MIR_EQ_VALUE
+		if dst_type != Types.TYPE_TAG_BOOL or ins.first < 0 or ins.first >= len(types) or ins.second < 0 or ins.second >= len(types)
+			return "invalid structural equality registers"
+		let source = types[!ins.first]
+		let tag = Types.type_tag(program.types, source)
+		if source != types[!ins.second] or (tag != Types.TYPE_TAG_RECORD and tag != Types.TYPE_TAG_OPTIONAL and tag != Types.TYPE_TAG_UNION) or not Types.type_supports_equality(program.types, source)
+			return "invalid structural equality operand type"
+		return ""
 	if ins.op == Mir.MIR_EQ_BOOL
 		if dst_type != Types.TYPE_TAG_BOOL or not mir_register_valid(types, ins.first, Types.TYPE_TAG_BOOL) or not mir_register_valid(types, ins.second, Types.TYPE_TAG_BOOL)
 			return "boolean operand type mismatch"
@@ -578,7 +586,9 @@ export def mir_dict_hashable_key(types: Types.TypeTable, kind: i64) -> bool
 	let desc = types.entries[!kind]
 	if desc.tag == Types.TYPE_TAG_I64 or desc.tag == Types.TYPE_TAG_BOOL or desc.tag == Types.TYPE_TAG_STRING or desc.tag == Types.TYPE_TAG_F64
 		return true
-	if desc.tag != Types.TYPE_TAG_RECORD
+	if desc.tag == Types.TYPE_TAG_OPTIONAL
+		return mir_dict_hashable_key(types, desc.first)
+	if desc.tag != Types.TYPE_TAG_RECORD and desc.tag != Types.TYPE_TAG_UNION
 		return false
 	for field in desc.fields
 		if not mir_dict_hashable_key(types, field.kind)

@@ -100,6 +100,7 @@ export let MIR_RECORD_NEW_FUSED_MOVE = 93
 export let MIR_I64_TO_F64 = 94
 export let MIR_F64_TO_I64 = 95
 export let MIR_F64_TO_I64_VALID = 96
+export let MIR_EQ_VALUE = 97
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2

@@ -512,10 +512,16 @@ its long-term feature list is **not** the implementation queue. In particular:
   exponents do not lose finite values to intermediate overflow/underflow.
   Correctly rounded native/interpreter literal parity remains unproven.
   Keep native and interpreted execution in agreement.
-- **Before broad equality/hashing or nominal variants:** decide structural
-  equality for aggregate/numerical types and whether same-shaped constructors
-  can ever be distinct union alternatives. Preserve today's structural union
-  restriction in the meantime.
+- **Equality/hashing, initial slice implemented:** source `==`/`!=` compare
+  records, optionals, and labeled unions recursively as boolean values.
+  Direct array `==` remains reserved for elementwise comparison; direct dict
+  and function equality remain unsupported. Hashable dictionary keys include
+  recursive records, optionals, and unions, but exclude arrays and dictionaries.
+  NaN dictionary key equivalence is canonicalized without changing IEEE `==`.
+  A future operator/collection-equality proposal requires separate review.
+- **Before nominal variants:** decide whether same-shaped constructors can ever
+  be distinct *types* rather than labeled alternatives; preserve the current
+  structural union restriction meanwhile.
 - **Before operator overloading across modules:** specify how imported
   operators enter scope and how ambiguity is reported. Existing exact-typed
   named-function overloads do not settle this.

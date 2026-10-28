@@ -1,0 +1,67 @@
+rec Pair(code: i64, label: string)
+rec Envelope(pair: Pair, numbers: Array[i64])
+rec FloatKey(number: f64)
+rec Scalar(x: i64, y: f64)
+rec Success(value: i64)
+rec Failure(value: i64)
+let Result = Success | Failure
+
+enum Signal
+	Idle
+	Ready
+
+rec Empty()
+
+def main() -> i64
+	let first = Pair(4, "four")
+	let second = Pair(4, "four")
+	if first != second or first == Pair(4, "five")
+		return 1
+	if Scalar(3, 2.5) != Scalar(3, 2.5) or Scalar(3, 2.5) == Scalar(4, 2.5)
+		return 13
+	let one = Envelope(first, [1, 2, 3])
+	let two = Envelope(second, [1, 2, 3])
+	if one != two or one == Envelope(first, [1, 3, 2])
+		return 2
+	let missing = Dict[i64,i64]().get(1)
+	let missing_again = Dict[i64,i64]().get(2)
+	let present = Dict[i64,i64]().insert(1, 3).get(1)
+	if missing != missing_again or missing == present or present != present
+		return 3
+	let left: Result = Success(9)
+	let right: Result = Success(9)
+	let other: Result = Failure(9)
+	if left != right or left == other
+		return 4
+	let idle: Signal = Idle()
+	let ready: Signal = Ready()
+	let idle_again: Signal = Idle()
+	let ready_again: Signal = Ready()
+	if idle != idle_again or idle == ready
+		return 5
+	let numbers = Dict[Optional[i64],i64]().insert(missing, 11).insert(present, 22)
+	if (numbers.get(missing) or 0) != 11 or (numbers.get(present) or 0) != 22
+		return 6
+	let pairs = Dict[Pair,i64]().insert(first, 70)
+	if (pairs.get(second) or 0) != 70
+		return 7
+	let signals = Dict[Signal,i64]().insert(idle, 33).insert(ready, 44)
+	if (signals.get(idle_again) or 0) != 33 or (signals.get(ready_again) or 0) != 44
+		return 8
+	let results = Dict[Result,i64]().insert(left, 55).insert(other, 66)
+	if (results.get(right) or 0) != 55 or (results.get(other) or 0) != 66
+		return 9
+	let saved_results = results
+	let replaced_results = results.insert(left, 77)
+	if (saved_results.get(left) or 0) != 55 or (replaced_results.get(right) or 0) != 77
+		return 14
+	let nan = 0.0 / 0.0
+	if nan == nan or FloatKey(nan) == FloatKey(nan)
+		return 10
+	let floats = Dict[f64,i64]().insert(-0.0, 14).insert(nan, 15)
+	if (floats.get(0.0) or 0) != 14 or (floats.get(nan) or 0) != 15
+		return 11
+	let nested_float_keys = Dict[FloatKey,i64]().insert(FloatKey(nan), 16)
+	if (nested_float_keys.get(FloatKey(nan)) or 0) != 16
+		return 12
+	return 0

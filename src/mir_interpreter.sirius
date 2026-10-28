@@ -57,20 +57,25 @@ def mir_list_dir_values(path: string) -> MirDirectoryValues
 def mir_real_value(value: f64) -> Mir.MirValue
 	return Mir.MirValue(Types.TYPE_TAG_F64, 0, "", value)
 
-def mir_dict_equal(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], a: Mir.MirValue, b: Mir.MirValue) -> bool
+# Structural comparison also defines the dictionary key equality relation.
+# IEEE floating comparison is retained (including NaN != NaN), and -0 == +0.
+def mir_dict_equal(types: Types.TypeTable, heap: Array[Mir.MirHeapRecord], a: Mir.MirValue, b: Mir.MirValue, key_comparison: bool) -> bool
 	if a.type_id != b.type_id
 		return false
-	if a.type_id == Types.TYPE_TAG_STRING
+	let tag = Types.type_tag(types, a.type_id)
+	if tag == Types.TYPE_TAG_STRING
 		return a.text == b.text
-	if a.type_id == Types.TYPE_TAG_F64
-		return a.real == b.real
-	if a.type_id >= Types.TYPE_TAG_RECORD and a.type_id < len(types.entries) and types.entries[!a.type_id].tag == Types.TYPE_TAG_RECORD
+	if tag == Types.TYPE_TAG_F64
+		return a.real == b.real or (key_comparison and a.real != a.real and b.real != b.real)
+	if tag == Types.TYPE_TAG_UNION and Types.union_is_enum(types, a.type_id)
+		return a.bits == b.bits
+	if tag == Types.TYPE_TAG_RECORD or tag == Types.TYPE_TAG_ARRAY or tag == Types.TYPE_TAG_OPTIONAL or tag == Types.TYPE_TAG_UNION
 		let first = heap[!a.bits]
 		let second = heap[!b.bits]
 		if len(first.fields) != len(second.fields)
 			return false
 		for i in 0..len(first.fields)
-			if not mir_dict_equal(types, heap, first.fields[!i], second.fields[!i])
+			if not mir_dict_equal(types, heap, first.fields[!i], second.fields[!i], key_comparison)
 				return false
 		return true
 	return a.bits == b.bits
@@ -373,7 +378,7 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					return mir_failure("uninitialized dictionary key", steps)
 				var at = -1
 				for i in 0..len(dict.fields) / 2
-					if mir_dict_equal(program.types, heap, dict.fields[!i * 2], key)
+					if mir_dict_equal(program.types, heap, dict.fields[!i * 2], key, true)
 						at = i
 						break
 				if ins.op == Mir.MIR_DICT_GET_OPTIONAL
@@ -759,6 +764,12 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
 					heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], fields, 1))
+				continue
+			if ins.op == Mir.MIR_EQ_VALUE
+				var equal = 0
+				if mir_dict_equal(program.types, heap, left, right, false)
+					equal = 1
+				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, equal, "")
 				continue
 			if ins.op >= Mir.MIR_ADD_F64 and ins.op <= Mir.MIR_LE_F64
 				if left.type_id != Types.TYPE_TAG_F64 or right.type_id != Types.TYPE_TAG_F64
