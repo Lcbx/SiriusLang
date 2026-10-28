@@ -1332,6 +1332,47 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		var after = -1
 		for i in 1..node.count
 			let arm = Hir.hir_ast_child(context.tree, id, i)
+			let case = context.tree.nodes[!arm]
+			if case.kind == Ast.NODE_CASE_GROUP
+				let condition = next.active
+				next = mir_lower_block(next)
+				let matched = next.active
+				next = mir_lower_block(next)
+				let following = next.active
+				next.active = condition
+				# Each tag branches to the same body; no payload is extracted.
+				for j in 0..case.count - 1
+					let pattern = Hir.hir_ast_child(context.tree, arm, j)
+					let annotation = Hir.hir_annotation_find(context.hir, context.annotation_index, pattern, Hir.HIR_MATCH_CASE)
+					if annotation < 0
+						return mir_lower_error(next, "missing typed match alternative")
+					let alternative = context.hir[!annotation].field_index
+					let label = len(next.register_types)
+					next = mir_lower_register(next, Types.TYPE_TAG_I64)
+					next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, label, -1, -1, alternative))
+					let equals = len(next.register_types)
+					next = mir_lower_register(next, Types.TYPE_TAG_BOOL)
+					next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_EQ_I64, equals, tag, label, 0))
+					let test = next.active
+					var missed = following
+					if j + 1 < case.count - 1
+						next = mir_lower_block(next)
+						missed = next.active
+					next.active = test
+					next = mir_lower_end(next, Mir.mir_branch(equals, matched, missed))
+					next.active = missed
+				next.active = matched
+				next = mir_lower_statements(next, context, Hir.hir_ast_child(context.tree, arm, case.count - 1))
+				next.error == "" else return next
+				if not mir_lower_ended(next)
+					let arm_end = next.active
+					if after < 0
+						next = mir_lower_block(next)
+						after = next.active
+					next.active = arm_end
+					next = mir_lower_end(next, Mir.mir_jump(after))
+				next.active = following
+				continue
 			let record_type = mir_lower_type(context, arm, Hir.HIR_MATCH_CASE)
 			let annotation = Hir.hir_annotation_find(context.hir, context.annotation_index, arm, Hir.HIR_MATCH_CASE)
 			var alternative = -1

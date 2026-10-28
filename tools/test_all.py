@@ -25,6 +25,7 @@ GROUP_PATTERNS = {
 		'test_union_hybrid_coallocation'),
 	'modules': ('test_module_*', 'test_source_modules', 'test_long_module_symbols'),
 	'language': ('test_callback_*', 'test_constructor_*', 'test_contextual_*',
+		'test_match_*',
 		'test_function_*', 'test_generic_*', 'test_multistage_*',
 		'test_union_*', 'test_stdlib_callbacks', 'test_stdlib_numeric',
 		'test_negative_array_index', 'test_integer_edges'),

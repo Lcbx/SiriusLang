@@ -164,6 +164,12 @@ or panic).
   its structural payload shape. HIR checks label-based exhaustiveness and records the
   selected canonical tag for MIR lowering, even if two payload shapes are identical.
   `enum Color` is shorthand for empty `rec` declarations and a labeled union.
+* Tag-only branches such as `Error1 | Error2` use `NODE_CASE_GROUP`, containing
+  individual `NODE_CASE` tag leaves and one shared body. HIR resolves and checks
+  every tag, without binding payload fields. MIR emits tag comparisons that
+  branch to the shared body and performs no payload extraction for that group.
+  Bare single tags use the same representation. Generic packages preserve these
+  syntax nodes and defining-module constructor names.
 * Canonical labeled union descriptors retain alternatives in declaration order and
   preserve them through module type translation and MIR serialization.
   `MIR_UNION_NEW`/`MIR_UNION_GET` use the existing `second` field as a nonnegative label

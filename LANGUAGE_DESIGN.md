@@ -245,6 +245,21 @@ additional binders then select the remaining published fields in canonical
 lexicographic name order. Patterns may omit these additional binders but must
 include every constructor parameter.
 
+Tag-only patterns ignore the payload. Separate tags with `|` to share one
+branch body, including alternatives with different payload shapes:
+
+```sirius
+match result
+	Success(value)
+		return value > 0.5
+	Error1 | Error2
+		return false
+```
+
+A bare tag can also form a branch on its own. Grouped tags bind no payload
+names; use a separate constructor pattern when fields are needed. Duplicate
+alternatives and exhaustiveness are checked across all tags in all branches.
+
 ### Structural records and labeled union alternatives
 
 Record constructor names do not affect record type identity: two records with

@@ -1,0 +1,6 @@
+def positive(result: Result) -> bool
+	match result
+		Success(value)
+			return value > 0.5
+		Error1 | Error2
+			return false

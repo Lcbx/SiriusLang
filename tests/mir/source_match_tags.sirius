@@ -1,0 +1,67 @@
+rec Success(value: f64)
+rec Error1(message: string)
+rec Error2(message: string)
+rec Error3(code: i64)
+let Result = Success | Error1 | Error2 | Error3
+
+enum Color
+	Red
+	Green
+	Blue
+	Done
+
+def positive(result: Result) -> bool
+	match result
+		Success(value)
+			return value > 0.5
+		Error1 | Error2 | Error3
+			return false
+
+def apply(result: Result, callback) -> bool
+	match result
+		Success(value)
+			return callback(value)
+		Error1 | Error2 | Error3
+			return callback(0.0)
+
+def ignored(result: Result) -> i64
+	match result
+		Success
+			return 1
+		Error1() | Error2
+			return 2
+		Error3
+			return 3
+
+def main() -> i64
+	let values: Array[Result] = [Success(0.75), Error1("one"), Error2("two"), Error3(3), Success(0.25)]
+	var positives = 0
+	var errors = 0
+	var seen = 0
+	for result in values
+		if positive(result)
+			positives += 1
+		if apply(result, fn(x) x > 0.5) != positive(result)
+			return 1
+		match result
+			Success(value)
+				seen += 1
+			Error1 | Error2 | Error3
+				let amount = 1
+				errors += amount
+				seen += amount
+	if positives != 1 or errors != 3 or seen != 5
+		return 2
+	if ignored(values[!0]) != 1 or ignored(values[!1]) != 2 or ignored(values[!2]) != 2 or ignored(values[!3]) != 3
+		return 3
+	let colors: Array[Color] = [Red(), Green(), Blue(), Done()]
+	var total = 0
+	for color in colors
+		match color
+			Red | Green | Blue
+				total += 1
+			Done
+				total += 10
+	if total != 13
+		return 4
+	return 0

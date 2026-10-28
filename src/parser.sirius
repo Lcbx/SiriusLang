@@ -54,6 +54,7 @@ export let NODE_IMPORT = 47
 export let NODE_EXPORT = 48
 export let NODE_REEXPORT = 49
 export let NODE_ENUM = 50
+export let NODE_CASE_GROUP = 51
 
 export def node_kind_name(kind: i64) -> string
 	if kind == NODE_ARM
@@ -78,6 +79,8 @@ export def node_kind_name(kind: i64) -> string
 		return "call"
 	if kind == NODE_CASE
 		return "case"
+	if kind == NODE_CASE_GROUP
+		return "case_group"
 	if kind == NODE_CHECKED_INDEX
 		return "checked_index"
 	if kind == NODE_CONTINUE
@@ -700,35 +703,56 @@ def parse_statement(p: ParseState) -> ParseResult
 		var arms = Array[i64]()
 		arms = arms.append(value.node)
 		while next.error == "" and not kind_is(next, Lex.TOKEN_DEDENT) and not kind_is(next, Lex.TOKEN_EOF)
-			var position = next.index
-			let line = next.tokens[!position].line
-			var variant = word(next)
-			next = expect_kind(next, Lex.TOKEN_NAME, "variant name")
-			if is_token(next, ".")
-				next = expect(next, ".")
-				variant += "." + word(next)
-				next = expect_kind(next, Lex.TOKEN_NAME, "qualified variant name")
-				if next.error == ""
-					let start = len(next.source)
-					next.source += variant
-					position = len(next.tokens)
-					next.tokens = next.tokens.append(Lex.Token(Lex.TOKEN_NAME, start, len(next.source), line, 0))
-			next = expect(next, "(")
+			var positions = Array[i64]()
 			var names = Array[i64]()
-			while next.error == "" and not is_token(next, ")")
-				let name = next.index
-				next = expect_kind(next, Lex.TOKEN_NAME, "bound name")
-				let leaf_result = leaf(next, NODE_BINDING, name)
-				next = leaf_result.state
-				names = names.append(leaf_result.node)
-				if not is_token(next, ",")
+			var grouped = false
+			while next.error == ""
+				var position = next.index
+				let line = next.tokens[!position].line
+				var variant = word(next)
+				next = expect_kind(next, Lex.TOKEN_NAME, "variant name")
+				if is_token(next, ".")
+					next = expect(next, ".")
+					variant += "." + word(next)
+					next = expect_kind(next, Lex.TOKEN_NAME, "qualified variant name")
+					if next.error == ""
+						let start = len(next.source)
+						next.source += variant
+						position = len(next.tokens)
+						next.tokens = next.tokens.append(Lex.Token(Lex.TOKEN_NAME, start, len(next.source), line, 0))
+				positions = positions.append(position)
+				if is_token(next, "(")
+					next = expect(next, "(")
+					while next.error == "" and not is_token(next, ")")
+						let name = next.index
+						next = expect_kind(next, Lex.TOKEN_NAME, "bound name")
+						let leaf_result = leaf(next, NODE_BINDING, name)
+						next = leaf_result.state
+						names = names.append(leaf_result.node)
+						if not is_token(next, ",")
+							break
+						next = expect(next, ",")
+					next = expect(next, ")")
+				else
+					grouped = true
+				if is_token(next, "|")
+					grouped = true
+				if grouped and len(names) != 0
+					return ParseResult(fail(next, "grouped match tags cannot bind payloads"), -1)
+				if not is_token(next, "|")
 					break
-				next = expect(next, ",")
-			next = expect(next, ")")
+				next = expect(next, "|")
 			let body = parse_block(next)
 			next = body.state
+			var kind = NODE_CASE
+			if grouped
+				kind = NODE_CASE_GROUP
+				for position in positions
+					let tag = append_node(next, NODE_CASE, position, Array[i64]())
+					next = tag.state
+					names = names.append(tag.node)
 			names = names.append(body.node)
-			let arm = append_node(next, NODE_CASE, position, names)
+			let arm = append_node(next, kind, positions[!0], names)
 			next = arm.state
 			arms = arms.append(arm.node)
 		next = expect_kind(next, Lex.TOKEN_DEDENT, "dedent")

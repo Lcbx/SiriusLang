@@ -323,23 +323,30 @@ def module_scan_capture_node(tree: Parser.ParseState, id: i64, bindings: Array[s
 		required = scanned.helpers
 		for i in 1..node.count
 			let arm = Hir.hir_ast_child(next, id, i)
+			let case = next.nodes[!arm]
+			var patterns = [arm]
+			if case.kind == Parser.NODE_CASE_GROUP
+				patterns = Array[i64]()
+				for j in 0..case.count - 1
+					patterns = patterns.append(Hir.hir_ast_child(next, arm, j))
 			# Pattern constructors belong to the defining module, not to the
 			# importing module's namespace. These nodes are not ordinary calls
 			# and therefore bypass the normal free-name capture path.
-			let name = Hir.hir_ast_text(next, arm)
-			for function in owner.declarations.functions
-				if function.name == name and function.constructor
-					next = module_scan_rename(next, arm, Module.hir_module_symbol(owner.name, name))
-					break
-			for imported in owner.declarations.imports
-				let prefix = imported.alias + "."
-				if name.starts_with(prefix)
-					next = module_scan_rename(next, arm, module_scan_capture_import_alias(owner.name, imported.alias) + name.slice(len(imported.alias), len(name)))
-					break
-			let case = next.nodes[!arm]
+			for pattern in patterns
+				let name = Hir.hir_ast_text(next, pattern)
+				for function in owner.declarations.functions
+					if function.name == name and function.constructor
+						next = module_scan_rename(next, pattern, Module.hir_module_symbol(owner.name, name))
+						break
+				for imported in owner.declarations.imports
+					let prefix = imported.alias + "."
+					if name.starts_with(prefix)
+						next = module_scan_rename(next, pattern, module_scan_capture_import_alias(owner.name, imported.alias) + name.slice(len(imported.alias), len(name)))
+						break
 			var scoped = bindings
-			for j in 0..case.count - 1
-				scoped = scoped.append(Hir.hir_ast_text(next, Hir.hir_ast_child(next, arm, j)))
+			if case.kind != Parser.NODE_CASE_GROUP
+				for j in 0..case.count - 1
+					scoped = scoped.append(Hir.hir_ast_text(next, Hir.hir_ast_child(next, arm, j)))
 			let body = module_scan_capture_node(next, Hir.hir_ast_child(next, arm, case.count - 1), scoped, owner, updated, required)
 			if body.error != ""
 				return body

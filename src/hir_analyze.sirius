@@ -905,23 +905,34 @@ def hir_callback_probe(original: HirCallbackProbe, id: i64, callback: string) ->
 			let case = tree.nodes[!arm]
 			var path = probe
 			path = hir_callback_constraints(path, observed)
-			var case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
-			path.state.types = case_type.table
-			if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
-				var alternative = Types.union_alternative_index(path.state.types, union_id, case_type.type_id)
-				if path.state.types.entries[!union_id].fields[!0].name != ""
-					alternative = Resolve.hir_union_constructor_alternative_index(path.state.types, union_id, Hir.hir_ast_text(tree, arm), case_type.type_id)
-				alternatives = alternatives.append(alternative)
-				let fields = path.state.types.entries[!case_type.type_id].fields
-				var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
-				for function in path.state.functions
-					if function.name == Hir.hir_ast_text(tree, arm) and function.constructor
-						constructor = function
+			if case.kind == Ast.NODE_CASE_GROUP
 				for j in 0..case.count - 1
-					let field_index = Resolve.hir_match_field_index(fields, constructor.parameters, j)
-					if field_index >= 0
-						let binding = Hir.hir_ast_child(tree, arm, j)
-						path.state = hir_body_binding(path.state, binding, Hir.hir_ast_text(tree, binding), fields[!field_index].kind, false)
+					let pattern = Hir.hir_ast_child(tree, arm, j)
+					let case_type = hir_module_type_reference_with_constants(path.state.types, tree, pattern, path.state.functions, path.state.module_constants, path.state.type_aliases)
+					path.state.types = case_type.table
+					if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
+						var alternative = Types.union_alternative_index(path.state.types, union_id, case_type.type_id)
+						if path.state.types.entries[!union_id].fields[!0].name != ""
+							alternative = Resolve.hir_union_constructor_alternative_index(path.state.types, union_id, Hir.hir_ast_text(tree, pattern), case_type.type_id)
+						alternatives = alternatives.append(alternative)
+			else
+				let case_type = hir_module_type_reference_with_constants(path.state.types, tree, arm, path.state.functions, path.state.module_constants, path.state.type_aliases)
+				path.state.types = case_type.table
+				if case_type.type_id != Types.TYPE_TAG_INVALID and union_id != Types.TYPE_TAG_INVALID
+					var alternative = Types.union_alternative_index(path.state.types, union_id, case_type.type_id)
+					if path.state.types.entries[!union_id].fields[!0].name != ""
+						alternative = Resolve.hir_union_constructor_alternative_index(path.state.types, union_id, Hir.hir_ast_text(tree, arm), case_type.type_id)
+					alternatives = alternatives.append(alternative)
+					let fields = path.state.types.entries[!case_type.type_id].fields
+					var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
+					for function in path.state.functions
+						if function.name == Hir.hir_ast_text(tree, arm) and function.constructor
+							constructor = function
+					for j in 0..case.count - 1
+						let field_index = Resolve.hir_match_field_index(fields, constructor.parameters, j)
+						if field_index >= 0
+							let binding = Hir.hir_ast_child(tree, arm, j)
+							path.state = hir_body_binding(path.state, binding, Hir.hir_ast_text(tree, binding), fields[!field_index].kind, false)
 			path = hir_callback_probe(path, Hir.hir_ast_child(tree, arm, case.count - 1), callback)
 			path = hir_callback_restore(path, len(probe.state.symbols))
 			if path.reachable
@@ -1946,6 +1957,22 @@ export def hir_body_block(state: HirBodyState, id: i64) -> HirBodyState
 	result.depth -= 1
 	return result
 
+def hir_body_match_tag(state: HirBodyState, union_id: i64, arm_id: i64) -> HirBodyState
+	var result = state
+	let case_type = hir_module_type_reference_with_constants(result.types, result.tree, arm_id, result.functions, result.module_constants, result.type_aliases)
+	result.types = case_type.table
+	if case_type.error != ""
+		return hir_body_error(result, arm_id, case_type.error)
+	if case_type.type_id == Types.TYPE_TAG_INVALID
+		return hir_body_error(result, arm_id, "unknown match constructor '" + Hir.hir_ast_text(state.tree, arm_id) + "'")
+	var alternative = Types.union_alternative_index(result.types, union_id, case_type.type_id)
+	if result.types.entries[!union_id].fields[!0].name != ""
+		alternative = Resolve.hir_union_constructor_alternative_index(result.types, union_id, Hir.hir_ast_text(state.tree, arm_id), case_type.type_id)
+	if alternative < 0
+		return hir_body_error(result, arm_id, "match arm is not a union alternative")
+	result.nodes = result.nodes.append(Hir.HirNode(arm_id, Hir.HIR_MATCH_CASE, case_type.type_id, alternative))
+	return result
+
 export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 	state.error == "" else return state
 	let node = state.tree.nodes[!id]
@@ -1960,25 +1987,25 @@ export def hir_body_statement(state: HirBodyState, id: i64) -> HirBodyState
 		var alternatives = Array[i64]()
 		for i in 1..node.count
 			let arm_id = Hir.hir_ast_child(state.tree, id, i)
-			let case_type = hir_module_type_reference_with_constants(result.types, result.tree, arm_id, result.functions, result.module_constants, result.type_aliases)
-			result.types = case_type.table
-			if case_type.error != ""
-				return hir_body_error(result, arm_id, case_type.error)
-			if case_type.type_id == Types.TYPE_TAG_INVALID
-				return hir_body_error(result, arm_id, "unknown match constructor '" + Hir.hir_ast_text(state.tree, arm_id) + "'")
-			var alternative = Types.union_alternative_index(result.types, union_id, case_type.type_id)
-			if result.types.entries[!union_id].fields[!0].name != ""
-				alternative = Resolve.hir_union_constructor_alternative_index(result.types, union_id, Hir.hir_ast_text(state.tree, arm_id), case_type.type_id)
-			if alternative < 0
-				return hir_body_error(result, arm_id, "match arm is not a union alternative")
-			alternatives = alternatives.append(alternative)
-			result.nodes = result.nodes.append(Hir.HirNode(arm_id, Hir.HIR_MATCH_CASE, case_type.type_id, alternative))
+			let case = state.tree.nodes[!arm_id]
+			if case.kind == Ast.NODE_CASE_GROUP
+				for j in 0..case.count - 1
+					result = hir_body_match_tag(result, union_id, Hir.hir_ast_child(state.tree, arm_id, j))
+					result.error == "" else return result
+					alternatives = alternatives.append(result.nodes[!len(result.nodes) - 1].field_index)
+				result = hir_body_block(result, Hir.hir_ast_child(state.tree, arm_id, case.count - 1))
+				result.error == "" else return result
+				continue
+			result = hir_body_match_tag(result, union_id, arm_id)
+			result.error == "" else return result
+			let record_type = result.nodes[!len(result.nodes) - 1].type_id
+			alternatives = alternatives.append(result.nodes[!len(result.nodes) - 1].field_index)
 			# Existing positional parameters precede optional computed fields.
 			var constructor = Hir.new_hir_function_decl("", -1, -1, false, -1, Array[Hir.HirParameterDecl]())
 			for function in result.functions
 				if function.name == Hir.hir_ast_text(state.tree, arm_id) and function.constructor
 					constructor = function
-			let fields = result.types.entries[!case_type.type_id].fields
+			let fields = result.types.entries[!record_type].fields
 			let bound = result.tree.nodes[!arm_id].count - 1
 			if bound < len(constructor.parameters) or bound > len(fields)
 				return hir_body_error(result, arm_id, "match pattern requires constructor parameters, followed by optional published fields")
