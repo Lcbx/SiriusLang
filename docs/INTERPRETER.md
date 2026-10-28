@@ -1,226 +1,168 @@
 # MIR interpreter
 
-> Paths and commands in this document are relative to the repository root.
+The native runner lowers source through the same HIR specialization and MIR
+ownership/optimization pipeline as the C emitter, then executes linked MIR
+without generating C for the input. Entry point: `src/run_cli.sirius`;
+execution: `src/mir_interpreter.sirius`; serialization: `src/mir_wire.sirius`.
+Commands and paths below are relative to the repository root.
 
-**Status:** Sirius now has two execution paths for the *same* typed CFG MIR:
-`src/mir_emit_c.sirius` emits native C11, while `src/mir_interpreter.sirius`
-executes it dynamically. `src/run_cli.sirius` lowers a source file through the
-normal HIR specialization, MIR ownership/optimization pipeline and interprets
-the linked program. The runner itself is built once as a native executable;
-the input source does not generate C. `src/mir_wire.sirius` also persists and
-reloads concrete executable MIR. The interpreter itself does not perform compile-time execution or effect
-inference. The surrounding runner supports source-free generic specialization
-through `.smirg` packages and concrete MIR library linking.
-
-## Dynamic source execution
+## Run source or saved MIR
 
 ```sh
 python tools/build_mir_runner.py
 ./sirius-run path/to/main.sirius [args...]
-python tools/test_mir_run.py --all-fixtures
-```
-
-`main() -> i64` is required, as for the native emitter. Command-line arguments
-are supplied by the host. Optional file reads distinguish missing files from
-empty files. `print` and `eprint` use stdout and stderr respectively; explicit
-runtime panics report to stderr. `--max-steps N` and `--max-depth N` set
-interpreter-only limits (defaults: 10 million instructions and 256 call levels).
-All 91 shared compiler fixtures run successfully through the interpreter.
-
-## Portable executable MIR
-
-```sh
 ./sirius-run --emit-mir main.smir path/to/main.sirius
 ./sirius-run --load-mir main.smir [args...]
-python tools/test_mir_wire.py --all-fixtures
 ```
 
-`--emit-mir` saves the *post-lowering and ownership-optimized* MIR and exits
-without executing it. `--load-mir` interprets that artifact, without the source
-compiler. The file includes a versioned header (`SIRIUS-MIR-EXEC/1`), entry
-index, canonical structural type descriptors, specialized functions, typed
-registers, CFG blocks, instruction operands and text payloads. Integers use
-canonical decimal lines; strings are byte-length-prefixed so embedded newlines
-remain unambiguous. IDs are reconstructed, not process-local pointers. The
-loader validates bounds, version, type identities, MIR structure and ownership
-balance before executing. The format has a 64 MiB file limit and item-count
-limits; its version is tied to the current implementation, not a stable public
-cross-version ABI.
+Source execution requires `main() -> i64`. `--emit-mir` saves optimized MIR
+and exits without executing it. `--load-mir` needs no source compilation.
+`arguments()[0]` is the source path or loaded artifact path; native programs
+use the executable path. Other arguments pass through unchanged.
 
-With source execution, `arguments()[0]` is the source path; with loaded MIR it
-is the artifact path. Remaining positional arguments are passed unchanged. The
-native C emitter uses the native executable path for `arguments()[0]`.
+Options before the input select interpreter-only budgets:
 
-Artifacts contain only already specialized, executable functions. They do
-**not** preserve generic source/HIR needed to instantiate new specializations,
-exported symbols, imports, native bindings or a persistent library interface.
-Named exports in the separate concrete-library format are described below;
-concrete imports are supported in the separate library format; generic
-interfaces are stored separately in `.smirg` packages. This feature does not imply compile-time execution
-or purity inference.
+| Option | Default | Accepted values |
+| --- | --- | --- |
+| `--max-steps N` | 10,000,000 instructions/terminators | Positive decimal, at most 1,000,000,000 |
+| `--max-depth N` | 256 call levels | Positive decimal, at most 1,000,000,000 |
 
-## Named concrete MIR libraries
+Use `--` for source paths beginning with a dash. Runner options do not appear
+in `arguments()`. Invalid flags exit 2; execution failures print
+`Sirius panic: ...` to stderr and exit 1. Compile-time diagnostics retain the
+compiler's stdout format. `print` and `eprint` write stdout and stderr and
+accept `i64`, `f64`, `bool` and `string`. Optional file reads distinguish
+missing from empty files.
 
-The concrete library format (`SIRIUS-MIR-LIB/2`) packages the same optimized executable
-MIR with a table of named entry functions and canonical **structural** function
-signatures. It is independent of the process-local type descriptor indices.
+## Executable format (`.smir`)
+
+`SIRIUS-MIR-EXEC/1` stores an entry index, canonical structural descriptors,
+specialized functions, typed registers, CFG blocks, operands and text.
+Integers use canonical decimal lines; strings are byte-length-prefixed and
+may contain newlines. The loader reconstructs IDs and validates bounds,
+version, canonical types, MIR structure and ownership balance. Files are
+limited to 64 MiB with additional item-count bounds.
+
+This is an experimental, compiler-version-specific format, without a stable
+cross-version ABI. It contains concrete functions, not generic declarations,
+export/import interfaces or native bindings. For those separate mechanisms,
+see [Modules and packages](MODULES.md).
+
+## Libraries and linking (`.smirl`)
 
 ```sh
 ./sirius-run --emit-lib module.smirl --export foo --export bar module.sirius
 ./sirius-run --list-lib module.smirl
 ./sirius-run --entry bar --load-lib module.smirl
 ./sirius-run --link-lib combined.smirl module.smirl another.smirl
+```
+
+`--entry` must precede `--load-lib`. Concrete export roots require annotated
+parameter types; their combined reachable call graph is compiled once. Direct
+CLI execution additionally requires a suitable zero-argument `i64` entry.
+Generic roots need specialization through source modules or `.smirg` packages.
+
+`SIRIUS-MIR-LIB/2` adds named exports/imports and canonical structural
+signatures to concrete MIR. Loading checks names, indices and signatures.
+The linker interns equivalent types, remaps register/return TypeIds and call
+indices, and preserves exports. Duplicate export names, missing imports and
+signature mismatches are errors. Only fully linked output executes. The same
+ordered inputs produce byte-identical output; changing link order may change
+numbering and traversal order of exports, without changing program semantics.
+The former `/1` format has no compatibility reader.
+
+A bodyless `extern def` produces a typed unresolved import slot with a panic
+placeholder. Native C emission and `--emit-mir` reject unresolved imports;
+produce and link libraries first. Source-module building and source-free
+generic specialization are handled by the surrounding runner, not by execution
+of unspecialized generic functions. Native registration and mixed
+native/interpreted calls remain proposals in [Modules and FFI](MIR_MODULES_AND_FFI.md).
+
+## Execution and ownership
+
+MIR functions have typed registers, parameters in the first slots, explicit
+call operands, CFG branches/backedges and typed return values. Verification
+precedes execution; invalid register reads also have dynamic checks.
+`MirOutcome` contains a result, host-visible error and consumed step count.
+Specialization discovery belongs to HIR; MIR function indices preserve the
+specialization registry indices. See [IR design](IR_DESIGN.md).
+
+The interpreter handles the current executable opcode set, including scalar
+arithmetic, strings, records, arrays, dictionaries, optionals, tagged unions,
+function references and indirect calls. Unsupported source syntax fails
+explicitly during analysis/lowering. There is no fallback emitter.
+
+Managed registers own logical values. Copies retain; moves consume their
+source; releases invalidate it. Calls retain managed arguments unless a
+verified move transfers them; returns transfer ownership to the caller.
+Field/index reads produce independently owned values. Consuming updates clone
+shared owners and preserve CoW snapshots, retaining replacement children
+before dropping old ones. Heap release follows canonical type descriptors.
+For exact instruction contracts and CFG pass order, use
+[Ownership](OWNERSHIP.md).
+
+Optional lookup returns absence without panicking. Source `optional or
+fallback` and `let x = optional else return value` use branches so the fallback
+runs only when absent. `MIR_DICT_GET_OR` instead receives an already evaluated
+fallback and is not the lowering of lazy source `or`.
+
+`MirInterpreter.mir_audit_return_credits(types, outcome)` optionally checks a
+successful execution. The returned value contributes a root; each reachable
+object contributes its child edges once, including repeated child handles.
+Unreachable objects must have zero references. It rejects leaked objects,
+wrong-type/out-of-range handles and credit mismatches. This checks one execution,
+not every path or fatal-error unwinding. See `tools/test_mir_credits.py`.
+
+## Backend parity and limits
+
+Both backends should match visible results, diagnostics and ownership behavior;
+test expected results separately from backend agreement. The source inspection
+showing a handler for every executable opcode is not evidence that all operand
+combinations have been tested. `MIR_STRING_FIND` is covered by the string-op range.
+
+Known differences and unproven boundaries:
+
+- Native dictionaries enumerate occupied hash slots; the interpreter uses a
+  linear entry list. Cursor representations and traversal order differ.
+  Programs should not depend on dictionary iteration order.
+- Native append can reuse unique buffers; interpreted append copies the logical
+  elements into a fresh heap record. Interpreter timings do not predict native
+  allocation behavior or asymptotic append costs.
+- Decimal-to-`f64` parsing uses Sirius code rather than native `strtod`. Difficult
+  rounding ties and extreme magnitudes do not yet have proven exact parity.
+- Execution budgets apply only to the interpreter. No JIT, general compile-time
+  MIR execution, effect inference or native/interpreted call bridge exists.
+
+`i64` addition, subtraction, multiplication and negation wrap at 64 bits.
+Division/remainder truncate toward zero and trap on zero or `INT64_MIN / -1`.
+Floating operations may yield IEEE NaN/infinity. Explicit scalar conversions
+follow [Usage](USAGE.md#syntax-and-values).
+
+Recoverable `Optional`, status and result-union values use ordinary return
+ownership; `Std.Filesystem` already offers result wrappers. `MirOutcome.error`
+reports host execution failure, not a catchable Sirius value. Guard lowering
+makes supported arithmetic/index/unwrap traps explicit CFG panic edges so
+local cleanup can run. Fatal termination does not promise caller-frame
+unwinding; allocation and other implicit aborts remain outside that guarantee.
+
+## Validation
+
+```sh
+python tools/test_mir_run.py --all-fixtures
+python tools/test_mir_wire.py --all-fixtures
 python tools/test_mir_library.py
 python tools/test_mir_link.py
 python tools/test_mir_import.py
+python tools/test_mir_credits.py
 ```
 
-Export roots can have parameters when each parameter has an explicit
-concrete type annotation. Unannotated generic roots are not exportable yet.
-The worklist compiles their combined reachable call graph, including functions
-called by multiple roots. Selection for direct CLI execution additionally
-requires return type `i64`. The loader verifies unique export names, function
-indices and the stored signatures against reconstructed MIR types before any
-execution. `SIRIUS-MIR-EXEC/1` is the current executable format. Neither
-artifact format is a public compatibility commitment; breaking changes are
-allowed while Sirius is experimental.
+Direct interpreter tests build MIR with `tests/mir/driver_native.sirius`;
+`tests/mir/lowering_driver_native.sirius` tests source lowering without C
+emission for the input. `python tools/test_mir.py --rebuild` bypasses the build
+cache. Component drivers cover HIR worklists, linked programs, direct C,
+managed records/arrays/dictionaries, optionals, lifetime insertion, ownership
+and exit cleanup. Use `python tools/test_all.py --group mir --list` to list the
+active drivers, and [Development](DEVELOPMENT.md) for test selection.
 
-The concrete linker combines one or more validated libraries into one
-program. It interns structurally equivalent types into a shared type table,
-remaps all function register/return type IDs, relocates internal MIR calls,
-and preserves named exports. Duplicate exported names are errors. Link order
-changes numbering and export order, not execution semantics; repeating the
-same ordered inputs yields byte-identical output.
-
-A consuming source can declare `extern def f(x: i64) -> i64` without a
-body. Its concrete call site creates an unresolved import slot. The library
-stores import names and canonical signatures; the linker matches those against
-other libraries' named exports, validates structural type equivalence, then
-relocates `MIR_CALL`/`MIR_CALL_MOVE` instructions. Missing or mismatched
-symbols are rejected, regardless of input order. Import slots have checked
-panic placeholders, and the runner refuses to execute an unresolved library.
-Only fully linked output is currently emitted (no partial linking).
-
-The native C compiler and `--emit-mir` reject source programs containing
-unresolved imports; build a MIR library and link it first. Exported concrete
-functions, not generic definitions, are the unit of linkage. The `/2` library
-format replaces `/1`, without a compatibility reader.
-
-**Now available separately:** a Sirius-native source-module scanner and
-`--build-modules` pipeline compile concrete modules and link them into a
-loadable MIR library. **Also implemented:** exported generic specialization through portable
-`.smirg` packages. Native C registration and native/interpreter interop remain
-future work.
-`--entry` must precede `--load-lib` in the CLI invocation.
-
-## Run isolated tests
-
-```sh
-python tools/test_mir.py               # Compiles the Sirius interpreter via the C bootstrap, then runs it
-python tools/test_mir.py --rebuild     # Bypass build cache
-python tools/test_mir_lower.py          # Lower checked scalar source to MIR and execute it
-python tools/test_hir_worklist.py       # Test semantic specialization without any backend
-python tools/test_mir_program.py        # Link HIR specializations into a scalar MIR program
-python tools/test_mir_direct_c.py       # Direct MIR-to-C runtime checks
-python tools/test_mir_optional.py       # Direct optional MIR tests, interpreter and C
-python tools/test_mir_lifetime.py       # CFG last-use releases, branches, loops, CoW and native equivalence
-python tools/test_mir_ownership.py      # Definite initialization, moves, releases and CFG joins
-python tools/test_mir_exit_cleanup.py   # CFG-edge releases, unused arguments, returns and explicit panic cleanup
-python tools/test_mir_managed.py        # Shared interpreted/native managed-string ownership tests
-python tools/test_mir_records.py        # Nested structural records and managed field ownership
-python tools/test_mir_arrays.py         # CoW, bounds, and nested managed arrays
-python tools/test_mir_dict.py           # Dictionary CoW and nested-value ownership
-```
-
-`tests/mir/driver_native.sirius` builds MIR blocks directly. Tests assert program results as well as instruction budgets, branch selection, function calls, verifier diagnostics, panics, invalid inputs, and uninitialized registers. `MirOutcome` returns a value, an error string, and consumed instruction/terminator steps. The separate `tests/mir/lowering_driver_native.sirius` and `tools/test_mir_lower.py` exercise pre-emission typed HIR, lowering, MIR verification, and execution with no C generation for the input source.
-
-Initial coverage: `i64`, `f64`, `bool`, owned `string`, canonical structural records, rank-1 arrays, dictionaries, copies, integer arithmetic/comparisons, boolean equality/negation, print, direct calls, jumps, branches, return and panic. All registers have a declared type; function parameters occupy the first registers. Calls have explicit argument register lists. Loops are CFG backedges. The verifier checks structural/type consistency before execution. Reads of potentially uninitialized registers are detected dynamically. Interpreter execution has configurable total-step and call-depth limits. `i64` addition, subtraction, multiplication, and negation wrap at 64 bits; division and remainder truncate toward zero, with traps for zero divisors and the minimum-integer / `-1` case in both backends.
-
-**Dynamic interpreter limitations:** fatal implicit runtime failures deliberately do not unwind caller frames; exact decimal literal rounding at all IEEE-754 boundaries, execution of generic declarations without specialization, and cross-boundary native calls. `f64` now uses a separate real-valued field in `MirValue`, including for nested collection elements, and implements every current MIR floating opcode (`sqrt`, comparisons, arithmetic and print). Decimal spelling is parsed by a Sirius implementation rather than native `strtod`; parity for difficult rounding ties and extreme magnitudes remains to be proven. The source frontend already supports several deeper updates, record spreads and type inference; source programs use the same MIR lowerer for either backend. `Array.append` and direct record-field updates now have experimental support. The current lowering also supports checked string literals (with a restricted escape set), string `+`, `len(string)`, simple record/array literals, field projection, checked array access/update/length, and managed values in generic calls, assignments and returns. Unsupported syntax gives an explicit lowering error.
-
-**Backend parity audit (October 2026):** The current interpreter has a handler for every declared executable MIR opcode; `MIR_STRING_FIND` is handled by the string-operation range, rather than a separate named branch. This is a source-level coverage inspection, not a successful run of all opcode combinations. Two differences remain worth testing before treating interpreter output as byte-for-byte native-equivalent:
-
-- **Dictionary traversal:** `MIR_DICT_NEXT` returns indices into the C backend's hash-table slots; the interpreter stores dictionary entries in a linear list and returns sequential indices in insertion order. `MIR_DICT_KEY` and `MIR_DICT_VALUE` use each backend's corresponding cursor representation, so entries can be visited in different orders. Code should not depend on dictionary traversal order without an explicit language-design decision and a parity implementation.
-- **Array append costs:** native `MIR_ARRAY_APPEND` can reuse a uniquely owned buffer; the interpreter copies the logical array elements into a fresh heap record on each append. This preserves value semantics but can have substantially different algorithmic costs. Do not infer native allocation behavior from interpreter timings.
-
-The interpreter also has separate step/depth limits, does not unwind caller frames on fatal errors, and uses an independent decimal-to-`f64` parser whose exact rounding parity is unproven. Concrete MIR execution, source-free generic specialization by the surrounding runner, and native/interpreted library interoperability are distinct capabilities.
-
-**Managed-value ownership:** Initialized string/record/array/dictionary/optional registers own one reference each. `MIR_COPY`/`MIR_RETAIN` preserve the source and produce another owned value; `MIR_MOVE` transfers ownership and invalidates the source; `MIR_RELEASE` invalidates its register. Function calls retain managed arguments and transfer the credits to the callee; managed returns transfer ownership to the caller. `MIR_RECORD_NEW` constructs immutable records with canonical field order; `MIR_RECORD_GET` copies a field (retaining managed fields). `MIR_ARRAY_NEW` builds rank-1 arrays, `MIR_ARRAY_GET` performs bounds-checked reads, and `MIR_ARRAY_LENGTH` returns their length. `MIR_ARRAY_SET` **consumes the source register** (which may also be the destination), cloning if shared and reusing storage if uniquely owned; the replacement element is retained before the overwritten element is dropped. Generated C reference-counts record storage and releases nested strings/records/arrays when the last owner is dropped, using canonical descriptors; `Optional[T]` uses zero/one-element owned storage and recursively releases any managed payload; all live owned registers are cleaned up on normal function return. The Sirius interpreter maintains logical record/array/dictionary reference counts in a heap with recursive drops. This is a conservative subset, not the full CFG ownership pass or proof of ARC across every exit. The Python MIR prototype from earlier exploration is not part of the maintained path.
-
-## Concrete specialization worklist
-
-`src/hir_specialize.sirius` owns specialization discovery and semantic body analysis independently of C or MIR. It indexes requests by declaration-body identity and canonical argument TypeIds; repeat calls and active recursive calls reuse an entry. Each worklist entry yields `HirSpecializedFunction` with typed nodes, call-to-specialization IDs and return type. `src/mir_program.sirius` lowers one `MirFunction` per completed entry, retaining **the same index** as the HIR registry; `MIR_CALL` refers to that index. The final linked program is verified before execution.
-
-This migration slice supports direct and mutual recursion, generic parameters with scalar/string/record/array/dictionary/optional instantiations, and supported managed calls; nonrecursive unannotated generic results are inferred per specialization, while unresolved recursive results are rejected. The semantic worklist can analyze non-scalar types such as arrays, and lowers the supported checked rank-1 array subset to MIR. The compiler emits from linked MIR and HIR-owned specialization IDs; unsupported features fail explicitly rather than falling back to another emitter.
-
-## Optional values and control flow (experimental)
-
-`MIR_OPTIONAL_NONE`, `MIR_OPTIONAL_SOME`, `MIR_OPTIONAL_HAS` and `MIR_OPTIONAL_UNWRAP` support canonical `Optional[T]`, including managed nested payloads. `MIR_ARRAY_GET_OPTIONAL` and `MIR_DICT_GET_OPTIONAL` construct optionals without panicking on a missing element/key. Both the interpreter and MIR C backend use the same owned zero/one-field representation, with recursive release.
-
-The typed-HIR path lowers `array[?index]`, `dict.get(key)`, postfix `!` unwrap, `optional or fallback` with **lazy** fallback CFG branches, and `let value = optional else return expression`. The fallback is evaluated only when absent; unwrapping absent values panics. These are tested through the C backend and direct interpreter/native MIR tests. `MIR_DICT_GET_OR` remains an eager, internal primitive, not the implementation of source `or`.
-
-## Native/dynamic equivalence policy
-
-`./sirius input.sirius output.c` emits C from MIR. `./sirius-run input.sirius`
-interprets that same MIR after lowering; unsupported operations are reported,
-never silently compiled as a fallback.
-
-`tools/test_mir_run.py` checks explicitly expected results for both execution
-modes, then optionally checks the common source fixtures. Future `sirius test
---backend=both` remains only a proposed convenience interface: the current
-runner and test harness are separate commands. Both execution paths should be
-tested from the same fixtures before extending opcode coverage, with the MIR
-verifier and language semantics as the authority. No JIT or purity inference is
-required by this dynamic-execution work.
-
-The standalone runner accepts `sirius-run [--max-steps N] [--max-depth N]
-input.sirius [args...]` (defaults: ten million steps and 256 nested calls).
-Limits must be positive decimal integers up to one billion. The `--` separator
-allows source filenames beginning with a dash. Execution-limit failures report
-`Sirius panic: ...` to stderr and exit with status 1; invalid CLI flags exit 2.
-Interpreter options are not included in the program's `arguments()` array.
-Compile-time diagnostics still use the compiler's existing stdout format.
-`print` and `eprint` accept the same four printable scalar types.
-
-## Remaining execution gaps
-
-`f64` execution, concrete executable/library serialization, source-independent
-generic packages, and MIR/native differential tests are implemented. The
-remaining work is to extend parity tests to additional corner cases and
-execution budgets, improve failure diagnostics, and define native/interpreted
-library dispatch. General compile-time MIR execution is deliberately deferred.
-Implicit fatal aborts do not unwind caller frames; ordinary return paths and
-in-band `Result` values retain normal ownership semantics.
-
-### Dictionary limitations
-
-MIR supports `MIR_DICT_NEW`, `MIR_DICT_INSERT`, `MIR_DICT_GET_OR`, and `MIR_DICT_LENGTH` for scalar, string, and recursively hashable record keys, with all currently supported MIR value types. Insertion uses owned CoW and retains nested managed values. Native MIR delegates hashing/storage to `S_Dict` (open addressing); the debug interpreter still uses linear scans with equivalent structural key equality. `MIR_DICT_GET_OR` takes a pre-evaluated fallback; source `dict.get(key) or expr` has lazy semantics and now lowers through Optional/CFG branches. Source-level `Dict[K,V]()`, `.insert`, and `len(dict)` do work through the default MIR compiler.
-
-## CFG ownership pass (experimental)
-
-The linked HIR specialization program runs `mir_insert_lifetimes` and then `mir_insert_exit_cleanup`. Backward liveness inserts `MIR_RELEASE` after the last register use; forward definite-initialization rejects invalid reads, moves and double release. Exit cleanup splits branch edges when needed, drops definitely owned registers that are dead on a successor, and drops remaining initialized managed values before explicit returns and panics (excluding the returned value). It recomputes ownership states after edge insertion to avoid double releases. Both rewrites are idempotent and verified, and native/interpreter tests cover them. Backend return cleanup remains enabled for defensive handling of partially initialized registers. Implicit runtime panics do not unwind references, and general ownership-credit proofs remain incomplete.
-
-## CFG ownership balance (experimental)
-
-`src/mir_ownership.sirius` computes forward **must-initialize** and **may-initialize** states across the CFG. `mir_check_balance` checks managed borrow/transfer/release/overwrite credit transitions under both states, and rejects any reachable `Return` or explicit `Panic` that may leave a managed register owned (except the returned register, whose ownership is transferred). This is a register-credit audit, not a heap-reference or exceptional-unwinding proof. `src/mir_cleanup.sirius` releases definitely owned values on edges and exits and uses `MIR_RELEASE_IF_INIT` where initialization differs between predecessor paths. The MIR interpreter and C backend implement this guarded release consistently. See `tools/test_mir_balance.py`.
-
-This verifies normal returns and explicit panic exits. Guard insertion now makes division, shifts, checked indexing and unwrap failures explicit CFG paths; allocation failure and other process-fatal aborts may still bypass caller-frame cleanup by design. Backend return cleanup is retained as defense in depth.
-
-## Optional return-credit audit
-
-`MirInterpreter.mir_audit_return_credits(types, outcome)` validates a successful run: the return value contributes one root credit, each reachable heap object contributes one credit for each of its owned child fields (not per reference to the parent), and all unreachable heap objects must have zero references. It reports mismatched reference counts, forged type/handle pairs and leaked objects. The audit is opt-in and does not unwind failures or replace the static MIR ownership/balance proof. Exercise it with `python tools/test_mir_credits.py`.
-
-## Failure results and host execution errors
-
-Routine recoverable failures currently return `Optional`/status values;
-constructor-based `Result` unions can now use ordinary MIR return and branch
-ownership rules, with tagged record payloads and HIR-exhaustive matching.
-Standard-library APIs have not yet adopted `Result`. IEEE-754 floating operations may return NaN/infinity
-rather than trapping. Invalid integer division, checked indexing and forced
-unwrap still take explicit fatal `MIR_PANIC` paths.
-
-`MirOutcome.error` reports a **host-visible execution failure**, such as a
-step/depth budget abort or fatal MIR panic. It is not a catchable Sirius value.
-Neither dynamic execution nor native `s_panic` promises to unwind all live
-calling frames on fatal termination. Ownership-credit audits apply to
-successful normal returns and future union-valued recoverable errors.
+A proposed `sirius test --backend=both` command is not implemented; use the
+current runner and Python test harness.

@@ -1,7 +1,7 @@
 # Ownership and memory management
 
 > Paths and commands are relative to the repository root. **Current** below
-> describes the Phase 12 implementation (October 2026); **target** is intended
+> describes the implementation as of October 2026; **target** is intended
 > behavior, not a claim that every value already has that representation.
 > Trust the compiler, runtime and tests for current behavior, and
 > `LANGUAGE_DESIGN.md` for intended language semantics.

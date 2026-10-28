@@ -1,208 +1,115 @@
-# Sirius — MIR, Modules, Libraries, and FFI
+# Module and FFI architecture
 
-> Paths and commands in this document are relative to the repository root.
+This document describes **proposed extensions** to the implemented module
+system. For current syntax, commands and package restrictions, use
+[Modules and packages](MODULES.md); for concrete MIR loading and execution,
+use [Interpreter](INTERPRETER.md). Intended language semantics are in
+[Language design](../LANGUAGE_DESIGN.md).
 
-> **Status:** Library/module/FFI design target. Executable MIR, concrete libraries, and concrete cross-library imports/linking are implemented. A Sirius-native path-based source-module builder supports concrete imports and on-demand monomorphization from available generic source; the modular compiler CLI now accepts a module root and emits entry-reachable native C; mixed native/interpreted dispatch is not implemented. Native builds resolve source-free generic packages. Experimental source-free HIR template packages are supported. Core semantics are defined in [LANGUAGE_DESIGN.md](../LANGUAGE_DESIGN.md); current build and packaging workflows are in [Modules](MODULES.md). API names and artifacts below are provisional.
+## Current boundary
 
-## 1. Module resolution and visibility
+Source modules, concrete `.smirl` linking and source-free `.smirg`
+specialization work at build time. `.smirg` carries syntax/typed-HIR snapshots,
+not executable generic MIR. Native-module imports build the compiler itself;
+`bootstrap/compiler.c` is generated from that module graph.
 
-Given a source root, `Math/Stats.sirius` defines module `Math.Stats`:
+The following remain unimplemented: general compile-time MIR execution,
+native-library registration, mixed native/interpreted calls, a runtime generic
+specialization registry and a stable foreign ABI. Illustrative APIs below
+are design sketches.
 
-```sirius
-import Math.Stats alias Stats
+## Compile-time execution
 
-export def describe(xs)
-	return Stats.mean(xs)
-```
+The proposed model uses the general MIR interpreter for requested computations
+and module constants. It does not require a separate restricted interpreter,
+mandatory purity, sandbox or execution budget. Host-provided I/O and native
+calls could have side effects; builds need not be reproducible.
 
-Imports name compile-time namespaces; they do not instantiate runtime module objects. An ordinary import does not make the imported namespace public. An explicit named member re-export does:
+Staging and explicit compile-time syntax remain undecided, including operations
+that produce types or declarations. MIR evaluation during type-checking must
+first compile its own dependencies. Current module constants use supported
+compile-time expressions; importing a module does not execute arbitrary
+runtime initialization.
 
-```sirius
-import Math.Stats alias Stats
-export Stats.mean alias average
-export Stats.DEFAULT_LIMIT
-```
+## Specialization across library boundaries
 
-A consumer imports these as `Facade.average(...)` and `Facade.DEFAULT_LIMIT`.
-Only exported members can be re-exported. Re-exported calls resolve to the
-original definition (including on-demand generic specialization); re-exported
-constants and constructors retain their typed interfaces, including computed publications.
-Namespace-wide `export import` remains a proposal, not implemented syntax.
+For a concrete call, the target process is:
 
-Named-function overload resolution is implemented for annotated, distinct parameter types; imported operator overload policy and multiple files per namespace remain undecided. Module-level `let` bindings are currently restricted to supported compile-time
-expressions; importing a module does not execute runtime initialization code.
-`export let` exposes typed constants (including strings, records and arrays) to
-importers without a runtime getter. Arbitrary effectful initializers remain proposed.
+1. Resolve the originating declaration and applicable overload.
+2. Form a key from declaration identity, canonical argument types and any
+   other specialization-relevant parameters.
+3. Reuse a compatible native specialization if available.
+4. Otherwise specialize the generic representation and either compile it
+   ahead of time or execute concrete MIR.
 
-**Implemented source-module subset:** `src/module_scan.sirius` uses the
-Sirius parser/HIR to traverse explicit dotted imports relative to a source root,
-detect cycles, and retain ASTs, HIR declarations, and canonical typed exports.
-Only the standalone scanner CLI formats the `SIRIUS-MODULES/1` manifest.
-`src/module_interface.sirius` re-interns types and constants shared by the
-scanner and builder. `src/module_build.sirius` imports typed HIR declarations
-without reparsing text and orchestrates independent concrete MIR compilation
-and in-memory linking, invoked by `sirius-run --build-modules`. Python is an optional launcher. During one build, the builder resolves source and package dependencies with one depth-first visit per module, caching parsed sources locally and validating pinned interfaces after dependencies. The standalone source-only scanner retains its independent traversal. The compiler preserves source
-imports/exports and resolves qualified calls such as `Stats.mean(xs)` to
-structured external function declarations. Length-prefixed module names prevent export collisions.
-Concrete function imports, structural record signatures, exported constant
-values, and `export rec` constructors with qualified type names are supported.
-Imported constructors are lowered inline; no runtime import is needed for them.
-Computed fields and final fixed-type conditional overrides are transported as
-constructor AST subtrees through source imports and `.smirg` packages; their
-canonical result types and normalized bodies are pinned in public interfaces.
-Transported expressions can reference defining-module constants and local
-helper functions, including transitive calls. Their private owner-qualified
-bindings prevent capture by importer names. Referenced constants and helper
-bodies contribute to public dependency fingerprints; general closure capture
-and externally defined helper functions remain unsupported.
-Exported concrete signatures and constructors can reference imported public
-record types, including nested collection types.
-Exported generic functions with unannotated parameters and either explicit or inferred specialization return types are specialized in their defining source module for each imported concrete signature; linked libraries contain only those concrete specializations. Namespace-wide re-exports and runtime module objects remain pending. Named member re-exports (including aliases and transitive forwarding) are implemented. The compiler, dynamic MIR runner, scanner and library/linker components now
-compile through native module imports. The generated modular compiler C is the
-checked-in bootstrap, and no ordered source concatenation is required for
-production builds. The test-only flat source adapter has also been retired; internal test drivers use native imports.
-Tests: `tools/test_module_scanner.py`,
-`tools/test_module_builder.py`, and `tools/test_source_modules.py`.
+Native applications perform required monomorphization at build/link time.
+A future mixed application could specialize on first use and interpret a
+missing specialization, without a native JIT. Cached implementations must be
+invalidated when implementation or ABI compatibility changes. Ownership and
+persistence of a shared specialization registry remain open.
 
-## 2. Shared MIR execution
+Current source and `.smirg` builds already perform build-time specialization;
+this does not establish a runtime registry or native binary lookup mechanism.
+Ordinary concrete function bodies are linked from source or `.smirl`, not
+transported as concrete exports in `.smirg`.
 
-```text
-Sirius source
-    -> parse / analyze / specialize / lower
-    -> typed MIR
-         |-> C emitter -> native code
-         |-> interpreter at compile time (deferred)
-         |-> serialized executable MIR -> interpreter at runtime (implemented)
-         `-> combinations of native and interpreted functions
-```
+## Native library registration
 
-### Compile-time evaluation
+A future library would provide:
 
-The compiler would use the general MIR interpreter to evaluate requested computations and module constants. No separate restricted interpreter, mandatory purity requirement, sandbox or execution budget is planned. I/O, native calls and other side effects would be allowed when the host provides them; builds need not be reproducible.
-
-Explicit compile-time syntax, the ordering of compilation and evaluation, and compile-time operations that generate types or declarations remain to be designed. In particular, evaluating MIR while type-checking its own dependencies requires staged compilation.
-
-### Serialized MIR
-
-An **executable** artifact contains concrete callable functions and their transitive dependencies.
-This is implemented as `SIRIUS-MIR-EXEC/1` in `src/mir_wire.sirius` with
-`--emit-mir` and `--load-mir` runner options. It stores canonical type descriptors,
-concrete MIR functions, entry index and CFG instructions. The loader verifies
-the format, types and ownership before execution. Version compatibility is
-currently exact. The separate `SIRIUS-MIR-LIB/2` format supports multiple
-named concrete zero-argument roots and canonical structural signatures. It
-validates names, indices and signatures on loading, and carries the entire
-concrete transitive call graph. `src/mir_link.sirius` can combine multiple
-independent concrete libraries and deduplicate structural type descriptors,
-relocating local call indices. Typed `extern def` declarations produce import placeholders and signature
-metadata. The linker resolves them against concrete exports with matching
-structural signatures, or rejects the link. Path-based concrete source imports use the Sirius module scanner, native module builder, and the existing linker. The parser/HIR handles `import`, `export def`, `export rec` and `export let` (including union aliases), discovery and typed export interfaces; native builds reuse parsed source and import typed HIR declarations directly, while explicit `extern def` source remains supported. Source builds specialize exported generics on demand while source definitions are available. Source-free instantiation from separate `.smirg` typed-HIR snapshots is supported both explicitly and automatically by source-module builds when the corresponding `.sirius` file is absent; native linking of concrete specializations is implemented; runtime registration remains future work. Portable `.smirg` packages preserve generic declarations as syntax/typed-HIR snapshots, separately from concrete executable `.smirl` libraries. They also publish compile-time constructors, union aliases and constants, but do not provide ordinary nongeneric function bodies as concrete exports. Any future compiled registration ABI must preserve stable type and symbol identities rather than process-local pointers.
-
-The format is initially versioned for compiler compatibility, not promised as a permanently stable cross-version interchange standard.
-
-## 3. Specializing across library boundaries
-
-For an exported generic function:
-
-```sirius
-export def double(x) -> i64
-	return x + x
-```
-
-The implemented source-module builder has the defining source and specializes this function for each concrete imported signature before final linking. A distributed `.smirl` library still contains **concrete specializations only**. An experimental separate `.smirg` package now stores checked syntax/typed HIR declarations and supports explicit source-free specialization into a linkable `.smirl` through `sirius-run --specialize-generic`. It is not executable MIR. The native module builder automatically locates it as a fallback for a missing `.sirius` import and links the requested specializations.
-
-For a call with concrete argument types:
-
-1. Resolve the originating module/declaration and overloads.
-2. Construct a specialization key from that identity and canonical concrete types (and any other specialization-relevant parameters).
-3. Reuse an existing compatible native specialization when available.
-4. Otherwise specialize the generic MIR, then either compile it ahead of time or execute its specialized MIR in the interpreter.
-
-A purely native application performs required monomorphization at build/link time. A mixed application may specialize on first use and interpret a missing specialization; no native JIT compiler is required. Cached implementations must be invalidated when their defining implementation or ABI changes.
-
-A single common specialization registry is a useful implementation goal, but its exact ownership and persistence are not settled.
-
-**Implemented experimental artifact:** `SIRIUS-MIR-GENERIC/3` (`.smirg`)
-retains an AST token/node arena and a validated HIR declaration/type/constant
-snapshot, rather than concrete MIR instructions. Dependency-free packages
-encode an explicit zero dependency count; `/1` and `/2` are no longer read. The compiler can
-instantiate a named exported generic for supplied canonical type signatures
-(`i64`, `Array[i64]`, `Dict[string,i64]`, `Record{1:x=i64;}`, etc.), producing
-ordinary `SIRIUS-MIR-LIB/2` with the same mangled symbol naming used by
-source-driven specialization. The defining source is not needed after packaging.
-It can retain explicit `extern def` imports which are resolved later by the
-normal MIR linker. Packages with imports pin their direct dependencies' order-independent
-public interfaces (including constant values and named re-export target symbols).
-Previously generated packages must be regenerated when upgrading the compiler.
-Packaging an importing module requires a source root argument and a resolvable
-dependency graph. `--build-modules` resolves those imports recursively from
-source or `.smirg` packages, verifies the pinned interfaces, and specializes
-functions into ordinary MIR before linking. Dependency packages are separate artifacts by default. Optionally,
-`--bundle-generic input.smirg output.smirg source-root` wraps an existing
-package and its transitive **`.smirg`-only** dependency closure into a
-`SIRIUS-MIR-BUNDLE/1` archive. Its entries preserve the current `/3`
-`.smirg` bytes and their interface fingerprints. The module builder loads
-embedded packages only if neither source nor external package exists; it
-still verifies interfaces and detects import cycles. The archive is canonical,
-size/count-bounded, and cannot contain nested bundles. Bundling does not
-compile missing source dependencies or bundle concrete `.smirl` libraries.
-Source takes precedence.
-Standalone `--specialize-generic` supports only dependency-free packages.
-The format remains compiler-version-specific; no runtime generic specialization
-registry exists, and the standalone scanner remains source-only.
-
-## 4. Library artifacts and registration
-
-Conceptually, a Sirius library provides:
-
-| Part | Purpose |
+| Component | Purpose |
 | --- | --- |
-| Portable interface metadata | Exported names, signatures, type descriptors/layouts, identity, dependencies, compatibility information |
-| Generic MIR | Bodies and supporting definitions needed to create new concrete specializations |
-| Native binary (optional) | Already compiled specializations and runtime support |
-| C-callable registration hook (native binary) | Register native symbol addresses, descriptors, and implementations in a running host |
+| Portable interface | Export names/signatures, semantic type identities, layout compatibility, dependencies and versions |
+| Generic representation | Definitions needed for new concrete specializations |
+| Optional native binary | Already compiled specializations and runtime support |
+| C-callable registration hook | Publish addresses, descriptors and implementations to a running host |
 
-A possible **illustrative**, not finalized, entry point is:
+An illustrative hook, with no finalized ABI:
 
 ```c
 void sirius_register_v1(SiriusRegistry *registry);
 ```
 
-A compiler/interpreter can call the hook when it can load and execute the library for its **host** platform. The interface metadata must also be readable without executing target code, allowing cross-compilation or inspection of an incompatible native binary. The native hook does not replace the generic MIR required for new specializations.
+The compiler/interpreter may execute that hook only for a compatible host
+binary. Interface metadata must remain inspectable without running target
+code, including during cross-compilation. The hook does not replace generic
+bodies needed for new specializations. Independent binaries cannot assume
+matching descriptor addresses or function pointers.
 
-Details still to specify: artifact packaging, discovery/loading, registry lifetime, hook ABI, symbol/version identity, compatible target triples, and native/interpreted call adapters. Function pointers and type descriptors cannot be assumed to have the same process-local addresses in independently loaded libraries.
+Still to specify: packaging and discovery, loading, registry lifetime, symbol
+and version identity, compatible target triples, hook ABI and native/interpreted
+call adapters.
 
-## 5. ABI and C interoperability
+## Calling conventions and C interoperability
 
-### Sirius native/interpreter boundary
+Native and interpreted values targeting the same ABI should agree on canonical
+record order, primitive/array representations, ARC and CoW operations. Matching
+layouts alone do not define a calling convention: interpreted-to-native calls
+need adapters; native-to-interpreted callbacks need dispatch or trampolines.
+Descriptor identity must use semantic compatibility, not pointer equality.
 
-Sirius values should use matching layouts and runtime operations when a native library and the interpreter target the same ABI. This includes canonical record ordering, primitive and array representations, reference counts, and CoW ownership. Matching data layout **does not by itself define** a function-call ABI; interpreted calls still require adapters, and native-to-interpreted calls eventually require dispatch/trampolines.
+Third-party C structures can depend on declaration order, padding, alignment,
+unions, bitfields, flexible arrays, borrowed pointers, allocator-specific buffers
+and custom ownership. Structural compatibility with a Sirius record does not
+establish C ABI compatibility.
 
-Canonical descriptor identity must be based on semantic type information and compatibility rules, not merely pointer equality.
+Start with explicit wrappers using C primitives and opaque handles, converting
+to ordinary Sirius values at the boundary. Foreign-layout records, imported C
+declarations, callbacks and shared-buffer conversions can follow once their
+syntax, ownership and lifetime rules are defined.
 
-### Third-party C boundary
+## Remaining design decisions
 
-C APIs may use declaration-order structures, padding, platform-dependent alignment, unions, bitfields, flexible arrays, borrowed pointers, allocator-specific buffers, and custom ownership conventions. A structurally equivalent Sirius record is **not automatically C ABI-compatible**.
+- Compile-time syntax, staging and type-level operations.
+- Type/symbol identity and native ABI compatibility across compiler versions.
+- Generic overload visibility, cyclic specialization and interface evolution.
+- Long-term MIR compatibility and dependency-bundle versioning.
+- Registry ownership, hook ABI and cross-boundary error/value exchange.
+- Foreign record layout, callbacks and pointer lifetimes.
+- Namespace-wide re-exports, multiple files per namespace and imported-operator
+  overload policy. Current named-function overloads do not settle operator scope.
 
-Initial interop should use explicit wrappers with C primitives and opaque handles, converting to ordinary Sirius values at the boundary. Explicit C-layout records, imported C declarations, callbacks, and owned/buffer-sharing conversions can be added later. Their syntax and safety rules are undecided.
-
-## 6. Suggested implementation order (proposal)
-
-1. Define portable exported-symbol and type-descriptor metadata in a module interface.
-2. **Done for the current source/package model:** source builds use canonical specialization keys, and `.smirg` snapshots produce concrete MIR without provider source. Automatic package discovery, recursively validated interfaces, versioned optional dependency bundles, build-local caching and native-module graph resolution are implemented.
-3. **Done for current MIR artifacts:** serialize/load specialized MIR, validate exported symbols and signatures, resolve concrete imports, and specialize exported generics using `.smirg` interfaces. Future work concerns ABI stability and compiled/interpreted bridging.
-4. Evaluate module constants through the general MIR interpreter, then add explicit compile-time evaluation syntax.
-5. Register already compiled native specializations through a versioned C hook.
-6. Implement interpreted-to-native dispatch; later native-to-interpreted callbacks/trampolines.
-7. Add explicit C wrappers and then richer foreign-layout facilities if justified.
-
-These steps are architectural suggestions, not commitments or claims that all prerequisites are already satisfied.
-
-## 7. Open questions
-
-* Exact staging and syntax for `comptime` and compile-time type-level operations.
-* Canonical type-identity encoding and native ABI compatibility across compiler versions.
-* Generic overload visibility, recursive/cyclic specialization, and exported interface evolution.
-* Long-term MIR version compatibility and how to evolve dependency bundles across compiler versions.
-* The registration hook ABI, ownership of the registry, and how native/interpreted calls exchange errors and values.
-* C foreign record declarations, callbacks, ownership, and pointer-lifetime rules.
+A possible implementation order is general compile-time MIR evaluation,
+versioned native registration, interpreted-to-native calls, then reverse
+callbacks and richer C wrappers. This is an architectural suggestion, not a
+roadmap commitment or evidence that prerequisites are complete.

@@ -60,9 +60,8 @@ mangling (the `_O` symbol suffix), while non-overloaded public names keep
 their existing ABI names. Both qualified imports and named re-exports resolve
 by parameter types. Existing on-demand generic specializations retain the
 separate `_G` symbol suffix. Full type encodings remain unambiguous and
-TypeId-independent. MIR import/export names can now be up to 4096 characters
-(previously 256), accommodating larger structural signatures without changing
-existing names or the `SIRIUS-MIR-LIB/2` wire format. Libraries using longer
+TypeId-independent. MIR import/export names support up to 4096 characters, accommodating larger
+structural signatures within the `SIRIUS-MIR-LIB/2` format. Libraries using longer
 symbols require a compiler with the increased acceptance bound. Concrete
 overload bodies belong in linked `.smirl` libraries; source-free `.smirg`
 packages do not carry them.
@@ -154,6 +153,28 @@ checks native/MIR parity, ARC auditing, deterministic artifacts, and rejection
 of attempts to relabel tagged values or construct from incompatible records.
 Concrete non-generic function bodies are **not** transported by `.smirg`
 packages: use sources or compiled `.smirl` libraries for them.
+
+## Builder internals
+
+`src/module_scan.sirius` traverses dotted imports and retains parsed ASTs,
+HIR declarations and canonical typed exports. Only the standalone scanner
+formats `SIRIUS-MODULES/1`; that scanner is source-only.
+`src/module_interface.sirius` re-interns shared types and constants.
+`src/module_build.sirius` imports typed declarations without reparsing and
+orchestrates concrete MIR compilation and in-memory linking.
+
+Within a build, a depth-first traversal visits each dependency once, caches
+parsed sources and validates pinned interfaces after dependencies. Imports
+resolve to structured external declarations with length-prefixed module names.
+Concrete export signatures can reference imported public record types, including
+nested collection types. Constructors lower inline without a runtime import.
+
+Computed constructor fields and fixed-type conditional overrides travel as AST
+subtrees. Canonical result types and normalized bodies are pinned in public
+interfaces. Defining-module constants and private helpers use owner-qualified
+bindings to prevent importer capture; referenced constants/helper bodies
+contribute to dependency fingerprints. General lexical capture and externally
+defined constructor helpers are unsupported.
 
 ## Validation
 
