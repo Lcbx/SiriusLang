@@ -105,6 +105,14 @@ and invalid relabeling/structure cases. The path passed without compiler
 changes; this closes the source-free package validation gap, but does not
 change the allocation-heavy representation of payload-bearing unions.
 
+**Contextual Optional defaults (implemented):** `optional or fallback` now
+checks the fallback against the optional's payload type. Direct constructors
+retain their labels, including same-shaped alternatives; array literals and
+callbacks also receive the expected type. Structural conversion stays in the
+absent-value CFG branch. Native/MIR, ARC/CoW, lazy trapping defaults, qualified
+constructors, source-free generic imports and invalid ambiguous defaults are
+covered by `tools/test_union_optional_dict_coercions.py`.
+
 **Next:** extend contextual constructor selection to remaining nested
 expressions where real examples justify it. Named pattern binders and
 refutable bindings remain possible ergonomic improvements. No new nominal

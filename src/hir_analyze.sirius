@@ -1684,14 +1684,22 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 		return result
 	if kind == Ast.NODE_BINARY
 		let lhs = hir_body_expression(result, Hir.hir_ast_child(state.tree, id, 0))
+		lhs.error == "" else return lhs
 		let left = lhs.last_type
-		result = hir_body_expression(lhs, Hir.hir_ast_child(state.tree, id, 1))
-		let right = result.last_type
+		let source = Hir.hir_ast_child(state.tree, id, 1)
 		let op = Hir.hir_ast_text(state.tree, id)
+		if op == "or" and Types.type_tag(lhs.types, left) == Types.TYPE_TAG_OPTIONAL
+			result = hir_body_expression_expected(lhs, source, lhs.types.entries[!left].first)
+		else
+			result = hir_body_expression(lhs, source)
+		result.error == "" else return result
+		let right = result.last_type
 		if left != Types.TYPE_TAG_INVALID and right != Types.TYPE_TAG_INVALID and op == "or" and Types.type_tag(result.types, left) == Types.TYPE_TAG_OPTIONAL
 			let value_type = result.types.entries[!left].first
 			if right != value_type
-				return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, value_type) + ", found " + Resolve.hir_type_name(result.types, right))
+				if not Types.type_coercible(result.types, value_type, right) and hir_direct_constructor_alternative(result, source, value_type, right) < 0
+					return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, value_type) + ", found " + Resolve.hir_type_name(result.types, right))
+				result.nodes = result.nodes.append(Hir.HirNode(source, Hir.HIR_UNION_INJECT, value_type, -1))
 			result.last_type = value_type
 			result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_BINARY, value_type, -1))
 		elif left != Types.TYPE_TAG_INVALID and right != Types.TYPE_TAG_INVALID and op != ".."

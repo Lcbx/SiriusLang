@@ -1,0 +1,85 @@
+rec Good(value: i64)
+rec Bad(value: i64)
+let Result = Good | Bad
+rec Missing(code: i64)
+let Unique = Good | Missing
+rec Ready(text: string, data: Array[i64])
+rec Failed(text: string, data: Array[i64])
+let Managed = Ready | Failed
+
+enum Color
+	Red
+	Green
+	Blue
+
+def score(result: Result) -> i64
+	match result
+		Good(value)
+			return value
+		Bad(value)
+			return -value
+
+def unique_score(result: Unique) -> i64
+	match result
+		Good(value)
+			return value
+		Missing(code)
+			return -code
+
+def explode() -> i64
+	let empty = Array[i64]()
+	return empty[!0]
+
+def data_of(result: Managed) -> Array[i64]
+	match result
+		(Ready | Failed)(text, data)
+			return data
+
+def managed_score(result: Managed) -> i64
+	match result
+		Ready(text, data)
+			return len(text) + data[!0]
+		Failed(text, data)
+			return -len(text) - data[!0]
+
+def main() -> i64
+	let mapping = Dict[i64,Result]().insert(1, Good(7))
+	let present = mapping.get(1) or Bad(explode())
+	let missing = mapping.get(99) or Bad(3)
+	if score(present) != 7 or score(missing) != -3
+		return 1
+	let colors = Dict[i64,Color]().insert(1, Red())
+	let color = colors.get(99) or Green()
+	if Color.index(color) != Color.index(Green)
+		return 2
+	let nested = Dict[i64,Array[Result]]().get(0) or [Good(2), Bad(5)]
+	let stored = Dict[i64,Array[Result]]().insert(1, nested)
+	let selected = stored.get(1) or [Bad(explode())]
+	if score(selected[!0]) != 2 or score(selected[!1]) != -5
+		return 3
+	let empty = stored.get(0) or []
+	if len(empty) != 0
+		return 4
+	var data = [10]
+	let managed = Dict[i64,Managed]().insert(1, Ready("ok", data))
+	let saved = managed
+	let first = managed.get(1) or Failed("unused", [explode()])
+	let fallback = managed.get(99) or Failed("bad", data)
+	data[!0] = 99
+	let extracted = data_of(fallback)
+	var edited = extracted
+	edited[!0] = 12
+	if extracted[!0] != 10 or managed_score(first) != 12 or managed_score(fallback) != -13
+		return 5
+	if managed_score(saved.get(1) or Failed("bad", [0])) != 12
+		return 6
+	let increment = Dict[i64,Fn[i64,i64]]().get(0) or fn(x) x + 1
+	if increment(4) != 5
+		return 7
+	let raw = Missing(6)
+	let unique = Dict[i64,Unique]().get(0) or raw
+	let raw_values = [raw]
+	let converted = Dict[i64,Array[Unique]]().get(0) or raw_values
+	if unique_score(unique) != -6 or unique_score(converted[!0]) != -6
+		return 8
+	return 0

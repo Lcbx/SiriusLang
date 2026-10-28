@@ -575,6 +575,14 @@ let value = a[?i] else return false
 
 `or` on `Optional` selects a fallback on absence, independent of truthiness. Prefix `?` and `!` only modify indexing; postfix `!` unboxes any `Optional`. Indexed assignment uses `a[!i] = value`.
 
+For `Optional[T] or fallback`, the fallback is checked with expected type `T`.
+Direct constructor calls retain their union label, so a default such as
+`results.get(key) or Failure(404)` needs no explicit union wrapper, even when
+alternatives have identical payload shapes. Array literals and callbacks also
+receive this expected type. Existing structural conversions apply; an ambiguous
+stored record still needs explicit labeled construction. The fallback and its
+conversion execute only when the optional is absent.
+
 ### Guards
 
 An expression guard requires a scalar `bool`. Execution continues when it is `true`; otherwise the `else` branch terminates the current path with `return`, `break`, or `continue`:

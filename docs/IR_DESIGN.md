@@ -472,6 +472,15 @@ branches, so fallback expressions execute only for absent values. The older
 `or`. The implemented CFG ownership/lifetime passes follow this lowering, as described
 below. See `tools/test_mir_optional.py` and `tools/test_mir_run.py`.
 
+An optional's payload type supplies the fallback's HIR expected type. This
+preserves direct constructor labels and types nested array literals and callback
+values contextually. Approved structural conversions use `HIR_UNION_INJECT` on
+the fallback expression and lower inside the absent-value block, before copying
+into the shared result register. Neither fallback evaluation nor conversion is
+hoisted into the present-value path. Native/MIR, ARC/CoW, ambiguous-record
+rejection and source-free generic coverage are in
+`tools/test_union_optional_dict_coercions.py`.
+
 ## Explicit runtime failure edges (experimental)
 
 `src/mir_guard.sirius` splits checked `MIR_DIV_I64`, `MIR_REM_I64`, `MIR_SHL_I64`,

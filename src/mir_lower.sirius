@@ -1107,10 +1107,18 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, result, unwrapped, -1, 0))
 			next = mir_lower_end(next, Mir.mir_jump(done))
 			next.active = missing
-			let fallback = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
+			let source = Hir.hir_ast_child(context.tree, id, 1)
+			let fallback = mir_lower_expression(next, context, source)
 			next = fallback.state
 			next.error == "" else return MirLowerExpr(next, -1)
-			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, result, fallback.slot, -1, 0))
+			var slot = fallback.slot
+			let injected_type = mir_lower_type(context, source, Hir.HIR_UNION_INJECT)
+			if injected_type != Types.TYPE_TAG_INVALID
+				let injected = mir_lower_inject_source(next, context, slot, injected_type, source)
+				next = injected.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				slot = injected.slot
+			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_COPY, result, slot, -1, 0))
 			next = mir_lower_end(next, Mir.mir_jump(done))
 			next.active = done
 			return MirLowerExpr(next, result)
