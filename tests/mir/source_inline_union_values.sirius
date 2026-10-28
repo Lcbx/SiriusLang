@@ -1,0 +1,57 @@
+rec Small(value: i64)
+rec Alias(value: i64)
+rec Empty()
+rec Mixed(value: i64, weight: f64, valid: bool)
+rec Large(a: i64, b: i64, c: i64, d: i64)
+rec Managed(text: string)
+let Choice = Small | Alias | Empty | Mixed | Large | Managed
+rec Holder(value: Choice)
+
+def identity(value: Choice) -> Choice
+	return value
+
+def score(value: Choice) -> i64
+	match value
+		Small(n)
+			return n
+		Alias(n)
+			return n * 2
+		Empty()
+			return 0
+		Mixed(n, weight, valid)
+			if valid and weight == 2.5
+				return n
+			return 99
+		Large(a, b, c, d)
+			return a + b + c + d
+		Managed(text)
+			return len(text)
+
+def main() -> i64
+	var payload = Small(7)
+	let value = identity(Choice.Small(payload))
+	payload.value = 9
+	if score(value) != 7 or payload.value != 9
+		return 1
+	var holder = Holder(value)
+	let snapshot = holder
+	holder.value = Choice.Managed(Managed("okay"))
+	if score(snapshot.value) != 7 or score(holder.value) != 4
+		return 2
+	var mapping = Dict[i64,Choice]().insert(1, value).insert(2, Empty()).insert(3, Large(1, 2, 3, 4))
+	let saved = mapping
+	mapping = mapping.insert(1, Alias(5)).insert(2, Managed("abcd"))
+	if score(saved.get(1) or Choice.Empty(Empty())) != 7 or score(mapping.get(1) or Choice.Empty(Empty())) != 10
+		return 3
+	if score(saved.get(2) or value) != 0 or score(mapping.get(2) or value) != 4 or score(saved.get(3) or value) != 10
+		return 4
+	let keys = Dict[Choice,i64]().insert(value, 1).insert(Choice.Alias(Alias(7)), 2).insert(Choice.Empty(Empty()), 3).insert(Choice.Mixed(Mixed(8, 2.5, true)), 4).insert(Choice.Large(Large(1, 2, 3, 4)), 5).insert(Choice.Managed(Managed("okay")), 6)
+	if (keys.get(Choice.Small(Small(7))) or 0) != 1 or (keys.get(Choice.Alias(Alias(7))) or 0) != 2
+		return 5
+	if (keys.get(Choice.Empty(Empty())) or 0) != 3 or (keys.get(Choice.Mixed(Mixed(8, 2.5, true))) or 0) != 4
+		return 6
+	if (keys.get(Choice.Large(Large(1, 2, 3, 4))) or 0) != 5 or (keys.get(Choice.Managed(Managed("okay"))) or 0) != 6
+		return 7
+	if Holder(value) != snapshot or value == Choice.Alias(Alias(7))
+		return 8
+	return 0

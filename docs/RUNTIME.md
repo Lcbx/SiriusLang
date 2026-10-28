@@ -110,7 +110,7 @@ than comparing padding bytes.
 CoW snapshots, optional access, nested equality, ARC auditing and MIR parity.
 `--sanitize` adds AddressSanitizer and UndefinedBehaviorSanitizer where supported.
 
-### Inline tagged-union arrays
+### Hybrid tagged unions
 
 For a payload-bearing union with any record alternative of up to three
 unmanaged scalar fields (`i64`, `f64`, `bool`, or an empty record), generated
@@ -121,12 +121,22 @@ fields inline; other alternatives use a boxed-wrapper fallback indicated by
 payload width, not by the largest managed alternative. CoW and ARC scan/drop
 retain or release only the boxed fallback edges.
 
-Union registers and non-array containers retain their existing pointer ABI.
-Packing an inline alternative currently consumes a preconstructed wrapper;
-reading it reconstructs an owned wrapper and record payload. These transient
-allocations are a limitation despite the smaller live heap graph.
+Outside arrays, union registers and containers keep a pointer to an owned
+wrapper. The wrapper stores the tag in `fields[0]` and eligible scalar payloads
+in the following slots, without a separate payload object. Large and managed
+alternatives retain the record pointer in `fields[1]`. Type-directed scanning,
+dropping, cloning, equality, and hashing distinguish these layouts by type and
+tag. Fresh scalar constructors reserve one extra slot so consuming injection
+can reuse the allocation. Borrowed injections copy the scalar fields; projection
+materializes an independent owned payload record. Reading an inline array slot
+now allocates just its wrapper. The MIR interpreter retains its logical boxed
+representation. Scalar payload projection still allocates, and registers and
+non-array containers still require a wrapper.
 `python tools/test_mir_inline_unions.py` validates scalar tags, managed/large
-fallback, CoW, optional indexing, equality, ARC, and native/MIR parity.
+fallback, non-array containers, CoW, optional indexing, equality, hashing, ARC,
+and native/MIR parity. The allocation fixture in
+`tools/test_union_hybrid_coallocation.py` drops from 1022 to 769 generated-record
+allocations versus the array-only representation; scalar projection still allocates.
 
 ## Generated field helpers
 

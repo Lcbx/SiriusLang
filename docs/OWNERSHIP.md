@@ -100,7 +100,7 @@ array remains unchanged and the extracted value may outlive it.
 | `Array[Union]` with at least one small scalar alternative | `S_MirArrayUnion<TypeId>` slot: declaration-order tag plus up to three `S_MirField` scalar values, or a boxed union pointer marked by tag `-1`. Copy/drop retain and release only the boxed fallback |
 | `Dict[K,V]` | Refcounted MIR wrapper owning a separate refcounted `S_Dict` hash table; table entries have type-directed key/value copy/drop hooks |
 | `Optional[T]` | Managed MIR wrapper with zero or one owned payload slot (even for scalar payloads at present) |
-| Tagged union with payload | Managed tag-plus-owned-record wrapper; heterogeneous alternative payload sizes are supported through separate record objects |
+| Tagged union with payload | Managed wrapper with a tag and up to three inline unmanaged scalar fields; other alternatives own a separate record payload |
 
 The current *inline-record* eligibility test is intentionally narrow:
 records with **1–4 fields** of `i64`, `f64`, or `bool` only. Union
@@ -116,22 +116,20 @@ Optional wrapper; ordinary array indexing does not. This is an
 current eligibility also depends on other types appearing in the compiled
 program.
 
-The default payload-bearing union layout has a separately refcounted wrapper
-and record payload. `MIR_RECORD_NEW_FUSED` expresses a constructor hint;
-`SIRIUS_EXPERIMENTAL_UNION_COALLOC` can put wrapper and payload in one
-allocation **with two independent ARC identities**, but is opt-in and not the
-default layout. The opt-in `SIRIUS_EXPERIMENTAL_UNION_HYBRID`
-variant coallocates only fresh scalar-record alternatives with at most three
-fields and leaves wider/managed alternatives separately boxed. It retains
-two ARC identities and the existing union *register* pointer ABI. When a
-payload-bearing union has any alternative with 0–3 unmanaged scalar fields,
-its native array specialization packs those alternatives into a tag-plus-payload
-slot; larger and managed alternatives remain boxed. Array insertion currently
-constructs and subsequently releases normal wrapper/payload objects for inline
-cases; extraction reconstructs them. This reduces retained heap objects but
-does not remove temporary construction/read allocations. All-empty-record
-unions avoid the wrapper entirely (although extracting an empty record payload
-currently materializes a record). `Fn`
+Payload-bearing native unions keep an owned wrapper pointer. Alternatives with
+up to three unmanaged scalar fields store those fields directly after the tag;
+other alternatives own a separately allocated payload record. The verified
+`MIR_RECORD_NEW_FUSED` constructor sequence reserves a tag slot and reuses the
+fresh scalar record allocation for its union wrapper. Ordinary borrowed
+injection copies scalar bytes, and payload projection creates an independent
+owned record. `SIRIUS_EXPERIMENTAL_UNION_COALLOC` can still coallocate boxed
+fallbacks with two independent ARC identities. The historical hybrid flag has
+no additional effect on scalar alternatives, which inline by default.
+
+Native arrays pack eligible scalar union alternatives into tag-plus-payload
+slots and retain wrapper pointers for boxed fallbacks. Reading an inline slot
+allocates one wrapper. All-empty-record unions avoid wrappers entirely
+(although extracting an empty record payload materializes a record). `Fn`
 values are noncapturing references and need no closure environment or ARC.
 The runtime also has generic `S_Array` and scalar-specialized helpers; those
 runtime layouts should not be conflated with the generated MIR-record arrays.
@@ -146,11 +144,11 @@ See `runtime/sirius_runtime.c` and `runtime/sirius_runtime.h`.
 | `MIR_RELEASE`, `MIR_RELEASE_IF_INIT` | Consume one (or conditionally owned) register | Drop owned value (all its ARC obligations) and invalidate register |
 | `MIR_RECORD_NEW`, `MIR_ARRAY_NEW` | Borrow each input, including repeated registers | Construct an owned value: inline eligible record or allocated root; copy/retain inputs **per managed child slot** |
 | `MIR_RECORD_NEW_MOVE`, `MIR_ARRAY_NEW_MOVE` | Borrow other fields; consume selected distinct managed inputs | Move selected child ownership into slots; copy/retain others |
-| `MIR_RECORD_NEW_FUSED`, `MIR_RECORD_NEW_FUSED_MOVE` | Same ownership as corresponding record constructors | Hint for optional native wrapper/payload coallocation; the two objects retain independent ARC identities when enabled |
+| `MIR_RECORD_NEW_FUSED`, `MIR_RECORD_NEW_FUSED_MOVE` | Same ownership as corresponding record constructors | Hint for scalar allocation reuse or optional boxed wrapper/payload coallocation; boxed coallocation preserves independent ARC identities |
 | `MIR_RECORD_GET`, `MIR_ARRAY_GET`, optional/dictionary reads | Borrow container | Copy selected value into an owned destination: normally retain its managed storage, or copy inline fields plus their credits; source keeps its ownership |
 | `MIR_DICT_KEY`, `MIR_DICT_VALUE` | Borrow dictionary at a valid read-only cursor | Retain projected managed key/value; source and snapshots retain their credits |
-| `MIR_UNION_NEW`, `MIR_UNION_TAG`, `MIR_UNION_GET` | Constructor borrows a payload, tag read borrows; payload projection borrows wrapper | Managed union owns its selected record payload; reading the payload produces a new owned result; payload-free enum remains an unowned tag |
-| `MIR_UNION_NEW_MOVE` | Consume a last-use owned record payload | Transfer the payload credit into a non-enum wrapper without a retain/release pair; invalidate the payload register |
+| `MIR_UNION_NEW`, `MIR_UNION_TAG`, `MIR_UNION_GET` | Constructor borrows a payload, tag read borrows; payload projection borrows wrapper | Managed union owns its selected payload (inline scalar bytes or a retained record pointer); reading the payload produces a new owned result; payload-free enum remains an unowned tag |
+| `MIR_UNION_NEW_MOVE` | Consume a last-use owned record payload | Consume the payload credit into a non-enum wrapper (reuse reserved scalar storage when unique, otherwise copy scalars or transfer a boxed pointer); invalidate the payload register |
 | `MIR_FUNCTION_REF`, `MIR_CALL_INDIRECT` | Function reference is a non-owning scalar; indirect arguments are borrowed | Callee receives retained managed arguments and returns an owned value, like a direct call |
 | `MIR_OPTIONAL_SOME` / `NONE` | Borrow payload / no payload | Create owned optional; `SOME` retains managed payload |
 | `MIR_RECORD_SET`, `MIR_ARRAY_SET`, append, `MIR_DICT_INSERT` | Consume parent; borrow replacement / key / value | Retain incoming managed child; perform CoW if shared; release displaced child on replacement; return owned parent |
@@ -213,7 +211,9 @@ These are implemented, not merely proposed:
 * **Inline scalar records:** eligible scalar-only records use native
   aggregate registers and type-strided array slots. Eligible scalar-only union
   alternatives are packed into native array slots; managed/large alternatives
-  and non-array union boundaries still use their existing wrapper ABI.
+  and non-array union boundaries use pointer-valued wrappers. Eligible scalar
+  payloads also inline inside those wrappers, with no child ARC edge; projection
+  copies them into an owned record.
 * **Type-directed native slot helpers:** `mir_c_slot_copy`,
   `mir_c_slot_retain`, `mir_c_slot_drop`, plus generated scalar-record
   box/unbox routines, connect logical value operations to current C layouts.

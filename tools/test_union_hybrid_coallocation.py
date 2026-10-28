@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Verify opt-in hybrid coallocation in *compiler-generated* native C.
+"""Verify default scalar union storage and optional boxed fallback coallocation.
 
-Only fresh scalar record alternatives of <=3 S_MirField slots coallocate under
-SIRIUS_EXPERIMENTAL_UNION_HYBRID; large or managed alternatives remain boxed.
-The union register ABI, independent ARC credits and MIR semantics remain unchanged.
-Array slots may now pack eligible scalar alternatives independently of this flag.
+Scalar payloads inline in wrappers and array slots without an experimental flag.
+Large and managed payloads retain independent ownership and can coallocate under
+SIRIUS_EXPERIMENTAL_UNION_COALLOC. Count generated-runtime allocations with ARC.
 """
 import argparse
 import re
@@ -86,14 +85,10 @@ def main() -> None:
         src.write_text(SOURCE.replace('    ', '\t'), encoding='utf-8')
         execute([str(compiler), str(src), str(c_file)])
         emitted = c_file.read_text(encoding='utf-8')
-        # Only the small record should use the hybrid branch; other records
-        # retain their former experimental full-coallocation branch.
-        hybrid_sites = emitted.count('record = s_mir_record_new_fused(')
-        if hybrid_sites != 4:
-            raise AssertionError(f'expected four fused MIR constructor sites, got {hybrid_sites}')
+        # Scalar alternatives now inline in the wrapper by default. Only
+        # the two boxed fallback sites remain eligible for full coallocation.
         branches = re.findall(r'(#(?:if|ifdef)[^\n]+)\n\s*record = s_mir_record_new_fused\(', emitted)
-        if len(branches) != 4 or sum('HYBRID' in b for b in branches) != 2:
-            raise AssertionError(f'only the two Small sites should be hybrid eligible: {branches}')
+        assert len(branches) == 2 and all('HYBRID' not in b for b in branches), branches
         anchor = 'static inline S_MirRecord *s_mir_record_new(int64_t id, size_t fields) {'
         assert emitted.count(anchor) == 1
         emitted = emitted.replace(anchor, PROBE + anchor)
@@ -113,10 +108,12 @@ def main() -> None:
             if not match or run.stdout:
                 raise AssertionError((name, run.stdout, run.stderr))
             counts[name] = int(match.group(1))
-        # 256 items have 252 Small + 2 Big + 2 Managed, plus one Small
-        # appended after snapshot. Hybrid skips exactly 253 allocations;
-        # full coallocation skips 257 (including all 4 non-small payloads).
-        if counts['default'] - counts['hybrid'] != 253 or counts['hybrid'] - counts['all'] != 4:
+        # Small payloads have no separate live allocation in any mode.
+        # Full coallocation still saves the four boxed fallback allocations.
+        # Fresh scalar construction saves 253 calls versus the previous
+        # default's 1022; payload projection still materializes records.
+        assert counts['default'] == 769, counts
+        if counts['default'] != counts['hybrid'] or counts['hybrid'] - counts['all'] != 4:
             raise AssertionError(counts)
         print('PASS hybrid union: allocation selection, large/managed fallback, '
               f'CoW, native ARC{", ASan/UBSan" if args.sanitize else ""}: {counts}')

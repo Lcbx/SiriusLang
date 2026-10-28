@@ -182,7 +182,8 @@ or panic).
   verifier restricts this source-free form to valid labeled, payload-free enums. No
   record is allocated by either native execution or MIR interpretation for that form.
   Unions with any nonempty alternative still use an `S_MirRecord*` tagged wrapper
-  (`fields[0]` tag, `fields[1]` retained record pointer). Dictionary union
+  (`fields[0]` tag, following slots hold up to three unmanaged scalar fields;
+  other alternatives use a retained record pointer in `fields[1]`). Dictionary union
   entries remain pointer-valued. Native `Array[Union]` specializations with at
   least one eligible scalar alternative now use strided slots containing a
   declaration-order tag and up to three unmanaged scalar fields; large/managed
@@ -206,16 +207,11 @@ or panic).
   capacities; the native runtime rejects attempts to resize a fused node. No extra
   record-header word is required. See `ROADMAP.md` for the experiment's measured
   benefits and limitations.
-* Opt-in selective coallocation (`SIRIUS_EXPERIMENTAL_UNION_HYBRID`) uses the same
-  independent-wrapper/payload ARC headers for fresh alternatives with at most three
-  unmanaged scalar fields (24 bytes of field slots). Other alternatives—including wider
-  scalar records and records containing managed fields—remain separately allocated
-  unless the full-coallocation flag is enabled. Coallocation is independent of
-  array slot packing: the register ABI stays boxed while eligible scalar union
-  alternatives are now stored inline in arrays. The selection is static and does not
-  change union tags, MIR serialization, or source semantics. Run
-  `tools/test_union_hybrid_coallocation.py` for generated-program allocation, CoW, and
-  sanitizer validation.
+* Scalar alternatives of up to three unmanaged fields now inline in union wrappers
+  by default. Fresh consuming construction reuses the payload allocation with a
+  reserved tag slot. The historical `SIRIUS_EXPERIMENTAL_UNION_HYBRID` flag adds
+  no coallocation for these alternatives; full coallocation remains available
+  for boxed fallbacks. See [Runtime](RUNTIME.md#hybrid-tagged-unions).
 
 * Array access becomes a bounds proof/optional result/checked panic path, depending on syntax.
 * Checked and optional negative array indices normalize relative to array length
@@ -350,8 +346,8 @@ capacity and `S_MirField` union slots. Records use one fixed slot per field in
 canonical name order; arrays use `length` variable, type-strided slots;
 optionals use zero or one; dictionary wrappers use one slot holding `S_Dict *`. Unions with
 only empty-record alternatives use zero heap slots: their value is the scalar
-alternative index. Other unions use two fixed slots (alternative index and a
-retained pointer to a separately allocated record payload). Native union
+alternative index. Other unions use a wrapper with an alternative index and
+either up to three inline scalar fields or a retained record payload pointer. Native union
 arrays can mix heterogeneous alternatives: their stride is fixed for that
 union specialization, with a boxed fallback for large or managed payloads.
 
@@ -361,7 +357,8 @@ element type, byte stride and ownership policy; reads copy fields with `memcpy`
 without creating a record object. CoW copies these unmanaged slots as bytes.
 Record fields, dictionary entries and optional payloads still box records;
 optional array indexing boxes the selected element. Managed-field records and
-union alternatives use boxed storage outside arrays. Inside union arrays,
+union alternatives use pointer-valued wrappers outside arrays, with eligible
+scalar payloads inline in the wrapper. Inside union arrays,
 eligible scalar-only alternatives are packed inline and larger/managed ones
 use a pointer fallback. See [Ownership](OWNERSHIP.md),
 `tools/test_mir_inline_arrays.py`, and `tools/test_mir_inline_unions.py`.

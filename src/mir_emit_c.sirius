@@ -34,9 +34,7 @@ def mir_c_inline_record(types: Types.TypeTable, id: i64) -> bool
 			return false
 	return true
 
-# An opt-in hybrid allocation policy. The wrapper and a fresh small scalar
-# record share one allocation, while large/managed payloads remain separately
-# boxed. Each retains its own ARC identity and the existing union pointer ABI.
+# Small scalar payloads inline in wrappers and array slots by default.
 # The maximum is three eight-byte scalar fields (24 payload bytes); do not
 # use source-level type names or approximate string/container sizes here.
 def mir_c_union_small_payload(types: Types.TypeTable, record_type: i64) -> bool
@@ -51,10 +49,8 @@ def mir_c_union_small_payload(types: Types.TypeTable, record_type: i64) -> bool
 			return false
 	return true
 
-# Array-only union slots have an inline tag and up to three unmanaged
-# scalar fields. Alternatives that do not fit retain a boxed union wrapper.
-# Registers, dictionaries, record fields and the MIR interpreter keep their
-# existing pointer ABI.
+# Union wrappers and array slots inline up to three unmanaged scalar fields.
+# Other alternatives retain boxed payloads. Registers keep their pointer ABI.
 def mir_c_inline_union(types: Types.TypeTable, id: i64) -> bool
 	if Types.type_tag(types, id) != Types.TYPE_TAG_UNION or Types.union_is_enum(types, id)
 		return false
@@ -265,6 +261,17 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	# Only fixed-size record payloads and their union wrappers use the experimental
 	# high-bit capacity marker. Growable arrays always have an ordinary capacity.
 	parts = parts.append("struct S_MirRecord { int64_t type_id; size_t refs, length, capacity; S_MirField fields[]; };\n")
+	# The static type and variant tag select inline fields versus a payload edge.
+	parts = parts.append("static inline int64_t s_mir_union_inline_count(int64_t type, int64_t tag) { (void)tag; switch (type) {\n")
+	for i in 0..len(types.entries)
+		if mir_c_inline_union(types, i)
+			parts = parts.append("case " + str(i) + ": switch (tag) {\n")
+			for j in 0..len(types.entries[!i].fields)
+				let alternative = types.entries[!i].fields[!j].kind
+				if mir_c_union_small_payload(types, alternative)
+					parts = parts.append("case " + str(j) + ": return " + str(len(types.entries[!alternative].fields)) + ";\n")
+			parts = parts.append("default: return -1; }\n")
+	parts = parts.append("default: return -1; } }\n")
 	# Arrays share the S_MirRecord header, but their trailing storage is a
 	# byte-addressed buffer: element widths can differ from S_MirField.
 	# Scalar-only records have value slots; objects/strings keep pointer slots.
@@ -338,7 +345,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 					parts = parts.append("\t\t    else if (layout.element_type == " + str(u) + ") { const S_MirArrayUnion" + str(u) + " *v = (const void *)slot; if (v->tag == -1) visit(v->payload.boxed, context); }\n")
 			parts = parts.append("\t\t  } } break;\n")
 		elif desc.tag == Types.TYPE_TAG_UNION
-			parts = parts.append("\tcase " + str(i) + ": visit(r->fields[1].record, context); break;\n")
+			parts = parts.append("\tcase " + str(i) + ": if (s_mir_union_inline_count(r->type_id, r->fields[0].bits) < 0) visit(r->fields[1].record, context); break;\n")
 		elif desc.tag == Types.TYPE_TAG_DICT
 			parts = parts.append("\tcase " + str(i) + ": visit(r->fields[0].dict, context); break;\n")
 	parts = parts.append("\tdefault: s_panic(\"unknown ARC scanned type\");\n\t}\n}\n#endif\n")
@@ -498,7 +505,14 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				parts = parts.append("case " + str(i) + ": if (a.record->fields[0].bits != b.record->fields[0].bits) return false;\n")
 				parts = parts.append("switch (a.record->fields[0].bits) {\n")
 				for j in 0..len(desc.fields)
-					parts = parts.append("case " + str(j) + ": return s_mir_value_equal(" + str(desc.fields[!j].kind) + ", a.record->fields[1], b.record->fields[1], key_comparison);\n")
+					let alternative = desc.fields[!j].kind
+					if mir_c_inline_union(types, i) and mir_c_union_small_payload(types, alternative)
+						parts = parts.append("case " + str(j) + ":\n")
+						for k in 0..len(types.entries[!alternative].fields)
+							parts = parts.append("if (!s_mir_value_equal(" + str(types.entries[!alternative].fields[!k].kind) + ", a.record->fields[" + str(k + 1) + "], b.record->fields[" + str(k + 1) + "], key_comparison)) return false;\n")
+						parts = parts.append("return true;\n")
+					else
+						parts = parts.append("case " + str(j) + ": return s_mir_value_equal(" + str(alternative) + ", a.record->fields[1], b.record->fields[1], key_comparison);\n")
 				parts = parts.append("default: s_panic(\"invalid union alternative\"); }\n")
 	parts = parts.append("default: s_panic(\"unsupported equality type\"); } }\n")
 	var has_composite_keys = false
@@ -533,7 +547,14 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 					parts = parts.append("case " + str(i) + ": { int64_t tag = field.record->fields[0].bits;\n")
 					parts = parts.append("uint64_t hash = s_mir_hash_combine(UINT64_C(0x345678), s_hash_i64_key(&tag));\nswitch (tag) {\n")
 					for j in 0..len(desc.fields)
-						parts = parts.append("case " + str(j) + ": return s_mir_hash_combine(hash, s_mir_hash_field(" + str(desc.fields[!j].kind) + ", field.record->fields[1]));\n")
+						let alternative = desc.fields[!j].kind
+						if mir_c_inline_union(types, i) and mir_c_union_small_payload(types, alternative)
+							parts = parts.append("case " + str(j) + ": { uint64_t result = UINT64_C(0x345678);\n")
+							for k in 0..len(types.entries[!alternative].fields)
+								parts = parts.append("result = s_mir_hash_combine(result, s_mir_hash_field(" + str(types.entries[!alternative].fields[!k].kind) + ", field.record->fields[" + str(k + 1) + "]));\n")
+							parts = parts.append("return s_mir_hash_combine(hash, s_mir_hash_combine(result, " + str(len(types.entries[!alternative].fields)) + ")); }\n")
+						else
+							parts = parts.append("case " + str(j) + ": return s_mir_hash_combine(hash, s_mir_hash_field(" + str(alternative) + ", field.record->fields[1]));\n")
 					parts = parts.append("default: s_panic(\"invalid union alternative\"); } }\n")
 		parts = parts.append("default: s_panic(\"unhashable dictionary key\"); } }\n")
 		var emitted_keys = Array[i64]()
@@ -582,7 +603,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 		elif type_desc.tag == Types.TYPE_TAG_UNION
 			parts = parts.append("\tcase " + str(i) + ":\n")
 			parts = parts.append("#if defined(SIRIUS_EXPERIMENTAL_UNION_COALLOC) || defined(SIRIUS_EXPERIMENTAL_UNION_HYBRID)\n\t\tif (s_mir_is_fused(r)) { s_mir_record_release(r->fields[1].record); return; }\n#endif\n")
-			parts = parts.append("\t\ts_mir_record_release(r->fields[1].record); break;\n")
+			parts = parts.append("\t\tif (s_mir_union_inline_count(r->type_id, r->fields[0].bits) < 0) s_mir_record_release(r->fields[1].record);\n\t\tbreak;\n")
 		elif type_desc.tag == Types.TYPE_TAG_DICT
 			parts = parts.append("\tcase " + str(i) + ": s_dict_release(r->fields[0].dict); break;\n")
 		elif type_desc.tag == Types.TYPE_TAG_ARRAY
@@ -593,8 +614,8 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"unknown managed type\");\n\t}\n")
 	parts = parts.append("#if defined(SIRIUS_EXPERIMENTAL_UNION_COALLOC) || defined(SIRIUS_EXPERIMENTAL_UNION_HYBRID)\n\tif (s_mir_is_fused(r)) { free((unsigned char *)r - S_MIR_FUSED_OFFSET); return; }\n#endif\n")
 	parts = parts.append("\tfree(r);\n}\n\n")
-	# Array-only packed union helpers. Packing consumes one ownership credit;
-	# a small scalar alternative is copied then both original wrappers are
+	# Packed array union helpers. Packing consumes one ownership credit;
+	# a small scalar alternative is copied then its original wrapper is
 	# released. Other alternatives transfer their boxed pointer unchanged.
 	for i in 0..len(types.entries)
 		if mir_c_inline_union(types, i)
@@ -605,17 +626,17 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 				let alternative = desc.fields[!j].kind
 				if mir_c_union_small_payload(types, alternative)
 					let count = len(types.entries[!alternative].fields)
-					parts = parts.append("\tcase " + str(j) + ": slot.tag = tag; memcpy(slot.payload.fields, owned->fields[1].record->fields, " + str(count) + " * sizeof(S_MirField)); s_mir_record_release(owned); return slot;\n")
+					parts = parts.append("\tcase " + str(j) + ": slot.tag = tag; memcpy(slot.payload.fields, owned->fields + 1, " + str(count) + " * sizeof(S_MirField)); s_mir_record_release(owned); return slot;\n")
 			parts = parts.append("\tdefault: slot.tag = -1; slot.payload.boxed = owned; return slot;\n\t}\n}\n")
 			parts = parts.append("static inline S_MirRecord *s_mir_array_union_read" + str(i) + "(const S_MirArrayUnion" + str(i) + " *slot) {\n")
-			parts = parts.append("\tif (slot->tag == -1) return s_mir_record_retain(slot->payload.boxed);\n\tS_MirRecord *payload;\n\tswitch (slot->tag) {\n")
+			parts = parts.append("\tif (slot->tag == -1) return s_mir_record_retain(slot->payload.boxed);\n\tS_MirRecord *wrapper;\n\tswitch (slot->tag) {\n")
 			for j in 0..len(desc.fields)
 				let alternative = desc.fields[!j].kind
 				if mir_c_union_small_payload(types, alternative)
 					let count = len(types.entries[!alternative].fields)
-					parts = parts.append("\tcase " + str(j) + ": payload = s_mir_record_new(" + str(alternative) + ", " + str(count) + "); memcpy(payload->fields, slot->payload.fields, " + str(count) + " * sizeof(S_MirField)); break;\n")
+					parts = parts.append("\tcase " + str(j) + ": wrapper = s_mir_record_new(" + str(i) + ", " + str(count + 1) + "); memcpy(wrapper->fields + 1, slot->payload.fields, " + str(count) + " * sizeof(S_MirField)); break;\n")
 			parts = parts.append("\tdefault: s_panic(\"invalid inline union tag\");\n\t}\n")
-			parts = parts.append("\tS_MirRecord *wrapper = s_mir_record_new(" + str(i) + ", 2); wrapper->fields[0].bits = slot->tag; wrapper->fields[1].record = payload; return wrapper;\n}\n")
+			parts = parts.append("\twrapper->fields[0].bits = slot->tag; return wrapper;\n}\n")
 	parts = parts.append("static inline void s_mir_string_store(S_String **slot, S_String *owned) { S_String *old = *slot; *slot = owned; s_string_release(old); }\n")
 	parts = parts.append("static inline void s_mir_record_store(S_MirRecord **slot, S_MirRecord *owned) { S_MirRecord *old = *slot; *slot = owned; s_mir_record_release(old); }\n\n")
 	# Shared CoW cloning for records, optionals, arrays, and dictionaries.
@@ -649,7 +670,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 			parts = parts.append("\t\tfor (size_t j = 0; j < copy->length; ++j) s_mir_array_element_copy(layout, s_mir_array_at(copy, j));\n")
 			parts = parts.append("\t\tbreak; }\n")
 		elif desc.tag == Types.TYPE_TAG_UNION
-			parts = parts.append("\tcase " + str(i) + ": s_mir_record_retain(copy->fields[1].record); break;\n")
+			parts = parts.append("\tcase " + str(i) + ": if (s_mir_union_inline_count(copy->type_id, copy->fields[0].bits) < 0) s_mir_record_retain(copy->fields[1].record); break;\n")
 		elif desc.tag == Types.TYPE_TAG_DICT
 			parts = parts.append("\tcase " + str(i) + ": s_dict_retain(copy->fields[0].dict); break;\n")
 	parts = parts.append("\tdefault: s_panic(\"invalid collection type\");\n\t}\n")
@@ -691,7 +712,7 @@ def mir_c_record_runtime(types: Types.TypeTable) -> string
 	parts = parts.append("\tdefault: s_panic(\"invalid optional type\");\n\t} } return optional;\n}\n\n")
 	return "".join(parts)
 
-def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, program: Mir.MirProgram, checked: bool) -> string
+def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction, program: Mir.MirProgram, checked: bool, fresh_payload: bool) -> string
 	let types = program.types
 	let op = instruction.op
 	var result = ""
@@ -821,6 +842,21 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 			tag = Types.union_alternative_index(types, dst_type, function.register_types[!instruction.first])
 		if Types.union_is_enum(types, dst_type)
 			return result + "\t" + dst + " = " + str(tag) + mir_c_mark_init(instruction.dst, checked) + "\n"
+		if mir_c_inline_union(types, dst_type) and mir_c_union_small_payload(types, function.register_types[!instruction.first])
+			let count = len(types.entries[!function.register_types[!instruction.first]].fields)
+			var code = result + "\t{ S_MirRecord *variant;\n"
+			if op == Mir.MIR_UNION_NEW_MOVE or fresh_payload
+				var reused = first
+				if fresh_payload
+					reused = "s_mir_record_retain(" + first + ")"
+				code = code + "\t\tif (" + first + "->refs == 1 && " + first + "->capacity == " + str(count + 1) + ") { variant = " + reused + "; memmove(variant->fields + 1, variant->fields, " + str(count) + " * sizeof(S_MirField)); variant->type_id = " + str(dst_type) + "; variant->length = " + str(count + 1) + "; } else {\n"
+			code = code + "\t\tvariant = s_mir_record_new(" + str(dst_type) + ", " + str(count + 1) + "); memcpy(variant->fields + 1, " + first + "->fields, " + str(count) + " * sizeof(S_MirField));\n"
+			if op == Mir.MIR_UNION_NEW_MOVE
+				code = code + "\t\ts_mir_record_release(" + first + "); } " + first + " = NULL" + mir_c_mark_uninit(instruction.first, checked) + "\n"
+			elif fresh_payload
+				code = code + "\t\t}\n"
+			code = code + "\t\tvariant->fields[0].bits = " + str(tag) + ";\n"
+			return code + mir_c_store_owned(types, instruction.dst, dst_type, "variant", checked) + "\t}\n"
 		var code = result + "\t{ S_MirRecord *variant;\n"
 		let code_fused = "#if defined(SIRIUS_EXPERIMENTAL_UNION_COALLOC) || defined(SIRIUS_EXPERIMENTAL_UNION_HYBRID)\n\t\tvariant = s_mir_is_fused(" + first + ") ? s_mir_fused_wrapper(" + first + ") : s_mir_record_new(" + str(dst_type) + ", 2);\n#else\n\t\tvariant = s_mir_record_new(" + str(dst_type) + ", 2);\n#endif\n"
 		code = code + code_fused
@@ -841,6 +877,10 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 		if Types.union_is_enum(types, function.register_types[!instruction.first])
 			let code = result + "\tif (" + first + " != " + str(member) + ") s_panic(\"union variant mismatch\");\n"
 			return code + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_record_new(" + str(dst_type) + ", 0)", checked)
+		if mir_c_inline_union(types, function.register_types[!instruction.first]) and mir_c_union_small_payload(types, dst_type)
+			let count = len(types.entries[!dst_type].fields)
+			let code = result + "\tif (" + first + "->fields[0].bits != " + str(member) + ") s_panic(\"union variant mismatch\");\n\t{ S_MirRecord *payload = s_mir_record_new(" + str(dst_type) + ", " + str(count) + "); memcpy(payload->fields, " + first + "->fields + 1, " + str(count) + " * sizeof(S_MirField));\n"
+			return code + mir_c_store_owned(types, instruction.dst, dst_type, "payload", checked) + "\t}\n"
 		let code = result + "\tif (" + first + "->fields[0].bits != " + str(member) + ") s_panic(\"union variant mismatch\");\n"
 		return code + mir_c_store_owned(types, instruction.dst, dst_type, "s_mir_record_retain(" + first + "->fields[1].record)", checked)
 	if op == Mir.MIR_OPTIONAL_NONE
@@ -1075,14 +1115,16 @@ def mir_c_instruction(instruction: Mir.MirInstruction, function: Mir.MirFunction
 					code = code + "\t\t" + mir_c_register(arg) + " = " + mir_c_zero(types, function.register_types[!arg]) + mir_c_mark_uninit(arg, checked) + "\n"
 			return code + mir_c_store_owned(types, instruction.dst, dst_type, "record", checked) + "\t}\n"
 		var code = result + "\t{ S_MirRecord *record;\n"
-		if op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+		if (op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE) and not mir_c_union_small_payload(types, dst_type)
 			let union_type = function.register_types[!instruction.immediate]
-			var condition = "#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n"
-			if mir_c_union_small_payload(types, dst_type)
-				condition = "#if defined(SIRIUS_EXPERIMENTAL_UNION_COALLOC) || defined(SIRIUS_EXPERIMENTAL_UNION_HYBRID)\n"
+			let condition = "#ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC\n"
 			code = code + condition + "\t\trecord = s_mir_record_new_fused(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ", " + str(union_type) + ");\n#else\n"
-		code = code + "\t\trecord = s_mir_record_new(" + str(dst_type) + ", " + str(len(instruction.inputs)) + ");\n"
-		if op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE
+		var slots = len(instruction.inputs)
+		# Fresh scalar alternatives reserve the tag slot for consuming injection.
+		if (op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE) and mir_c_union_small_payload(types, dst_type)
+			slots += 1
+		code = code + "\t\trecord = s_mir_record_new(" + str(dst_type) + ", " + str(slots) + "); record->length = " + str(len(instruction.inputs)) + ";\n"
+		if (op == Mir.MIR_RECORD_NEW_FUSED or op == Mir.MIR_RECORD_NEW_FUSED_MOVE) and not mir_c_union_small_payload(types, dst_type)
 			code = code + "#endif\n"
 		for i in 0..len(instruction.inputs)
 			let arg = instruction.inputs[!i]
@@ -1568,7 +1610,14 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.
 	for i in 0..len(function.blocks)
 		let block = function.blocks[!i]
 		parts = parts.append("block" + str(i) + ": ;\n")
-		for instruction in block.instructions
+		for position in 0..len(block.instructions)
+			let instruction = block.instructions[!position]
+			var fresh_payload = false
+			if position > 0 and instruction.op == Mir.MIR_UNION_NEW
+				let previous = block.instructions[!position - 1]
+				# Verified fused construction is followed by injection and release;
+				# the payload register is never observed again before that release.
+				fresh_payload = previous.op == Mir.MIR_RECORD_NEW_FUSED or previous.op == Mir.MIR_RECORD_NEW_FUSED_MOVE
 			if instruction.op == Mir.MIR_PRINT or instruction.op == Mir.MIR_EPRINT
 				parts = parts.append(mir_c_check(instruction.first, checked))
 				var prefix = "s_print_"
@@ -1583,7 +1632,7 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.
 				else
 					parts = parts.append("\t" + prefix + "i64(" + mir_c_register(instruction.first) + ");\n")
 			else
-				parts = parts.append(mir_c_instruction(instruction, function, program, checked))
+				parts = parts.append(mir_c_instruction(instruction, function, program, checked, fresh_payload))
 		# At the end of a basic block, no partially constructed heap values remain.
 		# Audit all active frame roots and scanned heap edges, independently of retains.
 		parts = parts.append("\ts_arc_audit_check_frames();\n")

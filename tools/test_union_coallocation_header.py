@@ -17,14 +17,14 @@ from build_support import BuildCache
 from project_paths import executable_path
 
 
-SOURCE = '''rec Small(value: i64)
+SOURCE = '''rec Small(value: i64, a: i64, b: i64, c: i64)
 rec Large(value: i64, tag: string)
 let Choice = Small | Large
 
 def main() -> i64
-\tlet x: Choice = Small(4)
+\tlet x: Choice = Small(4, 0, 0, 0)
 \tmatch x
-\t\tSmall(value)
+\t\tSmall(value, a, b, c)
 \t\t\treturn value
 \t\tLarge(value, tag)
 \t\t\treturn 0
@@ -39,7 +39,7 @@ _Static_assert(sizeof(S_MirRecord) == sizeof(ExpectedHeader),
 
 int main(int argc, char **argv) {
 #ifdef SIRIUS_EXPERIMENTAL_UNION_COALLOC
-    S_MirRecord *payload = s_mir_record_new_fused(RECORD_ID, 1, UNION_ID);
+    S_MirRecord *payload = s_mir_record_new_fused(RECORD_ID, 4, UNION_ID);
     payload->fields[0].bits = 17;
     S_MirRecord *wrapper = s_mir_fused_wrapper(payload);
     wrapper->fields[0].bits = 0;
@@ -62,7 +62,7 @@ def check(cc: str, compiler: Path, sanitize: bool) -> None:
         src.write_text(SOURCE, encoding='utf-8')
         subprocess.run([str(compiler), str(src), str(c)], check=True)
         content = c.read_text(encoding='utf-8')
-        ids = re.search(r'record = s_mir_record_new_fused\((\d+), 1, (\d+)\)', content)
+        ids = re.search(r'record = s_mir_record_new_fused\((\d+), 4, (\d+)\)', content)
         if not ids:
             raise AssertionError('MIR did not select the fresh-record fusion path')
         old_main = 'int main(int argc, char **argv)'
