@@ -348,7 +348,7 @@ def mir_credit_children(program: Mir.MirProgram, function: Mir.MirFunction, ins:
 def mir_credit_projection(program: Mir.MirProgram, function: Mir.MirFunction, ins: Mir.MirInstruction, before: Array[i64], after: Array[i64], shapes: Array[MirCreditShape]) -> string
 	var owner = ins.first
 	var child_type = function.register_types[!ins.dst]
-	if ins.op == Mir.MIR_UNION_NEW
+	if ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_NEW_MOVE
 		if owner == -1
 			return ""
 		child_type = function.register_types[!owner]
@@ -377,7 +377,10 @@ def mir_credit_projection(program: Mir.MirProgram, function: Mir.MirFunction, in
 		return ""
 	if mir_ownership_get(before, owner) == 0
 		return "projection has no source credit"
-	if owner != ins.dst and mir_ownership_get(after, owner) != mir_ownership_get(before, owner)
+	if ins.op == Mir.MIR_UNION_NEW_MOVE
+		if mir_ownership_get(after, owner) != 0
+			return "union move retained source credit"
+	elif owner != ins.dst and mir_ownership_get(after, owner) != mir_ownership_get(before, owner)
 		return "projection consumed parent/child credit"
 	if mir_ownership_get(after, ins.dst) == 0
 		return "projection did not acquire an owned result"
@@ -397,7 +400,7 @@ def mir_credit_heap_function(program: Mir.MirProgram, function: Mir.MirFunction,
 					error = mir_credit_call(program, function, ins, before, after, shapes)
 				elif ins.op == Mir.MIR_RECORD_NEW or ins.op == Mir.MIR_RECORD_NEW_MOVE or ins.op == Mir.MIR_RECORD_NEW_FUSED or ins.op == Mir.MIR_RECORD_NEW_FUSED_MOVE or ins.op == Mir.MIR_ARRAY_NEW or ins.op == Mir.MIR_ARRAY_NEW_MOVE or ins.op == Mir.MIR_RECORD_SET or ins.op == Mir.MIR_ARRAY_SET or ins.op == Mir.MIR_ARRAY_APPEND or ins.op == Mir.MIR_RECORD_ARRAY_APPEND or ins.op == Mir.MIR_DICT_INSERT
 					error = mir_credit_children(program, function, ins, before, after, shapes)
-				elif ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_GET or ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
+				elif ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_NEW_MOVE or ins.op == Mir.MIR_UNION_GET or ins.op == Mir.MIR_OPTIONAL_SOME or ins.op == Mir.MIR_OPTIONAL_UNWRAP or ins.op == Mir.MIR_RECORD_GET or ins.op == Mir.MIR_ARRAY_GET or ins.op == Mir.MIR_ARRAY_GET_OPTIONAL or ins.op == Mir.MIR_DICT_GET_OR or ins.op == Mir.MIR_DICT_GET_OPTIONAL or ins.op == Mir.MIR_DICT_KEY or ins.op == Mir.MIR_DICT_VALUE
 					error = mir_credit_projection(program, function, ins, before, after, shapes)
 				if error != ""
 					return error + " in block " + str(block_id)

@@ -112,7 +112,11 @@ The default payload-bearing union layout has a separately refcounted wrapper
 and record payload. `MIR_RECORD_NEW_FUSED` expresses a constructor hint;
 `SIRIUS_EXPERIMENTAL_UNION_COALLOC` can put wrapper and payload in one
 allocation **with two independent ARC identities**, but is opt-in and not the
-default layout. All-empty-record unions avoid the wrapper entirely (although extracting
+default layout. The opt-in `SIRIUS_EXPERIMENTAL_UNION_HYBRID`
+variant coallocates only fresh scalar-record alternatives with at most three
+fields and leaves wider/managed alternatives separately boxed. It retains
+two ARC identities, the existing union pointer ABI and the current array
+element storage; it is not a true inline-array representation. All-empty-record unions avoid the wrapper entirely (although extracting
 an empty record payload currently materializes a record). `Fn`
 values are noncapturing references and need no closure environment or ARC.
 The runtime also has generic `S_Array` and scalar-specialized helpers; those
@@ -132,6 +136,7 @@ See `runtime/sirius_runtime.c` and `runtime/sirius_runtime.h`.
 | `MIR_RECORD_GET`, `MIR_ARRAY_GET`, optional/dictionary reads | Borrow container | Copy selected value into an owned destination: normally retain its managed storage, or copy inline fields plus their credits; source keeps its ownership |
 | `MIR_DICT_KEY`, `MIR_DICT_VALUE` | Borrow dictionary at a valid read-only cursor | Retain projected managed key/value; source and snapshots retain their credits |
 | `MIR_UNION_NEW`, `MIR_UNION_TAG`, `MIR_UNION_GET` | Constructor borrows a payload, tag read borrows; payload projection borrows wrapper | Managed union owns its selected record payload; reading the payload produces a new owned result; payload-free enum remains an unowned tag |
+| `MIR_UNION_NEW_MOVE` | Consume a last-use owned record payload | Transfer the payload credit into a non-enum wrapper without a retain/release pair; invalidate the payload register |
 | `MIR_FUNCTION_REF`, `MIR_CALL_INDIRECT` | Function reference is a non-owning scalar; indirect arguments are borrowed | Callee receives retained managed arguments and returns an owned value, like a direct call |
 | `MIR_OPTIONAL_SOME` / `NONE` | Borrow payload / no payload | Create owned optional; `SOME` retains managed payload |
 | `MIR_RECORD_SET`, `MIR_ARRAY_SET`, append, `MIR_DICT_INSERT` | Consume parent; borrow replacement / key / value | Retain incoming managed child; perform CoW if shared; release displaced child on replacement; return owned parent |
@@ -183,7 +188,7 @@ intervals cannot overlap, including across CFG joins and moved values.
 These are implemented, not merely proposed:
 
 * **Move-aware MIR:** local last-use `COPY`/`RETAIN` + `RELEASE` folding;
-  `MIR_MOVE`, `MIR_CALL_MOVE`, moving record/array constructors, consuming
+  `MIR_MOVE`, `MIR_CALL_MOVE`, moving record/array/union constructors, consuming
   CoW updates, and register-slot reuse based on non-overlapping ownership
   intervals. The ownership verifier still checks the resulting MIR.
 * **Unique-root CoW:** native records/arrays and dictionaries reuse owned

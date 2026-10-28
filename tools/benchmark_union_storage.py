@@ -3,7 +3,11 @@
 
 This is an isolated C11 prototype, not a Sirius compiler backend. Measurements
 include allocation, traversal, copying a CoW-detached array, updating one
-alternative, and ARC-like retain/release in each model. Managed values, the
+alternative, and ARC-like retain/release in each model. 'register-boxed'
+models a register-inline union whose array representation remains pointer-
+boxed: it should match 'current' allocation counts, unlike an inline array.
+The standalone 'fused' model has one RC identity and is NOT the compiler's
+coallocation experiment, which preserves separately owned payload records. Managed values, the
 MIR interpreter, package layouts, and generated code are deliberately excluded.
 """
 import argparse
@@ -22,7 +26,7 @@ CASES = {
     'small-sparse': (6, 64),
     'wide-sparse': (100, 64),
 }
-MODELS = ('current', 'fused', 'inline')
+MODELS = ('current', 'fused', 'inline', 'register-boxed')
 
 
 def build(cc: str, binary: Path, opt: int) -> None:
@@ -84,18 +88,31 @@ def main() -> None:
             checksums = {r['checksum'] for runs in results.values() for r in runs}
             if len(checksums) != 1:
                 raise AssertionError(f'{case_name}: output mismatch: {checksums}')
+            expected_allocations = {
+                'current': 2 * (args.count + args.clones),
+                'register-boxed': 2 * (args.count + args.clones),
+                'fused': args.count + args.clones,
+                'inline': 0,
+            }
+            for model, runs in results.items():
+                for sample in runs:
+                    if sample['allocations'] != expected_allocations[model]:
+                        raise AssertionError(f'{case_name} {model}: unexpected allocations '
+                                             f'{sample["allocations"]}')
+            if results['current'][0]['peak_bytes'] != results['register-boxed'][0]['peak_bytes']:
+                raise AssertionError(f'{case_name}: boxing altered container memory footprint')
             med = {model: {field: statistics.median(r[field] for r in results[model])
                            for field in ('construction', 'traversal', 'cow', 'cleanup', 'total')}
                    for model in MODELS}
             baseline = med['current']['total']
             print(f'\n{case_name} (maximum payload {max_words} x i64, '
                   f'1/{period} wide): checksum={checksums.pop()}')
-            print('  model      total ms   build ms   scan ms    CoW ms  free ms   '
+            print('  model           total ms   build ms   scan ms    CoW ms  free ms   '
                   'vs current    allocs   peak MiB')
             for model in MODELS:
                 entry = med[model]
                 sample = results[model][0]
-                print(f"  {model:9} {entry['total'] * 1000:8.2f} "
+                print(f"  {model:14} {entry['total'] * 1000:8.2f} "
                       f"{entry['construction'] * 1000:10.2f} "
                       f"{entry['traversal'] * 1000:9.2f} "
                       f"{entry['cow'] * 1000:9.2f} "
@@ -104,6 +121,7 @@ def main() -> None:
                       f"{sample['allocations']:9,} "
                       f"{sample['peak_bytes'] / 1048576:10.1f}")
     print('\nMeasured C model only; not a Sirius native/MIR performance claim.')
+    print('The enums row is a generic C-layout control: actual Sirius payload-free enums already use i64.')
 
 
 if __name__ == '__main__':

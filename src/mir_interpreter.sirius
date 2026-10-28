@@ -217,7 +217,7 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					success = 1
 				registers[!ins.dst] = Mir.new_mir_value(Types.TYPE_TAG_BOOL, success, "")
 				continue
-			if ins.op == Mir.MIR_UNION_NEW
+			if ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_NEW_MOVE
 				if ins.first == -1
 					let alternatives = program.types.entries[!function.register_types[!ins.dst]].fields
 					if not Types.union_is_enum(program.types, function.register_types[!ins.dst]) or ins.second < 0 or ins.second >= len(alternatives) or alternatives[!ins.second].name == ""
@@ -240,7 +240,10 @@ def mir_execute_function_owned(program: Mir.MirProgram, function_id: i64, argume
 					heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 					registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], tag, "")
 					continue
-				heap = mir_heap_copy(program.types, heap, payload)
+				if ins.op == Mir.MIR_UNION_NEW_MOVE
+					registers[!ins.first] = Mir.new_mir_value(Types.TYPE_TAG_INVALID, 0, "")
+				else
+					heap = mir_heap_copy(program.types, heap, payload)
 				heap = mir_heap_drop(program.types, heap, registers[!ins.dst])
 				registers[!ins.dst] = Mir.new_mir_value(function.register_types[!ins.dst], len(heap), "")
 				heap = heap.append(Mir.MirHeapRecord(function.register_types[!ins.dst], [Mir.new_mir_value(Types.TYPE_TAG_I64, tag, ""), payload], 1))

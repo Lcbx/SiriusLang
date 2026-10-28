@@ -1,0 +1,119 @@
+import mir alias Mir
+import mir_emit_c alias Emit
+import mir_interpreter alias Interpreter
+import mir_opt alias Opt
+import mir_ownership alias Ownership
+import mir_verify alias Verify
+import mir_wire alias Wire
+import types alias Types
+
+# The extra string-length instruction prevents the existing fresh-record
+# coallocation peephole from hiding this independent union-payload transfer.
+def fixture(share: bool) -> Mir.MirProgram
+	let record = Types.intern_record_type(Types.new_type_table(), [Types.RecordField("value", Types.TYPE_TAG_STRING)])
+	let other = Types.intern_record_type(record.table, [Types.RecordField("number", Types.TYPE_TAG_I64)])
+	let tagged = Types.intern_union_type(other.table, [record.id, other.id])
+	var code = [
+		Mir.mir_string(0, "hello"),
+		Mir.mir_record_new(1, [0]),
+		Mir.mir_op(Mir.MIR_STRING_LENGTH, 2, 0, -1, 0),
+		Mir.mir_union_new(3, 1),
+	]
+	if share
+		# The wrapper is created before the payload's final use. No move.
+		code = code.append(Mir.mir_record_get(4, 1, 0))
+		code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 4, 4, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0))
+	code = code.append(Mir.mir_union_get(5, 3))
+	code = code.append(Mir.mir_record_get(6, 5, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_STRING_LENGTH, 7, 6, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 6, 6, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 5, 5, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 3, 3, -1, 0))
+	code = code.append(Mir.mir_op(Mir.MIR_RELEASE, 0, 0, -1, 0))
+	let types = [Types.TYPE_TAG_STRING, record.id, Types.TYPE_TAG_I64, tagged.id, Types.TYPE_TAG_STRING, record.id, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64]
+	let runner = Mir.MirFunction(0, Types.TYPE_TAG_I64, types, [Mir.MirBlock(code, Mir.mir_return(7))], 0)
+	return Mir.mir_program_with_types([runner], tagged.table)
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 4
+		return 1
+	for shared in [false, true]
+		let program = fixture(shared)
+		if Verify.mir_verify(program) != "" or Ownership.mir_check_balance(program) != ""
+			return 2
+		let changed = Opt.mir_optimize_unchecked(program)
+		if Ownership.mir_check_balance(changed.program) != "" or Verify.mir_verify(changed.program) != ""
+			return 3
+		var count = 0
+		for instruction in changed.program.functions[!0].blocks[!0].instructions
+			if instruction.op == Mir.MIR_UNION_NEW_MOVE
+				count += 1
+		var expected = 1
+		if shared
+			expected = 0
+		if count != expected or changed.moves != expected
+			return 4
+		if Opt.mir_optimize_unchecked(changed.program).moves != 0
+			return 5
+		let baseline = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 200, 10)
+		let executed = Interpreter.mir_execute(changed.program, 0, Array[Mir.MirValue](), 200, 10)
+		if baseline.error != "" or executed.error != "" or baseline.value.bits != 5 or executed.value.bits != 5
+			return 6
+		for entry in executed.heap
+			if entry.refs != 0
+				return 7
+		let wire = Wire.mir_serialize_program(changed.program, 0)
+		if wire.error != ""
+			return 8
+		let decoded = Wire.mir_deserialize_program(wire.text)
+		if decoded.error != "" or Ownership.mir_check_balance(decoded.program) != ""
+			return 9
+		let replay = Interpreter.mir_execute(decoded.program, 0, Array[Mir.MirValue](), 200, 10)
+		if replay.error != "" or replay.value.bits != 5
+			return 10
+		let emitted = Emit.mir_emit_c(changed.program, 0)
+		if emitted.error != ""
+			return 11
+		var path = args[!1]
+		if shared
+			path = args[!2]
+		if not write_text(path, emitted.code)
+			return 12
+		if not shared and (emitted.code.find("s_mir_record_retain(r1)") or (-1)) != -1
+			return 13
+		if not shared
+			let before = Emit.mir_emit_c(program, 0)
+			if before.error != "" or not write_text(args[!3], before.code)
+				return 15
+	# The established fused-allocation hint must keep its adjacent wrapper and
+	# source release; rewriting it into UNION_NEW_MOVE would break that contract.
+	var fused = fixture(false)
+	var fun = fused.functions[!0]
+	var block = fun.blocks[!0]
+	var shortened = Array[Mir.MirInstruction]()
+	for at in 0..len(block.instructions)
+		if at != 2
+			shortened = shortened.append(block.instructions[!at])
+	block.instructions = shortened
+	fun.blocks[!0] = block
+	fused.functions[!0] = fun
+	let fused_optimized = Opt.mir_optimize_unchecked(fused)
+	if fused_optimized.moves != 0 or Ownership.mir_check_balance(fused_optimized.program) != "" or Verify.mir_verify(fused_optimized.program) != ""
+		return 16
+	let fused_code = fused_optimized.program.functions[!0].blocks[!0].instructions
+	if fused_code[!1].op != Mir.MIR_RECORD_NEW_FUSED or fused_code[!2].op != Mir.MIR_UNION_NEW or fused_code[!3].op != Mir.MIR_RELEASE
+		return 17
+	let fused_result = Interpreter.mir_execute(fused_optimized.program, 0, Array[Mir.MirValue](), 200, 10)
+	if fused_result.error != "" or fused_result.value.bits != 5
+		return 18
+	for entry in fused_result.heap
+		if entry.refs != 0
+			return 19
+	let valid = fixture(false)
+	let function = valid.functions[!0]
+	if Verify.mir_verify_instruction(valid, function, Mir.mir_op(Mir.MIR_UNION_NEW_MOVE, 3, -1, 0, 0)) == ""
+		return 14
+	print("PASS union last-use transfer")
+	return 0

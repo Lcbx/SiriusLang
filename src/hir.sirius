@@ -191,7 +191,10 @@ export def new_hir_function_decl(name: string, source: i64, body: i64, construct
 # by index, so nested values need no recursive runtime representation.
 export rec HirModuleConstant(name: string, value: i64, type_id: i64)
 export rec HirConstantValue(type_id: i64, bits: i64, fields: Array[i64], text: string)
-export rec HirConstantEval(table: Types.TypeTable, values: Array[HirConstantValue], index: i64, valid: bool)
+export rec HirConstantFound(index: i64)
+export rec HirConstantUnavailable()
+export let HirConstantOutcome = HirConstantFound | HirConstantUnavailable
+export rec HirConstantEval(table: Types.TypeTable, values: Array[HirConstantValue], outcome: HirConstantOutcome)
 export rec HirConstantField(name: string, value: i64)
 export rec HirImport(path: string, alias: string)
 export rec HirReexport(alias: string, name: string, public_name: string)

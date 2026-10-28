@@ -28,7 +28,7 @@ def main() -> None:
 		bad = Path(directory) / 'ambiguous.c'
 		from subprocess import run
 		result = run([str(compiler), str(ambiguous), str(bad)], capture_output=True, text=True)
-		if result.returncode == 0 or 'expected union, found record' not in result.stderr:
+		if result.returncode == 0 or 'expected union, found record' not in (result.stdout + result.stderr):
 			raise AssertionError(f'expected ambiguous record injection rejection: {result}')
 	# Same-shaped labeled alternatives require explicit tags in both backends.
 	labeled_driver = cache.native_driver('mir-labeled-union', ROOT / 'tests/mir/labeled_union_driver_native.sirius')
@@ -38,7 +38,7 @@ def main() -> None:
 		result = execute([str(labeled_driver), str(valid), str(invalid)])
 		if result.stdout != 'PASS labeled union MIR tags, interpreter, serialization and ownership\n':
 			raise AssertionError(result.stdout)
-		check_native(cache, valid, code=4)
+		check_native(cache, valid, code=2)
 		check_native(cache, invalid, code=None, stderr_contains=b'union variant mismatch')
 	print('PASS union MIR and Sirius source: ownership, interpreter and native C')
 

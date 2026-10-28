@@ -21,7 +21,9 @@ export rec ModuleScanResult(visited: Array[string], error: string, units: Array[
 
 export def new_module_scan_result(visited: Array[string], error: string, units: Array[ModuleScanUnit]) -> ModuleScanResult
 	return ModuleScanResult(visited, error, units, "")
-rec ModuleScanType(text: string, valid: bool)
+rec ModuleScanTypeValid(text: string)
+rec ModuleScanTypeInvalid()
+let ModuleScanType = ModuleScanTypeValid | ModuleScanTypeInvalid
 
 # Import dependency interfaces into a private HIR declaration context. This
 # path is shared by export-signature resolution and actual module compilation.
@@ -618,22 +620,23 @@ export def module_scan_reserved(name: string) -> bool
 
 def module_scan_type(tree: Parser.ParseState, id: i64) -> ModuleScanType
 	if id < 0 or tree.nodes[!id].kind != Parser.NODE_TYPE
-		return ModuleScanType("", false)
+		return ModuleScanTypeInvalid()
 	let name = Hir.hir_ast_text(tree, id)
 	let count = tree.nodes[!id].count
 	if count == 0
-		return ModuleScanType(name, true) # Checked against the module TypeTable below.
+		return ModuleScanTypeValid(name) # Checked against the module TypeTable below.
 	if (name != "Array" and name != "Optional" and name != "Dict") or (name == "Dict" and count != 2) or (name != "Dict" and count != 1)
-		return ModuleScanType("", false)
+		return ModuleScanTypeInvalid()
 	var result = name + "["
 	for i in 0..count
-		let child = module_scan_type(tree, Hir.hir_ast_child(tree, id, i))
-		if not child.valid
-			return ModuleScanType("", false)
-		if i > 0
-			result += ", "
-		result += child.text
-	return ModuleScanType(result + "]", true)
+		match module_scan_type(tree, Hir.hir_ast_child(tree, id, i))
+			ModuleScanTypeInvalid()
+				return ModuleScanTypeInvalid()
+			ModuleScanTypeValid(child)
+				if i > 0
+					result += ", "
+				result += child
+	return ModuleScanTypeValid(result + "]")
 
 def module_scan_export(tree: Parser.ParseState, fn_decl: Hir.HirFunctionDecl) -> string
 	var params = ""
@@ -644,14 +647,16 @@ def module_scan_export(tree: Parser.ParseState, fn_decl: Hir.HirFunctionDecl) ->
 		if param.type_node < 0
 			params += param.name
 		else
-			let typ = module_scan_type(tree, param.type_node)
-			if not typ.valid
-				return ""
-			params += param.name + ": " + typ.text
-	let result = module_scan_type(tree, fn_decl.result_type_node)
-	if not result.valid
-		return ""
-	return fn_decl.name + "\t" + params + "\t" + result.text + "\n"
+			match module_scan_type(tree, param.type_node)
+				ModuleScanTypeInvalid()
+					return ""
+				ModuleScanTypeValid(text)
+					params += param.name + ": " + text
+	match module_scan_type(tree, fn_decl.result_type_node)
+		ModuleScanTypeInvalid()
+			return ""
+		ModuleScanTypeValid(text)
+			return fn_decl.name + "\t" + params + "\t" + text + "\n"
 
 # A build-local memo retains parsed sources and resolved typed interfaces across
 # discovery retries. It is never shared across builds: source or package changes
@@ -665,24 +670,30 @@ export def module_scan_empty_cache() -> ModuleScanCache
 
 # Parse each source at most once within a build. Both scanner and native builder
 # use the same parse/declaration path, but maintain their own traversal state.
-export rec ModuleScanParsed(index: i64, error: string, cache: ModuleScanCache, missing: bool)
+# A source lookup has exactly one outcome. A missing source may still be
+# resolved from a generic package; invalid source syntax must not fall back.
+export rec ModuleSourceFound(index: i64)
+export rec ModuleSourceMissing(error: string)
+export rec ModuleSourceInvalid(error: string)
+export let ModuleSourceOutcome = ModuleSourceFound | ModuleSourceMissing | ModuleSourceInvalid
+export rec ModuleScanParsed(outcome: ModuleSourceOutcome, cache: ModuleScanCache)
 
 export def module_scan_parse_cached(root: string, name: string, cache: ModuleScanCache) -> ModuleScanParsed
 	for i in 0..len(cache.sources)
 		if cache.sources[!i].name == name
-			return ModuleScanParsed(i, "", cache, false)
+			return ModuleScanParsed(ModuleSourceFound(i), cache)
 	let path = Module.module_scan_filename(root, name)
 	let text = read_text(path) or ""
 	if text == ""
-		return ModuleScanParsed(-1, "module " + name + " not found under source root: " + path, cache, true)
+		return ModuleScanParsed(ModuleSourceMissing("module " + name + " not found under source root: " + path), cache)
 	let parsed = Parser.parse_module(text)
 	if parsed.state.error != ""
-		return ModuleScanParsed(-1, name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error, cache, false)
+		return ModuleScanParsed(ModuleSourceInvalid(name + ":" + str(parsed.state.error_line) + ": " + parsed.state.error), cache)
 	let declarations = HirDeclarations.hir_module_declarations(parsed.state, parsed.node)
 	if declarations.error != ""
-		return ModuleScanParsed(-1, name + ":" + str(declarations.error_line) + ": " + declarations.error, cache, false)
+		return ModuleScanParsed(ModuleSourceInvalid(name + ":" + str(declarations.error_line) + ": " + declarations.error), cache)
 	let updated = ModuleScanCache(cache.sources.append(ModuleScanSource(name, path, parsed.state, declarations)), cache.completed)
-	return ModuleScanParsed(len(cache.sources), "", updated, false)
+	return ModuleScanParsed(ModuleSourceFound(len(cache.sources)), updated)
 
 # The standalone scanner uses an empty cache; the native builder carries it
 # across retries while resolving missing packages.
@@ -712,13 +723,18 @@ def module_scan_visit_cached(root: string, name: string, visiting: Array[string]
 			let result = current.result
 			return ModuleScanCached(new_module_scan_result(result.visited.append(name), "", result.units.append(package)), current.cache)
 	let parsed = module_scan_parse_cached(root, name, state.cache)
-	if parsed.error != ""
-		var failed = new_module_scan_result(done, parsed.error, units)
-		if parsed.missing
-			failed.missing = name
-		return ModuleScanCached(failed, parsed.cache)
+	var source_index = -1
+	match parsed.outcome
+		ModuleSourceFound(index)
+			source_index = index
+		ModuleSourceMissing(message)
+			let previous = state.result
+			let failed = {previous.*, error = message, missing = name}
+			return ModuleScanCached(failed, parsed.cache)
+		ModuleSourceInvalid(message)
+			return ModuleScanCached(new_module_scan_result(done, message, units), parsed.cache)
 	var current = ModuleScanCached(state.result, parsed.cache)
-	let source = current.cache.sources[!parsed.index]
+	let source = current.cache.sources[!source_index]
 	let path = source.path
 	let tree = source.tree
 	let decl = source.declarations

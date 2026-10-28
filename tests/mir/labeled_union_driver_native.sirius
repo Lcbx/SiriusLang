@@ -48,7 +48,7 @@ def main() -> i64
 		print("ownership: " + checked)
 		return 3
 	let executed = Interpreter.mir_execute(program, 0, Array[Mir.MirValue](), 100, 10)
-	if executed.error != "" or executed.value.bits != 4
+	if executed.error != "" or executed.value.bits != 2
 		print("interpreter: " + executed.error)
 		return 4
 	for item in executed.heap
@@ -61,7 +61,7 @@ def main() -> i64
 	if decoded.error != "" or Wire.mir_serialize_program(decoded.program, 0).text != serialized.text
 		return 7
 	let replay = Interpreter.mir_execute(decoded.program, decoded.entry, Array[Mir.MirValue](), 100, 10)
-	if replay.error != "" or replay.value.bits != 4
+	if replay.error != "" or replay.value.bits != 2
 		return 8
 	let function = program.functions[!0]
 	# The legacy payload-only op and invalid or mismatched tags are rejected.
@@ -83,7 +83,7 @@ def main() -> i64
 	var bad = program
 	var bad_function = bad.functions[!0]
 	var bad_block = bad_function.blocks[!0]
-	bad_block.instructions[!6] = Mir.mir_union_get_labeled(6, 3, 0)
+	bad_block.instructions[!6] = Mir.mir_union_get_labeled(6, 3, 1)
 	bad_function.blocks[!0] = bad_block
 	bad.functions[!0] = bad_function
 	if Verify.mir_verify(bad) != ""

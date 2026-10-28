@@ -21,7 +21,7 @@ def main() -> None:
         folder = Path(directory)
         for stem in ('40_record_value_slots', '41_inline_scalar_record'):
             source = ROOT / 'tests/language/fixtures' / f'{stem}.sirius'
-            expected = (ROOT / 'tests/language/expected_output' / f'{stem}.txt').read_bytes()
+            expected = normalize_newlines((ROOT / 'tests/language/expected_output' / f'{stem}.txt').read_bytes())
             generated = folder / f'{stem}.c'
             execute([str(compiler), str(source), str(generated)])
             # The new fixture must actually use inline native registers, not

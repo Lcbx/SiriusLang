@@ -17,9 +17,9 @@ def main() -> i64
 	if colors.id == Types.TYPE_TAG_INVALID or not Types.type_descriptor_canonical(colors.table, colors.id)
 		return 2
 	let ordered = Types.intern_labeled_union_type(colors.table, [Types.RecordField("Blue", empty.id), Types.RecordField("Green", empty.id), Types.RecordField("Red", empty.id)])
-	if ordered.id != colors.id or len(ordered.table.entries) != len(colors.table.entries)
+	if ordered.id == colors.id or len(ordered.table.entries) != len(colors.table.entries) + 1
 		return 3
-	if Types.union_labeled_alternative_index(colors.table, colors.id, "Blue", empty.id) != 0 or Types.union_labeled_alternative_index(colors.table, colors.id, "Red", empty.id) != 2
+	if Types.union_labeled_alternative_index(colors.table, colors.id, "Blue", empty.id) != 2 or Types.union_labeled_alternative_index(colors.table, colors.id, "Red", empty.id) != 1
 		return 4
 	if Types.union_labeled_alternative_index(colors.table, colors.id, "Blue", wrapped.id) != -1 or Types.union_labeled_alternative_index(colors.table, colors.id, "Yellow", empty.id) != -1
 		return 5
@@ -34,7 +34,7 @@ def main() -> i64
 		return 9
 	if Types.intern_labeled_union_type(length.table, [Types.RecordField("Red", Types.TYPE_TAG_I64), Types.RecordField("Green", empty.id)]).id != Types.TYPE_TAG_INVALID
 		return 10
-	if Types.intern_type(length.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("Red", empty.id), Types.RecordField("Blue", empty.id)]).id != Types.TYPE_TAG_INVALID
+	if Types.intern_type(length.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("Red", empty.id), Types.RecordField("Red", empty.id)]).id != Types.TYPE_TAG_INVALID
 		return 11
 	if Types.intern_type(length.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("", empty.id), Types.RecordField("Blue", empty.id)]).id != Types.TYPE_TAG_INVALID
 		return 12
@@ -44,7 +44,10 @@ def main() -> i64
 	let imported = Interface.module_import_type(length.table, foreign_length.table, foreign_length.id)
 	if imported.id != length.id or Module.mir_type_signature(length.table, length.id) != Module.mir_type_signature(foreign_length.table, foreign_length.id)
 		return 13
-	let different = Types.intern_labeled_union_type(length.table, [Types.RecordField("Yards", wrapped.id), Types.RecordField("Feet", wrapped.id)])
+	let reordered = Types.intern_labeled_union_type(length.table, [Types.RecordField("Feet", wrapped.id), Types.RecordField("Meters", wrapped.id)])
+	if reordered.id == length.id or Module.mir_type_signature(reordered.table, reordered.id) == Module.mir_type_signature(length.table, length.id)
+		return 21
+	let different = Types.intern_labeled_union_type(reordered.table, [Types.RecordField("Yards", wrapped.id), Types.RecordField("Feet", wrapped.id)])
 	if different.id == length.id or Module.mir_type_signature(different.table, different.id) == Module.mir_type_signature(length.table, length.id)
 		return 14
 	let old_union = Types.intern_union_type(length.table, [empty.id, wrapped.id])
@@ -63,7 +66,7 @@ def main() -> i64
 	let decoded = Wire.mir_deserialize_program(encoded.text)
 	if decoded.error != "" or Wire.mir_serialize_program(decoded.program, 0).text != encoded.text
 		return 18
-	if Types.union_labeled_alternative_index(decoded.program.types, colors.id, "Red", empty.id) != 2
+	if Types.union_labeled_alternative_index(decoded.program.types, colors.id, "Red", empty.id) != 1
 		return 19
 	# Existing payload-only MIR injection cannot guess the label.
 	let legacy_instruction = Mir.mir_union_new(1, 0)

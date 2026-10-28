@@ -37,6 +37,23 @@ the canonical `Types.runtime_ownership()` classification through
 `mir_managed_type`. The isolated floating-point literal parser has moved out of the interpreter without
 changing its parsing algorithm or the MIR wire format.
 
+## Token-kind union boundary
+
+`tokenizer.TokenKind` is an exhaustive, labeled union used when classifying
+lexical kinds and reporting errors. The tokenizer retains `Token.kind: i64`
+for now: its signed codes are part of the existing token and generic-AST
+serialization contract, and numeric field access remains pervasive in parser,
+module scanning and HIR lowering. `token_kind_from_code` converts numeric
+codes into the tagged view, while `token_kind_code` maps back explicitly. An
+unrecognized code maps to `TkUnknown`, not to a valid source token.
+`token_is_error` and `token_label` use exhaustive matches.
+
+The zero-based `TokenKind.index(TkName)` discriminant is **not** the old
+`TOKEN_NAME` numeric code. Do not serialize a union discriminant in place of
+an existing token code. Converting `Token.kind`, AST `Node.kind`, HIR operations
+or MIR operations to tagged storage must be a measured, separately verified
+schema change; all of those fields currently retain their numeric layout.
+
 ## Using current Sirius constructs
 
 Prefer constructing records directly when all fields are available, and use
@@ -44,6 +61,50 @@ record spreads for updates that must preserve other fields. In particular,
 module-qualified name rewriting now shares one AST update path: conversions
 from attributes to names discard child edges, while type and `match` patterns
 retain their existing children and bindings.
+HIR overload selection now uses an exhaustive outcome union (`found`, `absent`,
+`rejected`) instead of a negative index combined with an error string. The
+resolved type table remains in its containing record because overload
+annotation lookup may intern new types. This is a local representation change;
+AST and MIR opcode storage remain unchanged.
+
+HIR match exhaustiveness checks now return a tagged outcome (`complete`,
+`invalid arm`, `repeated alternative`, or `missing alternative`) rather than a
+string error and an optional sentinel TypeId. Both the record-TypeId and
+label-index entry points share the same checking implementation. Callers
+handle all outcomes exhaustively; existing source diagnostics are unchanged.
+
+Callback inference now uses a distinct tagged result (`resolved`,
+`underdetermined`, `conflicting`, or `cyclic`) at HIR call sites, handled with
+exhaustive matches. The recursive callback probe retains its independent
+signature, conflict and cycle facts: those may coexist while exploring
+forwarding paths, so forcing them into a single traversal-state variant would
+lose information. The result priority remains conflict, resolved signature,
+cycle, then underdetermined. Neither HIR/MIR serialization nor callback
+calling conventions change.
+
+Additional independent success/failure results are now explicit:
+
+- `HirRecordEdit` keeps edited fields outside a `HirRecordUpdated(index)` /
+  `HirRecordEditError(message)` outcome. Callers match before using changed
+  fields; the successful index may be negative for an append or whole spread.
+- `HirConstantEval` retains its type/value arenas and returns either
+  `HirConstantFound(index)` or `HirConstantUnavailable()`. The latter represents
+  an expression that cannot be evaluated as a module constant, not a runtime
+  error. Recursive evaluation propagates this result exhaustively.
+- Shared HIR/MIR literal decoding returns `HirStringDecoded(value)` or
+  `HirStringDecodeError(message)`; the MIR backend no longer reconstructs a
+  second error-string result record.
+- Module export signature formatting returns `ModuleScanTypeValid(text)` or
+  `ModuleScanTypeInvalid()`. Invalid syntax remains distinguishable from an
+  empty type spelling, including for nested array/dictionary/optional types.
+
+This refactor deliberately leaves incremental analyzer state (`HirBodyState`,
+`HirModuleDecl`, and specialization worklists) as records, and leaves
+`HirCallCheck`, `HirResolution`, and parametric fast-path eligibility unchanged.
+These carry canonical typing/deferred-inference details across many callers;
+changing them requires a separate contract and regression analysis, rather
+than mechanically wrapping every field in a union. It also leaves compiler
+IR opcode integers unchanged.
 
 Sirius `match` is exhaustive dispatch on **tagged union values**, not a switch
 on arbitrary `i64` tags. MIR opcodes, terminator kinds and AST node kinds are
@@ -84,4 +145,6 @@ checks documentation links and rooted source/test file references. After any
 production compiler change, run `python tools/test_bootstrap.py` and regenerate
 `bootstrap/compiler.c` with `python tools/generate_bootstrap.py` only once
 self-hosting reaches a fixed point. Use `python tools/test_all.py` for the full
-suite; targeted MIR/dataflow tests are useful during small refactors.
+suite; `python tools/test_hir_overload_outcomes.py` exercises the overload
+outcome union directly; targeted MIR/dataflow tests are useful during small
+refactors.

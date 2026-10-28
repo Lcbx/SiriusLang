@@ -112,6 +112,25 @@ def mir_optimize_function(types: Types.TypeTable, function: Mir.MirFunction) -> 
 					moves += len(sources)
 					i = j
 					continue
+			# A last-use union payload can transfer its existing credit into the
+			# wrapper. Keep the fused-record sequence unchanged: its wrapper and
+			# payload have separate lifetime bookkeeping.
+			if ins.op == Mir.MIR_UNION_NEW and ins.first >= 0 and i + 1 < len(block.instructions)
+				let released = block.instructions[!i + 1]
+				var fused = false
+				if i > 0
+					let previous = block.instructions[!i - 1]
+					if (previous.op == Mir.MIR_RECORD_NEW_FUSED or previous.op == Mir.MIR_RECORD_NEW_FUSED_MOVE) and previous.dst == ins.first and previous.immediate == ins.dst
+						fused = true
+				if len(instructions) > 0
+					let previous = instructions[!len(instructions) - 1]
+					if (previous.op == Mir.MIR_RECORD_NEW_FUSED or previous.op == Mir.MIR_RECORD_NEW_FUSED_MOVE) and previous.dst == ins.first and previous.immediate == ins.dst
+						fused = true
+				if not fused and released.op == Mir.MIR_RELEASE and released.first == ins.first and not Types.union_is_enum(types, function.register_types[!ins.dst]) and Verify.mir_managed_type(types, function.register_types[!ins.first])
+					instructions = instructions.append(Mir.mir_union_new_move(ins))
+					i += 2
+					moves += 1
+					continue
 			if i + 1 < len(block.instructions) and (ins.op == Mir.MIR_COPY or ins.op == Mir.MIR_RETAIN) and ins.dst != ins.first and Verify.mir_managed_type(types, function.register_types[!ins.dst])
 				let next = block.instructions[!i + 1]
 				if next.op == Mir.MIR_RELEASE and next.first == ins.first

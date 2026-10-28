@@ -179,10 +179,9 @@ def type_descriptor_parts_canonical(id: i64, tag: i64, first: i64, second: i64, 
 		return second > TYPE_TAG_INVALID and second != TYPE_TAG_VOID and second < id
 	return false
 
-# Union alternatives have two distinct canonical encodings. Legacy unions are
-# unnamed and ordered by payload signature. Labeled unions are ordered by
-# unique labels, independent of payload shape (which can repeat). Mixed forms
-# are invalid; an unlabelled payload cannot select a labeled alternative.
+# Unnamed legacy unions use sorted payload signatures. Labeled alternatives
+# retain declaration order: that order determines tag numbers and is part of
+# the structural type identity. Labels must still be unique.
 def union_fields_canonical(table: TypeTable, fields: Array[RecordField]) -> bool
 	if len(fields) < 2
 		return false
@@ -195,12 +194,14 @@ def union_fields_canonical(table: TypeTable, fields: Array[RecordField]) -> bool
 		let signature = type_signature(table, member.kind)
 		if signature == "invalid"
 			return false
-		var key = signature
 		if labeled
-			key = member.name
-		if i > 0 and previous >= key
-			return false
-		previous = key
+			for j in 0..i
+				if fields[!j].name == member.name
+					return false
+		else
+			if i > 0 and previous >= signature
+				return false
+			previous = signature
 	return true
 
 # Canonical fields are sorted by the caller. Invalid construction leaves the
@@ -376,30 +377,20 @@ export def intern_union_type(table: TypeTable, alternatives: Array[i64]) -> Inte
 		fields = ordered
 	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
 
-# Labeled alternatives are structurally identified by (label, payload type).
-# Sorting by label makes tag indices stable across independent modules and
-# construction order. Duplicate labels are rejected even for different shapes.
-# This type-level API does not enable source-level variant construction yet.
+# Labeled alternatives are structurally identified by their ordered sequence
+# of (label, payload type) pairs. This preserves user-selected discriminants.
+# Reordering labels creates a distinct union type and type signature.
 export def intern_labeled_union_type(table: TypeTable, alternatives: Array[RecordField]) -> InternedType
 	if len(alternatives) < 2
 		return InternedType(table, TYPE_TAG_INVALID)
-	var fields = Array[RecordField]()
-	for alternative in alternatives
+	for i in 0..len(alternatives)
+		let alternative = alternatives[!i]
 		if alternative.name == "" or type_tag(table, alternative.kind) != TYPE_TAG_RECORD
 			return InternedType(table, TYPE_TAG_INVALID)
-		var at = 0
-		while at < len(fields) and fields[!at].name < alternative.name
-			at += 1
-		if at < len(fields) and fields[!at].name == alternative.name
-			return InternedType(table, TYPE_TAG_INVALID)
-		var ordered = Array[RecordField]()
-		for i in 0..at
-			ordered = ordered.append(fields[!i])
-		ordered = ordered.append(alternative)
-		for i in at..len(fields)
-			ordered = ordered.append(fields[!i])
-		fields = ordered
-	return intern_type(table, TYPE_TAG_UNION, 0, 0, fields)
+		for j in 0..i
+			if alternatives[!j].name == alternative.name
+				return InternedType(table, TYPE_TAG_INVALID)
+	return intern_type(table, TYPE_TAG_UNION, 0, 0, alternatives)
 
 # Explicit labels distinguish alternatives sharing the same structural payload.
 # A record can still be implicitly injected when exactly one alternative has

@@ -74,8 +74,6 @@ def instrument(source: str) -> str:
 		 '++s_mir_profile_dict_new;\n\tS_MirRecord *r = s_mir_record_new(id, 1); r->fields[0].dict = s_dict_new('),
 		('r = s_mir_record_unique_owned(r);\n\tr->fields[0].dict = s_dict_insert(',
 		 '++s_mir_profile_dict_insert;\n\tr = s_mir_record_unique_owned(r);\n\tr->fields[0].dict = s_dict_insert('),
-		('if (index < 0 || (uint64_t)index >= array->length) s_panic("array index out of bounds");\n\tarray = s_mir_record_unique_owned(array);',
-		 'if (index < 0 || (uint64_t)index >= array->length) s_panic("array index out of bounds");\n\t++s_mir_profile_array_set;\n\tarray = s_mir_record_unique_owned(array);'),
 		('S_MirRecord *optional = s_mir_record_new(optional_type, value ? 1 : 0);',
 		 '++s_mir_profile_optional;\n\tS_MirRecord *optional = s_mir_record_new(optional_type, value ? 1 : 0);'),
 	)
@@ -94,6 +92,18 @@ def instrument(source: str) -> str:
 	source = source.replace(clone_marker,
 		'\tif (record->type_id >= 0 && record->type_id < 4096) '
 		'++s_mir_profile_type_clones[record->type_id];\n' + clone_marker, 1)
+	# Array indexing changed from direct bounds checks to shared helpers when
+	# negative indices were introduced. Support both C emitter generations.
+	array_set_markers = (
+		('\tsize_t position = s_mir_array_index(array, index);\n\tarray = s_mir_record_unique_owned(array);',
+		 '\tsize_t position = s_mir_array_index(array, index);\n\t++s_mir_profile_array_set;\n\tarray = s_mir_record_unique_owned(array);'),
+		('if (index < 0 || (uint64_t)index >= array->length) s_panic("array index out of bounds");\n\tarray = s_mir_record_unique_owned(array);',
+		 'if (index < 0 || (uint64_t)index >= array->length) s_panic("array index out of bounds");\n\t++s_mir_profile_array_set;\n\tarray = s_mir_record_unique_owned(array);'),
+	)
+	matches = [(needle, replacement) for needle, replacement in array_set_markers if source.count(needle) == 1]
+	if len(matches) != 1:
+		raise ValueError('Expected exactly one generated array-set helper')
+	source = source.replace(*matches[0], 1)
 	for needle, replacement in replacements:
 		if source.count(needle) != 1:
 			raise ValueError(f'Expected exactly one generated MIR helper marker: {needle[:65]}')

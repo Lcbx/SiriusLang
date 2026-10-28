@@ -28,18 +28,91 @@ def main() -> i64
 		return 6
 	if Types.intern_union_type(union.table, [success.id, Types.TYPE_TAG_I64]).id != Types.TYPE_TAG_INVALID
 		return 7
-	if Match.check_exhaustive_match(union.table, union.id, variants).error != ""
+	var complete = false
+	match Match.check_exhaustive_match(union.table, union.id, variants)
+		Match.HirMatchComplete()
+			complete = true
+		Match.HirMatchInvalid(message)
+			return 8
+		Match.HirMatchRepeated(alternative)
+			return 8
+		Match.HirMatchMissing(alternative)
+			return 8
+	if not complete
 		return 8
-	let incomplete = Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id])
-	if incomplete.error != "non-exhaustive match" or incomplete.alternative != retry.id
-		return 9
-	let duplicate = Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, success.id])
-	if duplicate.error != "duplicate match alternative" or duplicate.alternative != success.id
-		return 10
-	if Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, Types.TYPE_TAG_I64]).error != "match arm is not a union alternative"
-		return 11
-	if Match.check_exhaustive_match(union.table, success.id, [success.id]).error != "match requires a tagged union"
-		return 12
+	match Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id])
+		Match.HirMatchMissing(alternative)
+			if alternative != retry.id
+				return 9
+		Match.HirMatchComplete()
+			return 9
+		Match.HirMatchInvalid(message)
+			return 9
+		Match.HirMatchRepeated(alternative)
+			return 9
+	match Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, success.id])
+		Match.HirMatchRepeated(alternative)
+			if alternative != success.id
+				return 10
+		Match.HirMatchComplete()
+			return 10
+		Match.HirMatchInvalid(message)
+			return 10
+		Match.HirMatchMissing(alternative)
+			return 10
+	match Match.check_exhaustive_match(union.table, union.id, [success.id, failure.id, Types.TYPE_TAG_I64])
+		Match.HirMatchInvalid(message)
+			if message != "match arm is not a union alternative"
+				return 11
+		Match.HirMatchComplete()
+			return 11
+		Match.HirMatchRepeated(alternative)
+			return 11
+		Match.HirMatchMissing(alternative)
+			return 11
+	match Match.check_exhaustive_match(union.table, success.id, [success.id])
+		Match.HirMatchInvalid(message)
+			if message != "match requires a tagged union"
+				return 12
+		Match.HirMatchComplete()
+			return 12
+		Match.HirMatchRepeated(alternative)
+			return 12
+		Match.HirMatchMissing(alternative)
+			return 12
+	# The HIR source checker receives label indices, not record TypeIds.
+	let index_success = Types.union_alternative_index(union.table, union.id, success.id)
+	let index_failure = Types.union_alternative_index(union.table, union.id, failure.id)
+	match Match.check_exhaustive_match_indices(union.table, union.id, [index_success, index_failure])
+		Match.HirMatchMissing(alternative)
+			if alternative != retry.id
+				return 22
+		Match.HirMatchComplete()
+			return 22
+		Match.HirMatchInvalid(message)
+			return 22
+		Match.HirMatchRepeated(alternative)
+			return 22
+	match Match.check_exhaustive_match_indices(union.table, union.id, [index_success, index_success])
+		Match.HirMatchRepeated(alternative)
+			if alternative != success.id
+				return 23
+		Match.HirMatchComplete()
+			return 23
+		Match.HirMatchInvalid(message)
+			return 23
+		Match.HirMatchMissing(alternative)
+			return 23
+	match Match.check_exhaustive_match_indices(union.table, union.id, [-1])
+		Match.HirMatchInvalid(message)
+			if message != "match arm is not a union alternative"
+				return 24
+		Match.HirMatchComplete()
+			return 24
+		Match.HirMatchRepeated(alternative)
+			return 24
+		Match.HirMatchMissing(alternative)
+			return 24
 	let malformed = Types.intern_type(union.table, Types.TYPE_TAG_UNION, 0, 0, [Types.RecordField("", success.id), Types.RecordField("", failure.id)])
 	if malformed.id != Types.TYPE_TAG_INVALID
 		return 13

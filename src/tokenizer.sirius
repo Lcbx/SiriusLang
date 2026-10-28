@@ -1,6 +1,7 @@
 # Sirius stage-1 tokenizer. Byte offsets are half-open UTF-8 source spans.
 # The first lexical error terminates tokenization.
-# Module-level integers name the token kinds without a runtime enum type.
+# Integer codes are kept for compact token storage and serialized AST snapshots.
+# The tagged TokenKind view is used for exhaustive token classification.
 export let TOKEN_NAME = 1
 export let TOKEN_INT = 2
 export let TOKEN_FLOAT = 3
@@ -16,41 +17,160 @@ export let TOKEN_UNCLOSED_STRING = -3
 export let TOKEN_INVALID_BRACKET = -4
 export let TOKEN_UNCLOSED_BRACKET = -5
 
+export rec TkName()
+export rec TkInt()
+export rec TkFloat()
+export rec TkString()
+export rec TkOperator()
+export rec TkNewline()
+export rec TkIndent()
+export rec TkDedent()
+export rec TkEof()
+export rec TkInvalidChar()
+export rec TkInvalidIndent()
+export rec TkUnclosedString()
+export rec TkInvalidBracket()
+export rec TkUnclosedBracket()
+export rec TkUnknown()
+export let TokenKind = TkName | TkInt | TkFloat | TkString | TkOperator | TkNewline | TkIndent | TkDedent | TkEof | TkInvalidChar | TkInvalidIndent | TkUnclosedString | TkInvalidBracket | TkUnclosedBracket | TkUnknown
+
+export def token_kind_from_code(code: i64) -> TokenKind
+	if code == TOKEN_NAME
+		return TkName()
+	if code == TOKEN_INT
+		return TkInt()
+	if code == TOKEN_FLOAT
+		return TkFloat()
+	if code == TOKEN_STRING
+		return TkString()
+	if code == TOKEN_OP
+		return TkOperator()
+	if code == TOKEN_NEWLINE
+		return TkNewline()
+	if code == TOKEN_INDENT
+		return TkIndent()
+	if code == TOKEN_DEDENT
+		return TkDedent()
+	if code == TOKEN_EOF
+		return TkEof()
+	if code == TOKEN_INVALID_CHAR
+		return TkInvalidChar()
+	if code == TOKEN_INVALID_INDENT
+		return TkInvalidIndent()
+	if code == TOKEN_UNCLOSED_STRING
+		return TkUnclosedString()
+	if code == TOKEN_INVALID_BRACKET
+		return TkInvalidBracket()
+	if code == TOKEN_UNCLOSED_BRACKET
+		return TkUnclosedBracket()
+	return TkUnknown()
+
+export def token_kind_code(kind: TokenKind) -> i64
+	match kind
+		TkName()
+			return TOKEN_NAME
+		TkInt()
+			return TOKEN_INT
+		TkFloat()
+			return TOKEN_FLOAT
+		TkString()
+			return TOKEN_STRING
+		TkOperator()
+			return TOKEN_OP
+		TkNewline()
+			return TOKEN_NEWLINE
+		TkIndent()
+			return TOKEN_INDENT
+		TkDedent()
+			return TOKEN_DEDENT
+		TkEof()
+			return TOKEN_EOF
+		TkInvalidChar()
+			return TOKEN_INVALID_CHAR
+		TkInvalidIndent()
+			return TOKEN_INVALID_INDENT
+		TkUnclosedString()
+			return TOKEN_UNCLOSED_STRING
+		TkInvalidBracket()
+			return TOKEN_INVALID_BRACKET
+		TkUnclosedBracket()
+			return TOKEN_UNCLOSED_BRACKET
+		TkUnknown()
+			return 0
+
+export def token_is_error(kind: TokenKind) -> bool
+	match kind
+		TkName()
+			return false
+		TkInt()
+			return false
+		TkFloat()
+			return false
+		TkString()
+			return false
+		TkOperator()
+			return false
+		TkNewline()
+			return false
+		TkIndent()
+			return false
+		TkDedent()
+			return false
+		TkEof()
+			return false
+		TkInvalidChar()
+			return true
+		TkInvalidIndent()
+			return true
+		TkUnclosedString()
+			return true
+		TkInvalidBracket()
+			return true
+		TkUnclosedBracket()
+			return true
+		TkUnknown()
+			return true
+
+export def token_label(kind: TokenKind) -> string
+	match kind
+		TkName()
+			return "NAME"
+		TkInt()
+			return "INT"
+		TkFloat()
+			return "FLOAT"
+		TkString()
+			return "STRING"
+		TkOperator()
+			return "OP"
+		TkNewline()
+			return "NEWLINE"
+		TkIndent()
+			return "INDENT"
+		TkDedent()
+			return "DEDENT"
+		TkEof()
+			return "EOF"
+		TkInvalidChar()
+			return "INVALID_CHAR"
+		TkInvalidIndent()
+			return "INVALID_INDENT"
+		TkUnclosedString()
+			return "UNCLOSED_STRING"
+		TkInvalidBracket()
+			return "INVALID_BRACKET"
+		TkUnclosedBracket()
+			return "UNCLOSED_BRACKET"
+		TkUnknown()
+			return "UNKNOWN"
+
 export rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
 
 export def token_text(source: string, token: Token) -> string
 	return source.slice(token.start, token.end)
 
 export def token_kind_name(kind: i64) -> string
-	if kind == TOKEN_NAME
-		return "NAME"
-	if kind == TOKEN_INT
-		return "INT"
-	if kind == TOKEN_FLOAT
-		return "FLOAT"
-	if kind == TOKEN_STRING
-		return "STRING"
-	if kind == TOKEN_OP
-		return "OP"
-	if kind == TOKEN_NEWLINE
-		return "NEWLINE"
-	if kind == TOKEN_INDENT
-		return "INDENT"
-	if kind == TOKEN_DEDENT
-		return "DEDENT"
-	if kind == TOKEN_EOF
-		return "EOF"
-	if kind == TOKEN_INVALID_CHAR
-		return "INVALID_CHAR"
-	if kind == TOKEN_INVALID_INDENT
-		return "INVALID_INDENT"
-	if kind == TOKEN_UNCLOSED_STRING
-		return "UNCLOSED_STRING"
-	if kind == TOKEN_INVALID_BRACKET
-		return "INVALID_BRACKET"
-	if kind == TOKEN_UNCLOSED_BRACKET
-		return "UNCLOSED_BRACKET"
-	return "UNKNOWN"
+	return token_label(token_kind_from_code(kind))
 
 def peek(source: string, i: i64) -> i64
 	return source.byte_at(i) or -1

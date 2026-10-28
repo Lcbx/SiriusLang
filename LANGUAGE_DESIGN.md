@@ -258,8 +258,9 @@ let Length = Meters | Feet
 ```
 
 The union has two distinct alternatives, `Meters: {value: f64}` and
-`Feet: {value: f64}`. Its canonical identity is the order-independent set of
-`(constructor label, payload shape)` pairs. Duplicate labels are invalid.
+`Feet: {value: f64}`. Its structural identity includes the **ordered sequence**
+of `(constructor label, payload shape)` pairs. Duplicate labels are invalid.
+Reordering alternatives defines a different union type and changes its tag numbers.
 Records are not nominal types: outside the union, `Meters(2.0)` and
 `Feet(2.0)` have the same structural type.
 
@@ -279,8 +280,31 @@ let Color = Red | Green | Blue
 ```
 
 All three payloads are the same empty record type. The selected union label,
-not the payload's type, distinguishes them. No implicit ordinal, integer
-conversion, or ordering relation is defined. Empty records are valid values.
+not the payload's type, distinguishes them. Declaration order assigns the tag
+numbers `Red = 0`, `Green = 1`, and `Blue = 2`, but no implicit integer
+conversion or ordering relation is defined. Empty records are valid values.
+
+An explicit `UnionType.index(value_or_label) -> i64` obtains the zero-based
+**declaration-order** alternative index, from either a tagged union value or
+the label type itself (enums are unions of empty records):
+
+```sirius
+let color: Color = Red()
+let code = Color.index(color)  # i64, 0
+let code2 = Color.index(Green)  # i64, 1
+```
+
+The argument must have the named union type, be a **direct constructor call**
+contextually injected into that union (`Color.index(Red())` is valid), or be
+an alternative's constructor type name (`Color.index(Red)` is valid). Label
+names are compile-time operands; they do not construct a value. A previously
+stored standalone record has no constructor label and is rejected.
+
+The order of a source `enum` declaration or `let Union = First | Second | ...`
+sets the tag values, and is preserved in imported and serialized descriptors.
+Different orders are different structural union types. Indices can be used
+as discriminants, but are **not** permanent wire-format identifiers: inserting
+or reordering alternatives can renumber them.
 
 A record can be implicitly injected when **exactly one** union alternative has
 its structural type. When multiple alternatives have the same payload shape,
@@ -306,7 +330,7 @@ used as `Units.Length.Meters(data)`. Contextual injection in all nested
 expression forms remains incomplete.
 `enum` and `A | B` are supported; there is no distinct `variant` declaration.
 
-MIR uses explicit canonical tag indices for labeled construction and checked
+MIR uses explicit declaration-order tag indices for labeled construction and checked
 extraction; its verifier, interpreter and C emitter preserve them, including
 when record shapes coincide. Unions whose every alternative is an empty record
 use an unowned `i64` tag directly; arrays and dictionaries store this scalar in

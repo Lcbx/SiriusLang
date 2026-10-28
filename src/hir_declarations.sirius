@@ -152,18 +152,22 @@ export def hir_module_declarations(tree: Ast.ParseState, root: i64) -> Hir.HirMo
 				union_sources = union_sources.append(HirTypeUnionSource(name, initializer))
 				continue
 			let evaluated = Constants.hir_eval_constant(types, values, tree, initializer, constants)
-			if not evaluated.valid
-				return hir_declaration_error(functions, constants, "unsupported module constant initializer", Hir.hir_ast_line(tree, id))
+			var evaluated_index = -1
+			match evaluated.outcome
+				Hir.HirConstantFound(index)
+					evaluated_index = index
+				Hir.HirConstantUnavailable()
+					return hir_declaration_error(functions, constants, "unsupported module constant initializer", Hir.hir_ast_line(tree, id))
 			types = evaluated.table
 			values = evaluated.values
-			let type_id = values[!evaluated.index].type_id
+			let type_id = values[!evaluated_index].type_id
 			if entry.count > 1
 				let annotation = Hir.hir_ast_child(tree, id, 0)
 				if tree.nodes[!annotation].kind == Ast.NODE_TYPE
 					let annotated = Hir.hir_ast_text(tree, annotation)
 					if (annotated != "i64" or type_id != Types.TYPE_TAG_I64) and (annotated != "bool" or type_id != Types.TYPE_TAG_BOOL) and (annotated != "string" or type_id != Types.TYPE_TAG_STRING)
 						return hir_declaration_error(functions, constants, "module constant type mismatch", Hir.hir_ast_line(tree, id))
-			constants = constants.append(Hir.HirModuleConstant(name, evaluated.index, type_id))
+			constants = constants.append(Hir.HirModuleConstant(name, evaluated_index, type_id))
 			continue
 		var parameters = Array[Hir.HirParameterDecl]()
 		var return_type = -1

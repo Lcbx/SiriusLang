@@ -26,11 +26,19 @@ def main() -> i64
 	if checked.error != "" or checked.type_id != Types.TYPE_TAG_I64
 		return 5
 	let record = Resolve.hir_record_put(Array[Types.RecordField](), "x", Types.TYPE_TAG_I64)
-	if record.error != "" or len(record.fields) != 1
-		return 6
+	match record.outcome
+		Resolve.HirRecordUpdated(index)
+			if index != -1 or len(record.fields) != 1
+				return 6
+		Resolve.HirRecordEditError(message)
+			return 6
 	let evaluated = Constants.hir_constant_push(Types.new_type_table(), Array[Hir.HirConstantValue](), Types.TYPE_TAG_I64, 5, Array[i64]())
-	if not evaluated.valid or evaluated.values[!evaluated.index].bits != 5
-		return 7
+	match evaluated.outcome
+		Hir.HirConstantFound(index)
+			if evaluated.values[!index].bits != 5
+				return 7
+		Hir.HirConstantUnavailable()
+			return 7
 	let generic = Ast.parse_module("def identity(x)\n\treturn x\n")
 	if generic.state.error != ""
 		return 8
@@ -40,5 +48,35 @@ def main() -> i64
 	let plan = Param.hir_parametric_plan(generic.state, declarations_generic.functions[!0], declarations_generic.functions)
 	if len(plan.nodes) == 0 or plan.result_type != -2
 		return 10
+	match Resolve.hir_record_put(record.fields, "bad", Types.TYPE_TAG_INVALID).outcome
+		Resolve.HirRecordEditError(message)
+			if message != "invalid record field type"
+				return 11
+		Resolve.HirRecordUpdated(index)
+			return 11
+	match Resolve.hir_record_delete(record.fields, "missing").outcome
+		Resolve.HirRecordEditError(message)
+			if message != "unknown deleted field 'missing'"
+				return 12
+		Resolve.HirRecordUpdated(index)
+			return 12
+	match Constants.hir_constant_invalid(evaluated.table, evaluated.values).outcome
+		Hir.HirConstantFound(index)
+			return 13
+		Hir.HirConstantUnavailable()
+			if len(evaluated.values) != 1
+				return 13
+	match Constants.hir_decode_string("\"ok\"")
+		Constants.HirStringDecoded(value)
+			if value != "ok"
+				return 14
+		Constants.HirStringDecodeError(message)
+			return 14
+	match Constants.hir_decode_string("\"bad" + "\\" + "q\"")
+		Constants.HirStringDecodeError(message)
+			if message != "unsupported MIR string escape"
+				return 15
+		Constants.HirStringDecoded(value)
+			return 15
 	print("HIR analysis modules OK")
 	return 0

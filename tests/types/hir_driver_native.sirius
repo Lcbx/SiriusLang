@@ -78,32 +78,75 @@ def main() -> i64
 	if HirResolve.resolve_hir_function_call(dict.table, "f", [Types.TYPE_TAG_I64], [Types.TYPE_TAG_INVALID], Types.TYPE_TAG_INVALID).error != ""
 		return 27
 	let first = HirResolve.hir_record_put(Array[Types.RecordField](), "z", Types.TYPE_TAG_I64)
-	if first.error != "" or first.index != -1 or len(first.fields) != 1
-		return 28
+	match first.outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != -1 or len(first.fields) != 1
+				return 28
+		HirResolve.HirRecordEditError(message)
+			return 28
 	let second = HirResolve.hir_record_put(first.fields, "name", Types.TYPE_TAG_STRING)
-	if second.error != "" or len(second.fields) != 2
-		return 29
+	match second.outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != -1 or len(second.fields) != 2
+				return 29
+		HirResolve.HirRecordEditError(message)
+			return 29
 	let override = HirResolve.hir_record_put(second.fields, "z", Types.TYPE_TAG_BOOL)
-	if override.index != 0 or override.fields[!0].kind != Types.TYPE_TAG_BOOL
-		return 30
+	match override.outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != 0 or override.fields[!0].kind != Types.TYPE_TAG_BOOL
+				return 30
+		HirResolve.HirRecordEditError(message)
+			return 30
 	let restored = HirResolve.hir_record_put(override.fields, "z", Types.TYPE_TAG_I64)
+	match restored.outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != 0
+				return 31
+		HirResolve.HirRecordEditError(message)
+			return 31
 	let same_record = HirResolve.resolve_hir_record(table, restored.fields)
 	if same_record.error != "" or same_record.type_id != left.id
 		return 31
 	let deleted = HirResolve.hir_record_delete(restored.fields, "z")
-	if deleted.index != 0 or len(deleted.fields) != 1
-		return 32
-	if HirResolve.hir_record_delete(deleted.fields, "missing").error != "unknown deleted field 'missing'"
-		return 33
+	match deleted.outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != 0 or len(deleted.fields) != 1
+				return 32
+		HirResolve.HirRecordEditError(message)
+			return 32
+	match HirResolve.hir_record_delete(deleted.fields, "missing").outcome
+		HirResolve.HirRecordEditError(message)
+			if message != "unknown deleted field 'missing'"
+				return 33
+		HirResolve.HirRecordUpdated(index)
+			return 33
 	let spread = HirResolve.hir_record_spread(same_record.table, deleted.fields, left.id)
-	if spread.error != "" or len(spread.fields) != 2
-		return 34
-	if HirResolve.hir_record_spread(table, deleted.fields, Types.TYPE_TAG_I64).error != "record spread expects a record"
-		return 35
-	if HirResolve.hir_constructor_publish(first.fields, "z", Types.TYPE_TAG_I64).error != "constructor field overrides are not supported yet"
-		return 36
-	if HirResolve.hir_constructor_publish(first.fields, "other", Types.TYPE_TAG_STRING).error != ""
-		return 37
+	match spread.outcome
+		HirResolve.HirRecordUpdated(index)
+			if len(spread.fields) != 2
+				return 34
+		HirResolve.HirRecordEditError(message)
+			return 34
+	match HirResolve.hir_record_spread(table, deleted.fields, Types.TYPE_TAG_I64).outcome
+		HirResolve.HirRecordEditError(message)
+			if message != "record spread expects a record"
+				return 35
+		HirResolve.HirRecordUpdated(index)
+			return 35
+	# Published fields use the same replacement behavior as ordinary edits.
+	match HirResolve.hir_constructor_publish(first.fields, "z", Types.TYPE_TAG_I64).outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != 0
+				return 36
+		HirResolve.HirRecordEditError(message)
+			return 36
+	match HirResolve.hir_constructor_publish(first.fields, "other", Types.TYPE_TAG_STRING).outcome
+		HirResolve.HirRecordUpdated(index)
+			if index != -1
+				return 37
+		HirResolve.HirRecordEditError(message)
+			return 37
 	if HirResolve.resolve_hir_record(table, Array[Types.RecordField]()).error != ""
 		return 38
 	let parsed = Parser.parse_module("def id(x: i64) -> i64\n\treturn x\n\nrec Pair(x: i64, y: i64)\n\nlet LIMIT = 7\n")
@@ -122,7 +165,7 @@ def main() -> i64
 	if duplicate.state.error != "" or HirDeclarations.hir_module_declarations(duplicate.state, duplicate.node).error != "duplicate parameter 'x'"
 		return 43
 	let colliding = Parser.parse_module("let N = 3\ndef N() -> i64\n\treturn 0\n")
-	if colliding.state.error != "" or HirDeclarations.hir_module_declarations(colliding.state, colliding.node).error != "duplicate function 'N'"
+	if colliding.state.error != "" or HirDeclarations.hir_module_declarations(colliding.state, colliding.node).error != "duplicate module name 'N'"
 		return 44
 	let legacy = Parser.parse_module("def Old(x: i64)\n\tpub x\n")
 	if legacy.state.error != "" or HirDeclarations.hir_module_declarations(legacy.state, legacy.node).error != "def constructors are no longer supported; use rec"
@@ -237,7 +280,7 @@ def main() -> i64
 		return 65
 	let wrong_annotation = Parser.parse_module("def f() -> i64\n\tlet values: Array[string] = [1]\n\treturn 0\n")
 	let wrong_annotation_decl = HirDeclarations.hir_module_declarations(wrong_annotation.state, wrong_annotation.node)
-	if HirAnalyze.hir_analyze_function_body(wrong_annotation.state, wrong_annotation_decl.functions[!0], ["f"], Array[string]()).error != "expected Array[string], found Array[i64]"
+	if HirAnalyze.hir_analyze_function_body(wrong_annotation.state, wrong_annotation_decl.functions[!0], ["f"], Array[string]()).error != "expected string, found i64"
 		return 66
 	# Concrete generic and constructor calls resolve before C emission, even
 	# across forward declarations and nested generic calls.

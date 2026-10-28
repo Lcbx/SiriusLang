@@ -859,7 +859,7 @@ export def parse_module(source: string) -> ParseResult
 	let tokens = Lex.tokenize(source)
 	var p = new_parse_state(source, tokens)
 	for token in tokens
-		if token.kind < 0
+		if token.kind < 0 and Lex.token_is_error(Lex.token_kind_from_code(token.kind))
 			p.error = Lex.token_kind_name(token.kind)
 			p.error_line = token.line
 			return ParseResult(p, -1)

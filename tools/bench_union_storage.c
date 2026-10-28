@@ -2,9 +2,13 @@
  * POD-only storage-layout model for Sirius tagged union arrays.
  *
  * This is NOT the Sirius emitter or runtime: it models its two RC allocations
- * per element, a fused RC union, and a by-value, max-width array element.
- * COW copies retain pointed-to unions in the first two models and copy all
- * bytes in the inline model. No managed payload fields or ABI are modeled.
+ * per element, a compact union with ONE RC identity, a by-value,
+ * max-width array element,
+ * and inline register construction boxed on insertion into a pointer array.
+ * COW copies retain pointed-to unions in pointer models and copy all bytes
+ * in the inline-array model. No managed payload fields or ABI are modeled.
+ * The compact single-node model is NOT the production coallocation experiment,
+ * which preserves two independently retainable ARC identities.
  */
 #include <inttypes.h>
 #include <stdint.h>
@@ -59,7 +63,7 @@ static Node *new_node(int64_t type_id, size_t slots) {
 }
 static void release_node(Node *node, int model) {
     if (--node->refs) return;
-    if (model == 0 && node->type_id == 2)
+    if ((model == 0 || model == 3) && node->type_id == 2)
         release_node(node->fields[1].pointer, model);
     deallocate(node, sizeof(Node) + node->capacity * sizeof(Slot));
 }
@@ -83,11 +87,16 @@ static Node *make_variant(int model, size_t i, size_t maximum, size_t period,
                           int changed) {
     size_t width = width_for(i, maximum, period);
     Node *wrapper;
-    if (model == 0) {
+    if (model == 0 || model == 3) {
+        /* Model 3 constructs an inline value in a local C register, then
+         * separately boxes the wrapper and payload for a pointer container.
+         * The heap ABI and ARC identities are identical to model 0. */
+        const int64_t local_tag = tag_for(i, period) ^ (changed && !maximum);
+        const int64_t local_payload = value_for(i, width) + (changed ? 97 : 0);
         Node *record = new_node(1, width);
-        if (width) record->fields[width - 1].bits = value_for(i, width) + (changed ? 97 : 0);
+        if (width) record->fields[width - 1].bits = local_payload;
         wrapper = new_node(2, 2);
-        wrapper->fields[0].bits = tag_for(i, period) ^ (changed && !maximum);
+        wrapper->fields[0].bits = local_tag;
         wrapper->fields[1].pointer = record;
     } else {
         wrapper = new_node(2, width + 1);
@@ -132,7 +141,7 @@ static int64_t scan(const Buffer *b, int model, size_t maximum, size_t period) {
             Node *n = ((Node **)b->data)[i];
             tag = n->fields[0].bits;
             if (width) {
-                if (model == 0) value = ((Node *)n->fields[1].pointer)->fields[width - 1].bits;
+                if (model == 0 || model == 3) value = ((Node *)n->fields[1].pointer)->fields[width - 1].bits;
                 else value = n->fields[width].bits;
             }
         }
@@ -174,12 +183,13 @@ static size_t numeric(const char *arg) {
 }
 int main(int argc, char **argv) {
     if (argc != 7) {
-        fprintf(stderr, "usage: %s current|fused|inline count max_words wide_period scans clones\n", argv[0]);
+        fprintf(stderr, "usage: %s current|fused|inline|register-boxed count max_words wide_period scans clones\n", argv[0]);
         return 2;
     }
     int model = strcmp(argv[1], "current") == 0 ? 0 :
                 strcmp(argv[1], "fused") == 0 ? 1 :
-                strcmp(argv[1], "inline") == 0 ? 2 : -1;
+                strcmp(argv[1], "inline") == 0 ? 2 :
+                strcmp(argv[1], "register-boxed") == 0 ? 3 : -1;
     if (model < 0) return 2;
     size_t n = numeric(argv[2]), max = numeric(argv[3]), period = numeric(argv[4]);
     size_t scans = numeric(argv[5]), clones = numeric(argv[6]);

@@ -1,0 +1,45 @@
+# The emitted array layout stays one S_MirField per element for now.
+# Exercise copy/drop across all three ownership classes and CoW.
+rec Tiny(value: i64)
+rec Small(value: i64)
+rec Managed(items: Array[i64], name: string)
+let Choice = Small | Managed
+
+enum Token
+	A
+	B
+
+def score(value: Choice) -> i64
+	match value
+		Small(n)
+			return n
+		Managed(items, name)
+			return items[!0] + len(name)
+
+def token_score(value: Token) -> i64
+	match value
+		A()
+			return 1
+		B()
+			return 2
+
+def main() -> i64
+	var nums = [10, 20]
+	let old_nums = nums
+	nums = nums.append(30)
+	nums[!0] = 7
+	var strings = ["first", "second"]
+	let old_strings = strings
+	strings[!1] = "third"
+	var records = [Tiny(1), Tiny(2)]
+	let old_records = records
+	records[!0] = Tiny(9)
+	var variants = Array[Choice]().append(Small(3)).append(Managed([4], "x"))
+	let old_variants = variants
+	let change: Choice = Small(5)
+	variants[!0] = change
+	let tokens = Array[Token]().append(A()).append(B())
+	var nested = [[5], [8]]
+	let old_nested = nested
+	nested[!0] = [9]
+	return old_nums[!0] + nums[!0] + len(old_strings[!1]) + len(strings[!1]) + old_records[!0].value + records[!0].value + score(old_variants[!0]) + score(variants[!0]) + score(variants[!1]) + token_score(tokens[!1]) + old_nested[!0][!0] + nested[!0][!0]

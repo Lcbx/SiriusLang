@@ -1,0 +1,56 @@
+# Declaration-order union discriminants, including scalar enums and equal-shaped labels.
+enum Color
+	Red
+	Green
+	Blue
+
+rec Meters(value: i64)
+rec Feet(value: i64)
+rec Data(value: i64)
+let Length = Meters | Feet
+
+rec None()
+rec Number(value: i64)
+rec Text(value: string)
+let Variant = None | Number | Text
+
+def get_index(value: Length) -> i64
+	return Length.index(value)
+
+def main() -> i64
+	let red: Color = Red()
+	let blue: Color = Blue()
+	let green: Color = Green()
+	if Color.index(blue) != 2 or Color.index(green) != 1 or Color.index(red) != 0
+		return 11
+	if Color.index(Red()) != 0 or Color.index(Red) != 0 or Color.index(Green) != 1 or Color.index(Blue) != 2
+		return 16
+	let first: Length = Length.Meters(Data(10))
+	let second: Length = Length.Feet(Data(10))
+	if get_index(first) != 0 or get_index(second) != 1 or Length.index(Feet(9)) != 1
+		return 12
+	if Length.index(Meters) != 0 or Length.index(Feet) != 1
+		return 17
+	let items: Array[Length] = [first, second]
+	if Length.index(items[!0]) != 0 or Length.index(items[!1]) != 1
+		return 13
+	let nothing: Variant = None()
+	let number: Variant = Number(5)
+	let text: Variant = Text("hello")
+	if Variant.index(nothing) != 0 or Variant.index(number) != 1 or Variant.index(text) != 2
+		return 14
+	if Variant.index(None) != 0 or Variant.index(Number) != 1 or Variant.index(Text) != 2
+		return 18
+	let copies = [red, green, blue]
+	if Color.index(copies[!2]) != 2
+		return 15
+	# The type name is a compile-time label, not an allocated enum value.
+	if Color.index(Red) != Color.index(Red()) or Color.index(Green) != Color.index(Green()) or Color.index(Blue) != Color.index(Blue())
+		return 19
+	if Length.index(Meters) != Length.index(Meters(5)) or Length.index(Feet) != Length.index(Feet(5))
+		return 20
+	if Variant.index(None) != Variant.index(None()) or Variant.index(Number) != Variant.index(Number(5)) or Variant.index(Text) != Variant.index(Text("x"))
+		return 21
+	if Color.index(Blue) != Color.index(blue)
+		return 22
+	return 0

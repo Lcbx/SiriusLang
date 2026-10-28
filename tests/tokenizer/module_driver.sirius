@@ -18,6 +18,14 @@ def main() -> i64
 	let nested = T.intern_dict_type(reverse.table, T.TYPE_TAG_STRING, record.id)
 	if nested.table.entries[!nested.id].tag != T.TYPE_TAG_DICT
 		return 4
+	let kinds = [Lex.TOKEN_NAME, Lex.TOKEN_INT, Lex.TOKEN_FLOAT, Lex.TOKEN_STRING, Lex.TOKEN_OP, Lex.TOKEN_NEWLINE, Lex.TOKEN_INDENT, Lex.TOKEN_DEDENT, Lex.TOKEN_EOF, Lex.TOKEN_INVALID_CHAR, Lex.TOKEN_INVALID_INDENT, Lex.TOKEN_UNCLOSED_STRING, Lex.TOKEN_INVALID_BRACKET, Lex.TOKEN_UNCLOSED_BRACKET]
+	for kind in kinds
+		if Lex.token_kind_code(Lex.token_kind_from_code(kind)) != kind
+			return 5
+		if Lex.token_is_error(Lex.token_kind_from_code(kind)) != (kind < 0)
+			return 6
+	if Lex.token_kind_name(0) != "UNKNOWN" or Lex.token_kind_code(Lex.token_kind_from_code(123)) != 0
+		return 7
 	for token in Lex.tokenize(source)
 		var shown = ""
 		if token.kind >= Lex.TOKEN_NAME and token.kind <= Lex.TOKEN_OP

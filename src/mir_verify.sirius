@@ -163,7 +163,9 @@ export def mir_verify_instruction(program: Mir.MirProgram, function: Mir.MirFunc
 		if ins.op == Mir.MIR_OPTIONAL_UNWRAP and dst_type != desc.first
 			return "optional unwrap type mismatch"
 		return ""
-	if ins.op == Mir.MIR_UNION_NEW
+	if ins.op == Mir.MIR_UNION_NEW or ins.op == Mir.MIR_UNION_NEW_MOVE
+		if ins.op == Mir.MIR_UNION_NEW_MOVE and (Types.union_is_enum(program.types, dst_type) or ins.first < 0)
+			return "union move requires owned payload and non-enum union"
 		if ins.first == -1
 			if not Types.union_is_enum(program.types, dst_type)
 				return "empty union constructor requires enum destination"

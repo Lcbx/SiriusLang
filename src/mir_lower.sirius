@@ -369,13 +369,6 @@ def mir_lower_literal(text: string) -> i64
 		value = value * 10 + (text.byte_at(i) or 48) - 48
 	return value
 
-rec MirLowerString(value: string, error: string)
-
-# Share the decoder with compile-time constant evaluation.
-def mir_lower_string(text: string) -> MirLowerString
-	let decoded = Constants.hir_decode_string(text)
-	return MirLowerString(decoded.value, decoded.error)
-
 # Materialize a compile-time value at each use. MIR ownership/lifetime passes
 # can then handle records exactly like ordinary immutable runtime values.
 def mir_lower_constant(state: MirBuilder, context: MirLowerContext, index: i64) -> MirLowerExpr
@@ -649,13 +642,14 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 	if node.kind == Ast.NODE_STRING
 		if mir_lower_type(context, id, Hir.HIR_LITERAL) != Types.TYPE_TAG_STRING
 			return MirLowerExpr(mir_lower_error(next, "missing typed string literal"), -1)
-		let decoded = mir_lower_string(text)
-		if decoded.error != ""
-			return MirLowerExpr(mir_lower_error(next, decoded.error), -1)
-		let dst = len(next.register_types)
-		next = mir_lower_register(next, Types.TYPE_TAG_STRING)
-		next = mir_lower_emit(next, Mir.mir_string(dst, decoded.value))
-		return MirLowerExpr(next, dst)
+		match Constants.hir_decode_string(text)
+			Constants.HirStringDecoded(value)
+				let dst = len(next.register_types)
+				next = mir_lower_register(next, Types.TYPE_TAG_STRING)
+				next = mir_lower_emit(next, Mir.mir_string(dst, value))
+				return MirLowerExpr(next, dst)
+			Constants.HirStringDecodeError(message)
+				return MirLowerExpr(mir_lower_error(next, message), -1)
 	if node.kind == Ast.NODE_FLOAT
 		if mir_lower_type(context, id, Hir.HIR_LITERAL) != Types.TYPE_TAG_F64
 			return MirLowerExpr(mir_lower_error(next, "missing typed float literal"), -1)
@@ -679,6 +673,30 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		next = mir_lower_emit(next, Mir.mir_op(opcode, dst, -1, -1, immediate))
 		return MirLowerExpr(next, dst)
 	if node.kind == Ast.NODE_CALL
+		let label_index = Hir.hir_annotation_find(context.hir, context.annotation_index, id, Analyze.HIR_UNION_INDEX_LABEL)
+		if label_index >= 0
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, Types.TYPE_TAG_I64)
+			next = mir_lower_emit(next, Mir.mir_op(Mir.MIR_CONST_I64, dst, -1, -1, context.hir[!label_index].field_index))
+			return MirLowerExpr(next, dst)
+		let indexed = Hir.hir_annotation_find(context.hir, context.annotation_index, id, Analyze.HIR_UNION_INDEX)
+		if indexed >= 0
+			let expected = context.hir[!indexed].field_index
+			let operand = mir_lower_expression(next, context, Hir.hir_ast_child(context.tree, id, 1))
+			next = operand.state
+			next.error == "" else return MirLowerExpr(next, -1)
+			var value = operand.slot
+			if next.register_types[!value] != expected
+				let injected = mir_lower_inject_source(next, context, value, expected, Hir.hir_ast_child(context.tree, id, 1))
+				next = injected.state
+				next.error == "" else return MirLowerExpr(next, -1)
+				value = injected.slot
+			if next.register_types[!value] != expected or Types.type_tag(context.types, expected) != Types.TYPE_TAG_UNION
+				return MirLowerExpr(mir_lower_error(next, "invalid union index argument"), -1)
+			let dst = len(next.register_types)
+			next = mir_lower_register(next, Types.TYPE_TAG_I64)
+			next = mir_lower_emit(next, Mir.mir_union_tag(dst, value))
+			return MirLowerExpr(next, dst)
 		let explicit = Hir.hir_annotation_find(context.hir, context.annotation_index, id, Analyze.HIR_UNION_CONSTRUCT)
 		if explicit >= 0
 			let typed = context.hir[!explicit]

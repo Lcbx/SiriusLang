@@ -178,7 +178,10 @@ export def resolve_hir_collection_call(types: Types.TypeTable, receiver: i64, me
 export let HIR_RECORD = 7
 export let HIR_CONSTRUCTOR = 8
 
-export rec HirRecordEdit(fields: Array[Types.RecordField], index: i64, error: string)
+export rec HirRecordUpdated(index: i64)
+export rec HirRecordEditError(message: string)
+export let HirRecordEditOutcome = HirRecordUpdated | HirRecordEditError
+export rec HirRecordEdit(fields: Array[Types.RecordField], outcome: HirRecordEditOutcome)
 
 export def hir_record_field(fields: Array[Types.RecordField], name: string) -> i64
 	for i in 0..len(fields)
@@ -188,35 +191,40 @@ export def hir_record_field(fields: Array[Types.RecordField], name: string) -> i
 
 export def hir_record_put(fields: Array[Types.RecordField], name: string, type_id: i64) -> HirRecordEdit
 	if type_id == Types.TYPE_TAG_INVALID or type_id == Types.TYPE_TAG_VOID
-		return HirRecordEdit(fields, -1, "invalid record field type")
+		return HirRecordEdit(fields, HirRecordEditError("invalid record field type"))
 	let index = hir_record_field(fields, name)
 	var result = fields
 	if index >= 0
 		result[!index] = Types.RecordField(name, type_id)
 	else
 		result = result.append(Types.RecordField(name, type_id))
-	return HirRecordEdit(result, index, "")
+	return HirRecordEdit(result, HirRecordUpdated(index))
 
 export def hir_record_delete(fields: Array[Types.RecordField], name: string) -> HirRecordEdit
 	let index = hir_record_field(fields, name)
 	if index < 0
-		return HirRecordEdit(fields, -1, "unknown deleted field '" + name + "'")
+		return HirRecordEdit(fields, HirRecordEditError("unknown deleted field '" + name + "'"))
 	var result = Array[Types.RecordField]()
 	for i in 0..len(fields)
 		if i != index
 			result = result.append(fields[!i])
-	return HirRecordEdit(result, index, "")
+	return HirRecordEdit(result, HirRecordUpdated(index))
 
 export def hir_record_spread(types: Types.TypeTable, fields: Array[Types.RecordField], owner: i64) -> HirRecordEdit
 	if owner < 0 or owner >= len(types.entries)
-		return HirRecordEdit(fields, -1, "record spread expects a record")
+		return HirRecordEdit(fields, HirRecordEditError("record spread expects a record"))
 	let descriptor = types.entries[!owner]
 	if descriptor.tag != Types.TYPE_TAG_RECORD
-		return HirRecordEdit(fields, -1, "record spread expects a record")
+		return HirRecordEdit(fields, HirRecordEditError("record spread expects a record"))
 	var result = fields
 	for field in descriptor.fields
-		result = hir_record_put(result, field.name, field.kind).fields
-	return HirRecordEdit(result, -1, "")
+		let edit = hir_record_put(result, field.name, field.kind)
+		match edit.outcome
+			HirRecordUpdated(index)
+				result = edit.fields
+			HirRecordEditError(message)
+				return HirRecordEdit(result, HirRecordEditError(message))
+	return HirRecordEdit(result, HirRecordUpdated(-1))
 
 export def resolve_hir_record(types: Types.TypeTable, fields: Array[Types.RecordField]) -> HirCallCheck
 	let interned = Types.intern_record_type(types, fields)
@@ -246,48 +254,44 @@ export def hir_match_field_index(fields: Array[Types.RecordField], parameters: A
 	return -1
 
 
-# Semantic matching operates on structural record alternatives, without
-# relying on source constructor names or requiring a C/MIR runtime backend.
-export rec HirMatchCheck(error: string, alternative: i64)
+# Exhaustiveness checks carry exactly one semantic outcome. The alternative
+# payload is meaningful only for repeated and missing arms; errors that have
+# no alternative cannot accidentally expose a sentinel TypeId.
+export rec HirMatchComplete()
+export rec HirMatchInvalid(message: string)
+export rec HirMatchRepeated(alternative: i64)
+export rec HirMatchMissing(alternative: i64)
+export let HirMatchOutcome = HirMatchComplete | HirMatchInvalid | HirMatchRepeated | HirMatchMissing
 
-export def check_exhaustive_match(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchCheck
+# Semantic matching operates on structural record alternatives, without
+# relying on source constructor names or a C/MIR runtime representation.
+export def check_exhaustive_match(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchOutcome
 	if Types.type_tag(types, union_id) != Types.TYPE_TAG_UNION
-		return HirMatchCheck("match requires a tagged union", -1)
-	let members = types.entries[!union_id].fields
-	var seen = Array[bool]()
-	for member in members
-		seen = seen.append(false)
+		return HirMatchInvalid("match requires a tagged union")
+	var indices = Array[i64]()
 	for arm in arms
-		let index = Types.union_alternative_index(types, union_id, arm)
-		if index < 0
-			return HirMatchCheck("match arm is not a union alternative", -1)
-		if seen[!index]
-			return HirMatchCheck("duplicate match alternative", members[!index].kind)
-		seen[!index] = true
-	for i in 0..len(seen)
-		if not seen[!i]
-			return HirMatchCheck("non-exhaustive match", members[!i].kind)
-	return HirMatchCheck("", -1)
+		indices = indices.append(Types.union_alternative_index(types, union_id, arm))
+	return check_exhaustive_match_indices(types, union_id, indices)
 
 # Exhaustiveness is about labels, not payload record shapes. Source match
 # analysis resolves each constructor name to a canonical alternative index.
-export def check_exhaustive_match_indices(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchCheck
+export def check_exhaustive_match_indices(types: Types.TypeTable, union_id: i64, arms: Array[i64]) -> HirMatchOutcome
 	if Types.type_tag(types, union_id) != Types.TYPE_TAG_UNION
-		return HirMatchCheck("match requires a tagged union", -1)
+		return HirMatchInvalid("match requires a tagged union")
 	let members = types.entries[!union_id].fields
 	var seen = Array[bool]()
 	for member in members
 		seen = seen.append(false)
 	for index in arms
 		if index < 0 or index >= len(members)
-			return HirMatchCheck("match arm is not a union alternative", -1)
+			return HirMatchInvalid("match arm is not a union alternative")
 		if seen[!index]
-			return HirMatchCheck("duplicate match alternative", members[!index].kind)
+			return HirMatchRepeated(members[!index].kind)
 		seen[!index] = true
 	for i in 0..len(seen)
 		if not seen[!i]
-			return HirMatchCheck("non-exhaustive match", members[!i].kind)
-	return HirMatchCheck("", -1)
+			return HirMatchMissing(members[!i].kind)
+	return HirMatchComplete()
 
 # Resolve the exported constructor's source label after module name mangling.
 # Only a direct constructor call or match pattern uses this entry point;

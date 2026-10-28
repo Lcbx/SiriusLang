@@ -1,0 +1,77 @@
+# Exercise the HIR result states without depending on MIR lowering or emission.
+import hir_analyze alias Analyze
+import hir_declarations alias Decl
+import parser alias Parser
+import types alias Types
+
+def main() -> i64
+	let source = "def pick(x: i64) -> i64\n\treturn x\ndef other(x: string) -> i64\n\treturn len(x)\n"
+	let parsed = Parser.parse_module(source)
+	if parsed.state.error != ""
+		return 1
+	let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
+	if declarations.error != "" or len(declarations.functions) != 2
+		return 2
+	var state = Analyze.new_hir_body_state(parsed.state, Array[string](), Array[string](), declarations.types)
+	state.functions = declarations.functions
+
+	# No function of this name: ordinary name/expression handling may follow.
+	let absent = Analyze.hir_select_overload(state, "missing", [Types.TYPE_TAG_I64])
+	match absent.outcome
+		Analyze.HirOverloadAbsent()
+			if len(absent.table.entries) != len(state.types.entries)
+				return 3
+		Analyze.HirOverloadFound(index)
+			return 4
+		Analyze.HirOverloadRejected(message)
+			return 5
+
+	# Preserve existing behavior for a single declaration: it is selected,
+	# with mismatch reporting deferred to the normal call checker.
+	let single = Analyze.hir_select_overload(state, "pick", [Types.TYPE_TAG_BOOL])
+	match single.outcome
+		Analyze.HirOverloadFound(index)
+			if index != 0
+				return 6
+		Analyze.HirOverloadAbsent()
+			return 7
+		Analyze.HirOverloadRejected(message)
+			return 8
+
+	# Create an overload set from the two parsed declarations.
+	var overloaded = state
+	let other_function = state.functions[!1]
+	overloaded.functions = [state.functions[!0], {other_function.*, name = "pick"}]
+	let exact = Analyze.hir_select_overload(overloaded, "pick", [Types.TYPE_TAG_STRING])
+	match exact.outcome
+		Analyze.HirOverloadFound(index)
+			if index != 1
+				return 9
+		Analyze.HirOverloadAbsent()
+			return 10
+		Analyze.HirOverloadRejected(message)
+			return 11
+
+	let unmatched = Analyze.hir_select_overload(overloaded, "pick", [Types.TYPE_TAG_BOOL])
+	match unmatched.outcome
+		Analyze.HirOverloadFound(index)
+			return 12
+		Analyze.HirOverloadAbsent()
+			return 13
+		Analyze.HirOverloadRejected(message)
+			if message != "no matching overload for 'pick'"
+				return 14
+
+	var duplicate = state
+	duplicate.functions = [state.functions[!0], state.functions[!0]]
+	let ambiguous = Analyze.hir_select_overload(duplicate, "pick", [Types.TYPE_TAG_I64])
+	match ambiguous.outcome
+		Analyze.HirOverloadFound(index)
+			return 15
+		Analyze.HirOverloadAbsent()
+			return 16
+		Analyze.HirOverloadRejected(message)
+			if message != "ambiguous overload for 'pick'"
+				return 17
+	print("PASS HIR overload outcome states")
+	return 0

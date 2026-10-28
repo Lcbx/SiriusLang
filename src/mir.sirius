@@ -101,6 +101,8 @@ export let MIR_I64_TO_F64 = 94
 export let MIR_F64_TO_I64 = 95
 export let MIR_F64_TO_I64_VALID = 96
 export let MIR_EQ_VALUE = 97
+# Transfers a last-use owned record payload into a non-enum union wrapper.
+export let MIR_UNION_NEW_MOVE = 98
 
 export let MIR_JUMP = 1
 export let MIR_BRANCH = 2
@@ -134,7 +136,7 @@ export def mir_failure_info(op: i64) -> MirFailureInfo
 		return MirFailureInfo(false, false, true)
 	if op == MIR_DICT_NEXT or op == MIR_DICT_KEY or op == MIR_DICT_VALUE
 		return MirFailureInfo(false, true, false)
-	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_CALL_INDIRECT or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW or op == MIR_RECORD_NEW_FUSED or op == MIR_RECORD_NEW_FUSED_MOVE
+	if op == MIR_ARGUMENTS or op == MIR_STR_I64 or op == MIR_CALL or op == MIR_CALL_MOVE or op == MIR_CALL_INDIRECT or op == MIR_PRINT or op == MIR_EPRINT or op == MIR_CONST_STRING or op == MIR_STRING_CONCAT or op == MIR_STRING_SLICE or op == MIR_STRING_STARTS_WITH or op == MIR_STRING_ENDS_WITH or op == MIR_STRING_JOIN or op == MIR_RECORD_NEW or op == MIR_RECORD_NEW_MOVE or op == MIR_ARRAY_NEW or op == MIR_ARRAY_NEW_MOVE or op == MIR_ARRAY_APPEND or op == MIR_DICT_NEW or op == MIR_DICT_INSERT or op == MIR_RECORD_SET or op == MIR_RECORD_ARRAY_APPEND or op == MIR_OPTIONAL_NONE or op == MIR_OPTIONAL_SOME or op == MIR_UNION_NEW or op == MIR_UNION_NEW_MOVE or op == MIR_RECORD_NEW_FUSED or op == MIR_RECORD_NEW_FUSED_MOVE
 		return MirFailureInfo(false, true, false)
 	return MirFailureInfo(false, false, false)
 
@@ -270,6 +272,9 @@ export def mir_union_new_labeled(dst: i64, record: i64, alternative: i64) -> Mir
 
 # A payload-free enum alternative needs only its index; -1 means there is
 # no source record to retain. Verifiers reject this form for other unions.
+export def mir_union_new_move(ins: MirInstruction) -> MirInstruction
+	return MirInstruction(MIR_UNION_NEW_MOVE, ins.dst, ins.first, ins.second, ins.immediate, ins.inputs, ins.text)
+
 export def mir_union_new_empty(dst: i64, alternative: i64) -> MirInstruction
 	return mir_op(MIR_UNION_NEW, dst, -1, alternative, 0)
 

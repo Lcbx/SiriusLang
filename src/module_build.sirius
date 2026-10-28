@@ -128,11 +128,15 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 			return state
 	let source_path = Module.module_scan_filename(root, name)
 	let parsed = ModuleScan.module_scan_parse_cached(root, name, state.cache)
-	if not parsed.missing
-		if parsed.error != ""
-			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, parsed.error, previous.units), parsed.cache)
-		let source = parsed.cache.sources[!parsed.index]
-		return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGeneric.MirGenericDependency](), false, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), bundles)
+	var missing_error = ""
+	match parsed.outcome
+		ModuleScan.ModuleSourceFound(index)
+			let source = parsed.cache.sources[!index]
+			return module_build_visit_imports(root, name, source_path, source.tree, source.declarations, Array[MirGeneric.MirGenericDependency](), false, visiting, ModuleScan.ModuleScanCached(previous, parsed.cache), bundles)
+		ModuleScan.ModuleSourceInvalid(message)
+			return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, message, previous.units), parsed.cache)
+		ModuleScan.ModuleSourceMissing(message)
+			missing_error = message
 	let package_path = source_path.slice(0, len(source_path) - 7) + ".smirg"
 	var serialized = read_text(package_path) or ""
 	if serialized == ""
@@ -140,7 +144,7 @@ def module_build_visit(root: string, name: string, visiting: Array[string], stat
 			if bundle.name == name
 				serialized = bundle.contents
 	if serialized == ""
-		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, parsed.error, previous.units), parsed.cache)
+		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, missing_error, previous.units), parsed.cache)
 	let archive = MirBundle.mir_bundle_read(serialized)
 	if archive.error != ""
 		return ModuleScan.ModuleScanCached(ModuleScan.new_module_scan_result(previous.visited, "invalid generic bundle " + name + ": " + archive.error, previous.units), parsed.cache)
