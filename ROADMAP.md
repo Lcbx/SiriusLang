@@ -119,6 +119,14 @@ expressions where real examples justify it. Named pattern binders and
 refutable bindings remain possible ergonomic improvements. No new nominal
 `variant` or special payload type is planned.
 
+**HIR/MIR boundary (initial separation):** HIR injection annotations now carry
+the target type and selected constructor alternative. MIR consumes that index
+instead of recovering labels from call syntax and function declarations.
+Structural conversion reconstruction still lives in MIR; a complete HIR
+conversion plan, including nested record/collection conversions, remains work
+to do. The HIR-only assertions in `tests/types/union_source_driver_native.sirius`
+check label selections before lowering.
+
 ## Current storage and regression coverage
 
 Payload-free enums use unowned `i64` tags. In the C backend, union alternatives

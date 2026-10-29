@@ -12,6 +12,8 @@ export let HIR_LITERAL = 4
 export let HIR_UNARY = 5
 export let HIR_MATCH_CASE = 6
 export let HIR_UNION_INJECT = 7
+# HIR_UNION_INJECT: type_id is the conversion target; field_index is the
+# selected union alternative, or -1 for a structural conversion.
 export let HIR_LAMBDA = 8
 
 export rec HirNode(source: i64, operation: i64, type_id: i64, field_index: i64)

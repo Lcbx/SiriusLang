@@ -408,7 +408,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 			let expected = function.argument_types[!i]
 			if not Types.type_coercible(result.types, expected, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), expected, args[!i]) < 0
 				return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, expected) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
-			result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, expected, -1))
+			result.nodes = result.nodes.append(hir_union_injection(result, Hir.hir_ast_child(result.tree, id, i + 1), expected, args[!i]))
 			specialized_args[!i] = expected
 		if parameter.type_node >= 0
 			let annotation = hir_module_type_reference_with_constants(result.types, result.tree, parameter.type_node, result.functions, result.module_constants, result.type_aliases)
@@ -416,7 +416,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 			if annotation.type_id != Types.TYPE_TAG_INVALID and annotation.type_id != args[!i]
 				if not Types.type_coercible(result.types, annotation.type_id, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), annotation.type_id, args[!i]) < 0
 					return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, annotation.type_id) + ", found " + Resolve.hir_type_name(result.types, args[!i]))
-				result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, annotation.type_id, -1))
+				result.nodes = result.nodes.append(hir_union_injection(result, Hir.hir_ast_child(result.tree, id, i + 1), annotation.type_id, args[!i]))
 				specialized_args[!i] = annotation.type_id
 	# In concrete-specialization mode, register calls for the HIR worklist.
 	# Do not recursively analyze callees from inside an expression.
@@ -1471,7 +1471,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 							if result.last_type != named.type_id
 								if hir_direct_constructor_alternative(result, value, named.type_id, result.last_type) < 0
 									return hir_body_error(result, value, "union index requires a value of the specified union type or a direct variant constructor")
-								result.nodes = result.nodes.append(Hir.HirNode(value, Hir.HIR_UNION_INJECT, named.type_id, -1))
+								result.nodes = result.nodes.append(hir_union_injection(result, value, named.type_id, result.last_type))
 							result.last_type = Types.TYPE_TAG_I64
 							result.nodes = result.nodes.append(Hir.HirNode(id, HIR_UNION_INDEX, Types.TYPE_TAG_I64, named.type_id))
 							result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_CALL, Types.TYPE_TAG_I64, -1))
@@ -1623,7 +1623,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 				if not Types.type_coercible(result.types, signature.fields[!i].kind, args[!i]) and hir_direct_constructor_alternative(result, Hir.hir_ast_child(result.tree, id, i + 1), signature.fields[!i].kind, args[!i]) < 0
 					return hir_body_error(result, id, "indirect call argument type mismatch")
 				if args[!i] != signature.fields[!i].kind
-					result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, signature.fields[!i].kind, -1))
+					result.nodes = result.nodes.append(hir_union_injection(result, Hir.hir_ast_child(result.tree, id, i + 1), signature.fields[!i].kind, args[!i]))
 			result.last_type = signature.second
 		elif complete and callee_kind == Ast.NODE_NAME
 			let name = Hir.hir_ast_text(state.tree, callee)
@@ -1669,7 +1669,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 					if tag == Types.TYPE_TAG_DICT and i == 1
 						expected = descriptor.second
 					if args[!i] != expected
-						result.nodes = result.nodes.append(Hir.HirNode(Hir.hir_ast_child(result.tree, id, i + 1), Hir.HIR_UNION_INJECT, expected, -1))
+						result.nodes = result.nodes.append(hir_union_injection(result, Hir.hir_ast_child(result.tree, id, i + 1), expected, args[!i]))
 		if result.last_type != Types.TYPE_TAG_INVALID
 			result.nodes = result.nodes.append(Hir.HirNode(id, Resolve.HIR_CALL, result.last_type, resolved_function))
 		return result
@@ -1699,7 +1699,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 			if right != value_type
 				if not Types.type_coercible(result.types, value_type, right) and hir_direct_constructor_alternative(result, source, value_type, right) < 0
 					return hir_body_error(result, id, "expected " + Resolve.hir_type_name(result.types, value_type) + ", found " + Resolve.hir_type_name(result.types, right))
-				result.nodes = result.nodes.append(Hir.HirNode(source, Hir.HIR_UNION_INJECT, value_type, -1))
+				result.nodes = result.nodes.append(hir_union_injection(result, source, value_type, right))
 			result.last_type = value_type
 			result.nodes = result.nodes.append(Hir.HirNode(id, Hir.HIR_BINARY, value_type, -1))
 		elif left != Types.TYPE_TAG_INVALID and right != Types.TYPE_TAG_INVALID and op != ".."
@@ -1916,6 +1916,11 @@ export def hir_direct_constructor_alternative(state: HirBodyState, source: i64, 
 		return -1
 	return Resolve.hir_union_constructor_alternative_index(state.types, expected, name, actual)
 
+# The target type and selected label are semantic HIR decisions. A negative
+# index requests structural conversion rather than a labeled constructor.
+def hir_union_injection(state: HirBodyState, source: i64, expected: i64, actual: i64) -> Hir.HirNode
+	return Hir.HirNode(source, Hir.HIR_UNION_INJECT, expected, hir_direct_constructor_alternative(state, source, expected, actual))
+
 # Contextual homogeneous arrays can hold distinct alternatives when their
 # expected element type is a union. Every element is checked independently.
 export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: i64) -> HirBodyState
@@ -1924,7 +1929,12 @@ export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: 
 	if state.tree.nodes[!id].kind == Ast.NODE_NAME and Types.type_tag(state.types, expected) == Types.TYPE_TAG_FUNCTION
 		return hir_body_function_value_expected(state, id, expected)
 	if state.tree.nodes[!id].kind != Ast.NODE_ARRAY or Types.type_tag(state.types, expected) != Types.TYPE_TAG_ARRAY
-		return hir_body_expression(state, id)
+		var checked = hir_body_expression(state, id)
+		checked.error == "" else return checked
+		let alternative = hir_direct_constructor_alternative(checked, id, expected, checked.last_type)
+		if alternative >= 0
+			checked.nodes = checked.nodes.append(Hir.HirNode(id, Hir.HIR_UNION_INJECT, expected, alternative))
+		return checked
 	var result = state
 	let element_type = result.types.entries[!expected].first
 	let node = result.tree.nodes[!id]
@@ -1935,7 +1945,7 @@ export def hir_body_expression_expected(state: HirBodyState, id: i64, expected: 
 		if result.last_type != element_type
 			if not Types.type_coercible(result.types, element_type, result.last_type) and hir_direct_constructor_alternative(result, child, element_type, result.last_type) < 0
 				return hir_body_error(result, child, "expected " + Resolve.hir_type_name(result.types, element_type) + ", found " + Resolve.hir_type_name(result.types, result.last_type))
-			result.nodes = result.nodes.append(Hir.HirNode(child, Hir.HIR_UNION_INJECT, element_type, -1))
+			result.nodes = result.nodes.append(hir_union_injection(result, child, element_type, result.last_type))
 	result.last_type = expected
 	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_ARRAY, expected, -1))
 	return result

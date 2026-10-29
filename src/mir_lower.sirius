@@ -1224,25 +1224,17 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		return MirLowerExpr(next, dst)
 	return MirLowerExpr(mir_lower_error(next, "unsupported source expression for MIR"), -1)
 
-# Use the constructor label only for an immediate call in an expected-union
-# context. Structural records saved to bindings cannot carry constructor names.
+# HIR selects constructor labels. Lowering consumes the alternative index;
+# it must not recover semantic identity from constructor syntax or names.
 def mir_lower_inject_source(state: MirBuilder, context: MirLowerContext, value: i64, expected: i64, source: i64) -> MirLowerExpr
-	let actual = state.register_types[!value]
-	if Types.type_tag(context.types, expected) == Types.TYPE_TAG_UNION and context.tree.nodes[!source].kind == Ast.NODE_CALL
-		let callee = Hir.hir_ast_child(context.tree, source, 0)
-		if context.tree.nodes[!callee].kind == Ast.NODE_NAME or context.tree.nodes[!callee].kind == Ast.NODE_ATTR
-			let name = Hir.hir_ast_text(context.tree, callee)
-			var constructor = false
-			for function in context.functions
-				if function.constructor and (function.name == name or function.name.ends_with("." + name))
-					constructor = true
-			if constructor
-				let alternative = Resolve.hir_union_constructor_alternative_index(context.types, expected, name, actual)
-				if alternative >= 0
-					var next = mir_lower_register(state, expected)
-					let destination = len(state.register_types)
-					next = mir_lower_emit(next, Mir.mir_union_new_labeled(destination, value, alternative))
-					return MirLowerExpr(next, destination)
+	let at = Hir.hir_annotation_find(context.hir, context.annotation_index, source, Hir.HIR_UNION_INJECT)
+	if at >= 0
+		let conversion = context.hir[!at]
+		if conversion.type_id == expected and conversion.field_index >= 0
+			var next = mir_lower_register(state, expected)
+			let destination = len(state.register_types)
+			next = mir_lower_emit(next, Mir.mir_union_new_labeled(destination, value, conversion.field_index))
+			return MirLowerExpr(next, destination)
 	return mir_lower_inject(state, context, value, expected)
 
 def mir_lower_return_value(state: MirBuilder, context: MirLowerContext, value: i64) -> MirBuilder

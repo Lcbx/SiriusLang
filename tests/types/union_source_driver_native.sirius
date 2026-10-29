@@ -26,6 +26,32 @@ def analyze(source: string) -> string
 	return body.error
 
 def main() -> i64
+	# Constructor identity must already be present in HIR, before MIR exists.
+	let labels = Parser.parse_module("rec A(x: i64)\nrec B(x: i64)\nlet Choice = A | B\ndef main() -> Choice\n\tlet value: Choice = B(1)\n\tlet values: Array[Choice] = [A(2), B(3)]\n\treturn A(4)\n")
+	let label_decl = Decl.hir_module_declarations(labels.state, labels.node)
+	let label_hir = Spec.hir_specialize_program(labels.state, label_decl, "main", Array[i64]())
+	if label_hir.error != ""
+		print(label_hir.error)
+		return 15
+	let label_body = label_hir.bodies[!label_hir.entry]
+	let label_index = Hir.hir_annotation_index(label_body.nodes, len(labels.state.nodes))
+	var selections = 0
+	for i in 0..len(label_body.nodes)
+		let node = label_body.nodes[!i]
+		if node.operation == Hir.HIR_UNION_INJECT
+			let first = Hir.hir_annotation_find(label_body.nodes, label_index, node.source, Hir.HIR_UNION_INJECT)
+			if first != i
+				continue
+			let selected = label_body.nodes[!first]
+			if selected.field_index < 0
+				return 16
+			let callee = Hir.hir_ast_child(labels.state, node.source, 0)
+			let name = Hir.hir_ast_text(labels.state, callee)
+			if label_hir.types.entries[!selected.type_id].fields[!selected.field_index].name != name
+				return 17
+			selections += 1
+	if selections != 4
+		return 18
 	let header = "rec Success(value: i64)\nrec Failure(code: i64)\nlet Result = Success | Failure\n"
 	let good = header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tFailure(code)\n\t\t\treturn -code\n"
 	let error = analyze(good)
