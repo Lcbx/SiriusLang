@@ -49,9 +49,8 @@ export def hir_annotation_find(nodes: Array[HirNode], index: HirAnnotationIndex,
 
 export rec HirResolution(type_id: i64, field_index: i64, error: string)
 
-# Bindings belong to semantic resolution; the C backend merely retains their
-# temporary legacy ABI kind until the rest of emission moves to HIR.
-export rec SymbolInfo(name: string, kind: i64, type_id: i64, mutable: bool, depth: i64)
+# Bindings carry canonical semantic types and lexical scope information.
+export rec SymbolInfo(name: string, type_id: i64, mutable: bool, depth: i64)
 
 export def resolve_hir_name(symbols: Array[SymbolInfo], name: string) -> HirResolution
 	for i in 0..len(symbols)

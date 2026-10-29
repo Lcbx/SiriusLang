@@ -354,7 +354,7 @@ def main() -> i64
 		if resolved.error != ""
 			print("ERROR " + str(resolved.line) + ": " + resolved.error)
 			return 1
-		var roots = ["main"]
+		var roots = HirDeclarations.hir_executable_roots(declarations, "main")
 		if emit_lib_path != ""
 			roots = export_names
 		let lowered = MirProgram.mir_build_program_roots(resolved.tree, declarations, roots, Array[i64]())

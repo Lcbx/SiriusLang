@@ -1,6 +1,5 @@
 # Canonical semantic types. TypeId is an index in TypeTable.entries, not a
-# description encoded into an integer. This table is separate from the legacy
-# C-emitter kind integers while callers migrate to canonical IDs.
+# description encoded into an integer. HIR and MIR share these canonical IDs.
 
 export let TYPE_TAG_INVALID = 0
 export let TYPE_TAG_I64 = 1

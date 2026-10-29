@@ -223,7 +223,6 @@ export def resolve_hir_collection_call(types: Types.TypeTable, receiver: i64, me
 # Record construction is a semantic operation. The editor carries canonical
 # TypeIds, independent of source-level field ordering and C field expressions.
 export let HIR_RECORD = 19
-export let HIR_CONSTRUCTOR = 20
 
 export rec HirRecordUpdated(index: i64)
 export rec HirRecordEditError(message: string)

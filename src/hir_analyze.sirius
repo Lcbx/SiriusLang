@@ -3,9 +3,8 @@ import parser alias Ast
 import hir alias Hir
 import hir_resolve alias Resolve
 
-# Independent, pre-emission body analysis. Unresolved types are explicitly
-# deferred rather than guessed: specialization and collection typing still
-# belong to the legacy emitter during this migration.
+# HIR owns body typing, contextual conversions and specialization requests.
+# Unresolved types are deferred until concrete specialization, never guessed.
 export let HIR_BINDING = 9
 export let HIR_ASSIGN = 10
 export let HIR_ARRAY = 11
@@ -332,7 +331,7 @@ export def hir_body_binding(state: HirBodyState, id: i64, name: string, type_id:
 	for symbol in result.symbols
 		if symbol.name == name and symbol.depth == result.depth
 			return hir_body_error(result, id, "duplicate binding '" + name + "'")
-	result.symbols = result.symbols.append(Hir.SymbolInfo(name, type_id, type_id, mutable, result.depth))
+	result.symbols = result.symbols.append(Hir.SymbolInfo(name, type_id, mutable, result.depth))
 	result.facts = result.facts.append(HirStaticFact(-1, hir_unknown_range(), Array[i64]()))
 	result.nodes = result.nodes.append(Hir.HirNode(id, HIR_BINDING, type_id, len(result.symbols) - 1))
 	return result
@@ -387,7 +386,7 @@ export def hir_select_overload(state: HirBodyState, name: string, args: Array[i6
 
 # Resolve concrete user calls independently of C emission. Unknown parameter or
 # return types are deferred; an active unannotated recursive call is deferred too.
-# The backend remains responsible for generating/reusing specializations.
+# Resolve arguments and enqueue concrete HIR specializations.
 export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: Array[i64]) -> HirBodyState
 	var result = state
 	let selected = hir_select_overload(state, name, args)
@@ -506,7 +505,7 @@ export def hir_body_user_call(state: HirBodyState, id: i64, name: string, args: 
 				Resolve.HirRecordEditError(message)
 					return hir_body_error(result, pub_id, message)
 			# Publications are visible to later publications, including overrides.
-			nested.symbols = nested.symbols.append(Hir.SymbolInfo(field_name, field_type, field_type, false, nested.depth + 1))
+			nested.symbols = nested.symbols.append(Hir.SymbolInfo(field_name, field_type, false, nested.depth + 1))
 			nested.facts = nested.facts.append(HirStaticFact(-1, hir_unknown_range(), Array[i64]()))
 		for typed_node in nested.nodes
 			if typed_node.operation != HIR_BINDING
@@ -1804,7 +1803,7 @@ export def hir_body_expression(state: HirBodyState, id: i64) -> HirBodyState
 		for i in 0..node.count
 			result = hir_body_expression(result, Hir.hir_ast_child(state.tree, id, i))
 		return result
-	# Other expressions keep their original emitter validation until typed.
+	# Unsupported expression forms remain unresolved.
 	return result
 
 # Instantiate a named generic function using an expected first-class Fn type.

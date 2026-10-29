@@ -28,8 +28,8 @@ def main() -> i64
 	if Hir.resolve_hir_binary(table, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, "*").error == ""
 		return 7
 	var names = Array[Hir.SymbolInfo]()
-	names = names.append(Hir.SymbolInfo("value", 1, Types.TYPE_TAG_I64, true, 0))
-	names = names.append(Hir.SymbolInfo("value", 4, Types.TYPE_TAG_STRING, false, 1))
+	names = names.append(Hir.SymbolInfo("value", Types.TYPE_TAG_I64, true, 0))
+	names = names.append(Hir.SymbolInfo("value", Types.TYPE_TAG_STRING, false, 1))
 	let symbol = Hir.resolve_hir_name(names, "value")
 	if symbol.field_index != 1 or symbol.type_id != Types.TYPE_TAG_STRING
 		return 8

@@ -25,7 +25,7 @@ export def map(values, callback)
 
 # Explicit environment passing for callbacks that would otherwise need a
 # lexical capture. The environment is a normal CoW value; no closure heap or
-# implicit capture is involved. The callback takes (environment, element).
+# implicit capture is involved. The callback takes (element, environment).
 export def map_with_context(values, context, callback)
 	var result = empty_array_like(callback)
 	for value in values

@@ -1,0 +1,259 @@
+import hir alias Hir
+import parser alias Ast
+import module_scan alias Scan
+
+# A declaration graph includes unused bodies, which have no specialized MIR.
+# Calls through values remain dynamic; named references conservatively retain
+# their possible targets. Overloads share a name in this diagnostic view.
+rec GraphEdge(target: string, reference: bool)
+rec GraphWalk(edges: Array[GraphEdge], indirect: bool)
+rec GraphNode(key: string, name: string, constructor: bool, exported: bool, entry: bool, line: i64, edges: Array[GraphEdge], indirect: bool)
+
+def graph_contains(names: Array[string], name: string) -> bool
+	for item in names
+		if item == name
+			return true
+	return false
+
+def graph_known(nodes: Array[GraphNode], key: string) -> bool
+	for node in nodes
+		if node.key == key
+			return true
+	return false
+
+def graph_edge(state: GraphWalk, target: string, reference: bool, nodes: Array[GraphNode]) -> GraphWalk
+	if not graph_known(nodes, target)
+		return state
+	for edge in state.edges
+		if edge.target == target and edge.reference == reference
+			return state
+	return GraphWalk(state.edges.append(GraphEdge(target, reference)), state.indirect)
+
+def graph_path(tree: Ast.ParseState, id: i64) -> string
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_NAME
+		return Hir.hir_ast_text(tree, id)
+	if node.kind == Ast.NODE_ATTR and node.count == 1
+		let owner = graph_path(tree, Hir.hir_ast_child(tree, id, 0))
+		if owner != ""
+			return owner + "." + Hir.hir_ast_text(tree, id)
+	return ""
+
+def graph_target(tree: Ast.ParseState, id: i64, bound: Array[string], declarations: Hir.HirModuleDecl, prefix: string) -> string
+	if tree.nodes[!id].kind == Ast.NODE_LAMBDA
+		return prefix + "#lambda" + str(id)
+	let path = graph_path(tree, id)
+	if path == ""
+		return ""
+	var first = path
+	var last = path
+	var dotted = false
+	var dots = 0
+	for i in 0..len(path)
+		if (path.byte_at(i) or 0) == 46
+			dots += 1
+			if not dotted
+				first = path.slice(0, i)
+			dotted = true
+			last = path.slice(i + 1, len(path))
+	if graph_contains(bound, first)
+		return ""
+	if not dotted
+		return prefix + path
+	for imported in declarations.imports
+		if imported.alias == first
+			# Also resolves an explicit Imported.Union.Label(payload).
+			if dots > 1 and last == "index"
+				return ""
+			return imported.path + "." + last
+	for alias in declarations.type_aliases
+		if alias.name == first
+			if last == "index"
+				return ""
+			return prefix + last
+	return ""
+
+def graph_bindings(tree: Ast.ParseState, id: i64, bound: Array[string]) -> Array[string]
+	let node = tree.nodes[!id]
+	if node.kind == Ast.NODE_BLOCK
+		return bound
+	if node.kind == Ast.NODE_BINDING
+		return bound.append(Hir.hir_ast_text(tree, id))
+	var names = bound
+	for i in 0..node.count
+		names = graph_bindings(tree, Hir.hir_ast_child(tree, id, i), names)
+	return names
+
+def graph_walk(tree: Ast.ParseState, id: i64, bound: Array[string], declarations: Hir.HirModuleDecl, prefix: string, caller: string, nodes: Array[GraphNode], state: GraphWalk) -> GraphWalk
+	let node = tree.nodes[!id]
+	var next = state
+	if node.kind == Ast.NODE_TYPE or node.kind == Ast.NODE_PARAM or node.kind == Ast.NODE_BINDING or node.kind == Ast.NODE_DEF
+		return next
+	if node.kind == Ast.NODE_BLOCK
+		var names = bound
+		for i in 0..node.count
+			let child = Hir.hir_ast_child(tree, id, i)
+			next = graph_walk(tree, child, names, declarations, prefix, caller, nodes, next)
+			let kind = tree.nodes[!child].kind
+			if kind == Ast.NODE_LET or kind == Ast.NODE_VAR or kind == Ast.NODE_PUB
+				names = names.append(Hir.hir_ast_text(tree, child))
+			elif kind == Ast.NODE_DESTRUCTURE
+				for j in 1..tree.nodes[!child].count
+					names = names.append(Hir.hir_ast_text(tree, Hir.hir_ast_child(tree, child, j)))
+			if kind == Ast.NODE_RETURN or kind == Ast.NODE_RECUR
+				break
+		return next
+	if node.kind == Ast.NODE_FOR
+		next = graph_walk(tree, Hir.hir_ast_child(tree, id, 0), bound, declarations, prefix, caller, nodes, next)
+		return graph_walk(tree, Hir.hir_ast_child(tree, id, 1), bound.append(Hir.hir_ast_text(tree, id)), declarations, prefix, caller, nodes, next)
+	if node.kind == Ast.NODE_DESTRUCTURE
+		# Destructuring selectors are field names, not function references.
+		return graph_walk(tree, Hir.hir_ast_child(tree, id, 0), bound, declarations, prefix, caller, nodes, next)
+	if node.kind == Ast.NODE_CASE or node.kind == Ast.NODE_CASE_GROUP or node.kind == Ast.NODE_CASE_BIND_GROUP
+		let names = graph_bindings(tree, id, bound)
+		for i in 0..node.count
+			let child = Hir.hir_ast_child(tree, id, i)
+			if tree.nodes[!child].kind == Ast.NODE_BLOCK
+				next = graph_walk(tree, child, names, declarations, prefix, caller, nodes, next)
+		return next
+	if node.kind == Ast.NODE_LAMBDA
+		return graph_edge(next, prefix + "#lambda" + str(id), true, nodes)
+	if node.kind == Ast.NODE_CALL and node.count > 0
+		let callee = Hir.hir_ast_child(tree, id, 0)
+		let target = graph_target(tree, callee, bound, declarations, prefix)
+		next = graph_edge(next, target, false, nodes)
+		if not graph_known(nodes, target)
+			let kind = tree.nodes[!callee].kind
+			if kind == Ast.NODE_ATTR or kind == Ast.NODE_LAMBDA or graph_contains(bound, Hir.hir_ast_text(tree, callee))
+				next.indirect = true
+			next = graph_walk(tree, callee, bound, declarations, prefix, caller, nodes, next)
+		for i in 1..node.count
+			next = graph_walk(tree, Hir.hir_ast_child(tree, id, i), bound, declarations, prefix, caller, nodes, next)
+		return next
+	if node.kind == Ast.NODE_NAME or node.kind == Ast.NODE_ATTR
+		let target = graph_target(tree, id, bound, declarations, prefix)
+		if graph_known(nodes, target)
+			return graph_edge(next, target, true, nodes)
+	if node.kind == Ast.NODE_RECUR
+		next = graph_edge(next, caller, false, nodes)
+	for i in 0..node.count
+		next = graph_walk(tree, Hir.hir_ast_child(tree, id, i), bound, declarations, prefix, caller, nodes, next)
+	return next
+
+def graph_declarations(nodes: Array[GraphNode], tree: Ast.ParseState, declarations: Hir.HirModuleDecl, prefix: string, entry: bool) -> Array[GraphNode]
+	var result = nodes
+	for function in declarations.functions
+		var name = prefix + function.name
+		let line = Hir.hir_ast_line(tree, function.source)
+		if function.name.starts_with("#lambda")
+			name = prefix + "<lambda at line " + str(line) + ">"
+		let exported = graph_contains(declarations.exports, function.name)
+		result = result.append(GraphNode(prefix + function.name, name, function.constructor, exported, entry and function.name == "main", line, Array[GraphEdge](), false))
+	return result
+
+def graph_connect(nodes: Array[GraphNode], tree: Ast.ParseState, declarations: Hir.HirModuleDecl, offset: i64, prefix: string) -> Array[GraphNode]
+	var result = nodes
+	for i in 0..len(declarations.functions)
+		let function = declarations.functions[!i]
+		if function.body < 0
+			continue
+		var bound = Array[string]()
+		for parameter in function.parameters
+			bound = bound.append(parameter.name)
+		var body = function.body
+		if tree.nodes[!body].kind == Ast.NODE_LAMBDA
+			body = Hir.hir_ast_child(tree, body, tree.nodes[!body].count - 1)
+		let walked = graph_walk(tree, body, bound, declarations, prefix, prefix + function.name, nodes, GraphWalk(Array[GraphEdge](), false))
+		let original = result[!offset + i]
+		result[!offset + i] = {original.*, edges = walked.edges, indirect = walked.indirect}
+	return result
+
+def graph_redirect(target: string, aliases: Array[Hir.HirExternalAlias]) -> string
+	var result = target
+	for i in 0..len(aliases)
+		for alias in aliases
+			if alias.name == result
+				result = alias.target
+	return result
+
+def graph_display(nodes: Array[GraphNode], key: string) -> string
+	for node in nodes
+		if node.key == key
+			return node.name
+	return key
+
+def graph_render(nodes: Array[GraphNode], aliases: Array[Hir.HirExternalAlias]) -> string
+	var used = Array[bool]()
+	for node in nodes
+		used = used.append(node.entry or node.exported)
+	var changed = true
+	while changed
+		changed = false
+		for i in 0..len(nodes)
+			if not used[!i]
+				continue
+			for edge in nodes[!i].edges
+				let target = graph_redirect(edge.target, aliases)
+				for j in 0..len(nodes)
+					if nodes[!j].key == target and not used[!j]
+						used[!j] = true
+						changed = true
+	var lines = ["Call graph (conservative; calls and function references):\n"]
+	for i in 0..len(nodes)
+		let node = nodes[!i]
+		var label = "function "
+		if node.constructor
+			label = "constructor "
+		var status = " [unused]"
+		if used[!i]
+			status = " [used]"
+		if node.exported
+			status += " [exported]"
+		if node.entry
+			status += " [entry]"
+		lines = lines.append(label + node.name + status + " (line " + str(node.line) + ")\n")
+		for edge in node.edges
+			var action = "  calls "
+			if edge.reference
+				action = "  references "
+			lines = lines.append(action + graph_display(nodes, graph_redirect(edge.target, aliases)) + "\n")
+		if node.indirect
+			lines = lines.append("  dynamic/member calls (not resolved in the declaration graph)\n")
+	lines = lines.append("Unused functions and constructors (unreachable from main and exports):\n")
+	var any_unused = false
+	for i in 0..len(nodes)
+		if not used[!i]
+			any_unused = true
+			var label = "function "
+			if nodes[!i].constructor
+				label = "constructor "
+			lines = lines.append("  " + label + nodes[!i].name + "\n")
+	if not any_unused
+		lines = lines.append("  (none)\n")
+	return "".join(lines)
+
+export def hir_call_graph_source(tree: Ast.ParseState, declarations: Hir.HirModuleDecl) -> string
+	let nodes = graph_declarations(Array[GraphNode](), tree, declarations, "", true)
+	return graph_render(graph_connect(nodes, tree, declarations, 0, ""), Array[Hir.HirExternalAlias]())
+
+export def hir_call_graph_modules(units: Array[Scan.ModuleScanUnit], entry: string) -> string
+	var nodes = Array[GraphNode]()
+	var aliases = Array[Hir.HirExternalAlias]()
+	for unit in units
+		nodes = graph_declarations(nodes, unit.tree, unit.declarations, unit.name + ".", unit.name == entry)
+		for reexport in unit.declarations.reexports
+			for imported in unit.declarations.imports
+				if imported.alias == reexport.alias
+					aliases = aliases.append(Hir.HirExternalAlias(unit.name + "." + reexport.public_name, imported.path + "." + reexport.name))
+	# Alias names are graph targets even though they have no separate body.
+	var available = nodes
+	for alias in aliases
+		if graph_known(nodes, graph_redirect(alias.target, aliases))
+			available = available.append(GraphNode(alias.name, alias.name, false, true, false, 0, Array[GraphEdge](), false))
+	var offset = 0
+	for unit in units
+		let connected = graph_connect(available, unit.tree, unit.declarations, offset, unit.name + ".")
+		for i in 0..len(unit.declarations.functions)
+			nodes[!offset + i] = connected[!offset + i]
+		offset += len(unit.declarations.functions)
+	return graph_render(nodes, aliases)

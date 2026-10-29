@@ -30,6 +30,25 @@ def hir_declaration_type_signature(tree: Ast.ParseState, id: i64) -> string
 		result += str(len(child)) + ":" + child
 	return result + "]"
 
+# Executables retain concrete public functions as well as their entry point.
+# Exported generics remain templates until concrete arguments are supplied.
+export def hir_executable_roots(declarations: Hir.HirModuleDecl, entry: string) -> Array[string]
+	var roots = [entry]
+	for name in declarations.exports
+		if name == entry
+			continue
+		for function in declarations.functions
+			if function.name != name or function.constructor
+				continue
+			var concrete = true
+			for parameter in function.parameters
+				if parameter.type_node < 0
+					concrete = false
+			if concrete
+				roots = roots.append(name)
+				break
+	return roots
+
 export def hir_declaration_error(functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], message: string, line: i64) -> Hir.HirModuleDecl
 	return Hir.new_hir_module_decl(functions, constants, Types.new_type_table(), Array[Hir.HirConstantValue](), message, line)
 

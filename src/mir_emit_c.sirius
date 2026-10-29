@@ -1818,7 +1818,7 @@ def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.
 
 rec MirCResult(code: string, error: string)
 
-def mir_emit_c_internal(program: Mir.MirProgram, entry: i64, checked: bool) -> MirCResult
+def mir_emit_c_internal(program: Mir.MirProgram, entry: i64, checked: bool, roots: Array[i64]) -> MirCResult
 	let error = Common.mir_common_entry_error(program, entry)
 	if error != ""
 		return MirCResult("", error)
@@ -1838,17 +1838,24 @@ def mir_emit_c_internal(program: Mir.MirProgram, entry: i64, checked: bool) -> M
 	parts = parts.append("\n")
 	for i in 0..len(program.functions)
 		parts = parts.append(mir_c_definition(program.functions[!i], i, program, checked) + "\n")
-	parts = parts.append("int main(int argc, char **argv) { s_set_arguments(argc, argv); return (int)" + mir_c_function(entry) + "(); }\n")
+	parts = parts.append("int main(int argc, char **argv) { s_set_arguments(argc, argv); ")
+	# Public roots may have no callers inside this executable. Mark their
+	# addresses as used without calling them or relying on C compiler attributes.
+	for root in roots
+		if root < 0 or root >= len(program.functions)
+			return MirCResult("", "invalid C root function")
+		if root != entry
+			parts = parts.append("(void)&" + mir_c_function(root) + "; ")
+	parts = parts.append("return (int)" + mir_c_function(entry) + "(); }\n")
 	return MirCResult("".join(parts), "")
 
 # Keep defensive runtime checks for direct / externally constructed MIR.
 export def mir_emit_c(program: Mir.MirProgram, entry: i64) -> MirCResult
-	return mir_emit_c_internal(program, entry, true)
+	return mir_emit_c_internal(program, entry, true, Array[i64]())
 
-# Standalone linked libraries can contain many unrelated public exports.
-# Keep only entry-reachable functions and relocate their direct call targets
-# before emitting a self-contained C executable.
-def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, checked: bool) -> MirCResult
+# Keep functions reachable through calls or function values from the requested
+# roots, relocating every retained target before C emission.
+def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, roots: Array[i64], checked: bool) -> MirCResult
 	let count = len(program.functions)
 	if entry < 0 or entry >= count
 		return MirCResult("", "invalid C entry function")
@@ -1856,6 +1863,10 @@ def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, checked: 
 	for i in 0..count
 		reachable = reachable.append(false)
 	reachable[!entry] = true
+	for root in roots
+		if root < 0 or root >= count
+			return MirCResult("", "invalid C root function")
+		reachable[!root] = true
 	var changed = true
 	while changed
 		changed = false
@@ -1893,26 +1904,32 @@ def mir_emit_c_reachable_internal(program: Mir.MirProgram, entry: i64, checked: 
 				instructions = instructions.append(Mir.MirInstruction(ins.op, ins.dst, ins.first, ins.second, immediate, ins.inputs, ins.text))
 			blocks = blocks.append(Mir.MirBlock(instructions, block.terminator))
 		functions = functions.append(Mir.MirFunction(function.argument_count, function.return_type, function.register_types, blocks, function.entry))
-	return mir_emit_c_internal(Mir.mir_program_with_types(functions, program.types), indices[!entry], checked)
+	var relocated_roots = Array[i64]()
+	for root in roots
+		relocated_roots = relocated_roots.append(indices[!root])
+	return mir_emit_c_internal(Mir.mir_program_with_types(functions, program.types), indices[!entry], checked, relocated_roots)
 
 # Defensive emission remains the default for arbitrary MIR supplied by callers.
 export def mir_emit_c_reachable(program: Mir.MirProgram, entry: i64) -> MirCResult
-	return mir_emit_c_reachable_internal(program, entry, true)
+	return mir_emit_c_reachable_internal(program, entry, [entry], true)
 
 # A linked, ownership-balanced MIR program has no uninitialized reads, and
 # explicit cleanup covers all exits. Validate before dropping C-side init flags.
 export def mir_emit_c_reachable_verified(program: Mir.MirProgram, entry: i64) -> MirCResult
+	return mir_emit_c_roots_verified(program, entry, [entry])
+
+export def mir_emit_c_roots_verified(program: Mir.MirProgram, entry: i64, roots: Array[i64]) -> MirCResult
 	let error = Ownership.mir_check_balance(program)
 	if error != ""
 		return MirCResult("", error)
 	let failure = Verify.mir_audit_failures_unchecked(program)
 	if failure.error != ""
 		return MirCResult("", failure.error)
-	return mir_emit_c_reachable_internal(program, entry, false)
+	return mir_emit_c_reachable_internal(program, entry, roots, false)
 
 # The normal compiler pipeline has already verified ownership and CFG safety.
-def mir_emit_c_verified(program: Mir.MirProgram, entry: i64) -> MirCResult
-	return mir_emit_c_internal(program, entry, false)
+def mir_emit_c_verified(program: Mir.MirProgram, entry: i64, roots: Array[i64]) -> MirCResult
+	return mir_emit_c_reachable_internal(program, entry, roots, false)
 
 # Opt-in pipeline: parse -> specialized HIR worklist -> linked CFG MIR -> C.
 # Failure is explicit, never an implicit fallback to the old emitter.
@@ -1923,10 +1940,13 @@ export def compile_c_mir(source: string) -> Compile.CompileResult
 	let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
 	if declarations.error != ""
 		return Compile.CompileResult("", declarations.error, declarations.error_line)
-	let lowered = Program.mir_build_program(parsed.state, declarations, "main", Array[i64]())
+	let lowered = Program.mir_build_program_roots(parsed.state, declarations, Decl.hir_executable_roots(declarations, "main"), Array[i64]())
 	if lowered.error != ""
 		return Compile.CompileResult("", lowered.error, 1)
 	if len(lowered.imports) != 0
 		return Compile.CompileResult("", "unresolved imports require MIR library linking", 1)
-	let emitted = mir_emit_c_verified(lowered.program, lowered.entry)
+	var roots = Array[i64]()
+	for exported in lowered.exports
+		roots = roots.append(exported.function_id)
+	let emitted = mir_emit_c_verified(lowered.program, lowered.entry, roots)
 	return Compile.CompileResult(emitted.code, emitted.error, 1)

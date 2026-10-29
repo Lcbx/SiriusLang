@@ -1,5 +1,4 @@
 import hir alias Hir
-import parser alias Parser
 import types alias Types
 # Canonicalize imported HIR types and compile-time constant graphs.
 # TypeIds and value-arena indices are local to their defining module.

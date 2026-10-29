@@ -2,10 +2,13 @@ import mir_emit_c alias Emit
 import module_build alias Build
 import module alias Module
 import types alias Types
+import parser alias Ast
+import hir_declarations alias Decl
+import hir_call_graph alias Graph
 
 # Native compiler entry point. Source modules are built and linked in memory;
 # the historical positional single-file invocation remains supported.
-def compile_module_root(root: string, entry: string, output: string) -> i64
+def compile_module_root(root: string, entry: string, output: string, show_graph: bool) -> i64
 	let built = Build.module_build_link(root, entry)
 	if built.error != ""
 		eprint("module error: " + built.error)
@@ -23,22 +26,39 @@ def compile_module_root(root: string, entry: string, output: string) -> i64
 	if function.argument_count != 0 or function.return_type != Types.TYPE_TAG_I64
 		eprint("module error: entry main() must return i64 and take no arguments")
 		return 1
-	let result = Emit.mir_emit_c_reachable_verified(library.program, id)
+	var roots = Array[i64]()
+	for exported in library.exports
+		roots = roots.append(exported.function_id)
+	let result = Emit.mir_emit_c_roots_verified(library.program, id, roots)
 	if result.error != ""
 		eprint("module error: " + result.error)
 		return 1
 	if not write_text(output, result.code)
 		eprint("cannot write output: " + output)
 		return 2
+	if show_graph
+		let scanned = Build.module_build_scan(root, entry)
+		if scanned.error != ""
+			eprint("call graph error: " + scanned.error)
+			return 1
+		print(Graph.hir_call_graph_modules(scanned.units, entry))
 	return 0
 
 def main() -> i64
-	let args = arguments()
+	let original = arguments()
+	var args = [original[!0]]
+	var show_graph = false
+	for i in 1..len(original)
+		if original[!i] == "--call-graph"
+			show_graph = true
+		else
+			args = args.append(original[!i])
 	if len(args) == 5 and args[!1] == "--module-root"
-		return compile_module_root(args[!2], args[!3], args[!4])
+		return compile_module_root(args[!2], args[!3], args[!4], show_graph)
 	if len(args) != 3
 		eprint("usage: sirius input.sirius output.c")
 		eprint("   or: sirius --module-root source-root entry.module output.c")
+		eprint("add --call-graph to print declaration dependencies and unused declarations")
 		return 2
 	let source = read_text(args[!1]) or ""
 	let result = Emit.compile_c_mir(source)
@@ -48,4 +68,8 @@ def main() -> i64
 	if not write_text(args[!2], result.code)
 		eprint("cannot write output")
 		return 2
+	if show_graph
+		let parsed = Ast.parse_module(source)
+		let declarations = Decl.hir_module_declarations(parsed.state, parsed.node)
+		print(Graph.hir_call_graph_source(parsed.state, declarations))
 	return 0

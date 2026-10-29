@@ -13,7 +13,7 @@ PROGRAM = '''import Std.Filesystem alias FS
 
 def main() -> i64
 	let args = arguments()
-	let path = args[!1]
+	let path = args[!1] + "/français.txt"
 	let missing = args[!2]
 	let empty_file = args[!3]
 	let directory = args[!4]
@@ -110,7 +110,10 @@ def main() -> None:
 		(root / 'directory').mkdir()
 		(root / 'directory' / 'entry').write_text('data', encoding='utf-8')
 		(root / 'empty-dir').mkdir()
-		arguments = tuple(map(str, (root / 'français.txt', root / 'missing', root / 'empty-file',
+		(root / 'unicode').mkdir()
+		# Narrow Windows argv is not UTF-8. Construct the Unicode filename in
+		# Sirius so this checks wide-path filesystem I/O independently of argv.
+		arguments = tuple(map(str, (root / 'unicode', root / 'missing', root / 'empty-file',
 			root / 'directory', root / 'empty-dir', root / 'missing' / 'cannot-write')))
 		generated = root / 'app.c'
 		run(str(cache.seed()), '--module-root', str(root), 'App', str(generated))
@@ -123,7 +126,7 @@ def main() -> None:
 		interpreted = run(str(runner), '--entry', 'M_3_App_4_main', '--load-lib', str(library), *arguments)
 		assert (normalize_newlines(native_result.stdout), normalize_newlines(native_result.stderr)) == (
 			normalize_newlines(interpreted.stdout), normalize_newlines(interpreted.stderr))
-		assert (root / 'français.txt').read_bytes() == 'hello\né'.encode('utf-8')
+		assert (root / 'unicode' / 'français.txt').read_bytes() == 'hello\né'.encode('utf-8')
 		print('PASS filesystem Result: success, absence, write failure, empty directory, UTF-8, native/MIR parity')
 
 

@@ -27,6 +27,12 @@ Only `hir_parametric.sirius` is currently test-only: its symbolic HIR plan is
 exercised by `tests/hir/analysis_module_driver.sirius`, but the production
 compiler uses the concrete HIR specialization path. Historical versioned artifacts remain test fixtures.
 
+`hir_call_graph.sirius` builds the optional declaration-level dependency report,
+including unused bodies and constructor publications. Executable selection uses
+the resolved HIR specialization worklist and MIR call/function-reference edges;
+concrete exports remain roots alongside the entry point. See
+[the call-graph flag](USAGE.md#native-compilation) for report limitations.
+
 ## Token-kind union boundary
 
 `tokenizer.TokenKind` is an exported enum used for lexical classification

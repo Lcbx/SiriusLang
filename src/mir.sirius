@@ -244,16 +244,6 @@ export def mir_call_move_at(ins: MirInstruction, position: i64) -> bool
 		mask = mask / 2
 	return mask % 2 == 1
 
-export def mir_call_moves_register(ins: MirInstruction, register: i64) -> bool
-	if ins.op != MIR_CALL_MOVE
-		return false
-	if register == ins.first
-		return true
-	for i in 0..len(ins.inputs)
-		if ins.inputs[!i] == register and mir_call_move_at(ins, i)
-			return true
-	return false
-
 export def mir_string(dst: i64, value: string) -> MirInstruction
 	return MirInstruction(MIR_CONST_STRING, dst, -1, -1, 0, Array[i64](), value)
 

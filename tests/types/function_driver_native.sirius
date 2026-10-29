@@ -9,7 +9,7 @@ import mir_verify alias Verify
 
 def main() -> i64
 	# Annotation operations share one namespace across HIR modules.
-	let operations = [Hir.HIR_FIELD, Hir.HIR_BINARY, Hir.HIR_NAME, Hir.HIR_LITERAL, Hir.HIR_UNARY, Hir.HIR_MATCH_CASE, Hir.HIR_UNION_INJECT, Hir.HIR_LAMBDA, Analyze.HIR_BINDING, Analyze.HIR_ASSIGN, Analyze.HIR_ARRAY, Analyze.HIR_INDEX, Analyze.HIR_UNWRAP, Analyze.HIR_UNION_CONSTRUCT, Analyze.HIR_UNION_INDEX, Analyze.HIR_UNION_INDEX_LABEL, Analyze.HIR_EARLY_RETURN, Resolve.HIR_CALL, Resolve.HIR_RECORD, Resolve.HIR_CONSTRUCTOR]
+	let operations = [Hir.HIR_FIELD, Hir.HIR_BINARY, Hir.HIR_NAME, Hir.HIR_LITERAL, Hir.HIR_UNARY, Hir.HIR_MATCH_CASE, Hir.HIR_UNION_INJECT, Hir.HIR_LAMBDA, Analyze.HIR_BINDING, Analyze.HIR_ASSIGN, Analyze.HIR_ARRAY, Analyze.HIR_INDEX, Analyze.HIR_UNWRAP, Analyze.HIR_UNION_CONSTRUCT, Analyze.HIR_UNION_INDEX, Analyze.HIR_UNION_INDEX_LABEL, Analyze.HIR_EARLY_RETURN, Resolve.HIR_CALL, Resolve.HIR_RECORD]
 	for i in 0..len(operations)
 		for j in i + 1..len(operations)
 			if operations[!i] == operations[!j]

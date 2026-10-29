@@ -26,6 +26,28 @@ cc -std=c11 -I runtime bootstrap/compiler.c runtime/sirius_runtime.c -lm -o siri
 Windows programs use `.exe`; use the C/linker flags appropriate for MinGW or
 MSVC-targeting Clang. `tools/build_compiler.py` detects the native toolchain.
 
+Add `--call-graph` to print declaration dependencies and unused functions and
+constructors while compiling:
+
+```sh
+./sirius --call-graph program.sirius program.c
+./sirius --call-graph --module-root . App app.c
+```
+
+The report distinguishes calls, function references, constructors, exports and
+the entry point. It includes unreachable bodies, including mutually recursive
+groups. Module names and named re-exports are resolved; local bindings shadow
+declaration names. Calls through function values remain dynamic. The report is
+conservative: same-name overloads share possible edges, and it does not prove
+branches unreachable or enumerate dynamic targets.
+
+Code emission uses resolved HIR specializations and MIR calls/function values,
+retaining `main` and concrete exports and their dependencies. Unreachable
+private functions and uncalled constructor bodies produce no executable code.
+Constructors are expanded at their call sites; exported generics remain
+templates until specialized. Type metadata can remain even when a constructor
+body is unused. Reporting does not change the generated C.
+
 ## MIR interpreter and artifacts
 
 ```sh
