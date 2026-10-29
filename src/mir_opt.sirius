@@ -171,10 +171,18 @@ def mir_redirect_term(term: Mir.MirTerminator, redirect: Array[i64]) -> Mir.MirT
 		alternative = redirect[!alternative]
 	return Mir.MirTerminator(term.kind, term.operand, target, alternative, term.message)
 
+# A bounded fingerprint selects candidates; equality still checks every field.
+def mir_block_fingerprint(block: Mir.MirBlock) -> i64
+	var hash = len(block.instructions) % 1000003
+	for ins in block.instructions
+		hash = (hash * 31 + ins.op + 1) % 1000003
+		hash = (hash * 31 + (ins.dst % 1000003) + 1) % 1000003
+	return (hash * 31 + block.terminator.kind) % 1000003
+
 # The return value is already ownership-checked by the enclosing pipeline.
 # Reuse only blocks whose complete instruction streams are equal, without
 # changing a single instruction or the identity of any register.
-def mir_compact_cfg(function: Mir.MirFunction) -> Mir.MirFunction
+export def mir_compact_cfg(function: Mir.MirFunction) -> Mir.MirFunction
 	let count = len(function.blocks)
 	var forward = Array[i64]()
 	for i in 0..count
@@ -196,16 +204,23 @@ def mir_compact_cfg(function: Mir.MirFunction) -> Mir.MirFunction
 		normalized = normalized.append(Mir.MirBlock(block.instructions, mir_redirect_term(block.terminator, forward)))
 
 	var canonical = Array[i64]()
+	var heads = Dict[i64,i64]()
+	var previous = Array[i64]()
 	for i in 0..count
 		var selected = forward[!i]
+		var prior = -1
 		if selected == i
-			# Only the small cleanup/branch blocks have substantial repeated
-			# bodies; skip quadratic comparisons for large instruction streams.
-			if len(normalized[!i].instructions) <= 2
-				for j in 0..i
-					if canonical[!j] == j and len(normalized[!j].instructions) <= 2 and mir_blocks_equal(normalized[!i], normalized[!j])
-						selected = j
-						break
+			let hash = mir_block_fingerprint(normalized[!i])
+			prior = heads.get(hash) or -1
+			var j = prior
+			while j >= 0
+				if mir_blocks_equal(normalized[!i], normalized[!j])
+					selected = j
+					break
+				j = previous[!j]
+			if selected == i
+				heads = heads.insert(hash, i)
+		previous = previous.append(prior)
 		canonical = canonical.append(selected)
 	# Resolve earlier forwarding aliases to the representative they ultimately
 	# use, including aliases that were selected only after a later block.

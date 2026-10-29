@@ -6,6 +6,7 @@ import mir_verify alias Verify
 import mir_ownership alias Ownership
 import mir_cfg alias Cfg
 import mir_lifetime alias Lifetime
+import mir_opt alias Opt
 import mir_common alias Common
 import mir_program alias Program
 import compile_common alias Compile
@@ -1498,12 +1499,14 @@ def mir_c_interference_has(edges: Array[i64], words: i64, left: i64, right: i64)
 
 # Interfere every simultaneously live pair at a CFG boundary. The transfer
 # scan below also adds write/live and operand hazards inside each block.
-def mir_c_interference_boundary(edges: Array[i64], words: i64, live: Array[i64], candidate: Array[bool]) -> Array[i64]
+def mir_c_interference_boundary(edges: Array[i64], words: i64, live: Array[i64], candidate: Array[bool], candidates: Array[i64]) -> Array[i64]
 	var result = edges
-	for left in 0..len(live)
-		if candidate[!left] and live[!left] != 0
-			for right in left + 1..len(live)
-				if candidate[!right] and live[!right] != 0
+	for i in 0..len(candidates)
+		let left = candidates[!i]
+		if live[!left] != 0
+			for j in i + 1..len(candidates)
+				let right = candidates[!j]
+				if live[!right] != 0
 					result = mir_c_interference_add(result, words, left, right, candidate)
 	return result
 
@@ -1519,8 +1522,12 @@ def mir_c_scalar_slots(function: Mir.MirFunction) -> Array[i64]
 			if ins.dst >= function.argument_count and ins.dst < count and ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 				defined[!ins.dst] = true
 	var candidate = Array[bool]()
+	var candidates = Array[i64]()
 	for r in 0..count
-		candidate = candidate.append(r >= function.argument_count and defined[!r] and mir_c_scalar_type(function.register_types[!r]))
+		let eligible = r >= function.argument_count and defined[!r] and mir_c_scalar_type(function.register_types[!r])
+		candidate = candidate.append(eligible)
+		if eligible
+			candidates = candidates.append(r)
 	let words = (count + 62) / 63
 	var edges = Array[i64]()
 	for i in 0..count * words
@@ -1531,13 +1538,13 @@ def mir_c_scalar_slots(function: Mir.MirFunction) -> Array[i64]
 		var live = states[!b].live_out
 		if block.terminator.kind == Mir.MIR_RETURN or block.terminator.kind == Mir.MIR_BRANCH
 			live[!block.terminator.operand] = 1
-		edges = mir_c_interference_boundary(edges, words, live, candidate)
+		edges = mir_c_interference_boundary(edges, words, live, candidate, candidates)
 		for step in 0..len(block.instructions)
 			let ins = block.instructions[!len(block.instructions) - 1 - step]
 			let reads = Cfg.mir_instruction_reads(ins)
 			if ins.dst >= 0 and ins.dst < count and ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 				if candidate[!ins.dst]
-					for r in 0..count
+					for r in candidates
 						if live[!r] != 0
 							edges = mir_c_interference_add(edges, words, ins.dst, r, candidate)
 					for r in reads
@@ -1548,7 +1555,7 @@ def mir_c_scalar_slots(function: Mir.MirFunction) -> Array[i64]
 				for j in i + 1..len(reads)
 					edges = mir_c_interference_add(edges, words, r, reads[!j], candidate)
 				live[!r] = 1
-		edges = mir_c_interference_boundary(edges, words, live, candidate)
+		edges = mir_c_interference_boundary(edges, words, live, candidate, candidates)
 	# Deterministic greedy coloring; every slot member must be compatible with
 	# the new register (checking only its representative is insufficient).
 	var slots = Array[MirScalarSlot]()
@@ -1578,11 +1585,11 @@ def mir_c_scalar_slots(function: Mir.MirFunction) -> Array[i64]
 # Unlike backward value liveness, forward may-ownership includes values kept
 # for cleanup and survives joins and loop backedges. The overapproximation
 # intentionally rejects some branch-exclusive owners.
-def mir_c_managed_boundary(edges: Array[i64], words: i64, owners: Array[i64], candidate: Array[bool]) -> Array[i64]
+def mir_c_managed_boundary(edges: Array[i64], words: i64, owners: Array[i64], candidate: Array[bool], candidates: Array[i64]) -> Array[i64]
 	var result = edges
 	var present = Array[i64]()
-	for r in 0..len(candidate)
-		if candidate[!r] and Ownership.mir_ownership_get(owners, r) != 0
+	for r in candidates
+		if Ownership.mir_ownership_get(owners, r) != 0
 			for other in present
 				result = mir_c_interference_add(result, words, r, other, candidate)
 			present = present.append(r)
@@ -1592,13 +1599,13 @@ def mir_c_managed_boundary(edges: Array[i64], words: i64, owners: Array[i64], ca
 # register is not owned. RELEASE_IF_INIT also touches its physical slot on
 # the path where it owns nothing. Interfere with all owners present *before*
 # these operations, and with their inputs regardless of transfer order.
-def mir_c_managed_touch(edges: Array[i64], words: i64, ins: Mir.MirInstruction, owners: Array[i64], candidate: Array[bool]) -> Array[i64]
+def mir_c_managed_touch(edges: Array[i64], words: i64, ins: Mir.MirInstruction, owners: Array[i64], candidate: Array[bool], candidates: Array[i64]) -> Array[i64]
 	let dst = ins.dst
 	if dst < 0 or dst >= len(candidate) or not candidate[!dst]
 		return edges
 	var result = edges
-	for other in 0..len(candidate)
-		if candidate[!other] and Ownership.mir_ownership_get(owners, other) != 0
+	for other in candidates
+		if Ownership.mir_ownership_get(owners, other) != 0
 			result = mir_c_interference_add(result, words, dst, other, candidate)
 	if ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 		for source in Cfg.mir_instruction_reads(ins)
@@ -1615,8 +1622,12 @@ def mir_c_managed_slots(types: Types.TypeTable, function: Mir.MirFunction, alias
 			if ins.dst >= function.argument_count and ins.dst < count and ins.op != Mir.MIR_PRINT and ins.op != Mir.MIR_EPRINT and ins.op != Mir.MIR_RELEASE and ins.op != Mir.MIR_RELEASE_IF_INIT
 				defined[!ins.dst] = true
 	var candidate = Array[bool]()
+	var candidates = Array[i64]()
 	for r in 0..count
-		candidate = candidate.append(r >= function.argument_count and defined[!r] and Common.mir_common_managed(types, function.register_types[!r]))
+		let eligible = r >= function.argument_count and defined[!r] and Common.mir_common_managed(types, function.register_types[!r])
+		candidate = candidate.append(eligible)
+		if eligible
+			candidates = candidates.append(r)
 	# Skip ownership analysis for functions without two compatible
 	# non-argument managed destinations.
 	var has_pair = false
@@ -1639,18 +1650,20 @@ def mir_c_managed_slots(types: Types.TypeTable, function: Mir.MirFunction, alias
 	for b in 0..len(function.blocks)
 		if cfg.reached[!b] != 0
 			var owners = states[!b].incoming
-			edges = mir_c_managed_boundary(edges, words, owners, candidate)
+			edges = mir_c_managed_boundary(edges, words, owners, candidate, candidates)
 			for ins in function.blocks[!b].instructions
 				let changes_slot = ins.dst >= 0 and ins.dst < count and candidate[!ins.dst]
+				var owned_before = false
 				if changes_slot
+					owned_before = Ownership.mir_ownership_get(owners, ins.dst) != 0
 					# Includes unconditional and conditional release; the latter
 					# touches its slot even if that owner is absent on this path.
-					edges = mir_c_managed_touch(edges, words, ins, owners, candidate)
+					edges = mir_c_managed_touch(edges, words, ins, owners, candidate, candidates)
 				owners = Ownership.mir_ownership_after(ins, owners)
-				if changes_slot
-					# Scalar instructions cannot create managed ownership. A
-					# move into a scalar can only remove an existing owner.
-					edges = mir_c_managed_boundary(edges, words, owners, candidate)
+				if changes_slot and not owned_before and Ownership.mir_ownership_get(owners, ins.dst) != 0
+					# Only a newly owned candidate can add a simultaneous pair.
+					# Removing owners leaves the existing interference valid.
+					edges = mir_c_managed_boundary(edges, words, owners, candidate, candidates)
 	var result = aliases
 	var slots = Array[MirScalarSlot]()
 	for r in 0..count
@@ -1725,7 +1738,8 @@ def mir_c_compact_scalar_function(types: Types.TypeTable, function: Mir.MirFunct
 def mir_c_definition(function: Mir.MirFunction, index: i64, program: Mir.MirProgram, checked: bool) -> string
 	if checked
 		return mir_c_definition_layout(function, index, program, checked)
-	return mir_c_definition_layout(mir_c_compact_scalar_function(program.types, function), index, program, checked)
+	let compacted = mir_c_compact_scalar_function(program.types, function)
+	return mir_c_definition_layout(Opt.mir_compact_cfg(compacted), index, program, checked)
 
 def mir_c_definition_layout(function: Mir.MirFunction, index: i64, program: Mir.MirProgram, checked: bool) -> string
 	let types = program.types
