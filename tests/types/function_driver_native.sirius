@@ -8,6 +8,16 @@ import mir alias Mir
 import mir_verify alias Verify
 
 def main() -> i64
+	# Annotation operations share one namespace across HIR modules.
+	let operations = [Hir.HIR_FIELD, Hir.HIR_BINARY, Hir.HIR_NAME, Hir.HIR_LITERAL, Hir.HIR_UNARY, Hir.HIR_MATCH_CASE, Hir.HIR_UNION_INJECT, Hir.HIR_LAMBDA, Analyze.HIR_BINDING, Analyze.HIR_ASSIGN, Analyze.HIR_ARRAY, Analyze.HIR_INDEX, Analyze.HIR_UNWRAP, Analyze.HIR_UNION_CONSTRUCT, Analyze.HIR_UNION_INDEX, Analyze.HIR_UNION_INDEX_LABEL, Analyze.HIR_EARLY_RETURN, Resolve.HIR_CALL, Resolve.HIR_RECORD, Resolve.HIR_CONSTRUCTOR]
+	for i in 0..len(operations)
+		for j in i + 1..len(operations)
+			if operations[!i] == operations[!j]
+				return 17
+	let annotations = [Hir.HirNode(0, Resolve.HIR_RECORD, Types.TYPE_TAG_I64, -1), Hir.HirNode(0, Hir.HIR_UNION_INJECT, Types.TYPE_TAG_BOOL, -1)]
+	let index = Hir.hir_annotation_index(annotations, 1)
+	if Hir.hir_annotation_find(annotations, index, 0, Resolve.HIR_RECORD) != 0 or Hir.hir_annotation_find(annotations, index, 0, Hir.HIR_UNION_INJECT) != 1
+		return 18
 	let initial = Types.new_type_table()
 	let nested = Types.intern_array_type(initial, Types.TYPE_TAG_STRING)
 	let params = [Types.TYPE_TAG_I64, nested.id]

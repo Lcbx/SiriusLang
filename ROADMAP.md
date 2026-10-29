@@ -137,6 +137,12 @@ during specialization, while serialized MIR already contains lowered operations.
 Replacing remaining syntax-dependent lowering and giving conversions explicit
 HIR expression identities remain follow-up work.
 
+HIR annotation operation IDs are now distinct across the HIR modules. Record
+literals and their conversion targets previously shared an ID, causing valid
+record-literal arguments and collection elements to lose their conversions.
+Regression coverage includes direct/indirect calls, arrays, Optional defaults,
+explicit union payloads, managed CoW snapshots and source-free generic defaults.
+
 ## Current storage and regression coverage
 
 Payload-free enums use unowned `i64` tags. In the C backend, union alternatives

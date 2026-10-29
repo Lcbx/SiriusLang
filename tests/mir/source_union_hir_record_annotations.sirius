@@ -1,0 +1,41 @@
+rec Good(value: i64, text: string)
+rec Bad(message: string)
+let Result = Good | Bad
+rec Box(value: Result)
+rec Empty()
+let Choice = Box | Empty
+
+def read(box: Box) -> i64
+	match box.value
+		Good(value, text)
+			return value
+		Bad(message)
+			return -1
+
+def result_score(value: Result) -> i64
+	return read(Box(value))
+
+def main() -> i64
+	let direct = read({value = Good(4, "direct")})
+	let callback: Fn[Box,i64] = read
+	let indirect = callback({value = Good(5, "indirect")})
+	var values: Array[Box] = [{value = Good(6, "array")}]
+	let snapshot = values
+	values[!0] = Box(Good(9, "changed"))
+	let fallback = Dict[i64,Box]().get(0) or {value = Good(7, "fallback")}
+	let explicit = Choice.Box({value = Good(8, "explicit")})
+	var extracted = 0
+	match explicit
+		Box(value)
+			extracted = read(Box(value))
+		Empty
+			return 1
+	if direct + indirect + read(snapshot[!0]) + read(fallback) + extracted != 30
+		return 2
+	if read(values[!0]) != 9
+		return 3
+	let raw_values: Array[Result] = [{value = 11, text = "raw array"}]
+	let raw_fallback = Dict[i64,Result]().get(0) or {value = 12, text = "raw default"}
+	if result_score({value = 10, text = "raw argument"}) != 10 or result_score(raw_values[!0]) != 11 or result_score(raw_fallback) != 12
+		return 4
+	return 0

@@ -44,9 +44,15 @@ def main() -> i64
 PROVIDER = '''export rec Good(value: i64)
 export rec Bad(value: i64)
 export let Result = Good | Bad
+export rec Text(text: string)
+export let Nested = Good | Text
+export rec Holder(value: Nested)
 
 export def choose(mapping, key: i64) -> Result
     return mapping.get(key) or Bad(9)
+
+export def choose_holder(mapping, key: i64) -> Holder
+    return mapping.get(key) or {value = Good(13)}
 '''
 
 APP = '''import Provider alias P
@@ -61,6 +67,13 @@ def score(result: P.Result) -> i64
         P.Bad(value)
             return -value
 
+def holder_score(holder: P.Holder) -> i64
+    match holder.value
+        P.Good(value)
+            return value
+        P.Text(text)
+            return -1
+
 def main() -> i64
     let mapping = Dict[i64,P.Result]().insert(1, P.Good(7))
     if score(P.choose(mapping, 1)) != 7 or score(P.choose(mapping, 99)) != -9
@@ -68,6 +81,12 @@ def main() -> i64
     let fallback = mapping.get(99) or P.Bad(4)
     if score(fallback) != -4
         return 2
+    let holders = Dict[i64,P.Holder]().insert(1, P.Holder(P.Good(11)))
+    if holder_score(P.choose_holder(holders, 1)) != 11 or holder_score(P.choose_holder(holders, 99)) != 13
+        return 3
+    let record_fallback = holders.get(99) or {value = P.Good(17)}
+    if holder_score(record_fallback) != 17
+        return 4
     return 0
 '''
 

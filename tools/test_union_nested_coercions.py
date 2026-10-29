@@ -9,6 +9,24 @@ from project_paths import ROOT
 
 
 INVALID = (
+	('record literal incompatible field', '''rec Good(value: i64)
+rec Bad(message: string)
+let Outcome = Good | Bad
+rec Box(value: Outcome)
+def use(value: Box) -> i64
+	return 0
+def main() -> i64
+	return use({value = true})
+'''),
+	('record literal ambiguous nested shape', '''rec Good(value: i64)
+rec Twin(value: i64)
+let Outcome = Good | Twin
+rec Box(value: Outcome)
+def use(value: Box) -> i64
+	return 0
+def main() -> i64
+	return use({value = Good(1)})
+'''),
 	('non-member record', '''rec Success(value: i64)
 rec Failure(code: i64)
 rec Other(flag: bool)
@@ -50,14 +68,14 @@ def main() -> None:
 	runner = cache.native_tool('run_cli')
 	with tempfile.TemporaryDirectory() as directory:
 		folder = Path(directory)
-		for name, status in (('nested_coercions', 42), ('nested_managed', 11), ('mixed_arrays', 42), ('hir_conversion_plans', 0)):
+		for name, status in (('nested_coercions', 42), ('nested_managed', 11), ('mixed_arrays', 42), ('hir_conversion_plans', 0), ('hir_record_annotations', 0)):
 			source = ROOT / 'tests/mir' / f'source_union_{name}.sirius'
 			generated = folder / f'{name}.c'
 			execute([str(compiler), str(source), str(generated)])
 			check_native(cache, generated, code=status)
 			interpreted = subprocess.run([str(runner), str(source)], capture_output=True)
 			assert interpreted.returncode == status and not interpreted.stderr, (name, interpreted)
-			if name in ('nested_managed', 'hir_conversion_plans'):
+			if name in ('nested_managed', 'hir_conversion_plans', 'hir_record_annotations'):
 				binary = folder / 'managed_audit'
 				execute([cache.cc, *C_FLAGS, '-Wno-unused-function', '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'), str(generated), str(ROOT / 'runtime/sirius_runtime.c'), *link_flags(cache.cc), '-o', str(binary)])
 				audited = subprocess.run([str(binary)], capture_output=True)

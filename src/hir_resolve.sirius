@@ -5,7 +5,9 @@ import module alias Module
 # Call signature validation is semantic: no C names or ownership helpers.
 # A checked call returns an interned result type, and (possibly) an extended
 # type table for results such as Optional[string].
-export let HIR_CALL = 6
+# Operation IDs 1..17 are defined by hir and hir_analyze. These must remain
+# distinct: an expression and its conversion can annotate the same source.
+export let HIR_CALL = 18
 
 export rec HirCallCheck(table: Types.TypeTable, type_id: i64, error: string)
 
@@ -220,8 +222,8 @@ export def resolve_hir_collection_call(types: Types.TypeTable, receiver: i64, me
 
 # Record construction is a semantic operation. The editor carries canonical
 # TypeIds, independent of source-level field ordering and C field expressions.
-export let HIR_RECORD = 7
-export let HIR_CONSTRUCTOR = 8
+export let HIR_RECORD = 19
+export let HIR_CONSTRUCTOR = 20
 
 export rec HirRecordUpdated(index: i64)
 export rec HirRecordEditError(message: string)
