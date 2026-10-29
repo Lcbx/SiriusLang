@@ -1,0 +1,12 @@
+import lexer alias Lex
+
+def main() -> i64
+	let args = arguments()
+	let source = read_text(args[!1]) or ""
+	for token in Lex.tokenize(source)
+		let name = Lex.label(token.kind)
+		var shown = ""
+		if name == "NAME" or name == "INT" or name == "FLOAT" or name == "STRING" or name == "OP"
+			shown = " " + source.slice(token.start, token.end)
+		print(name + " " + str(token.start) + ":" + str(token.end) + " " + str(token.line) + ":" + str(token.column) + shown)
+	return 0

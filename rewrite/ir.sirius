@@ -1,0 +1,213 @@
+# Scalar slots hold i64 values or normalized booleans (0/1).
+export rec Constant(dst: i64, value: i64)
+export rec Negate(dst: i64, input: i64)
+export rec Not(dst: i64, input: i64)
+export rec PrintBool(input: i64)
+export rec Add(dst: i64, left: i64, right: i64)
+export rec Subtract(dst: i64, left: i64, right: i64)
+export rec Multiply(dst: i64, left: i64, right: i64)
+export rec BitAnd(dst: i64, left: i64, right: i64)
+export rec BitOr(dst: i64, left: i64, right: i64)
+export rec Copy(dst: i64, input: i64)
+export rec Print(input: i64)
+export rec Return(input: i64)
+export rec Compare(dst: i64, left: i64, right: i64, op: string)
+export rec Branch(input: i64, target: i64)
+export rec Jump(target: i64)
+export rec Nop()
+export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Return | Compare | Branch | Jump | Nop
+export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
+
+rec Flow(dst: i64, first: i64, second: i64, next: i64, other: i64)
+
+def in_bounds(slot: i64, count: i64) -> bool
+	return slot >= 0 and slot < count
+
+# Reachable predecessors contribute definite initialization by intersection.
+# A worklist revisits joins when a loop or a later predecessor removes a fact.
+export def verify(program: Program) -> string
+	if program.error != ""
+		return program.error
+	if program.slots < 0
+		return "negative slot count"
+	let count = len(program.instructions)
+	if count == 0
+		return "missing return"
+	var flows = Array[Flow]()
+	var returned = false
+	var has_control = false
+	for i in 0..count
+		var dst = -1
+		var first = -1
+		var second = -1
+		var next = i + 1
+		var other = -1
+		var writes = false
+		match program.instructions[!i]
+			Constant(target, value)
+				dst = target
+				writes = true
+			(Negate | Not | Copy)(target, input)
+				dst = target
+				first = input
+				writes = true
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+			(Add | Subtract | Multiply | BitAnd | BitOr)(target, left, right)
+				dst = target
+				first = left
+				second = right
+				writes = true
+				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
+					return "undefined input slot"
+			Compare(target, left, right, op)
+				dst = target
+				first = left
+				second = right
+				writes = true
+				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
+					return "undefined input slot"
+				if op != "==" and op != "!=" and op != "<" and op != "<=" and op != ">" and op != ">="
+					return "invalid comparison"
+			(Print | PrintBool)(input)
+				first = input
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+			Return(input)
+				first = input
+				next = -1
+				returned = true
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+			Branch(input, target)
+				has_control = true
+				first = input
+				other = target
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not in_bounds(target, count)
+					return "invalid jump target"
+			Jump(target)
+				has_control = true
+				next = target
+				if not in_bounds(target, count)
+					return "invalid jump target"
+			Nop
+				next = i + 1
+		if writes and not in_bounds(dst, program.slots)
+			return "invalid destination slot"
+		flows = flows.append(Flow(dst, first, second, next, other))
+	if not returned
+		return "missing return"
+	var blank = Array[bool]()
+	for i in 0..program.slots
+		blank = blank.append(false)
+	# Straight-line code has one predecessor per instruction; no matrix needed.
+	if not has_control
+		var finished = false
+		for flow in flows
+			if finished
+				return "unreachable instruction"
+			for input in [flow.first, flow.second]
+				if input >= 0 and not blank[!input]
+					return "undefined input slot"
+			if flow.dst >= 0
+				blank[!flow.dst] = true
+			finished = flow.next < 0
+		return ""
+	var incoming = Array[Array[bool]]()
+	var reached = Array[bool]()
+	for i in 0..count
+		incoming = incoming.append(blank)
+		reached = reached.append(false)
+	reached[!0] = true
+	var queue = [0]
+	var cursor = 0
+	while cursor < len(queue)
+		let index = queue[!cursor]
+		cursor += 1
+		let flow = flows[!index]
+		var outgoing = incoming[!index]
+		if flow.dst >= 0
+			outgoing[!flow.dst] = true
+		for successor in [flow.next, flow.other]
+			if successor < 0
+				continue
+			if successor >= count
+				return "path falls off program"
+			var changed = not reached[!successor]
+			if changed
+				incoming[!successor] = outgoing
+				reached[!successor] = true
+			else
+				var merged = incoming[!successor]
+				for slot in 0..program.slots
+					if merged[!slot] and not outgoing[!slot]
+						merged[!slot] = false
+						changed = true
+				incoming[!successor] = merged
+			if changed
+				queue = queue.append(successor)
+	for i in 0..count
+		if not reached[!i]
+			return "unreachable instruction"
+		let flow = flows[!i]
+		for input in [flow.first, flow.second]
+			if input >= 0 and not incoming[!i][!input]
+				return "undefined input slot"
+	return ""
+
+# Remove unreachable structural markers after early exits, remapping targets.
+export def prune(program: Program) -> Program
+	if program.error != ""
+		return program
+	let count = len(program.instructions)
+	var reached = Array[bool]()
+	var ids = Array[i64]()
+	for i in 0..count
+		reached = reached.append(false)
+		ids = ids.append(-1)
+	var queue = [0]
+	var cursor = 0
+	while cursor < len(queue)
+		let pc = queue[!cursor]
+		cursor += 1
+		if pc == count
+			continue
+		if pc < 0 or pc > count
+			return Program([], 0, "invalid jump target", 0)
+		if reached[!pc]
+			continue
+		reached[!pc] = true
+		match program.instructions[!pc]
+			Jump(target)
+				queue = queue.append(target)
+			Branch(input, target)
+				queue = queue.append(target)
+				queue = queue.append(pc + 1)
+			Return
+				continue
+			Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Compare | Nop
+				queue = queue.append(pc + 1)
+	var size = 0
+	for i in 0..count
+		if reached[!i]
+			ids[!i] = size
+			size += 1
+	var result = Array[Instruction]()
+	for i in 0..count
+		if not reached[!i]
+			continue
+		let instruction = program.instructions[!i]
+		match instruction
+			Jump(target)
+				if target < 0 or target >= count
+					return Program([], 0, "invalid jump target", 0)
+				result = result.append(Jump(ids[!target]))
+			Branch(input, target)
+				if target < 0 or target >= count
+					return Program([], 0, "invalid jump target", 0)
+				result = result.append(Branch(input, ids[!target]))
+			Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Compare | Nop | Return
+				result = result.append(instruction)
+	return Program(result, program.slots, "", 0)

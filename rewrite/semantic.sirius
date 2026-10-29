@@ -1,0 +1,94 @@
+import parser alias Parser
+
+export enum ScalarType
+	Integer
+	Boolean
+
+export rec Checked(parsed: Parser.State, references: Array[i64], types: Array[i64], error: string, line: i64)
+rec Binding(node: i64, mutable: bool, depth: i64)
+
+def name(parsed: Parser.State, token_id: i64) -> string
+	let token = parsed.tokens[!token_id]
+	return parsed.source.slice(token.start, token.end)
+
+export def check(parsed: Parser.State) -> Checked
+	var references = Array[i64]()
+	var types = Array[i64]()
+	var bindings = Dict[string, Binding]()
+	var scopes = Array[Dict[string, Binding]]()
+	var depth = 0
+	let integer = ScalarType.index(Integer)
+	let boolean = ScalarType.index(Boolean)
+	for i in 0..len(parsed.nodes)
+		let node = parsed.nodes[!i]
+		var reference = -1
+		var type = -1
+		var error = ""
+		match node.kind
+			Parser.Variable | Parser.Assign
+				let target = name(parsed, node.token)
+				let binding = bindings.get(target) or Binding(-1, false, -1)
+				reference = binding.node
+				if reference < 0
+					error = "unknown name: " + target
+				else
+					type = types[!reference]
+					if Parser.kind_is(node.kind, Parser.Assign())
+						if not binding.mutable
+							error = "cannot assign to immutable binding: " + target
+						elif types[!node.left] != type
+							error = "assignment type mismatch"
+			Parser.Binding | Parser.MutableBinding
+				let target = name(parsed, node.token)
+				let existing = bindings.get(target) or Binding(-1, false, -1)
+				if existing.node >= 0 and existing.depth == depth
+					error = "duplicate binding: " + target
+				type = types[!node.left]
+				if node.right >= 0
+					var expected = integer
+					if name(parsed, node.right) == "bool"
+						expected = boolean
+					if type != expected
+						error = "binding type mismatch"
+				bindings = bindings.insert(target, Binding(i, Parser.kind_is(node.kind, Parser.MutableBinding()), depth))
+			Parser.IntegerLiteral
+				type = integer
+			Parser.BooleanLiteral
+				type = boolean
+			Parser.Not
+				type = boolean
+				if types[!node.left] != boolean
+					error = "not requires bool"
+			Parser.Print
+				type = types[!node.left]
+			Parser.If | Parser.While
+				if types[!node.left] != boolean
+					error = "condition must be bool"
+				if depth == len(scopes)
+					scopes = scopes.append(bindings)
+				else
+					scopes[!depth] = bindings
+				depth += 1
+			Parser.Else
+				bindings = scopes[!depth - 1]
+			Parser.EndIf | Parser.EndWhile
+				depth -= 1
+				bindings = scopes[!depth]
+			Parser.LoopStart | Parser.Break | Parser.Continue
+				type = -1
+			Parser.Compare
+				type = boolean
+				let op = name(parsed, node.token)
+				if types[!node.left] != types[!node.right] or (types[!node.left] != integer and op != "==" and op != "!=")
+					error = "invalid comparison operands"
+			Parser.Negate | Parser.Add | Parser.Subtract | Parser.Multiply | Parser.BitAnd | Parser.BitOr | Parser.Return
+				type = integer
+				if types[!node.left] != integer
+					error = "expected i64 operand"
+				if node.right >= 0 and types[!node.right] != integer
+					error = "expected i64 operand"
+		if error != ""
+			return Checked(parsed, references, types, error, parsed.tokens[!node.token].line)
+		references = references.append(reference)
+		types = types.append(type)
+	return Checked(parsed, references, types, "", 0)

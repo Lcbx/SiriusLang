@@ -1,0 +1,10 @@
+import lexer alias Lex
+
+def main() -> i64
+	let args = arguments()
+	let source = read_text(args[!1]) or ""
+	var count = 0
+	for i in 0..20
+		count += len(Lex.tokenize(source))
+	print(count)
+	return 0

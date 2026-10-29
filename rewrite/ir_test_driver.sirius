@@ -1,0 +1,50 @@
+import ir alias IR
+
+def check(instructions: Array[IR.Instruction], slots: i64, expected: string) -> bool
+	return IR.verify(IR.Program(instructions, slots, "", 0)) == expected
+
+def main() -> i64
+	if not check([], -1, "negative slot count")
+		return 1
+	if not check([], 0, "missing return")
+		return 2
+	if not check([IR.Constant(-1, 3)], 1, "invalid destination slot")
+		return 3
+	if not check([IR.Constant(1, 3)], 1, "invalid destination slot")
+		return 4
+	if not check([IR.Copy(0, 0), IR.Return(0)], 1, "undefined input slot")
+		return 5
+	if not check([IR.Constant(0, 3), IR.Add(0, 0, 1), IR.Return(0)], 2, "undefined input slot")
+		return 6
+	if not check([IR.Constant(0, 3), IR.Print(-1)], 1, "undefined input slot")
+		return 7
+	if not check([IR.Constant(0, 3), IR.Return(1)], 1, "undefined input slot")
+		return 8
+	if not check([IR.Constant(0, 3), IR.Return(0), IR.Print(0)], 1, "unreachable instruction")
+		return 9
+	if not check([IR.Constant(0, 3), IR.Negate(0, 0), IR.Copy(1, 0), IR.Return(1)], 2, "")
+		return 10
+	if IR.verify(IR.Program([], 0, "frontend error", 1)) != "frontend error"
+		return 11
+	if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.Constant(1, 9), IR.Jump(5), IR.Nop(), IR.Return(1)], 2, "undefined input slot")
+		return 12
+	if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.Constant(1, 9), IR.Jump(5), IR.Constant(1, 8), IR.Return(1)], 2, "")
+		return 13
+	if not check([IR.Jump(-1), IR.Return(0)], 1, "invalid jump target")
+		return 14
+	if not check([IR.Constant(0, 0), IR.Branch(0, 3), IR.Return(0)], 1, "invalid jump target")
+		return 15
+	if not check([IR.Constant(0, 0), IR.Branch(0, 3), IR.Return(0), IR.Nop()], 1, "path falls off program")
+		return 16
+	if not check([IR.Constant(0, 0), IR.Branch(0, 4), IR.Constant(1, 7), IR.Jump(1), IR.Return(1)], 2, "undefined input slot")
+		return 17
+	if not check([IR.Constant(0, 0), IR.Compare(0, 0, 0, "invalid"), IR.Return(0)], 1, "invalid comparison")
+		return 18
+	if not check([IR.Not(0, 0), IR.Return(0)], 1, "undefined input slot")
+		return 19
+	if not check([IR.PrintBool(0), IR.Constant(0, 0), IR.Return(0)], 1, "undefined input slot")
+		return 20
+	let pruned = IR.prune(IR.Program([IR.Constant(0, 1), IR.Jump(3), IR.Nop(), IR.Return(0), IR.Nop()], 1, "", 0))
+	if len(pruned.instructions) != 3 or IR.verify(pruned) != ""
+		return 21
+	return 0

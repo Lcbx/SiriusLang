@@ -1,0 +1,253 @@
+import lexer alias Lex
+
+# Nodes are stored in postorder, so operands precede their users.
+export enum NodeKind
+	IntegerLiteral
+	BooleanLiteral
+	Compare
+	If
+	Else
+	EndIf
+	LoopStart
+	While
+	EndWhile
+	Negate
+	Not
+	Add
+	Subtract
+	Multiply
+	BitAnd
+	BitOr
+	Variable
+	Binding
+	MutableBinding
+	Assign
+	Print
+	Return
+	Break
+	Continue
+
+export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], index: i64, error: string, error_line: i64)
+export rec Parsed(state: State, node: i64)
+
+export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
+	return kind == expected
+
+def current(p: State) -> Lex.Token
+	return p.tokens[!p.index]
+
+def text(p: State) -> string
+	let token = current(p)
+	return p.source.slice(token.start, token.end)
+
+def fail(p: State, message: string) -> State
+	var result = p
+	if result.error == ""
+		result.error = message
+		result.error_line = current(p).line
+	return result
+
+def expect(p: State, expected: string) -> State
+	if p.error != ""
+		return p
+	if text(p) != expected
+		return fail(p, "expected '" + expected + "'")
+	var result = p
+	result.index += 1
+	return result
+
+def expect_kind(p: State, kind: i64, expected: string) -> State
+	if p.error != ""
+		return p
+	if current(p).kind != kind
+		return fail(p, "expected " + expected)
+	var result = p
+	result.index += 1
+	return result
+
+def node(p: State, kind: NodeKind, left: i64, right: i64, token: i64) -> Parsed
+	if p.error != ""
+		return Parsed(p, -1)
+	var result = p
+	let id = len(result.nodes)
+	result.nodes = result.nodes.append(Node(kind, left, right, token))
+	return Parsed(result, id)
+
+def precedence(op: string) -> i64
+	if op == "|"
+		return 1
+	if op == "&" or op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+		return 2
+	if op == "+" or op == "-"
+		return 3
+	if op == "*"
+		return 4
+	return 0
+
+def expression(p: State, minimum: i64) -> Parsed
+	var next = p
+	let token = next.index
+	var result = Parsed(next, -1)
+	if text(next) == "-" or text(next) == "not"
+		let logical = text(next) == "not"
+		next.index += 1
+		let operand = expression(next, 5)
+		var kind: NodeKind = Negate()
+		if logical
+			kind = NodeKind.Not(Not())
+		result = node(operand.state, kind, operand.node, -1, token)
+	elif text(next) == "("
+		next.index += 1
+		let inside = expression(next, 1)
+		result = Parsed(expect(inside.state, ")"), inside.node)
+	elif text(next) == "true" or text(next) == "false"
+		next.index += 1
+		result = node(next, BooleanLiteral(), -1, -1, token)
+	elif current(next).kind == Lex.TokenKind.index(Lex.Integer)
+		next.index += 1
+		result = node(next, IntegerLiteral(), -1, -1, token)
+	elif current(next).kind == Lex.TokenKind.index(Lex.Name)
+		next.index += 1
+		result = node(next, Variable(), -1, -1, token)
+	else
+		return Parsed(fail(next, "expected integer expression"), -1)
+	while result.state.error == ""
+		let op = text(result.state)
+		let priority = precedence(op)
+		if priority < minimum
+			break
+		let operator_token = result.state.index
+		var after = result.state
+		after.index += 1
+		let rhs = expression(after, priority + 1)
+		var kind: NodeKind = Add()
+		if op == "-"
+			kind = NodeKind.Subtract(Subtract())
+		elif op == "*"
+			kind = NodeKind.Multiply(Multiply())
+		elif op == "&"
+			kind = NodeKind.BitAnd(BitAnd())
+		elif op == "|"
+			kind = NodeKind.BitOr(BitOr())
+		elif op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
+			kind = NodeKind.Compare(Compare())
+		result = node(rhs.state, kind, result.node, rhs.node, operator_token)
+	return result
+
+def block(initial: State, loop_start: i64) -> State
+	var p = initial
+	p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+	p = expect_kind(p, Lex.TokenKind.index(Lex.Indent), "indented body")
+	var returned = false
+	while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Dedent) and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+		let token = p.index
+		if returned
+			return fail(p, "statement after control-flow exit")
+		if text(p) == "if" or text(p) == "while"
+			let loop = text(p) == "while"
+			let start = len(p.nodes)
+			if loop
+				p = node(p, LoopStart(), -1, -1, token).state
+			p.index += 1
+			let condition = expression(p, 1)
+			var kind: NodeKind = If()
+			if loop
+				kind = NodeKind.While(While())
+			let branch = node(condition.state, kind, condition.node, -1, token)
+			var body_loop = loop_start
+			if loop
+				body_loop = start
+			p = block(branch.state, body_loop)
+			if p.error != ""
+				return p
+			var alternate = -1
+			if not loop and text(p) == "else"
+				alternate = len(p.nodes)
+				p = node(p, Else(), -1, -1, token).state
+				p.index += 1
+				p = block(p, loop_start)
+				if p.error != ""
+					return p
+			let end = len(p.nodes)
+			if loop
+				p = node(p, EndWhile(), start, -1, token).state
+				p.nodes[!branch.node].right = end + 1
+				for i in start..end
+					if kind_is(p.nodes[!i].kind, Break()) and p.nodes[!i].left == start
+						p.nodes[!i].right = end + 1
+			else
+				p = node(p, EndIf(), -1, -1, token).state
+				p.nodes[!branch.node].right = end
+				if alternate >= 0
+					p.nodes[!branch.node].right = alternate + 1
+					p.nodes[!alternate].right = end
+			continue
+		elif text(p) == "let" or text(p) == "var"
+			let mutable = text(p) == "var"
+			p.index += 1
+			let name = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "binding name")
+			var annotation = -1
+			if text(p) == ":"
+				p = expect(p, ":")
+				annotation = p.index
+				if text(p) != "i64" and text(p) != "bool"
+					return fail(p, "expected i64 or bool")
+				p.index += 1
+			p = expect(p, "=")
+			let value = expression(p, 1)
+			var kind: NodeKind = Binding()
+			if mutable
+				kind = NodeKind.MutableBinding(MutableBinding())
+			p = node(value.state, kind, value.node, annotation, name).state
+		elif text(p) == "print"
+			p = expect(p, "print")
+			p = expect(p, "(")
+			let value = expression(p, 1)
+			p = expect(value.state, ")")
+			p = node(p, Print(), value.node, -1, token).state
+		elif text(p) == "return"
+			p = expect(p, "return")
+			let value = expression(p, 1)
+			p = node(value.state, Return(), value.node, -1, token).state
+			returned = true
+		elif text(p) == "break" or text(p) == "continue"
+			if loop_start < 0
+				return fail(p, "loop exit outside loop")
+			var kind: NodeKind = Break()
+			if text(p) == "continue"
+				kind = NodeKind.Continue(Continue())
+			p.index += 1
+			p = node(p, kind, loop_start, -1, token).state
+			returned = true
+		elif current(p).kind == Lex.TokenKind.index(Lex.Name)
+			p.index += 1
+			p = expect(p, "=")
+			let value = expression(p, 1)
+			p = node(value.state, Assign(), value.node, -1, token).state
+		else
+			return fail(p, "expected statement")
+		p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+	if p.error != ""
+		return p
+	return expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
+
+export def parse(source: string) -> State
+	let tokens = Lex.tokenize(source)
+	var p = State(source, tokens, Array[Node](), 0, "", 0)
+	for token in tokens
+		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
+			p.error = Lex.label(token.kind)
+			p.error_line = token.line
+			return p
+	p = expect(p, "def")
+	p = expect(p, "main")
+	p = expect(p, "(")
+	p = expect(p, ")")
+	p = expect(p, "->")
+	p = expect(p, "i64")
+	p = block(p, -1)
+	return expect_kind(p, Lex.TokenKind.index(Lex.Eof), "end of file")
+
+

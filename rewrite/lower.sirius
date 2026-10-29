@@ -1,0 +1,72 @@
+import parser alias Parser
+import semantic alias Semantic
+import ir alias IR
+
+export def lower(source: string) -> IR.Program
+	let parsed = Parser.parse(source)
+	var instructions = Array[IR.Instruction]()
+	if parsed.error != ""
+		return IR.Program(instructions, 0, parsed.error, parsed.error_line)
+	let checked = Semantic.check(parsed)
+	if checked.error != ""
+		return IR.Program(instructions, 0, checked.error, checked.line)
+	for i in 0..len(parsed.nodes)
+		let node = parsed.nodes[!i]
+		match node.kind
+			Parser.BooleanLiteral
+				let token = parsed.tokens[!node.token]
+				var value = 0
+				if source.slice(token.start, token.end) == "true"
+					value = 1
+				instructions = instructions.append(IR.Constant(i, value))
+			Parser.Compare
+				let token = parsed.tokens[!node.token]
+				instructions = instructions.append(IR.Compare(i, node.left, node.right, source.slice(token.start, token.end)))
+			Parser.If | Parser.While
+				instructions = instructions.append(IR.Branch(node.left, node.right))
+			Parser.Else | Parser.Break
+				instructions = instructions.append(IR.Jump(node.right))
+			Parser.EndWhile | Parser.Continue
+				instructions = instructions.append(IR.Jump(node.left))
+			Parser.LoopStart | Parser.EndIf
+				instructions = instructions.append(IR.Nop())
+			Parser.IntegerLiteral
+				let token = parsed.tokens[!node.token]
+				var value = 0
+				for offset in token.start..token.end
+					let digit = (source.byte_at(offset) or -1) - 48 # ASCII 0
+					# Largest positive i64 is 9223372036854775807.
+					if value > 922337203685477580 or (value == 922337203685477580 and digit > 7)
+						return IR.Program(instructions, 0, "integer literal out of range", token.line)
+					value = value * 10 + digit
+				instructions = instructions.append(IR.Constant(i, value))
+			Parser.Negate
+				instructions = instructions.append(IR.Negate(i, node.left))
+			Parser.Not
+				instructions = instructions.append(IR.Not(i, node.left))
+			Parser.Add
+				instructions = instructions.append(IR.Add(i, node.left, node.right))
+			Parser.Subtract
+				instructions = instructions.append(IR.Subtract(i, node.left, node.right))
+			Parser.Multiply
+				instructions = instructions.append(IR.Multiply(i, node.left, node.right))
+			Parser.BitAnd
+				instructions = instructions.append(IR.BitAnd(i, node.left, node.right))
+			Parser.BitOr
+				instructions = instructions.append(IR.BitOr(i, node.left, node.right))
+			Parser.Variable
+				instructions = instructions.append(IR.Copy(i, checked.references[!i]))
+			Parser.Binding | Parser.MutableBinding
+				instructions = instructions.append(IR.Copy(i, node.left))
+			Parser.Assign
+				instructions = instructions.append(IR.Copy(checked.references[!i], node.left))
+			Parser.Print
+				if checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Boolean)
+					instructions = instructions.append(IR.PrintBool(node.left))
+				else
+					instructions = instructions.append(IR.Print(node.left))
+			Parser.Return
+				instructions = instructions.append(IR.Return(node.left))
+	# A reachable sentinel exposes a missing return; dead block markers are pruned.
+	instructions = instructions.append(IR.Nop())
+	return IR.prune(IR.Program(instructions, len(parsed.nodes), "", 0))

@@ -1,0 +1,208 @@
+# Byte-oriented lexer. Kinds are declaration-order indices, not wire codes.
+export enum TokenKind
+	Name
+	Integer
+	Float
+	String
+	Operator
+	Newline
+	Indent
+	Dedent
+	Eof
+	InvalidChar
+	InvalidIndent
+	UnclosedString
+	InvalidBracket
+	UnclosedBracket
+
+export rec Token(kind: i64, start: i64, end: i64, line: i64, column: i64)
+
+export def label(kind: i64) -> string
+	if kind == TokenKind.index(Name)
+		return "NAME"
+	if kind == TokenKind.index(Integer)
+		return "INT"
+	if kind == TokenKind.index(Float)
+		return "FLOAT"
+	if kind == TokenKind.index(String)
+		return "STRING"
+	if kind == TokenKind.index(Operator)
+		return "OP"
+	if kind == TokenKind.index(Newline)
+		return "NEWLINE"
+	if kind == TokenKind.index(Indent)
+		return "INDENT"
+	if kind == TokenKind.index(Dedent)
+		return "DEDENT"
+	if kind == TokenKind.index(Eof)
+		return "EOF"
+	if kind == TokenKind.index(InvalidChar)
+		return "INVALID_CHAR"
+	if kind == TokenKind.index(InvalidIndent)
+		return "INVALID_INDENT"
+	if kind == TokenKind.index(UnclosedString)
+		return "UNCLOSED_STRING"
+	if kind == TokenKind.index(InvalidBracket)
+		return "INVALID_BRACKET"
+	if kind == TokenKind.index(UnclosedBracket)
+		return "UNCLOSED_BRACKET"
+	return "UNKNOWN"
+
+def byte(source: string, offset: i64) -> i64
+	return source.byte_at(offset) or -1 # -1 marks an out-of-range byte
+
+def digit(c: i64) -> bool
+	return c >= 48 and c <= 57 # 0-9
+
+def letter(c: i64) -> bool
+	return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 # A-Z, a-z, _
+
+def operator_length(c: i64, n: i64, third: i64) -> i64
+	# **=, //=, <<=, >>=
+	if third == 61 and c == n and (c == 42 or c == 47 or c == 60 or c == 62)
+		return 3
+	# .., ->
+	if (c == 46 and n == 46) or (c == 45 and n == 62)
+		return 2
+	# ==, !=, <=, >=, +=, -=, *=, /=, %=, &=, |=, ^=
+	if n == 61 and (c == 61 or c == 33 or c == 60 or c == 62 or c == 43 or c == 45 or c == 42 or c == 47 or c == 37 or c == 38 or c == 124 or c == 94)
+		return 2
+	# **, &&, ||, <<, >>, //
+	if c == n and (c == 42 or c == 38 or c == 124 or c == 60 or c == 62 or c == 47)
+		return 2
+	# ( through /, < through ?, and ! % & : [ ] ^ { | } ~
+	if (c >= 40 and c <= 47) or (c >= 60 and c <= 63) or c == 33 or c == 37 or c == 38 or c == 58 or c == 91 or c == 93 or c == 94 or c == 123 or c == 124 or c == 125 or c == 126
+		return 1
+	return 0
+
+export def tokenize(source: string) -> Array[Token]
+	var tokens = Array[Token]()
+	var brackets = Array[i64]()
+	var depth = 0
+	var indent = 0
+	var pos = 0
+	var line = 1
+	var column = 1
+	var at_line_start = true
+	var has_code = false
+	let size = len(source)
+	while pos < size
+		if at_line_start
+			var tabs = 0
+			var spaces = false
+			while byte(source, pos) == 9 or byte(source, pos) == 32 # tab, space
+				if byte(source, pos) == 9 # tab
+					tabs += 1
+				else
+					spaces = true
+				pos += 1
+				column += 1
+			let first = byte(source, pos)
+			if depth == 0 and first != 10 and first != 13 and first != 35 and first != -1 # LF, CR, #, EOF
+				if spaces or tabs > indent + 1
+					return tokens.append(Token(TokenKind.index(InvalidIndent), pos, pos, line, column))
+				if tabs > indent
+					tokens = tokens.append(Token(TokenKind.index(Indent), pos, pos, line, 1))
+					indent += 1
+				while indent > tabs
+					tokens = tokens.append(Token(TokenKind.index(Dedent), pos, pos, line, 1))
+					indent -= 1
+			at_line_start = false
+		let c = byte(source, pos)
+		if c == 10 or c == 13 # LF, CR
+			let start = pos
+			if c == 13 and byte(source, pos + 1) == 10 # CRLF
+				pos += 2
+			else
+				pos += 1
+			if depth == 0 and has_code
+				tokens = tokens.append(Token(TokenKind.index(Newline), start, pos, line, column))
+			line += 1
+			column = 1
+			at_line_start = true
+			has_code = false
+			continue
+		if c == 32 or c == 9 # space, tab
+			pos += 1
+			column += 1
+			continue
+		if c == 35 # # comment
+			while pos < size and byte(source, pos) != 10 and byte(source, pos) != 13 # LF, CR
+				pos += 1
+				column += 1
+			continue
+		let start = pos
+		var kind = TokenKind.index(Operator)
+		if letter(c)
+			kind = TokenKind.index(Name)
+			pos += 1
+			while letter(byte(source, pos)) or digit(byte(source, pos))
+				pos += 1
+		elif digit(c) or (c == 46 and digit(byte(source, pos + 1))) # .
+			kind = TokenKind.index(Integer)
+			while digit(byte(source, pos))
+				pos += 1
+			if byte(source, pos) == 46 and digit(byte(source, pos + 1)) # .
+				kind = TokenKind.index(Float)
+				pos += 1
+				while digit(byte(source, pos))
+					pos += 1
+			if byte(source, pos) == 101 or byte(source, pos) == 69 # e, E
+				var exponent = pos + 1
+				if byte(source, exponent) == 43 or byte(source, exponent) == 45 # +, -
+					exponent += 1
+				if digit(byte(source, exponent))
+					kind = TokenKind.index(Float)
+					pos = exponent + 1
+					while digit(byte(source, pos))
+						pos += 1
+		elif c == 34 or c == 39 # double quote, single quote
+			kind = TokenKind.index(String)
+			pos += 1
+			var closed = false
+			while pos < size
+				let next = byte(source, pos)
+				if next == 10 or next == 13 # LF, CR
+					break
+				if next == c
+					pos += 1
+					closed = true
+					break
+				if next == 92 # backslash
+					let escaped = byte(source, pos + 1)
+					if escaped == -1 or escaped == 10 or escaped == 13 # EOF, LF, CR
+						break
+					pos += 2
+				else
+					pos += 1
+			if not closed
+				return tokens.append(Token(TokenKind.index(UnclosedString), start, start + 1, line, column))
+		else
+			let width = operator_length(c, byte(source, pos + 1), byte(source, pos + 2))
+			if width == 0
+				return tokens.append(Token(TokenKind.index(InvalidChar), pos, pos + 1, line, column))
+			pos += width
+			if c == 40 or c == 91 or c == 123 # (, [, {
+				if depth == len(brackets)
+					brackets = brackets.append(c)
+				else
+					brackets[!depth] = c
+				depth += 1
+			elif c == 41 or c == 93 or c == 125 # ), ], }
+				if depth == 0
+					return tokens.append(Token(TokenKind.index(InvalidBracket), start, pos, line, column))
+				let opening = brackets[!depth - 1]
+				if (c == 41 and opening != 40) or (c == 93 and opening != 91) or (c == 125 and opening != 123) # (), [], {}
+					return tokens.append(Token(TokenKind.index(InvalidBracket), start, pos, line, column))
+				depth -= 1
+		tokens = tokens.append(Token(kind, start, pos, line, column))
+		column += pos - start
+		has_code = true
+	if depth != 0
+		return tokens.append(Token(TokenKind.index(UnclosedBracket), size, size, line, column))
+	if has_code
+		tokens = tokens.append(Token(TokenKind.index(Newline), size, size, line, column))
+	while indent > 0
+		tokens = tokens.append(Token(TokenKind.index(Dedent), size, size, line, 1))
+		indent -= 1
+	return tokens.append(Token(TokenKind.index(Eof), size, size, line, column))

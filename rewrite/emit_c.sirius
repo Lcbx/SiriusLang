@@ -1,0 +1,60 @@
+import ir alias IR
+import lower alias Lower
+
+export rec Result(code: string, error: string, line: i64)
+
+def slot(id: i64) -> string
+	return "v[" + str(id) + "]"
+
+export def compile(source: string) -> Result
+	let program = Lower.lower(source)
+	let error = IR.verify(program)
+	if error != ""
+		return Result("", error, program.line)
+	var lines = ["#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n#include <string.h>\n"]
+	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\nint main(void) {\n")
+	lines = lines.append("uint64_t v[" + str(program.slots) + "];\n")
+	lines = lines.append("goto L0;\n")
+	for index in 0..len(program.instructions)
+		let instruction = program.instructions[!index]
+		lines = lines.append("L" + str(index) + ":;\n")
+		var fallthrough = true
+		match instruction
+			IR.Compare(dst, left, right, op)
+				lines = lines.append(slot(dst) + " = signed_value(" + slot(left) + ") " + op + " signed_value(" + slot(right) + ");\n")
+			IR.Branch(input, target)
+				lines = lines.append("if (!" + slot(input) + ") goto L" + str(target) + ";\n")
+			IR.Jump(target)
+				lines = lines.append("goto L" + str(target) + ";\n")
+				fallthrough = false
+			IR.Nop
+				fallthrough = true
+			IR.Constant(dst, value)
+				lines = lines.append(slot(dst) + " = UINT64_C(" + str(value) + ");\n")
+			IR.Negate(dst, input)
+				lines = lines.append(slot(dst) + " = UINT64_C(0) - " + slot(input) + ";\n")
+			IR.Not(dst, input)
+				lines = lines.append(slot(dst) + " = !" + slot(input) + ";\n")
+			IR.PrintBool(input)
+				lines = lines.append("puts(" + slot(input) + " ? \"true\" : \"false\");\n")
+			IR.Add(dst, left, right)
+				lines = lines.append(slot(dst) + " = " + slot(left) + " + " + slot(right) + ";\n")
+			IR.Subtract(dst, left, right)
+				lines = lines.append(slot(dst) + " = " + slot(left) + " - " + slot(right) + ";\n")
+			IR.Multiply(dst, left, right)
+				lines = lines.append(slot(dst) + " = " + slot(left) + " * " + slot(right) + ";\n")
+			IR.BitAnd(dst, left, right)
+				lines = lines.append(slot(dst) + " = " + slot(left) + " & " + slot(right) + ";\n")
+			IR.BitOr(dst, left, right)
+				lines = lines.append(slot(dst) + " = " + slot(left) + " | " + slot(right) + ";\n")
+			IR.Copy(dst, input)
+				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
+			IR.Print(input)
+				lines = lines.append("printf(\"%\" PRId64 \"\\n\", signed_value(" + slot(input) + "));\n")
+			IR.Return(input)
+				lines = lines.append("return (int)signed_value(" + slot(input) + ");\n")
+				fallthrough = false
+		if fallthrough
+			lines = lines.append("goto L" + str(index + 1) + ";\n")
+	lines = lines.append("}\n")
+	return Result("".join(lines), "", 0)

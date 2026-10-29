@@ -1,0 +1,25 @@
+import emit_c alias Emit
+import lower alias Lower
+import interpreter alias Interpreter
+
+def main() -> i64
+	let args = arguments()
+	if len(args) == 3 and args[!1] == "--run"
+		let source = read_text(args[!2]) else return 2
+		let program = Lower.lower(source)
+		if program.error != ""
+			eprint("ERROR " + str(program.line) + ": " + program.error)
+			return 1
+		return Interpreter.run(program)
+	if len(args) != 3
+		eprint("usage: rewrite input.sirius output.c")
+		return 2
+	let contents = read_text(args[!1]) else return 2
+	let result = Emit.compile(contents)
+	if result.error != ""
+		eprint("ERROR " + str(result.line) + ": " + result.error)
+		return 1
+	if not write_text(args[!2], result.code)
+		eprint("cannot write output: " + args[!2])
+		return 2
+	return 0
