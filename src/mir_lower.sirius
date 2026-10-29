@@ -15,6 +15,7 @@ rec MirLowerField(name: string, slot: i64)
 
 # Source analysis is immutable during lowering; the builder owns only mutable CFG state.
 rec MirLowerContext(tree: Ast.ParseState, hir: Array[Hir.HirNode], annotation_index: Hir.HirAnnotationIndex, types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue], call_targets: Array[Hir.HirSpecializedCall], function_name: string, argument_count: i64, return_type: i64)
+	pub conversions = Array[Resolve.HirConversionPlan]()
 
 rec MirBuilder(active: i64)
 	pub register_types = Array[i64]()
@@ -205,20 +206,30 @@ def mir_lower_nested_assignment(state: MirBuilder, context: MirLowerContext, id:
 		updated = step.owner
 	return next
 
-# Recursively convert immutable structural values, preserving the canonical
-# target layout. Arrays are rebuilt element-wise, including dynamic lengths.
+# Consume a plan retained by checked HIR. Missing plans are boundary errors;
+# lowering must never silently repeat semantic analysis.
 def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, expected: i64) -> MirLowerExpr
+	if state.register_types[!value] == expected
+		return MirLowerExpr(state, value)
+	let at = Resolve.hir_conversion_find(context.conversions, state.register_types[!value], expected)
+	if at < 0
+		return MirLowerExpr(mir_lower_error(state, "missing checked HIR conversion plan"), -1)
+	let plan = context.conversions[!at]
+	return mir_lower_conversion(state, context, value, plan, plan.root)
+
+# Emit the HIR plan without repeating compatibility or alternative selection.
+def mir_lower_conversion(state: MirBuilder, context: MirLowerContext, value: i64, plan: Resolve.HirConversionPlan, index: i64) -> MirLowerExpr
 	var next = state
-	let actual = next.register_types[!value]
-	if actual == expected
+	let step = plan.steps[!index]
+	let actual = step.source_type
+	let expected = step.target_type
+	if step.operation == Resolve.HIR_CONVERSION_IDENTITY
 		return MirLowerExpr(next, value)
-	if not Types.type_coercible(context.types, expected, actual)
-		return MirLowerExpr(mir_lower_error(next, "incompatible implicit union conversion"), -1)
-	let tag = Types.type_tag(context.types, expected)
+	let tag = step.operation
 	if tag == Types.TYPE_TAG_UNION
 		let destination = len(next.register_types)
 		next = mir_lower_register(next, expected)
-		let alternative = Types.union_alternative_index(context.types, expected, actual)
+		let alternative = step.alternative
 		if context.types.entries[!expected].fields[!0].name != ""
 			next = mir_lower_emit(next, Mir.mir_union_new_labeled(destination, value, alternative))
 		else
@@ -226,7 +237,6 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		return MirLowerExpr(next, destination)
 	if tag == Types.TYPE_TAG_OPTIONAL
 		let source_payload = context.types.entries[!actual].first
-		let target_payload = context.types.entries[!expected].first
 		let destination = len(next.register_types)
 		next = mir_lower_register(next, expected)
 		let present = len(next.register_types)
@@ -245,7 +255,7 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		let payload = len(next.register_types)
 		next = mir_lower_register(next, source_payload)
 		next = mir_lower_emit(next, Mir.mir_optional_unwrap(payload, value))
-		let converted = mir_lower_inject(next, context, payload, target_payload)
+		let converted = mir_lower_conversion(next, context, payload, plan, step.children[!0])
 		next = converted.state
 		next.error == "" else return MirLowerExpr(next, -1)
 		next = mir_lower_emit(next, Mir.mir_optional_some(destination, converted.slot))
@@ -263,7 +273,7 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 			let field = len(next.register_types)
 			next = mir_lower_register(next, source_fields[!i].kind)
 			next = mir_lower_emit(next, Mir.mir_record_get(field, value, i))
-			let converted = mir_lower_inject(next, context, field, target_fields[!i].kind)
+			let converted = mir_lower_conversion(next, context, field, plan, step.children[!i])
 			next = converted.state
 			next.error == "" else return MirLowerExpr(next, -1)
 			inputs = inputs.append(converted.slot)
@@ -273,7 +283,6 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		return MirLowerExpr(next, destination)
 	if tag == Types.TYPE_TAG_DICT
 		let source_desc = context.types.entries[!actual]
-		let target_desc = context.types.entries[!expected]
 		let destination = len(next.register_types)
 		next = mir_lower_register(next, expected)
 		next = mir_lower_emit(next, Mir.mir_dict_new(destination))
@@ -309,7 +318,7 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		let element = len(next.register_types)
 		next = mir_lower_register(next, source_desc.second)
 		next = mir_lower_emit(next, Mir.mir_dict_value(element, value, cursor))
-		let converted = mir_lower_inject(next, context, element, target_desc.second)
+		let converted = mir_lower_conversion(next, context, element, plan, step.children[!0])
 		next = converted.state
 		next.error == "" else return MirLowerExpr(next, -1)
 		next = mir_lower_emit(next, Mir.mir_dict_insert(destination, destination, key, converted.slot))
@@ -318,7 +327,6 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		return MirLowerExpr(next, destination)
 	if tag == Types.TYPE_TAG_ARRAY
 		let source_element = context.types.entries[!actual].first
-		let target_element = context.types.entries[!expected].first
 		let destination = len(next.register_types)
 		next = mir_lower_register(next, expected)
 		next = mir_lower_emit(next, Mir.mir_array_new(destination, Array[i64]()))
@@ -350,7 +358,7 @@ def mir_lower_inject(state: MirBuilder, context: MirLowerContext, value: i64, ex
 		let element = len(next.register_types)
 		next = mir_lower_register(next, source_element)
 		next = mir_lower_emit(next, Mir.mir_array_get(element, value, index))
-		let converted = mir_lower_inject(next, context, element, target_element)
+		let converted = mir_lower_conversion(next, context, element, plan, step.children[!0])
 		next = converted.state
 		next.error == "" else return MirLowerExpr(next, -1)
 		next = mir_lower_emit(next, Mir.mir_array_append(destination, destination, converted.slot))
@@ -1224,7 +1232,7 @@ def mir_lower_expression(state: MirBuilder, context: MirLowerContext, id: i64) -
 		return MirLowerExpr(next, dst)
 	return MirLowerExpr(mir_lower_error(next, "unsupported source expression for MIR"), -1)
 
-# HIR selects constructor labels. Lowering consumes the alternative index;
+# HIR selects union alternatives. Lowering consumes the alternative index;
 # it must not recover semantic identity from constructor syntax or names.
 def mir_lower_inject_source(state: MirBuilder, context: MirLowerContext, value: i64, expected: i64, source: i64) -> MirLowerExpr
 	let at = Hir.hir_annotation_find(context.hir, context.annotation_index, source, Hir.HIR_UNION_INJECT)
@@ -1233,7 +1241,10 @@ def mir_lower_inject_source(state: MirBuilder, context: MirLowerContext, value: 
 		if conversion.type_id == expected and conversion.field_index >= 0
 			var next = mir_lower_register(state, expected)
 			let destination = len(state.register_types)
-			next = mir_lower_emit(next, Mir.mir_union_new_labeled(destination, value, conversion.field_index))
+			if context.types.entries[!expected].fields[!0].name != ""
+				next = mir_lower_emit(next, Mir.mir_union_new_labeled(destination, value, conversion.field_index))
+			else
+				next = mir_lower_emit(next, Mir.mir_union_new(destination, value))
 			return MirLowerExpr(next, destination)
 	return mir_lower_inject(state, context, value, expected)
 
@@ -1835,8 +1846,9 @@ def mir_lower_statement(state: MirBuilder, context: MirLowerContext, id: i64) ->
 		return next
 	return mir_lower_error(next, "unsupported source statement for MIR: " + Ast.node_kind_name(node.kind))
 
-export def mir_lower_function_module(tree: Ast.ParseState, header: Hir.HirFunctionDecl, hir: Array[Hir.HirNode], arguments: Array[i64], return_type: i64, targets: Array[Hir.HirSpecializedCall], types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue]) -> MirLowerResult
-	let context = MirLowerContext(tree, hir, Hir.hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, values, targets, header.name, len(arguments), return_type)
+export def mir_lower_function_module(tree: Ast.ParseState, header: Hir.HirFunctionDecl, hir: Array[Hir.HirNode], arguments: Array[i64], return_type: i64, targets: Array[Hir.HirSpecializedCall], types: Types.TypeTable, functions: Array[Hir.HirFunctionDecl], constants: Array[Hir.HirModuleConstant], values: Array[Hir.HirConstantValue], conversions: Array[Resolve.HirConversionPlan]) -> MirLowerResult
+	var context = MirLowerContext(tree, hir, Hir.hir_annotation_index(hir, len(tree.nodes)), types, functions, constants, values, targets, header.name, len(arguments), return_type)
+	context.conversions = conversions
 	var state = MirBuilder(0)
 	state = mir_lower_block(state)
 	if not Verify.mir_type_supported(context.types, return_type) or len(arguments) != len(header.parameters)
@@ -1861,7 +1873,7 @@ export def mir_lower_function_module(tree: Ast.ParseState, header: Hir.HirFuncti
 	return MirLowerResult(Mir.MirFunction(len(arguments), return_type, state.register_types, state.blocks, 0), state.error)
 
 def mir_lower_function_typed(tree: Ast.ParseState, header: Hir.HirFunctionDecl, hir: Array[Hir.HirNode], arguments: Array[i64], return_type: i64, targets: Array[Hir.HirSpecializedCall], types: Types.TypeTable) -> MirLowerResult
-	return mir_lower_function_module(tree, header, hir, arguments, return_type, targets, types, Array[Hir.HirFunctionDecl](), Array[Hir.HirModuleConstant](), Array[Hir.HirConstantValue]())
+	return mir_lower_function_module(tree, header, hir, arguments, return_type, targets, types, Array[Hir.HirFunctionDecl](), Array[Hir.HirModuleConstant](), Array[Hir.HirConstantValue](), Array[Resolve.HirConversionPlan]())
 
 # Compatibility wrapper for scalar standalone lowering tests.
 def mir_lower_function_calls(tree: Ast.ParseState, header: Hir.HirFunctionDecl, hir: Array[Hir.HirNode], arguments: Array[i64], return_type: i64, targets: Array[Hir.HirSpecializedCall]) -> MirLowerResult

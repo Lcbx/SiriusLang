@@ -185,6 +185,7 @@ export def hir_instantiate_parametric(tree: Ast.ParseState, plan: HirParametricB
 	var nodes = Array[Hir.HirNode]()
 	var current_types = types
 	var requests = Array[Analyze.HirSpecializationRequest]()
+	var conversions = Array[Resolve.HirConversionPlan]()
 	for node in plan.nodes
 		var type_id = hir_parametric_type(node.type_id, arguments)
 		var field_index = node.field_index
@@ -260,6 +261,10 @@ export def hir_instantiate_parametric(tree: Ast.ParseState, plan: HirParametricB
 				type_id = state.last_type
 				for request in state.requests
 					requests = requests.append(request)
+				for conversion in state.conversions
+					let root = conversion.steps[!conversion.root]
+					if Resolve.hir_conversion_find(conversions, root.source_type, root.target_type) < 0
+						conversions = conversions.append(conversion)
 				for j in 0..len(functions)
 					if functions[!j].name == name
 						field_index = j
@@ -294,4 +299,6 @@ export def hir_instantiate_parametric(tree: Ast.ParseState, plan: HirParametricB
 			let value = Hir.hir_ast_child(tree, returned, 0)
 			if hir_parametric_node_type(nodes, value) != final_type
 				return Spec.HirConcreteBody(Array[Hir.HirNode](), requests, current_types, Types.TYPE_TAG_INVALID, "inconsistent return types", Hir.hir_ast_line(tree, returned))
-	return Spec.HirConcreteBody(nodes, requests, current_types, final_type, "", 0)
+	var body = Spec.HirConcreteBody(nodes, requests, current_types, final_type, "", 0)
+	body.conversions = conversions
+	return body

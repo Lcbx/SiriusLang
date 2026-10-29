@@ -120,12 +120,22 @@ refutable bindings remain possible ergonomic improvements. No new nominal
 `variant` or special payload type is planned.
 
 **HIR/MIR boundary (initial separation):** HIR injection annotations now carry
-the target type and selected constructor alternative. MIR consumes that index
-instead of recovering labels from call syntax and function declarations.
-Structural conversion reconstruction still lives in MIR; a complete HIR
-conversion plan, including nested record/collection conversions, remains work
-to do. The HIR-only assertions in `tests/types/union_source_driver_native.sirius`
-check label selections before lowering.
+the target type and selected alternative, including unambiguous stored-record
+shapes as well as direct constructor labels. MIR consumes that index instead
+of recovering labels from call syntax and function declarations.
+HIR also owns recursive structural conversion plans for records, arrays,
+dictionaries and Optionals. Plans record identity steps, child conversions
+and nested union alternatives; MIR emits their records, loops and branches.
+The HIR-only assertions in `tests/types/union_source_driver_native.sirius`
+check direct-label and stored-record selections before lowering;
+`tests/types/union_driver_native.sirius` checks nested plans and rejection.
+Plans are retained in specialized HIR bodies and shared by source/target type
+pair within each body. MIR rejects a missing checked plan rather than invoking
+HIR analysis. Constructor publications and inferred early returns retain their
+plans too. HIR plans are not serialized; source-free generics rebuild them
+during specialization, while serialized MIR already contains lowered operations.
+Replacing remaining syntax-dependent lowering and giving conversions explicit
+HIR expression identities remain follow-up work.
 
 ## Current storage and regression coverage
 

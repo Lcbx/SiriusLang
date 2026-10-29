@@ -15,7 +15,7 @@ import module alias Module
 # Convert the HIR-owned specialization worklist to a complete supported MIR
 # program. Function indices exactly match HIR specialization IDs.
 
-# The backend owns only MIR output; HIR analyses remain local to lowering.
+# The backend owns MIR output and consumes the analyses retained by typed HIR.
 export rec MirProgramBuild(program: Mir.MirProgram, entry: i64, error: string, exports: Array[Mir.MirNamedExport], imports: Array[Mir.MirNamedImport])
 
 def new_mir_program_build(program: Mir.MirProgram, entry: i64, error: string) -> MirProgramBuild
@@ -56,7 +56,7 @@ export def mir_build_program_roots(tree: Ast.ParseState, declarations: Hir.HirMo
 			let symbol = mir_external_symbol(declarations.functions, header, analyzed.types, spec.arguments)
 			functions = functions.append(Mir.MirFunction(len(spec.arguments), body.return_type, spec.arguments, [Mir.MirBlock(releases, Mir.mir_panic("unresolved MIR import: " + symbol))], 0))
 		else
-			let lowered = Lower.mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values)
+			let lowered = Lower.mir_lower_function_module(tree, header, body.nodes, spec.arguments, body.return_type, body.calls, analyzed.types, declarations.functions, declarations.constants, declarations.values, body.conversions)
 			if lowered.error != ""
 				return new_mir_program_build(Mir.new_mir_program(functions), analyzed.entry, lowered.error)
 			functions = functions.append(lowered.function)

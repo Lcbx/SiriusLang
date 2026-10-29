@@ -21,6 +21,40 @@ def main() -> i64
 		return 3
 	if Types.union_alternative_index(union.table, union.id, Types.TYPE_TAG_I64) != -1
 		return 4
+	# HIR plans the entire nested conversion before any MIR instructions exist.
+	let source_record = Types.intern_record_type(union.table, [Types.RecordField("fixed", Types.TYPE_TAG_I64), Types.RecordField("value", success.id)])
+	let target_record = Types.intern_record_type(source_record.table, [Types.RecordField("fixed", Types.TYPE_TAG_I64), Types.RecordField("value", union.id)])
+	let source_optional = Types.intern_optional_type(target_record.table, source_record.id)
+	let target_optional = Types.intern_optional_type(source_optional.table, target_record.id)
+	let source_dict = Types.intern_dict_type(target_optional.table, Types.TYPE_TAG_STRING, source_optional.id)
+	let target_dict = Types.intern_dict_type(source_dict.table, Types.TYPE_TAG_STRING, target_optional.id)
+	let source_array = Types.intern_array_type(target_dict.table, source_dict.id)
+	let target_array = Types.intern_array_type(source_array.table, target_dict.id)
+	let plan = Match.hir_plan_conversion(target_array.table, source_array.id, target_array.id)
+	if plan.error != "" or len(plan.steps) != 6
+		return 50
+	var step = plan.steps[!plan.root]
+	for operation in [Types.TYPE_TAG_ARRAY, Types.TYPE_TAG_DICT, Types.TYPE_TAG_OPTIONAL]
+		if step.operation != operation or len(step.children) != 1
+			return 51
+		step = plan.steps[!step.children[!0]]
+	if step.operation != Types.TYPE_TAG_RECORD or len(step.children) != 2
+		return 52
+	let unchanged = plan.steps[!step.children[!0]]
+	let injected = plan.steps[!step.children[!1]]
+	if unchanged.operation != Match.HIR_CONVERSION_IDENTITY or injected.operation != Types.TYPE_TAG_UNION
+		return 53
+	if injected.source_type != success.id or injected.target_type != union.id or injected.alternative != Types.union_alternative_index(target_array.table, union.id, success.id)
+		return 54
+	let invalid_plan = Match.hir_plan_conversion(target_array.table, target_array.id, source_array.id)
+	if invalid_plan.error == "" or invalid_plan.root != -1 or len(invalid_plan.steps) != 0
+		return 55
+	let ambiguous = Types.intern_labeled_union_type(target_array.table, [Types.RecordField("First", success.id), Types.RecordField("Second", success.id)])
+	if Match.hir_plan_conversion(ambiguous.table, success.id, ambiguous.id).error == ""
+		return 56
+	let wrong_key = Types.intern_dict_type(target_array.table, Types.TYPE_TAG_I64, target_optional.id)
+	if Match.hir_plan_conversion(wrong_key.table, source_dict.id, wrong_key.id).error == ""
+		return 57
 	if Types.intern_union_type(union.table, [success.id, success.id]).id != Types.TYPE_TAG_INVALID
 		return 5
 	let same_shape = Types.intern_record_type(union.table, [Types.RecordField("value", Types.TYPE_TAG_I64)])

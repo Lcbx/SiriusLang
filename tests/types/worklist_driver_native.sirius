@@ -3,6 +3,7 @@ import hir_declarations alias HirDeclarations
 import hir_specialize alias HirSpecialize
 import parser alias Parser
 import types alias Types
+import hir_resolve alias Resolve
 # HIR worklist is usable without linking MIR or the C emitter.
 def main() -> i64
 	let source = "def size(values) -> i64\n\treturn len(values)\ndef main() -> i64\n\tlet a = [1, 2]\n\treturn size(a) + size([3, 4])\n"
@@ -47,5 +48,29 @@ def main() -> i64
 	let invalid = HirSpecialize.hir_specialize_program(bad.state, bad_declarations, "main", Array[i64]())
 	if invalid.error != "expected bool, found i64"
 		return 8
+	# Nested conversion plans survive specialization without a MIR dependency.
+	let conversion = Parser.parse_module("rec Payload(text: string)\nrec Failure(code: i64)\nlet Result = Payload | Failure\nrec SourceBox(value: Payload)\nrec TargetBox(value: Result)\ndef convert(items: Array[SourceBox]) -> Array[TargetBox]\n\tlet first: Array[TargetBox] = items\n\treturn items\ndef main() -> Array[TargetBox]\n\treturn convert([SourceBox(Payload(\"text\"))])\n")
+	let conversion_decl = HirDeclarations.hir_module_declarations(conversion.state, conversion.node)
+	let converted = HirSpecialize.hir_specialize_program(conversion.state, conversion_decl, "main", Array[i64]())
+	if converted.error != ""
+		print(converted.error)
+		return 13
+	if len(converted.bodies) != 2 or len(converted.bodies[!1].conversions) != 1
+		return 14
+	let plan = converted.bodies[!1].conversions[!0]
+	let root = plan.steps[!plan.root]
+	if root.operation != Types.TYPE_TAG_ARRAY or root.source_type != converted.registry.entries[!1].arguments[!0]
+		return 15
+	let record = plan.steps[!root.children[!0]]
+	let injection = plan.steps[!record.children[!0]]
+	if record.operation != Types.TYPE_TAG_RECORD or injection.operation != Types.TYPE_TAG_UNION or injection.alternative < 0
+		return 16
+	if Resolve.hir_conversion_find(converted.bodies[!1].conversions, root.source_type, root.target_type) != 0
+		return 17
+	let early = Parser.parse_module("def bad() -> i64\n\tlet value = Dict[i64,i64]().get(0) else return \"wrong\"\n\treturn 0\n")
+	let early_decl = HirDeclarations.hir_module_declarations(early.state, early.node)
+	let invalid_early = HirSpecialize.hir_specialize_program(early.state, early_decl, "bad", Array[i64]())
+	if invalid_early.error != "incompatible implicit union conversion"
+		return 18
 	print("PASS HIR worklist without backend")
 	return 0

@@ -39,6 +39,51 @@ export def hir_type_name(types: Types.TypeTable, id: i64) -> string
 		return "Fn[" + ",".join(parts) + "]"
 	return "record"
 
+# Postorder conversion steps separate semantic compatibility and alternative
+# selection from CFG construction. Children refer to earlier steps.
+export let HIR_CONVERSION_IDENTITY = -1
+export rec HirConversionStep(source_type: i64, target_type: i64, operation: i64, alternative: i64, children: Array[i64])
+export rec HirConversionPlan(steps: Array[HirConversionStep], root: i64, error: string)
+
+export def hir_conversion_find(plans: Array[HirConversionPlan], actual: i64, expected: i64) -> i64
+	for i in 0..len(plans)
+		let plan = plans[!i]
+		let root = plan.steps[!plan.root]
+		if root.source_type == actual and root.target_type == expected
+			return i
+	return -1
+
+def hir_conversion_steps(types: Types.TypeTable, actual: i64, expected: i64, plan: HirConversionPlan) -> HirConversionPlan
+	var result = plan
+	var operation = HIR_CONVERSION_IDENTITY
+	var alternative = -1
+	var children = Array[i64]()
+	if actual != expected
+		operation = Types.type_tag(types, expected)
+		if operation == Types.TYPE_TAG_UNION
+			alternative = Types.union_alternative_index(types, expected, actual)
+		elif operation == Types.TYPE_TAG_ARRAY or operation == Types.TYPE_TAG_OPTIONAL
+			result = hir_conversion_steps(types, types.entries[!actual].first, types.entries[!expected].first, result)
+			children = children.append(result.root)
+		elif operation == Types.TYPE_TAG_DICT
+			result = hir_conversion_steps(types, types.entries[!actual].second, types.entries[!expected].second, result)
+			children = children.append(result.root)
+		elif operation == Types.TYPE_TAG_RECORD
+			let source_fields = types.entries[!actual].fields
+			let target_fields = types.entries[!expected].fields
+			for i in 0..len(target_fields)
+				result = hir_conversion_steps(types, source_fields[!i].kind, target_fields[!i].kind, result)
+				children = children.append(result.root)
+	result.root = len(result.steps)
+	result.steps = result.steps.append(HirConversionStep(actual, expected, operation, alternative, children))
+	return result
+
+export def hir_plan_conversion(types: Types.TypeTable, actual: i64, expected: i64) -> HirConversionPlan
+	let empty = HirConversionPlan(Array[HirConversionStep](), -1, "")
+	if not Types.type_coercible(types, expected, actual)
+		return HirConversionPlan(empty.steps, -1, "incompatible implicit union conversion")
+	return hir_conversion_steps(types, actual, expected, empty)
+
 export def hir_expected(types: Types.TypeTable, expected: i64, found: i64) -> HirCallCheck
 	if Types.type_coercible(types, expected, found)
 		return HirCallCheck(types, expected, "")

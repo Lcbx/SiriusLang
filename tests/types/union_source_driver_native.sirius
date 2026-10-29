@@ -7,6 +7,8 @@ import types alias Types
 import mir_program alias MirProgram
 import mir_interpreter alias Interpreter
 import mir alias Mir
+import mir_lower alias Lower
+import hir_resolve alias Resolve
 
 # Resolve the source union once and check that specialization uses its alias
 # and typed, arm-scoped constructor parameters.
@@ -52,6 +54,29 @@ def main() -> i64
 			selections += 1
 	if selections != 4
 		return 18
+	# Stored records have no label, but a unique payload shape is resolved in HIR.
+	let structural = Parser.parse_module("rec A(x: i64)\nrec B(y: bool)\nlet Choice = A | B\ndef main() -> Choice\n\tlet raw = A(7)\n\tlet value: Choice = raw\n\tlet values: Array[Choice] = [raw]\n\treturn raw\n")
+	let structural_decl = Decl.hir_module_declarations(structural.state, structural.node)
+	let structural_hir = Spec.hir_specialize_program(structural.state, structural_decl, "main", Array[i64]())
+	if structural_hir.error != ""
+		print(structural_hir.error)
+		return 19
+	let structural_body = structural_hir.bodies[!structural_hir.entry]
+	let structural_index = Hir.hir_annotation_index(structural_body.nodes, len(structural.state.nodes))
+	var structural_selections = 0
+	for i in 0..len(structural_body.nodes)
+		let node = structural_body.nodes[!i]
+		if node.operation == Hir.HIR_UNION_INJECT
+			let first = Hir.hir_annotation_find(structural_body.nodes, structural_index, node.source, Hir.HIR_UNION_INJECT)
+			if first != i
+				continue
+			if node.field_index < 0
+				return 20
+			if structural_hir.types.entries[!node.type_id].fields[!node.field_index].name != "A"
+				return 21
+			structural_selections += 1
+	if structural_selections != 3
+		return 22
 	let header = "rec Success(value: i64)\nrec Failure(code: i64)\nlet Result = Success | Failure\n"
 	let good = header + "def unwrap(result: Result) -> i64\n\tmatch result\n\t\tSuccess(value)\n\t\t\treturn value\n\t\tFailure(code)\n\t\t\treturn -code\n"
 	let error = analyze(good)
@@ -115,5 +140,21 @@ def main() -> i64
 	for entry in executed.heap
 		if entry.refs != 0
 			return 14
+	# MIR requires the checked plan and cannot recreate a missing one.
+	let boundary = Parser.parse_module("rec A(x: i64)\nrec B(y: bool)\nlet Choice = A | B\nrec Source(value: A)\nrec Target(value: Choice)\ndef convert(value: Source) -> Target\n\treturn value\n")
+	let boundary_decl = Decl.hir_module_declarations(boundary.state, boundary.node)
+	let checked = Spec.hir_specialize_program(boundary.state, boundary_decl, "convert", Array[i64]())
+	if checked.error != "" or len(checked.bodies[!checked.entry].conversions) != 1
+		return 23
+	let body = checked.bodies[!checked.entry]
+	let specialization = checked.registry.entries[!checked.entry]
+	let definition = Spec.hir_definition(boundary_decl.functions, specialization.definition)
+	let function = boundary_decl.functions[!definition]
+	let missing_plan = Lower.mir_lower_function_module(boundary.state, function, body.nodes, specialization.arguments, body.return_type, body.calls, checked.types, boundary_decl.functions, boundary_decl.constants, boundary_decl.values, Array[Resolve.HirConversionPlan]())
+	if missing_plan.error != "missing checked HIR conversion plan"
+		return 24
+	let lowered = Lower.mir_lower_function_module(boundary.state, function, body.nodes, specialization.arguments, body.return_type, body.calls, checked.types, boundary_decl.functions, boundary_decl.constants, boundary_decl.values, body.conversions)
+	if lowered.error != ""
+		return 25
 	print("PASS source tagged union aliases and HIR match analysis")
 	return 0

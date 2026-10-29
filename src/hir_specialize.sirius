@@ -10,8 +10,10 @@ import hir_declarations alias Decl
 # duplicate signatures reuse existing IN_PROGRESS entries.
 
 export rec HirConcreteBody(nodes: Array[Hir.HirNode], requests: Array[Analyze.HirSpecializationRequest], types: Types.TypeTable, return_type: i64, error: string, error_line: i64)
+	pub conversions = Array[Resolve.HirConversionPlan]()
 # Bodies are in specialization-ID order; the array index is the ID.
 export rec HirSpecializedFunction(nodes: Array[Hir.HirNode], calls: Array[Hir.HirSpecializedCall], return_type: i64)
+	pub conversions = Array[Resolve.HirConversionPlan]()
 export rec HirSpecializedRoot(name: string, function_id: i64)
 export rec HirSpecializedProgram(registry: Hir.HirSpecializationRegistry, bodies: Array[HirSpecializedFunction], types: Types.TypeTable, entry: i64, error: string, roots: Array[HirSpecializedRoot])
 
@@ -58,7 +60,15 @@ export def hir_concrete_body(tree: Ast.ParseState, header: Hir.HirFunctionDecl, 
 			if result_type != Types.TYPE_TAG_INVALID and result_type != declared.type_id and Types.union_alternative_index(state.types, declared.type_id, result_type) < 0
 				state = Analyze.hir_body_error(state, header.source, "expected " + Resolve.hir_type_name(state.types, declared.type_id) + ", found " + Resolve.hir_type_name(state.types, result_type))
 			result_type = declared.type_id
-	return HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
+	if state.error == ""
+		for node in state.nodes
+			if node.operation == Analyze.HIR_EARLY_RETURN
+				state = Analyze.hir_body_conversion_plan(state, node.source, result_type, node.type_id)
+				if state.error != ""
+					break
+	var body = HirConcreteBody(state.nodes, state.requests, state.types, result_type, state.error, state.error_line)
+	body.conversions = state.conversions
+	return body
 
 export def hir_definition(functions: Array[Hir.HirFunctionDecl], definition: i64) -> i64
 	for i in 0..len(functions)
@@ -173,7 +183,9 @@ export def hir_specialize_program_roots(tree: Ast.ParseState, declarations: Hir.
 			let started = Hir.hir_begin_specialization(registry, request.definition, request.arguments, result_type)
 			registry = started.registry
 			calls = calls.append(Hir.HirSpecializedCall(request.source, started.index))
-		bodies = bodies.append(HirSpecializedFunction(typed.nodes, calls, typed.return_type))
+		var body = HirSpecializedFunction(typed.nodes, calls, typed.return_type)
+		body.conversions = typed.conversions
+		bodies = bodies.append(body)
 		registry = Hir.hir_complete_specialization(registry, cursor, typed.return_type)
 		cursor += 1
 	var result = new_hir_specialized_program(registry, bodies, types, entry, "")

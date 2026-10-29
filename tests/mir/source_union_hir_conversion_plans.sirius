@@ -1,0 +1,51 @@
+rec Payload(text: string)
+rec Failure(code: i64)
+let Result = Payload | Failure
+rec SourceBox(value: Payload)
+rec TargetBox(value: Result)
+
+def take(box: TargetBox) -> TargetBox
+	return box
+
+rec Factory(value: Payload)
+	pub converted = take(SourceBox(value))
+
+# Both inferred and declared return types must plan early-return conversions.
+def early(present: bool)
+	var values = Dict[i64,i64]()
+	if present
+		values = values.insert(0, 1)
+	let ignored = values.get(0) else return SourceBox(Payload("early"))
+	return TargetBox(Payload("present"))
+
+def unwrap_after(present: bool) -> TargetBox
+	var values = Dict[i64,SourceBox]()
+	if present
+		values = values.insert(0, SourceBox(Payload("unwrapped")))
+	let box: TargetBox = values.get(0) else return SourceBox(Payload("fallback"))
+	return box
+
+def lift(items: Array[SourceBox]) -> Array[TargetBox]
+	let first: Array[TargetBox] = items
+	return items
+
+def text(box: TargetBox) -> string
+	match box.value
+		Payload(value)
+			return value
+		Failure(code)
+			return "failure"
+
+def main() -> i64
+	if text(Factory(Payload("constructor")).converted) != "constructor"
+		return 1
+	if text(early(false)) != "early" or text(early(true)) != "present"
+		return 2
+	if text(unwrap_after(false)) != "fallback" or text(unwrap_after(true)) != "unwrapped"
+		return 3
+	var original = [SourceBox(Payload("original"))]
+	let converted = lift(original)
+	original[!0] = SourceBox(Payload("changed"))
+	if text(converted[!0]) != "original" or text(lift(original)[!0]) != "changed"
+		return 4
+	return 0

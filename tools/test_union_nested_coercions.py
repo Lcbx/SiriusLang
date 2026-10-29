@@ -50,14 +50,14 @@ def main() -> None:
 	runner = cache.native_tool('run_cli')
 	with tempfile.TemporaryDirectory() as directory:
 		folder = Path(directory)
-		for name, status in (('nested_coercions', 42), ('nested_managed', 11), ('mixed_arrays', 42)):
+		for name, status in (('nested_coercions', 42), ('nested_managed', 11), ('mixed_arrays', 42), ('hir_conversion_plans', 0)):
 			source = ROOT / 'tests/mir' / f'source_union_{name}.sirius'
 			generated = folder / f'{name}.c'
 			execute([str(compiler), str(source), str(generated)])
 			check_native(cache, generated, code=status)
 			interpreted = subprocess.run([str(runner), str(source)], capture_output=True)
 			assert interpreted.returncode == status and not interpreted.stderr, (name, interpreted)
-			if name == 'nested_managed':
+			if name in ('nested_managed', 'hir_conversion_plans'):
 				binary = folder / 'managed_audit'
 				execute([cache.cc, *C_FLAGS, '-Wno-unused-function', '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'), str(generated), str(ROOT / 'runtime/sirius_runtime.c'), *link_flags(cache.cc), '-o', str(binary)])
 				audited = subprocess.run([str(binary)], capture_output=True)
