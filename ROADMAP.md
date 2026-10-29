@@ -4,7 +4,9 @@ This is the **active task list**, not a history of completed work. The
 [language design](LANGUAGE_DESIGN.md) defines intended semantics, and the
 [examples](examples/README.md) list exercised features and restrictions.
 For the detailed milestones, benchmarks, and previous implementation decisions,
-see the [October 25, 2026 roadmap snapshot](docs/history/ROADMAP_20261025.md).
+see the [October 29 snapshot](docs/history/ROADMAP_20261029.md) and
+[October 25 snapshot](docs/history/ROADMAP_20261025.md). Historical claims may
+be superseded by the current baseline below.
 
 ## Current baseline (October 2026)
 
@@ -43,10 +45,10 @@ promised while the language is experimental.
 
 ## Priorities
 
-1. **Finish constructor-labeled unions and enum ergonomics.** Keep records
-   structural, give union alternatives explicit labels, and retain native/MIR
-   parity. Continue improving generic and higher-order inference after the
-   foundational union identity and pattern work.
+1. **Make existing features compose consistently.** Extend contextual typing
+   and constructor-label preservation where concrete programs expose gaps.
+   Keep conversion and label decisions in HIR for MIR to consume; preserve
+   native/interpreted and source-free package parity.
 2. **Maintain correctness and cross-platform portability.** Preserve the
    self-hosting bootstrap fixed point, CoW semantics, error-path behavior, ARC
    balance, Windows GCC support, and deterministic serialization. Add focused
@@ -87,9 +89,8 @@ preserve their selected tags. Stored records remain label-free.
 Explicit `Union.Label(record)` now constructs the selected alternative
 from any structurally compatible record payload; an existing union cannot be
 relabeled through this form. Qualified exported union aliases also resolve.
-The mixed-size `Array[Union]` native/MIR and ARC regression confirms that
-each element stores a fixed-size tagged wrapper referring to separately sized
-payload records, not a largest-variant inline buffer.
+Union storage is type-directed; see the current representation below. Large
+alternatives do not force every array element to reserve their payload size.
 
 **Verified source-free path:** payload-free enum declarations, constructor
 selection, matching, and `Union.Label(record)` in exported generic bodies now
@@ -118,383 +119,48 @@ expressions where real examples justify it. Named pattern binders and
 refutable bindings remain possible ergonomic improvements. No new nominal
 `variant` or special payload type is planned.
 
-**Compact enum storage (implemented):** A union whose alternatives are all
-empty records now uses an unowned `i64` tag instead of a heap wrapper. Arrays,
-dictionaries, arguments and record fields store that scalar directly in their
-existing `S_MirField` slot. The MIR interpreter has equivalent semantics;
-pattern arms without payload fields no longer extract a record. Native/MIR,
-ARC and CoW regressions are in `tools/test_union_scalar_enums.py`. In a
-Clang `-O2` generated-Sirius comparison (300,000 elements, 48 traversals,
-16 CoW updates, seven alternating runs), median native elapsed time fell
-from 0.198 s to 0.018 s after eliminating unused empty-payload extraction,
-and observed max RSS from about 39.5 MiB to 7.5 MiB. The workload performs
-14.4 million enum matches and strongly favors this optimization; it is one
-workload, not a general 11x speedup claim. Construction no longer requires a temporary record for the common immediate
-last-use case: post-cleanup MIR folds `RECORD_NEW(empty)`, `UNION_NEW`, and
-`RELEASE(record)` into a payload-free enum-tag operation. The native emitter,
-interpreter, verifier, and serialized MIR all support this form. This does
-not change independently used records or heterogeneous unions. Tests are in
-`tools/test_enum_empty_opt.py`. In a construction-oriented, generated-Sirius
-workload (2.4 million appends, one traversal/match, Clang `-O2`, nine runs),
-median native elapsed time fell from 32.5 ms to 12.3 ms. The narrower
-measurement excludes compilation and is reproducible using
-`tools/benchmark_enum_construction.py` with both compiler binaries. Other
-construction forms still materialize records; broaden the optimization only
-when tests and measurements justify it.
+## Current storage and regression coverage
 
-**Experimental general-purpose union storage (not implemented):**
-`tools/benchmark_union_storage.py` compares the existing two-allocation
-wrapper/record representation with a one-allocation fused wrapper and an
-inline max-payload-width array, using a standalone scalar-only C11 model.
-It includes construction, repeated traversal, detached CoW copies with one
-replacement, cleanup, and requested-byte accounting. At 80,000 values,
-48 traversals and 16 CoW updates (five runs, Clang/GCC `-O2`), the inline
-model took 0.21–0.44× the current model's time for payload-free enums and
-0.66–0.81× for balanced alternatives with up to six `i64` fields. But a
-rare 100-`i64` alternative (1 in 64 elements) made the fixed-width inline
-model approximately **16× slower** and increased modeled peak storage from
-roughly 10 MiB to 202 MiB. Fused heap wrappers had variable results and still
-needed one allocation per union. These are **C model measurements, not
-compiler-generated Sirius benchmarks**; managed fields, full ARC auditing,
-serialization, MIR interpretation and end-to-end workload effects are not
-modeled. Consequently only the payload-free scalar case was adopted; general
-payload storage is unchanged. Inline storage for other alternatives requires
-type-directed array/dictionary/register layout and ownership rules, plus
-native/MIR parity and end-to-end benchmarks. Do not assume the largest-
-alternative inline layout is universally beneficial.
+Payload-free enums use unowned `i64` tags. In the C backend, union alternatives
+with at most three unmanaged scalar fields (`i64`, `f64`, `bool`) inline their
+payload in wrappers and array slots by default. Larger and managed payloads
+retain boxed storage. Union registers retain their pointer ABI. See
+`src/mir_emit_c.sirius` and `tools/test_mir_inline_unions.py` for eligibility
+rules and native/MIR, CoW, hashing and ARC coverage.
 
-A generated-Sirius follow-up tested only **last-use payload ownership
-transfer** (not allocation fusion): `tools/benchmark_union_transfer.py`
-compiles real union-heavy Sirius source, then experimentally rewrites the
-adjacent wrapper retain plus record release in emitted C. Both versions pass
-native output checks; reduced-size runs also pass native ARC auditing. With
-400,000 alternating payload-bearing union values and 13 timed runs at `-O2`,
-Clang reported transferred/baseline ratios of 0.948 (scalar fields) and
-0.998 (managed string); GCC reported 1.073 and 0.998 respectively. This
-optimization removes an ARC retain/release pair but **neither allocation**;
-the cross-compiler result does not justify a production MIR transfer mode.
-The benchmark changes only temporary generated C; the compiler, runtime,
-serialized MIR and language semantics are unchanged. A genuine coallocated
-wrapper/payload representation must first define lifetime handling when a
-matched record remains referenced after its union wrapper is released,
-including ARC credits, independent payload extraction, and CoW.
+Boxed wrapper/payload coallocation remains experimental and disabled by
+default. `SIRIUS_EXPERIMENTAL_UNION_COALLOC` enables the optional path;
+`SIRIUS_EXPERIMENTAL_UNION_HYBRID` remains a tested configuration. Neither
+flag is needed for default small-scalar inlining. Allocation selection and
+managed/large fallback checks are in `tools/test_union_hybrid_coallocation.py`.
+Earlier C models and construction benchmarks are preserved in the
+[historical snapshot](docs/history/ROADMAP_20261029.md); their conclusions do
+not describe all current storage paths.
 
-**Coallocated wrapper/payload ownership experiment (not implemented):**
-`tools/bench_union_coallocation.c` and
-`tools/benchmark_union_coallocation.py` test a *single allocation containing
-both a union wrapper and its fixed-size record payload*. The two values retain
-independent reference counts. The wrapper owns one payload credit, and the
-allocation remains live while an extracted payload remains referenced after
-the wrapper dies. A detached CoW record gets a separate allocation and retains
-its managed members. The standalone C11 model exercises managed strings and
-numerical arrays, escaped records, record CoW, shared union wrappers and CoW
-array snapshots. Clang and GCC `-O2`, with 80,000 values, 48 scans and 16
-CoW copies (separate seven-run and eleven-run sessions), reported these
-median fused/current ranges: **0.80–0.91** (Clang scalar), **0.79–0.93**
-(Clang managed), **0.81–0.82** (GCC scalar) and **0.83** (GCC managed).
-The allocation count fell from 160,050 to 80,034 for scalar and
-from 240,082 to 160,066 for managed values. Requested payload bytes and
-modeled peak bytes were unchanged; allocator overhead is not counted.
-ASan/UBSan correctness runs passed for both representations under both C
-compilers. These figures are **standalone C-model results, not generated
-Sirius performance**, and ARC audit integration and self-hosting were not
-attempted. The prototype marks coallocated fixed-size nodes using a reserved
-capacity sentinel; it is *not* safe to generalize that marker to growable
-arrays. Before adopting: design typed MIR construction fusion and emitted-C
-lifetime/free policy (including ARC shadow credits for the two interior
-objects), validate record extraction, field mutation, CoW and package paths,
-then benchmark actual generated Sirius workloads. No production representation
-change follows from this model alone.
+## Next work
 
-**Generated-C construction fusion follow-up (experimental, not shipped):**
-`tools/benchmark_union_fusion.py` compiles real Sirius code, then rewrites
-only adjacent `RECORD_NEW -> UNION_NEW -> RELEASE(record)` sequences in the
-emitted C. It places the record and union header in one allocation, maintains
-independent ARC credits (including the existing retain/release operations),
-and delays freeing the slab until a matched record's last reference dies.
-It uses two reserved `capacity` sentinels for *fixed-size* coallocated
-objects; generalizing this to resizable arrays is unsafe. Baseline and
-rewritten C pass native result checks, ARC auditing, and ASan/UBSan with
-Clang and GCC. An additional managed record/array CoW snapshot and match
-regression passes in both compilers. At 80,000 values, `-O2`, the first
-seven-run medians gave fused/current timings of 0.858/0.811 (Clang
-scalar/managed) and 0.799/0.801 (GCC). A second nine-run session gave
-0.716/0.804 (Clang) and 0.712/0.845 (GCC). **These are generated Sirius
-workloads with an external C rewrite, not production compiler output.**
-Execution time includes construction, traversal, and cleanup but excludes
-compilation, startup granularity is material, and workloads are
-construction-heavy. The evidence justifies a real compiler-side prototype,
-not switching the default representation yet. Such an implementation must
-replace the exact-text C rewrite with a MIR-level non-escaping constructor
-pattern, encode coallocation in the generated runtime without overloading
-resizable capacity semantics, preserve package/type metadata, and validate
-ownership with escaped payloads, record CoW, managed nested fields, native
-and interpreted parity, and Windows GCC. Compiler rebuild and total
-compilation overhead also need measurement.
+- **Feature composition:** find a concrete nested expression that loses an
+  expected type or constructor label, then add positive and negative tests
+  across native/MIR and source-free generics before changing lowering.
+- **Independent applications:** build medium-sized programs combining modules,
+  collections, explicit callback contexts and failure handling. Use observed
+  library and diagnostic gaps to choose further work.
+- **Differential coverage:** expand combinations of contextual defaults,
+  callbacks, labeled unions and collections. Include managed payloads, CoW
+  snapshots and ARC auditing where supported.
+- **Numerical workloads:** extend the checked rank-2 `Std.Numeric` library from
+  concrete use cases. Compare changes with the existing library and flat-array
+  baseline using `tools/benchmark_stdlib_numeric.py`. Establish transitive
+  effect checking before parallel transformations.
+- **Allocation lifetime:** identify real pass-local allocations and prove that
+  references cannot escape a reset boundary before adopting regions. The POD
+  scratch prototype and allocation counts are historical evidence, not a
+  production allocator or proof that ARC-managed values can be reset.
 
-
-**Typed MIR coallocation prototype (opt-in, not the default):** The optimizer
-now marks fresh record constructors injected directly into a payload-bearing
-union, including constructors that move owned field inputs, with
-`MIR_RECORD_NEW_FUSED` / `MIR_RECORD_NEW_FUSED_MOVE`. Adjacent union wrapping
-and record release are mandatory; MIR verification rejects unsupported forms.
-The MIR interpreter retains its existing logical record behavior. The native C
-emitter uses one allocation for the wrapper and record only when compiled with
-`-DSIRIUS_EXPERIMENTAL_UNION_COALLOC`; otherwise it uses the original two
-allocations. The original experimental version used an explicit
-`allocation_kind` header field, costing an additional word on every record.
-That layout was the one measured in the initial and mixed-workload benchmarks
-below; it is preserved here as historical context. Wrapper/payload ARC
-identities remain separate.
-The generated-Sirius comparison in `tools/benchmark_union_compiler_coallocation.py`
-uses the *same emitted C* with and without this flag, no C rewriting. At
-400,000 alternating payloads and nine timed native executions (`-O2`),
-coallocated/current median times were **0.780x scalar / 0.779x managed**
-with Clang and **0.820x scalar / 0.834x managed** with GCC. CoW and
-128-element scalar/managed tests passed ARC auditing and ASan/UBSan in both
-configurations. These workloads heavily favor fresh construction and do not
-measure compile time or general application performance. Compiler fixtures
-(98 programs / 49 expected errors), bootstrap fixed point, and source-free
-heterogeneous union packages passed. Keep this **experimental** pending
-representative workloads, compile-time cost measurements, Windows GCC, and
-more escape/ownership tests. Do not treat these figures as a general speedup.
-
-**Mixed workload follow-up (October 27; opt-in remains off):**
-`tools/benchmark_union_coallocation_workloads.py` uses the same emitted C
-under both configurations. It covers repeated matching/traversal, detached
-CoW array appends, a managed `Array[i64]` field escaping its union wrapper,
-and a *no-union* record/array control to detect the metadata cost. Each case
-checks expected results, audits small inputs under both representations, and
-reports Sirius source-to-C time, native C build time, and nine-run median
-native execution separately (plus sample spread). Optional `--sanitize`
-adds ASan/UBSan to the bounded ARC checks.
-
-At 60,000 elements and 64 repetitions on Linux, two separate Clang `-O2`
-sessions gave coallocated/current ratios of **1.08–1.19** for traversal,
-**0.96–1.03** for CoW, **0.87–0.95** for escaped managed fields, and
-**0.90–0.96** for the no-union control. A GCC session gave **0.94**, **1.02**,
-**1.00**, and an anomalous **2.13** respectively; a repeated GCC control
-run returned **1.02**, so the anomalous timing is not reproducible. A separate
-Clang traversal repeat gave **0.97**. These variations are material,
-not a credible universal performance gain or regression. An independent C11
-`sizeof` probe confirms a 32-byte baseline record header versus 40 bytes
-under the opt-in flag (64-bit target, 8-byte `S_MirField`). Thus a one-field
-wrapper+payload pair requests 88 bytes in two blocks normally, versus
-104 bytes in one coallocated block, before allocator bookkeeping. This extra
-16-byte logical footprint plus the 8-byte header cost for unrelated records
-is a plausible traversal/cache downside, not a measured explanation of the
-timing variance. Emitting Sirius C
-for these small fixtures took approximately 6–12 ms; the opt-in switch acts
-at C compilation time, so this alone does not measure MIR optimization
-compile-time overhead. Individual C-build durations also varied substantially,
-precluding a reliable overhead claim from these runs.
-
-**Decision:** keep the feature disabled by default. Construction-heavy wins
-are repeatable, but there is no consistent gain in workloads dominated by
-traversal, CoW, or record-header overhead. Before reconsidering the default,
-measure representative end-to-end programs under controlled CPU conditions
-and obtain stable native compilation and memory measurements; also validate
-Windows GCC and whole-record (not just managed-field) escape in full Sirius.
-
-
-**Fixed-size coallocation header experiment (October 27; still opt-in):**
-The experimental C runtime no longer adds `allocation_kind` to every
-`S_MirRecord`. Instead, **only fused fixed-size records and their fixed-size
-union wrappers** set the top bit of their existing `capacity` word. The marker
-is disjoint from any allocated collection capacity: maximum allocation checks
-bound field counts well below this bit. Growable arrays, dictionaries and
-ordinary records retain the original 32-byte header, normal capacity, and
-resizing behavior. `s_mir_record_reserve_owned` explicitly rejects resizing
-a fused node. The independent wrapper/payload ARC credits and the `MIR_RECORD_NEW_FUSED`
-selection are unchanged; the C flag still defaults off. On the tested 64-bit
-layout, a one-field coallocated union pair requests 88 rather than 104 bytes,
-and ordinary record headers are 32 rather than 40 bytes under the flag.
-These are **layout calculations**, not evidence of an application speedup.
-The earlier benchmark ratios above refer to the previous 40-byte experimental
-header and must not be attributed to this new layout. A focused generated-C
-regression (`tools/test_union_coallocation_header.py`) checks the unchanged
-ordinary header, extraction of a retained record after its wrapper is freed,
-and ARC auditing with Clang/GCC ASan/UBSan. Both compilers passed. Scalar,
-managed, and CoW benchmark correctness tests passed, as did the 98 native
-compiler fixtures and 49 expected diagnostics and the generation-three
-bootstrap fixed point. A five-run 20,000-element construction test reported
-coallocated/current ratios of 0.99/0.81 (Clang scalar/managed) and
-0.89/0.78 (GCC), but a no-union control and an escaped-field workload were
-1.09x and 1.14x under Clang, with material sample spread. These short runs
-are insufficient to attribute timing differences to the header change or to
-justify enabling coallocation by default. Windows GCC remains untested.
-
-## Completed higher-order constraint diagnostics
-
-**Higher-order constraint diagnostics and inference:** generic callbacks can now
-flow through local aliases, copied nested record fields, and mutable
-assignments. Invalidating aliases on reassignment prevents stale constraints;
-lexical slots prevent shadowed names from creating false constraints. Source
-imports and source-free `.smirg` packages retain these generic definitions.
-Conditional alias joins now retain only identities preserved by continuing
-`if`/`elif`/`else` paths; exhaustive `match` arms use the same rule, with
-pattern-bound fields available to local inference. Return and guard exits do
-not contaminate the continuing path; loop joins allow zero iterations.
-The compiler distinguishes conflicting callback signatures, forwarding
-cycles without type seeds, and underdetermined callbacks, naming the relevant
-function and recommending explicit annotations. Conflicts now identify the
-first incompatible callback parameter types or arities and the defining-body
-call-site lines; forwarding preserves that evidence. Cycles report the
-bounded, human-readable forwarding chain, including for `.smirg` imports.
-Imported generic callback failures now name the defining module as well as
-the relevant callback body lines (including source-free packages); a complete
-source-file-aware explanation of all constraints remains future work.
-Direct calls through function-valued record fields use
-existing MIR indirect calls, including nested field projections. Defining-module `match` constructors in imported generic
-bodies now resolve correctly, including from source-free packages. Truly underdetermined callbacks still require an explicit `Fn` annotation.
-
-`enumerate` now uses `map_indexed(values, callback)` to build indexed records
-in one pass without array-element rewrites. No compiler or runtime changes
-were required. See the measured comparison below.
-
-## Resolved module regression (October 26, 2026)
-
-Imported generic bodies and computed constructors now preserve the defining
-module's imported namespaces under hygienic aliases. Their qualified calls,
-function values, type annotations, and match patterns resolve against the
-original dependency, not identically named imports in the consumer. Unqualified
-constructor calls are likewise attributed to the defining module. Existing
-module bundle, incremental discovery, package dependency, re-export, union,
-source module and contextual callback regressions now pass in the focused
-native runner tests. `test_module_capture_imports.py` also checks collisions,
-source-free `.smirg` dependencies, deterministic linking, and missing aliases.
-
-Generic calls now infer unannotated callback fields in record literal arguments,
-including nested literal paths, when the defining generic body invokes that
-specific field with known argument types. Each field is inferred independently;
-conflicting and unrelated fields cannot silently supply a type. Imported generic
-bodies and source-free `.smirg` packages use the same rules. This does not
-infer callback fields through arbitrary record transformations or through
-values with no usable type seed.
-
-The independent two-generation bootstrap check and the record-literal
-callback interpreter/source-free package regression now pass. Sequential
-`zip_with` exercises binary callback inference with heterogeneous array inputs,
-while `zip` builds generic structural pairs on top of it; both truncate to the
-shorter array. The two-array helpers require no new compiler inference rules.
-
-The previously proposed case `map(values, fn(x) box.apply(x))` is
-not a callback-inference gap: it attempts a lexical capture, which Sirius
-intentionally excludes. The equivalent `map(values, box.apply)` works with
-function-valued fields. Do not pursue lexical capture support as a roadmap
-task; use explicit callback context where needed.
-
-`Std.Functional.partition` additionally splits arrays in one traversal, calling
-its predicate once per element and preserving both groups' order and CoW
-semantics. It is a library-only change, not a step toward lexical captures.
-
-`Std.Functional.enumerate` now delegates to one-pass `map_indexed`: in a
-repeated 2,048-element workload (3,000 runs), Clang `-O2` improved from
-248 ms to 120 ms median, and GCC `-O2` from 190 ms to 95 ms (six timed
-executions after warm-up, same executable workload and array runtime).
-These are workload-specific measurements, not proof of a general 2x benefit.
-The new helper is tested through native C, MIR interpretation, source-free
-`.smirg` packaging, linked C and ARC auditing. No native array type is needed.
-
-`Std.Functional.map_with_context(values, context, callback)` passes state
-explicitly to noncapturing callbacks, including state with managed values and
-function-valued fields. Tests cover native, MIR, ARC and source-free packages.
-The MIR-only test in `tools/test_mir_closure_environment.py` independently
-exercises an owned record holding a function reference and explicit
-state across C, interpreter and serialization. These are supported value
-composition techniques, not work toward capturing closures.
-
-## Negative array indexing (October 27, 2026)
-
-Checked and optional array indexes now accept negative values, counting back
-from the end (`-1` is last, `-len(a)` is first). Out-of-range optional reads
-return absence; out-of-range checked reads and writes panic. The interpreter
-and C emitter use the same bounds semantics for MIR array operations, including
-negative `i64` minimum without overflow. Source tests cover CoW snapshots,
-nested writes, managed elements, and empty arrays. Plain unguarded `a[i]`
-remains subject to compile-time bounds proof.
-
-## Numerical scalar edge semantics (October 27, 2026)
-
-`i64` scalar addition, subtraction, multiplication and negation now have
-deterministic two's-complement wrapping semantics, rather than inheriting
-C11 signed-overflow undefined behavior. Generated C computes with `uint64_t`
-and copies the resulting bit pattern into `int64_t`; interpreter execution uses
-the same wrapped MIR operators. Integer division/remainder truncate toward
-zero and guard zero divisors and `INT64_MIN / -1` (including remainder).
-Unchecked raw MIR interpretation also checks that last overflow case.
-
-These decisions do not imply checked arithmetic, saturating arithmetic,
-implicit conversions, or a complete IEEE-754 numerical contract.
-
-## Numerical-array groundwork (October 27, 2026)
-
-`Std.Numeric` now exposes an initial **rank-2 `f64` matrix wrapper** backed by
-flat, row-major `Array[f64]` storage. Checked `make`, `reshape`, `transpose`,
-`matmul`, and singleton-axis broadcast `add` return tagged shape results. Storage sharing follows existing CoW
-semantics; transpose and multiplication create fresh arrays. Shape checks avoid
-signed product overflow, and multiplication and addition check result size.
-Focused native/MIR, emitted-library and ARC-audited tests cover valid/invalid
-shapes, zero dimensions and independent array snapshots.
-
-This is intentionally **library-first**, using `Array[f64]` and record-based
-shape metadata. `Std.Numeric.add` validates broadcast compatibility and
-zero-axis behavior. No native
-`Array[T, 2]` representation, generic element types, vectorized kernels or
-strided views are introduced.
-
-Initial compiled Sirius benchmarks (`tools/benchmark_stdlib_numeric.py`)
-compared the library against shape-specialized flat-array loops using the same
-array runtime. Clang `-O2` before/after measurements (five-run medians, 128x128
-addition at 512 repetitions and 64x64 multiplication at 64 repetitions) were:
-
-| Operation | Original matrix | Hoisted input arrays | Flat baseline |
-| --- | ---: | ---: | ---: |
-| Elementwise add | 59.9 ms | 27.0 ms | 27.6 ms |
-| Broadcast add | 57.9 ms | 30.7 ms | 28.9 ms |
-| Matmul | 68.0 ms | 16.6 ms | 15.2 ms |
-
-Repeated `matrix.data` projections inside loops induced per-element ownership
-traffic in emitted C. Binding the input arrays locally once after shape checks
-removed most of that cost without compiler or runtime changes. GCC `-O2` and
-Clang `-O0` also improved. The CoW snapshot comparison remained close to the
-flat baseline. Timings are local workload measurements, not general speedup
-claims: the flat loops specialize shapes at source level, and the benchmark
-includes allocation, checksums, and process startup, but not compilation time
-(which is reported separately). No evidence yet justifies native ranked arrays,
-new MIR kernels, or an allocation-lifetime redesign for these operations.
-
-Next, extend the standard library only for concrete numerical use cases and
-measure any future kernel change against both the library and an equivalent
-flat-array baseline.
-
-## Allocation-lifetime investigation (experimental; October 26, 2026)
-
-Jai-style scratch arenas may benefit temporary numerical buffers and compiler
-analysis passes. Sirius should keep semantic dependencies explicit; an implicit,
-mutable context for every function is not a current goal. Allocation placement
-should preserve CoW value semantics, ARC cleanup, and native/MIR parity.
-
-The existing `tools/profile_mir_allocations.py` records 19,078,159 generated
-MIR record allocations (including 2,725,320 CoW clones) during a local
-self-hosting run. This count alone does **not** establish which allocations
-are nonescaping or suitable for a region. The profiler now ignores LF/CRLF
-differences when comparing generated C with the checked-in bootstrap.
-
-A separate C11, **POD-only** scratch prototype in
-`tests/runtime/scratch_arena.c` has been validated for alignment, overflow,
-reset/reuse, and comparison with `malloc`/`free` on two synthetic phase-local
-workloads. `tools/test_runtime_scratch_arena.py --benchmark` reports timings
-and allocation counts; the results are not compiler performance measurements.
-No production allocator, emitted C, language syntax, or ownership behavior
-has changed.
-
-Next: identify real pass-local allocations and prove that no pointers or
-managed references escape a reset boundary; then compare memory peaks,
-end-to-end timings, and ARC effects in both execution backends. A region for
-arbitrary ARC-managed values must account for child release and CoW aliasing;
-do **not** reset it as if it contained plain bytes. Require a real workload
-improvement before exposing any allocator-selection API.
+Completed callback inference, module hygiene, negative indexing, numerical
+scalar fixes and matrix measurements are recorded in the
+[historical snapshot](docs/history/ROADMAP_20261029.md). The examples guide
+and dedicated regression tests describe their current supported behavior.
 
 ## Design commitments and decision gates
 
@@ -527,9 +193,8 @@ its long-term feature list is **not** the implementation queue. In particular:
   recursive records, optionals, and unions, but exclude arrays and dictionaries.
   NaN dictionary key equivalence is canonicalized without changing IEEE `==`.
   A future operator/collection-equality proposal requires separate review.
-- **Before nominal variants:** decide whether same-shaped constructors can ever
-  be distinct *types* rather than labeled alternatives; preserve the current
-  structural union restriction meanwhile.
+- **Union identity:** records remain structural and alternatives carry labels,
+  including same-shaped payloads. A new nominal variant category is not planned.
 - **Before operator overloading across modules:** specify how imported
   operators enter scope and how ambiguity is reported. Existing exact-typed
   named-function overloads do not settle this.
