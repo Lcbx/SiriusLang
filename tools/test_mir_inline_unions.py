@@ -25,7 +25,7 @@ def main():
     args = parser.parse_args()
     cache = BuildCache(require_cc())
     compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-    runner = None if args.native_only else (args.runner.resolve() if args.runner else cache.native_tool('run_cli'))
+    runner = None if args.native_only else (args.runner.resolve() if args.runner else cache.mir_runner())
     sources = [
         ROOT / 'tests/mir/source_inline_union_array.sirius',
         ROOT / 'tests/mir/source_inline_union_values.sirius',

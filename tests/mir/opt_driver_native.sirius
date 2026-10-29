@@ -24,7 +24,7 @@ def mir_opt_fixture(retain: bool, adjacent: bool) -> Mir.MirProgram
 # forwarding block. Compaction must preserve the owned-string cleanup.
 def mir_cfg_fixture() -> Mir.MirProgram
 	let start = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, 1), Mir.mir_string(1, "temporary"), Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 42)]
-	let release = [Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0)]
+	let release = [Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 42), Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 42), Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0)]
 	let blocks = [Mir.MirBlock(start, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(release, Mir.mir_jump(3)), Mir.MirBlock(release, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(4)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(3))]
 	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
 
@@ -35,9 +35,25 @@ def mir_uninitialized_cleanup_fixture() -> Mir.MirProgram
 	let blocks = [Mir.MirBlock(entry, Mir.mir_branch(0, 1, 2)), Mir.MirBlock([Mir.mir_string(1, "unused")], Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_jump(3)), Mir.MirBlock([Mir.mir_op(Mir.MIR_RELEASE_IF_INIT, 1, 1, -1, 0)], Mir.mir_return(2))]
 	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
 
-def main() -> i64
+# Long blocks with matching fingerprint fields but different immediates or
+# destinations must remain distinct.
+def mir_distinct_long_blocks(different_target: bool) -> Mir.MirProgram
+	let entry = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, 1)]
+	let left = [Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 41), Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0)]
+	var right = left
+	if not different_target
+		right = [Mir.mir_op(Mir.MIR_CONST_I64, 1, -1, -1, 42), Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 0), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 0)]
+	var end = Mir.mir_return(1)
+	if different_target
+		end = Mir.mir_return(2)
+	let blocks = [Mir.MirBlock(entry, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(left, Mir.mir_return(1)), Mir.MirBlock(right, end)]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], blocks, 0)])
+
+export def main() -> i64
 	let args = arguments()
-	if len(args) != 6
+	if len(args) != 6 and len(args) != 7
+		return 1
+	if len(args) == 7 and args[!6] != "opt"
 		return 1
 	for i in 0..3
 		let program = mir_opt_fixture(i == 1, i != 2)
@@ -98,5 +114,12 @@ def main() -> i64
 	let c_conditional = MirEmitC.mir_emit_c_reachable_verified(conditional.program, 0)
 	if c_conditional.error != "" or not write_text(args[!5], c_conditional.code)
 		return 20
+	for i in 0..2
+		let distinct = MirOpt.mir_optimize_unchecked(mir_distinct_long_blocks(i == 1)).program
+		if len(distinct.functions[!0].blocks) != 3 or MirOwnership.mir_check_balance(distinct) != ""
+			return 21
+		let executed = MirInterpreter.mir_execute(distinct, 0, Array[Mir.MirValue](), 100, 10)
+		if executed.error != "" or executed.value.bits != 41
+			return 22
 	print("PASS MIR owned-copy elimination")
 	return 0

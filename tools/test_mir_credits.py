@@ -4,12 +4,12 @@ import tempfile
 from pathlib import Path
 
 from build_support import BuildCache, check_native, execute, require_cc
-from project_paths import ROOT
+from mir_test_support import ownership_transfers_driver
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	driver = cache.native_driver('mir-credits', ROOT / 'tests/mir/credit_driver_native.sirius')
+	driver = ownership_transfers_driver(cache)
 	with tempfile.TemporaryDirectory() as directory:
 		outputs = [Path(directory) / f'case{i}.c' for i in range(8)]
 		result = execute([str(driver), *(str(path) for path in outputs)])

@@ -163,7 +163,7 @@ def main() -> None:
 			*link_flags(cache.cc), '-o', binary))
 		check(run(binary), 42)
 		if not args.native_only:
-			runner = args.package_runner or cache.native_tool('run_cli')
+			runner = args.package_runner or cache.mir_runner()
 			library = root / 'App.smirl'
 			check(run(runner, '--build-modules', root, 'App', library))
 			check(run(runner, '--entry', 'M_3_App_4_main', '--load-lib', library), 42)

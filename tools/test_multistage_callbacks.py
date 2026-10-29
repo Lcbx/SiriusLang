@@ -174,7 +174,7 @@ def main() -> None:
 		if args.native_only:
 			print('PASS multi-stage callbacks: native and ARC (MIR not checked)')
 			return
-		runner = cache.native_tool('run_cli')
+		runner = cache.mir_runner()
 		library = root / 'App.smirl'
 		check_success(run(runner, '--build-modules', root, 'App', library))
 		check_success(run(runner, '--entry', 'M_3_App_4_main', '--load-lib', library), 42)

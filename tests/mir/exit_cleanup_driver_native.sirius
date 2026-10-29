@@ -96,5 +96,19 @@ def main() -> i64
 	let panic = MirCleanup.mir_insert_exit_cleanup(cleanup_panic_program())
 	if panic.error != "" or not cleanup_has_release(panic.program.functions[!0].blocks[!0], 0)
 		return 11
+	# An unused owner on both edges is released once before the branch.
+	for take in 0..2
+		let entry = [Mir.mir_string(0, "shared"), Mir.mir_op(Mir.MIR_CONST_BOOL, 1, -1, -1, take), Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 7)]
+		let blocks = [Mir.MirBlock(entry, Mir.mir_branch(1, 1, 2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(2)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(2))]
+		let program = Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_BOOL, Types.TYPE_TAG_I64], blocks, 0)])
+		let shared = MirCleanup.mir_insert_exit_cleanup(program)
+		if shared.error != "" or shared.releases != 1 or len(shared.program.functions[!0].blocks) != 3 or not cleanup_has_release(shared.program.functions[!0].blocks[!0], 0)
+			return 12
+		let run = MirInterpreter.mir_execute(shared.program, 0, Array[Mir.MirValue](), 100, 10)
+		if run.error != "" or run.value.bits != 7
+			return 13
+		for cell in run.heap
+			if cell.refs != 0
+				return 14
 	print("PASS MIR path-sensitive exit cleanup")
 	return 0

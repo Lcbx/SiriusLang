@@ -51,7 +51,7 @@ def main() -> None:
 	parser.add_argument('--all-fixtures', action='store_true', help='check dynamic output against all supported compiler fixtures')
 	args = parser.parse_args()
 	cache = BuildCache(shutil.which('clang') or require_cc(), rebuild=args.rebuild)
-	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else cache.mir_runner()
 	compiler = args.compiler.resolve() if args.compiler else cache.seed()
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)

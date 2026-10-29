@@ -22,7 +22,7 @@ def main() -> None:
 	parser.add_argument('--compiler', type=Path)
 	args = parser.parse_args()
 	cache = BuildCache(shutil.which('clang') or require_cc())
-	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else cache.mir_runner()
 	compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)

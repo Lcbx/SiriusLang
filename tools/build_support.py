@@ -126,6 +126,10 @@ class BuildCache:
 	def seed(self) -> Path:
 		return self._binary('seed', ROOT / 'bootstrap/compiler.c', ())
 
+	def mir_runner(self) -> Path:
+		"""Return the cached native MIR runner, or the pinned suite copy."""
+		return self.native_tool('run_cli')
+
 	def native_tool(self, entry: str) -> Path:
 		"""Reuse the suite runner, or build a CLI with the checked-in C seed."""
 		if entry == 'run_cli' and not self.rebuild:
@@ -147,25 +151,27 @@ class BuildCache:
 			compile_c(self.cc, generated, output, runtime)
 		return self._artifact('native-' + entry, inputs, filename, build)
 
-	def native_driver(self, category: str, source: Path) -> Path:
+	def native_driver(self, category: str, source: Path, *, extra_modules: tuple[Path, ...] = ()) -> Path:
 		"""Build a test entry as Main using actual native compiler source modules."""
 		modules = sorted((ROOT / 'src').glob('*.sirius'))
 		seed = self.seed()
 		runtime = self.runtime()
 		filename = executable_path(Path('program')).name
 		inputs = (source.read_bytes(), seed.parent.name.encode(), runtime.parent.name.encode(),
+			*(path.name.encode() + b'\0' + path.read_bytes() for path in extra_modules),
 			*(path.name.encode() + b'\0' + path.read_bytes() for path in modules))
 		def build(output: Path, folder: Path) -> None:
 			root = folder / 'modules'
 			root.mkdir()
 			for module in modules:
 				shutil.copyfile(module, root / module.name)
+			for module in extra_modules:
+				shutil.copyfile(module, root / module.name)
 			shutil.copyfile(source, root / 'Main.sirius')
 			generated = folder / 'generated.c'
 			execute([str(seed), '--module-root', str(root), 'Main', str(generated)])
 			compile_c(self.cc, generated, output, runtime)
 		return self._artifact('native-driver-' + category, inputs, filename, build)
-
 
 def compile_c(cc: str, source: Path, output: Path, runtime: Path) -> None:
 	"""Link a C source file against the Sirius runtime with strict C11 flags."""

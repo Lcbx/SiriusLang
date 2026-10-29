@@ -5,7 +5,8 @@ import tempfile
 from pathlib import Path
 
 from build_support import BuildCache, C_FLAGS, link_flags, execute, require_cc
-from project_paths import executable_path, executable_path, ROOT
+from mir_test_support import ownership_transfers_driver
+from project_paths import executable_path, ROOT
 
 
 def main() -> None:
@@ -19,8 +20,10 @@ def main() -> None:
 			('nested', 'nested_credit_driver_native.sirius', 4),
 			('return', 'credit_driver_native.sirius', 8),
 		):
-			driver = cache.native_driver('mir-' + ('nested-credits' if name == 'nested' else 'credits'),
-				ROOT / 'tests/mir' / fixture)
+			if name == 'return':
+				driver = ownership_transfers_driver(cache)
+			else:
+				driver = cache.native_driver('mir-nested-credits', ROOT / 'tests/mir' / fixture)
 			sources = [folder / f'{name}{i}.c' for i in range(count)]
 			execute([str(driver), *(str(source) for source in sources)])
 			for i, source in enumerate(sources):

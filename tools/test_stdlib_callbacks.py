@@ -369,7 +369,7 @@ def main() -> i64
 		assert audit_build.returncode == 0, audit_build
 		audit_run = run(audited)
 		assert (audit_run.returncode, audit_run.stdout, audit_run.stderr) == (42, b'', b''), audit_run
-		runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+		runner = args.runner.resolve() if args.runner else cache.mir_runner()
 		library = root / 'App.smirl'
 		built = run(runner, '--build-modules', root, 'App', library)
 		assert built.returncode == 0, built

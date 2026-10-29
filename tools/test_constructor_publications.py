@@ -111,7 +111,7 @@ def execute(*args: Path | str) -> subprocess.CompletedProcess[bytes]:
 def main() -> None:
 	cache = BuildCache(require_cc())
 	compiler = cache.native_tool('modular_cli')
-	runner = cache.native_tool('run_cli')
+	runner = cache.mir_runner()
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
 		for name, source, code in (('numeric', PROGRAM, 99), ('managed', MANAGED, 16)):

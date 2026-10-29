@@ -188,7 +188,7 @@ def main() -> None:
 		assert audit.returncode == 0, audit
 		audited = run(binary)
 		assert (audited.returncode, audited.stdout, audited.stderr) == (0, b'', b''), audited
-		runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+		runner = args.runner.resolve() if args.runner else cache.mir_runner()
 		library = root / 'App.smirl'
 		built = run(runner, '--build-modules', root, 'App', library)
 		assert built.returncode == 0, built

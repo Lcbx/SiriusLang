@@ -19,7 +19,7 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path, help='reuse a previously built MIR runner')
 	args = parser.parse_args()
-	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).mir_runner()
 	cases = sorted((ROOT / 'tests/tokenizer/fixtures').glob('*.sirius'))
 	assert cases, 'missing tokenizer fixtures'
 	with tempfile.TemporaryDirectory() as directory:

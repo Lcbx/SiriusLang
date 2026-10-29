@@ -1,0 +1,16 @@
+import call_move_driver_native alias CallMove
+import constructor_move_driver_native alias ConstructorMove
+import credit_driver_native alias Credits
+import opt_driver_native alias Optimize
+
+def main() -> i64
+	let count = len(arguments())
+	if count == 6
+		return CallMove.main()
+	if count == 7 and arguments()[!6] == "opt"
+		return Optimize.main()
+	if count == 11
+		return ConstructorMove.main()
+	if count == 9
+		return Credits.main()
+	return 1

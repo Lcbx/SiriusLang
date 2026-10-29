@@ -24,7 +24,7 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc())
 	compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else cache.mir_runner()
 	source_dir = ROOT / 'tests/mir'
 	with tempfile.TemporaryDirectory() as folder:
 		work = Path(folder)

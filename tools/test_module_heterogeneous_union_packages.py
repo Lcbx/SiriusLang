@@ -97,7 +97,7 @@ def main() -> None:
     parser.add_argument('--cc', default=shutil.which('clang') or require_cc())
     args = parser.parse_args()
     cache = BuildCache(shutil.which(args.cc) or args.cc)
-    runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+    runner = args.runner.resolve() if args.runner else cache.mir_runner()
     with tempfile.TemporaryDirectory(prefix='sirius-hetero-package-') as directory:
         root = Path(directory)
         provider = root / 'Ops.sirius'

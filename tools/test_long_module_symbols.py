@@ -57,7 +57,7 @@ def main() -> None:
 	parser.add_argument('--runner', type=Path)
 	args = parser.parse_args()
 	cc = require_cc()
-	runner = args.runner.resolve() if args.runner else BuildCache(cc).native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else BuildCache(cc).mir_runner()
 	with tempfile.TemporaryDirectory(prefix='sirius-long-symbols-') as folder:
 		root = Path(folder)
 		changed = (*FIELDS[:-1], 'sixth_long_fielD')

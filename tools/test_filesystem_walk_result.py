@@ -115,12 +115,12 @@ def main() -> None:
 		(walk / 'top.txt').write_text('top', encoding='utf-8')
 		(walk / 'a' / 'français.txt').write_text('a', encoding='utf-8')
 		(walk / 'b' / 'zeta.txt').write_text('b', encoding='utf-8')
-		expected = [walk / 'top.txt', walk / 'a' / 'français.txt', walk / 'b' / 'zeta.txt']
+		expected = [f'{walk}/top.txt', f'{walk}/a/français.txt', f'{walk}/b/zeta.txt']
 		test_symlink = 'no'
 		link = walk / 'b' / 'loop'
 		try:
 			link.symlink_to(walk, target_is_directory=True)
-			expected.insert(2, link)
+			expected.insert(2, f'{walk}/b/loop')
 			test_symlink = 'yes'
 		except (OSError, NotImplementedError):
 			pass
@@ -146,13 +146,13 @@ def main() -> None:
 			run(str(cache.seed()), '--module-root', str(root), 'App', str(c_file))
 			binary = compile_native(cache, c_file)
 			native = run(str(binary), *arguments)
-			expected_output = ''.join(f'{path}\n' for path in expected).encode('utf-8') + b'checked walk: ok\n'
-			assert native.stdout == expected_output, (native.stdout, expected_output)
-			runner = cache.native_tool('run_cli')
+			expected_output = [path.encode('utf-8') for path in expected] + [b'checked walk: ok']
+			assert native.stdout.splitlines() == expected_output, (native.stdout, expected_output)
+			runner = cache.mir_runner()
 			library = root / 'linked.smirl'
 			run(str(runner), '--build-modules', str(root), 'App', str(library))
 			interpreted = run(str(runner), '--entry', 'M_3_App_4_main', '--load-lib', str(library), *arguments)
-			assert (native.stdout, native.stderr) == (interpreted.stdout, interpreted.stderr)
+			assert (native.stdout.splitlines(), native.stderr.splitlines()) == (interpreted.stdout.splitlines(), interpreted.stderr.splitlines())
 		finally:
 			if os.name == 'posix':
 				locked_child.chmod(0o700)

@@ -53,6 +53,25 @@ def main() -> None:
 				else:
 					raise AssertionError('Stale bootstrap accepted')
 
+		cached = work / 'cached'
+		cached.mkdir()
+		(cached / 'generated.c').write_bytes(b'generated\n')
+		class SharedCache(FakeCache):
+			def native_tool(self, entry: str) -> Path:
+				assert entry == 'modular_cli'
+				return cached / 'compiler'
+		with patch.object(bootstrap_support, 'execute', execute), \
+			 patch.object(bootstrap_support, 'compile_c', side_effect=AssertionError('unexpected rebuild')):
+			generated, binary = bootstrap_support.generate_fixed_point(SharedCache(), work, reuse_seed_compiler=True)
+			assert generated == b'generated\n' and binary == cached / 'compiler'
+			(cached / 'generated.c').write_bytes(b'different\n')
+			try:
+				bootstrap_support.generate_fixed_point(SharedCache(), work, reuse_seed_compiler=True)
+			except AssertionError as e:
+				assert 'Cached modular compiler source differs' in str(e)
+			else:
+				raise AssertionError('Mismatched cached compiler accepted')
+
 		with patch.object(bootstrap_support, 'execute', side_effect=lambda command: Path(command[-1]).write_bytes(
 				f'{len(calls)}\n'.encode())), \
 			 patch.object(bootstrap_support, 'compile_c', compile_c):
@@ -103,6 +122,20 @@ def main() -> None:
 			 patch.object(sys, 'argv', ['test_bootstrap.py']):
 			test_bootstrap.main()
 		assert checks == [True]
+		marker = work / 'fixtures-passed'
+		for compiler, expected in ((Path('shared'), True), (Path('other'), False)):
+			if marker.exists():
+				marker.unlink()
+			cache = FakeCache()
+			cache.native_tool = lambda entry: Path('shared')
+			with patch.object(test_bootstrap, 'ROOT', root), \
+				patch.object(test_bootstrap, 'BuildCache', return_value=cache), \
+				patch.object(test_bootstrap, 'require_cc', return_value='cc'), \
+				patch.object(test_bootstrap, 'generate_fixed_point', return_value=(b'new\n', compiler)), \
+				patch.object(test_bootstrap, 'check_cases'), \
+				patch.object(sys, 'argv', ['test_bootstrap.py', '--shared-fixtures-marker', str(marker)]):
+				test_bootstrap.main()
+			assert marker.exists() == expected
 		print('PASS bootstrap tools: convergence, stale C, regeneration and tests')
 
 

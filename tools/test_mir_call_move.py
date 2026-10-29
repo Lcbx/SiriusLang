@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 
 from build_support import BuildCache, C_FLAGS, link_flags, check_native, execute, require_cc
+from mir_test_support import ownership_transfers_driver
 from project_paths import executable_path, ROOT
 
 
@@ -17,7 +18,7 @@ def main() -> None:
 	with tempfile.TemporaryDirectory() as directory:
 		work = Path(directory)
 		if args.compiler is None:
-			driver = cache.native_driver('mir-call-move', ROOT / 'tests/mir/call_move_driver_native.sirius')
+			driver = ownership_transfers_driver(cache)
 		else:
 			modules = work / 'modules'
 			modules.mkdir()

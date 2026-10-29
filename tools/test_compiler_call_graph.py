@@ -123,7 +123,7 @@ def main():
     args = parser.parse_args()
     cache = BuildCache(require_cc())
     compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-    runner = cache.native_tool('run_cli')
+    runner = cache.mir_runner()
     with tempfile.TemporaryDirectory(prefix='sirius-call-graph-') as temporary:
         folder = Path(temporary)
         source = folder / 'single.sirius'

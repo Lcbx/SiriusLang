@@ -106,7 +106,7 @@ def main() -> None:
 			(root / f'{name}.sirius').write_text(f'import Provider alias P\n\ndef main() -> i64\n\treturn {expression}\n')
 		verify_compiler(compiler, root, cache)
 		if not args.native_only:
-			runner = args.package_runner or cache.native_tool('run_cli')
+			runner = args.package_runner or cache.mir_runner()
 			package = root / 'Provider.smirg'
 			result = run(runner, '--emit-generic', 'Provider', package, root / 'Provider.sirius', root)
 			assert result.returncode == 0, result

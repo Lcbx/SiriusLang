@@ -15,7 +15,7 @@ def run(binary: Path, *args: Path | str) -> subprocess.CompletedProcess[bytes]:
 def main() -> None:
 	cache = BuildCache(require_cc())
 	compiler = cache.native_tool('modular_cli')
-	runner = cache.native_tool('run_cli')
+	runner = cache.mir_runner()
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		for name, status, output, error in (

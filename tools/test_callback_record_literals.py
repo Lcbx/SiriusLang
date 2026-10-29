@@ -127,7 +127,7 @@ def main() -> None:
 			print('PASS record callback literals: native, ARC and negative cases')
 			return
 
-		runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+		runner = args.runner.resolve() if args.runner else cache.mir_runner()
 		library = root / 'source.smirl'
 		check(run(runner, '--build-modules', root, 'App', library))
 		check(run(runner, '--entry', 'M_3_App_4_main', '--load-lib', library), 42)

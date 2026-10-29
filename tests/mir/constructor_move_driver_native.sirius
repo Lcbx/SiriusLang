@@ -64,7 +64,7 @@ def fixture(mode: i64) -> Mir.MirProgram
 	let function = Mir.MirFunction(0, Types.TYPE_TAG_I64, registers, [Mir.MirBlock(instructions, Mir.mir_return(answer))], 0)
 	return Mir.mir_program_with_types([function], types)
 
-def main() -> i64
+export def main() -> i64
 	let args = arguments()
 	if len(args) != 11
 		return 1

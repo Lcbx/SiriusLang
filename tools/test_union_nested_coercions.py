@@ -65,7 +65,7 @@ def main() -> i64
 def main() -> None:
 	cache = BuildCache(require_cc())
 	compiler = cache.seed()
-	runner = cache.native_tool('run_cli')
+	runner = cache.mir_runner()
 	with tempfile.TemporaryDirectory() as directory:
 		folder = Path(directory)
 		for name, status in (('nested_coercions', 42), ('nested_managed', 11), ('mixed_arrays', 42), ('hir_conversion_plans', 0), ('hir_record_annotations', 0)):

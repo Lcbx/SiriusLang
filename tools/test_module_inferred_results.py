@@ -21,7 +21,7 @@ def checked(*args: object) -> subprocess.CompletedProcess[bytes]:
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	runner = cache.native_tool('run_cli')
+	runner = cache.mir_runner()
 	with tempfile.TemporaryDirectory(prefix='sirius-inferred-result-') as tmp:
 		root = Path(tmp)
 		provider = root / 'Ops.sirius'

@@ -57,7 +57,7 @@ def mir_call_move_fixture(mode: i64) -> Mir.MirProgram
 		callee = Mir.MirFunction(2, Types.TYPE_TAG_I64, inner_types, [Mir.MirBlock(inner, Mir.mir_return(inner_return))], 0)
 	return Mir.new_mir_program([first, callee])
 
-def main() -> i64
+export def main() -> i64
 	let paths = arguments()
 	if len(paths) != 6
 		return 1

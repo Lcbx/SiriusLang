@@ -100,7 +100,7 @@ def move_replacement() -> Mir.MirProgram
 	code = code.append(Mir.mir_op(Mir.MIR_CONST_I64, 2, -1, -1, 23))
 	return Mir.mir_program_with_types([Mir.MirFunction(0, Types.TYPE_TAG_I64, [array.id, array.id, Types.TYPE_TAG_I64], [Mir.MirBlock(code, Mir.mir_return(2))], 0)], array.table)
 
-def main() -> i64
+export def main() -> i64
 	let args = arguments()
 	if len(args) != 9
 		return 1

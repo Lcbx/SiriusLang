@@ -120,7 +120,7 @@ def main() -> None:
 		native = compile_native(cache, generated)
 		native_result = run(str(native), *arguments)
 		assert normalize_newlines(native_result.stdout) == b'filesystem Result: ok\n', native_result
-		runner = cache.native_tool('run_cli')
+		runner = cache.mir_runner()
 		library = root / 'linked.smirl'
 		run(str(runner), '--build-modules', str(root), 'App', str(library))
 		interpreted = run(str(runner), '--entry', 'M_3_App_4_main', '--load-lib', str(library), *arguments)

@@ -24,7 +24,7 @@ def main() -> None:
 	cache = BuildCache(require_cc())
 	driver = cache.native_driver('mir-function-value', ROOT / 'tests/mir/function_value_driver_native.sirius')
 	compiler = cache.native_tool('modular_cli')
-	runner = cache.native_tool('run_cli')
+	runner = cache.mir_runner()
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
 		source = work / 'indirect.c'

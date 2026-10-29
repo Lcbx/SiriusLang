@@ -87,6 +87,14 @@ def call_move_fixture() -> Mir.MirProgram
 	let caller = Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64, Types.TYPE_TAG_I64], [Mir.MirBlock(instructions, Mir.mir_return(5))], 0)
 	return Mir.new_mir_program([caller, callee])
 
+# Separate logical owners become the same physical slot on exclusive paths.
+def coalesced_blocks_fixture() -> Mir.MirProgram
+	let head = [Mir.mir_op(Mir.MIR_CONST_BOOL, 0, -1, -1, 1), Mir.mir_op(Mir.MIR_CONST_I64, 3, -1, -1, 5)]
+	let left = [Mir.mir_string(1, "same"), Mir.mir_op(Mir.MIR_RELEASE, 1, 1, -1, 0)]
+	let right = [Mir.mir_string(2, "same"), Mir.mir_op(Mir.MIR_RELEASE, 2, 2, -1, 0)]
+	let blocks = [Mir.MirBlock(head, Mir.mir_branch(0, 1, 2)), Mir.MirBlock(left, Mir.mir_jump(3)), Mir.MirBlock(right, Mir.mir_jump(3)), Mir.MirBlock(Array[Mir.MirInstruction](), Mir.mir_return(3))]
+	return Mir.new_mir_program([Mir.MirFunction(0, Types.TYPE_TAG_I64, [Types.TYPE_TAG_BOOL, Types.TYPE_TAG_STRING, Types.TYPE_TAG_STRING, Types.TYPE_TAG_I64], blocks, 0)])
+
 def main() -> i64
 	let args = arguments()
 	if len(args) != 13
@@ -146,5 +154,8 @@ def main() -> i64
 				return 14
 		if not write_text(args[!i + 1], verified.code)
 			return 7
+	let merged = Emit.mir_emit_c_reachable_verified(coalesced_blocks_fixture(), 0)
+	if merged.error != "" or (merged.code.find("block3: ;") or (-1)) != -1
+		return 15
 	print("PASS managed MIR slot reuse")
 	return 0

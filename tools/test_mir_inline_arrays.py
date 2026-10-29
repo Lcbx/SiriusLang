@@ -27,7 +27,7 @@ def main():
     args = parser.parse_args()
     cache = BuildCache(require_cc())
     compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-    runner = None if args.native_only else (args.runner.resolve() if args.runner else cache.native_tool('run_cli'))
+    runner = None if args.native_only else (args.runner.resolve() if args.runner else cache.mir_runner())
     sources = (
         ('tests/mir/source_inline_array_storage.sirius', b''),
         ('tests/mir/source_inline_array_allocations.sirius', b''),

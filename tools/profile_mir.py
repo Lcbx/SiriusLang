@@ -22,14 +22,25 @@ HOOKS = r'''
 #include <time.h>
 #include <stdio.h>
 #include <stdint.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 #define PROFILE_MAX 4096
 static uint64_t p_inclusive[PROFILE_MAX], p_exclusive[PROFILE_MAX], p_calls[PROFILE_MAX];
 static struct { int id; uint64_t started, child; } p_stack[128];
 static int p_depth;
 static uint64_t p_now(void) {
+	#ifdef _WIN32
+	static LARGE_INTEGER frequency;
+	LARGE_INTEGER counter;
+	if (!frequency.QuadPart) QueryPerformanceFrequency(&frequency);
+	QueryPerformanceCounter(&counter);
+	return (uint64_t)((double)counter.QuadPart * 1000000000.0 / (double)frequency.QuadPart);
+	#else
 	struct timespec t;
 	clock_gettime(CLOCK_MONOTONIC, &t);
 	return (uint64_t)t.tv_sec * 1000000000ull + t.tv_nsec;
+	#endif
 }
 static void p_enter(int id) {
 	if (p_depth >= 128) { fprintf(stderr, "profile stack exceeded\\n"); return; }
@@ -76,12 +87,11 @@ def instrument(source: str) -> str:
 			continue
 		body = body.replace('return returned;', f'p_leave({index});\n\treturn returned;')
 		source = source[:start] + f'\n\tp_enter({index});' + body + source[ending:]
-	main = re.search(r'int main\(int argc, char \*\*argv\) \{ s_set_arguments\(argc, argv\); return \(int\)(s_mir_f\d+\(\)); \}', source)
+	main = re.search(r'(int main\(int argc, char \*\*argv\) \{ s_set_arguments\(argc, argv\); (?:\(void\)&s_mir_f\d+; )*)return \(int\)(s_mir_f\d+\(\)); \}', source)
 	if main is None:
 		raise ValueError('Unknown generated MIR main() layout')
 	source = source[:main.start()] + (
-		'int main(int argc, char **argv) { s_set_arguments(argc, argv); '
-		+ 'int result = (int)' + main.group(1) + '; p_report(); return result; }') + source[main.end():]
+		main.group(1) + 'int result = (int)' + main.group(2) + '; p_report(); return result; }') + source[main.end():]
 	return HOOKS + source
 
 

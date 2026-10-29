@@ -56,7 +56,7 @@ def main() -> None:
 	args = parser.parse_args()
 	cache = BuildCache(require_cc())
 	compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else cache.mir_runner()
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
 		for name, (status, stdout) in CASES.items():

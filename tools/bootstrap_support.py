@@ -8,7 +8,8 @@ from build_support import BuildCache, compile_c, execute
 from project_paths import ROOT, normalize_newlines
 
 
-def generate_fixed_point(cache: BuildCache, work: Path, *, max_generations: int = 8) -> tuple[bytes, Path]:
+def generate_fixed_point(cache: BuildCache, work: Path, *, max_generations: int = 8,
+	reuse_seed_compiler: bool = False) -> tuple[bytes, Path]:
 	"""Return self-reproducing C and its compiler binary, valid while work exists."""
 	current = cache.seed()
 	previous = None
@@ -20,8 +21,14 @@ def generate_fixed_point(cache: BuildCache, work: Path, *, max_generations: int 
 			print(f'PASS C bootstrap fixed point at generation {generation}')
 			return result, current
 		binary = work / (f'generation_{generation}.exe' if sys.platform == 'win32' else f'generation_{generation}')
-		compile_c(cache.cc, generated, binary, cache.runtime())
-		current = binary
+		if generation == 1 and reuse_seed_compiler:
+			# Reuse the seed-built compiler shared with the modular self-host test.
+			current = cache.native_tool('modular_cli')
+			if (current.parent / 'generated.c').read_bytes() != result:
+				raise AssertionError('Cached modular compiler source differs from bootstrap generation 1')
+		else:
+			compile_c(cache.cc, generated, binary, cache.runtime())
+			current = binary
 		previous = result
 	raise AssertionError(f'Compiler C did not reach a fixed point in {max_generations} generations')
 

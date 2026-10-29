@@ -19,7 +19,7 @@ def run(runner: Path, entry: str, library: Path) -> subprocess.CompletedProcess[
 
 
 def main() -> None:
-	runner = BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
+	runner = BuildCache(shutil.which('clang') or require_cc()).mir_runner()
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
 		# Use the actual compiler source, not a test reimplementation.

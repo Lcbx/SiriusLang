@@ -14,7 +14,7 @@ def main() -> None:
 	parser.add_argument('--cc', default=shutil.which('clang') or require_cc(), help='C11 compiler; Clang is preferred for the large generated translation unit')
 	parser.add_argument('--rebuild', action='store_true')
 	args = parser.parse_args()
-	binary = BuildCache(shutil.which(args.cc) or args.cc, rebuild=args.rebuild).native_tool('run_cli')
+	binary = BuildCache(shutil.which(args.cc) or args.cc, rebuild=args.rebuild).mir_runner()
 	copy_binary(binary, args.output)
 	print(f'Built {args.output} (dynamic MIR source runner)')
 

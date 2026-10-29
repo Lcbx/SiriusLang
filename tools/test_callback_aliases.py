@@ -115,7 +115,7 @@ def main() -> None:
 			*link_flags(cache.cc), '-o', binary))
 		check(run(binary), 42)
 		if not args.native_only:
-			runner = cache.native_tool('run_cli')
+			runner = cache.mir_runner()
 			package = root / 'Provider.smirg'
 			check(run(runner, '--emit-generic', 'Provider', package, root / 'Provider.sirius', root))
 			(root / 'Provider.sirius').unlink()

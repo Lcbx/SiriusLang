@@ -22,7 +22,7 @@ def main() -> None:
 	parser.add_argument('--runner', type=Path)
 	args = parser.parse_args()
 	cache = BuildCache(require_cc())
-	runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else cache.mir_runner()
 	with tempfile.TemporaryDirectory() as tmp:
 		work = Path(tmp)
 		(work / 'Helpers.sirius').write_text(

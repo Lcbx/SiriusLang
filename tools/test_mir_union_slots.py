@@ -68,7 +68,7 @@ def main():
     args = parser.parse_args()
     cache = BuildCache(require_cc())
     compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
-    runner = args.runner.resolve() if args.runner else cache.native_tool('run_cli')
+    runner = args.runner.resolve() if args.runner else cache.mir_runner()
     checked = cache.native_driver('union-slots-checked', ROOT / 'tests/mir/union_slots_checked_native.sirius')
     modes = [('default', []), ('hybrid', ['-DSIRIUS_EXPERIMENTAL_UNION_HYBRID']),
              ('coalloc', ['-DSIRIUS_EXPERIMENTAL_UNION_COALLOC'])]

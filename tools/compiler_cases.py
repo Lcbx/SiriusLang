@@ -10,6 +10,8 @@ from build_support import BuildCache, compile_c, execute, validate_jobs
 from project_paths import ROOT, normalize_newlines
 
 REFERENCE = ('01_scalars', '02_branches', '03_loops', '04_recursion', '38_module_constants', '29_strings_and_arguments', '36_string_byte_at', '06_constructor', '07_record_spread', '10_generic', '05_records', '20_structural_layout', '17_dict')
+# These legacy negative cases describe limitations that the MIR backend supports.
+MIR_NEGATIVE_EXCLUDE = ('04_unsupported_array', '27_optional_elif')
 ERRORS = {
 	'01_immutable': 'cannot assign immutable',
 	'02_type_mismatch': 'expected bool, found i64',

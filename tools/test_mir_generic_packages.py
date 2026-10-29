@@ -23,7 +23,7 @@ def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	parser.add_argument('--runner', type=Path, help='existing sirius-run executable')
 	args = parser.parse_args()
-	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).native_tool('run_cli')
+	runner = args.runner.resolve() if args.runner else BuildCache(shutil.which('clang') or require_cc()).mir_runner()
 	with tempfile.TemporaryDirectory() as temp:
 		work = Path(temp)
 		source = work / 'Ops.sirius'

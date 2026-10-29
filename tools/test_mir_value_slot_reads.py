@@ -16,7 +16,7 @@ def main() -> None:
     args = parser.parse_args()
     cache = BuildCache(require_cc())
     compiler = args.compiler or cache.seed()
-    runner = args.runner or cache.native_tool('run_cli')
+    runner = args.runner or cache.mir_runner()
     with TemporaryDirectory(prefix='sirius-inline-pod-') as directory:
         folder = Path(directory)
         for stem in ('40_record_value_slots', '41_inline_scalar_record'):

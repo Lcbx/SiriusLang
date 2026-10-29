@@ -66,10 +66,32 @@ def needs_mir_runner(path: Path) -> bool:
 		tree = ast.parse(path.read_text(encoding='utf-8'))
 	except SyntaxError:
 		return False  # Let the normal test invocation report its syntax error.
-	return any(isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-		and node.func.attr == 'native_tool' and node.args
-		and isinstance(node.args[0], ast.Constant) and node.args[0].value == 'run_cli'
-		for node in ast.walk(tree))
+	for statement in tree.body:
+		if (isinstance(statement, ast.Assign) and any(isinstance(name, ast.Name)
+			and name.id == 'SUITE_NEEDS_MIR_RUNNER' for name in statement.targets)
+			and isinstance(statement.value, ast.Constant) and isinstance(statement.value.value, bool)):
+			return statement.value.value
+	for node in ast.walk(tree):
+		if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+			and node.func.attr == 'mir_runner'):
+			return True
+		if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+			and node.func.attr == 'native_tool'):
+			continue
+		entry = node.args[0] if node.args else next(
+			(keyword.value for keyword in node.keywords if keyword.arg == 'entry'), None)
+		# Dynamic arguments may request run_cli; prepare rather than silently
+		# letting that test build another runner.
+		if entry is None or not isinstance(entry, ast.Constant) or entry.value == 'run_cli':
+			return True
+	return False
+
+
+def deduplicate_fixture_suite(scripts: list[Path]) -> list[Path]:
+	"""Bootstrap runs the same compiler fixtures as test_compiler."""
+	if any(path.name == 'test_bootstrap.py' for path in scripts):
+		return [path for path in scripts if path.name != 'test_compiler.py']
+	return scripts
 
 
 def run_script(path: Path, root: Path, timeout: float | None, *,
@@ -146,7 +168,7 @@ def main() -> None:
 	if args.timeout < 0:
 		parser.error('--timeout must be >= 0')
 	root = Path(__file__).resolve().parent
-	scripts = select_scripts(root, tuple(args.match), tuple(args.exclude), tuple(args.group))
+	scripts = deduplicate_fixture_suite(select_scripts(root, tuple(args.match), tuple(args.exclude), tuple(args.group)))
 	if not scripts:
 		parser.error('no test scripts match the given filters')
 	if args.list:
@@ -159,7 +181,9 @@ def main() -> None:
 		env.pop(name, None)
 	with TemporaryDirectory(prefix='sirius-test-suite-') as temporary:
 		shared_runner = executable_path(Path(temporary) / 'sirius-run')
+		fixture_marker = Path(temporary) / 'bootstrap-shared-fixtures'
 		prepared = False
+		fixtures_passed = False
 		for path in scripts:
 			if not prepared and needs_mir_runner(path):
 				supplied = args.runner.resolve() if args.runner else None
@@ -167,7 +191,13 @@ def main() -> None:
 				prepared = True
 			print(f'\n========== {path.name} ==========', flush=True)
 			start = perf_counter()
-			code, timed_out = run_script(path, root.parent, args.timeout or None, env=env)
+			arguments = ()
+			if path.name == 'test_bootstrap.py':
+				arguments = ('--shared-fixtures-marker', str(fixture_marker))
+			if path.name == 'test_mir_compiler.py' and fixtures_passed:
+				arguments = ('--skip-shared-cases',)
+				print('Shared compiler fixtures already passed; running MIR-specific checks.', flush=True)
+			code, timed_out = run_script(path, root.parent, args.timeout or None, arguments=arguments, env=env)
 			elapsed = perf_counter() - start
 			if timed_out:
 				print(f'TIMEOUT {path.name} after {elapsed:.1f}s', flush=True)
@@ -177,6 +207,8 @@ def main() -> None:
 				failures.append((path.name, code))
 			else:
 				print(f'PASS {path.name} in {elapsed:.1f}s', flush=True)
+				if path.name == 'test_compiler.py' or (path.name == 'test_bootstrap.py' and fixture_marker.is_file()):
+					fixtures_passed = True
 			if failures and args.fail_fast:
 				break
 	if failures:

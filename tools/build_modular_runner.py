@@ -15,7 +15,7 @@ def main() -> None:
 	parser.add_argument('--rebuild', action='store_true')
 	args = parser.parse_args()
 	cache = BuildCache(shutil.which(args.cc) or args.cc, rebuild=args.rebuild)
-	binary = cache.native_tool('run_cli')
+	binary = cache.mir_runner()
 	copy_binary(binary, args.output)
 	print(f'Built native modular MIR runner: {args.output}')
 

@@ -11,31 +11,41 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import test_all
-from test_all import GROUP_PATTERNS, groups_for, needs_mir_runner, prepare_mir_runner, run_script, select_scripts
+from test_all import GROUP_PATTERNS, deduplicate_fixture_suite, groups_for, needs_mir_runner, prepare_mir_runner, run_script, select_scripts
 from test_fixture_layout import check_pairs, check_json_cases
 from profile_mir_allocations import parse_report, same_generated_c
+from profile_mir import instrument
 
 from project_paths import executable_path, normalize_newlines
 from build_support import MIR_RUNNER_ENV, MIR_RUNNER_TOOLCHAIN_ENV, assert_native, copy_binary
 
 
 def check_suite_runner(root: Path) -> None:
+	bootstrap = root / 'test_bootstrap.py'
+	compiler = root / 'test_compiler.py'
+	assert deduplicate_fixture_suite([bootstrap, compiler]) == [bootstrap]
+	assert deduplicate_fixture_suite([compiler]) == [compiler]
 	first = root / 'test_first.py'
 	second = root / 'test_second.py'
 	for script in (first, second):
 		script.write_text("cache.native_tool('run_cli')\n", encoding='utf-8')
 	assert needs_mir_runner(first)
 	other = root / 'not_a_runner.py'
+	for source in ("cache.native_tool(entry)\n", "cache.native_tool(entry='run_cli')\n", "cache.mir_runner()\n"):
+		other.write_text(source, encoding='utf-8')
+		assert needs_mir_runner(other)
 	for source in ("cache.native_tool('modular_cli')\n", "# cache.native_tool('run_cli')\n", 'broken ('):
 		other.write_text(source, encoding='utf-8')
 		assert not needs_mir_runner(other)
+	other.write_text('SUITE_NEEDS_MIR_RUNNER = False\ncache.mir_runner()\n', encoding='utf-8')
+	assert not needs_mir_runner(other)
 	prepared = []
 	seen = []
 	def prepare(tools, destination, timeout, env, supplied):
 		destination.write_bytes(b'runner')
 		prepared.append(destination)
 		return {**env, MIR_RUNNER_ENV: str(destination), MIR_RUNNER_TOOLCHAIN_ENV: 'test'}
-	def run(path, project, timeout, *, env):
+	def run(path, project, timeout, *, env, arguments=()):
 		binary = Path(env[MIR_RUNNER_ENV])
 		assert binary.is_file()
 		seen.append(binary)
@@ -51,6 +61,28 @@ def check_suite_runner(root: Path) -> None:
 		patch.object(test_all, 'select_scripts', return_value=[first]), \
 		patch.object(test_all, 'prepare_mir_runner', side_effect=AssertionError('unexpected runner setup')):
 		test_all.main()
+
+	# Skip the repeated fixture battery only after a successful earlier run.
+	mir = root / 'test_mir_compiler.py'
+	for first_status, same_compiler, expected in ((0, True, ('--skip-shared-cases',)),
+		(0, False, ()), (1, False, ())):
+		calls = []
+		def run_fixtures(path, project, timeout, *, arguments=(), env):
+			if path == bootstrap:
+				assert arguments[0] == '--shared-fixtures-marker'
+				if same_compiler:
+					Path(arguments[1]).write_text('passed')
+			calls.append((path.name, arguments if path == mir else ()))
+			return (first_status if path == bootstrap else 0), False
+		with patch.object(sys, 'argv', ['test_all.py']), \
+			patch.object(test_all, 'select_scripts', return_value=[bootstrap, mir]), \
+			patch.object(test_all, 'needs_mir_runner', return_value=False), \
+			patch.object(test_all, 'run_script', side_effect=run_fixtures):
+			try:
+				test_all.main()
+			except SystemExit as error:
+				assert first_status and error.code == 1
+		assert calls == [(bootstrap.name, ()), (mir.name, expected)]
 
 
 def check_runner_setup(root: Path) -> None:
@@ -112,6 +144,12 @@ with open(os.environ['RUNNER_REPORT'], 'a', encoding='utf-8') as output:
 
 
 def main() -> None:
+	for references in ('', '(void)&s_mir_f0; '):
+		source = ('static int64_t s_mir_f0(void)\n{\n\treturn returned;\n}\n'
+			'int main(int argc, char **argv) { s_set_arguments(argc, argv); '
+			+ references + 'return (int)s_mir_f0(); }\n')
+		profiled = instrument(source)
+		assert references in profiled and 'p_leave(0);' in profiled and 'p_report(); return result;' in profiled
 	assert normalize_newlines(b'a\r\nb\n') == b'a\nb\n'
 	windows_children = [PureWindowsPath('a'), PureWindowsPath('B')]
 	assert [path.name for path in sorted(windows_children, key=lambda path: path.name.encode('utf-8'))] == ['B', 'a']

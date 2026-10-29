@@ -6,25 +6,23 @@ import tempfile
 import subprocess
 
 from build_support import BuildCache, assert_native, execute, options, require_cc, run_native, validate_jobs
-from compiler_cases import check_cases
-
-
-# Two legacy negative fixtures require only backend limitations, not
-# language errors: MIR supports f64 arrays and Optional fallbacks in elif.
-NEGATIVE_EXCLUDE = ('04_unsupported_array', '27_optional_elif')
+from compiler_cases import MIR_NEGATIVE_EXCLUDE, check_cases
 
 
 def main() -> None:
 	parser = argparse.ArgumentParser(description=__doc__)
 	options(parser)
 	parser.add_argument('--compiler', type=Path, help='Use a prebuilt MIR compiler (skip rebuilding the compiler driver)')
+	parser.add_argument('--skip-shared-cases', action='store_true',
+		help='skip the shared compiler fixture suite, retaining MIR-specific checks')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc(), rebuild=args.rebuild)
 	compiler = args.compiler.resolve() if args.compiler else cache.native_tool('modular_cli')
 	with tempfile.TemporaryDirectory() as temporary:
 		work = Path(temporary)
-		check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
-			runtime=cache.runtime(), negative_exclude=NEGATIVE_EXCLUDE)
+		if not args.skip_shared_cases:
+			check_cases(cache.cc, compiler, work, jobs=validate_jobs(args.jobs),
+				runtime=cache.runtime(), negative_exclude=MIR_NEGATIVE_EXCLUDE)
 		# Module constants are typed; boolean names, negation, and shadowing
 		# must survive HIR analysis, MIR lowering, and native C emission.
 		bool_source = work / 'module_bool_constants.sirius'

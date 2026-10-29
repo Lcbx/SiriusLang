@@ -4,11 +4,10 @@ import argparse
 from pathlib import Path
 import shutil
 import subprocess
-import sys
 import tempfile
 
 from bootstrap_support import check_committed
-from build_support import BuildCache, assert_native, compile_c, execute, require_cc, run_native
+from build_support import BuildCache, assert_native, execute, require_cc, run_native
 from project_paths import ROOT
 
 
@@ -23,8 +22,8 @@ def main() -> None:
 		generated = root / 'generation_1.c'
 		execute([str(seed), '--module-root', str(ROOT / 'src'), 'modular_cli', str(generated)])
 		check_committed(ROOT / 'bootstrap/compiler.c', generated.read_bytes())
-		compiler = root / ('generation_1.exe' if sys.platform == 'win32' else 'generation_1')
-		compile_c(cache.cc, generated, compiler, cache.runtime())
+		compiler = cache.native_tool('modular_cli')
+		assert (compiler.parent / 'generated.c').read_bytes() == generated.read_bytes(), 'cached compiler source differs'
 		second_c = root / 'generation_2.c'
 		execute([str(compiler), '--module-root', str(ROOT / 'src'), 'modular_cli', str(second_c)])
 		assert second_c.read_bytes() == generated.read_bytes(), 'native modular C fixed point differs'
