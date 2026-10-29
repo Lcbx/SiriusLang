@@ -13,12 +13,13 @@ A statically typed, compiled-first, functional-first language combining Python-l
 
 * **Immutable values:** Records and arrays have value semantics, with copy-on-write (CoW) for efficient updates.
 * **Local imperatives:** Mutable bindings and conventional loops express sequential algorithms and local state.
+* **Explicit state changes:** Functions cannot mutate caller bindings through parameters. Stateful computations receive state and return updated state; the caller explicitly reassigns it.
 * **Functional transformations:** Pure array operations express independent computations, eligible for fusion, SIMD, and parallelization.
 * **Static duck-typing:** Structural compatibility through compile-time specialization (monomorphization).
 * **Universal types:** Canonical descriptors support memory layout, introspection, and explicit dynamic typing.
 * **Acyclic memory:** No mutable shared objects or capturing closures; reference counting without tracing GC.
 
-**Guiding principle:** Minimize overlapping constructs. Functional operations transform collections; imperative control flow handles sequencing and state. Higher-level utilities should be expressible through simpler primitives.
+**Guiding principle:** Minimize overlapping constructs. Functional operations transform collections; imperative control flow handles sequencing and local state. Caller-visible state changes remain explicit, not hidden in calls, preserving clear data flow and opportunities for parallel execution. Higher-level utilities should be expressible through simpler primitives.
 
 ## 2. Syntax and Bindings
 
@@ -72,22 +73,41 @@ point.x += 5
 
 **CoW:** Storage may be modified in place when exclusively owned and safe to overwrite; otherwise it is copied. Nested values support structural sharing.
 
-### Record destructuring
+### Record destructuring and multiple assignment
 
-Destructuring names every source field explicitly; binding names need not match:
+A declaration can destructure named record fields:
 
 ```sirius
 let {first = .a, second = .b} = value
 ```
 
-Equivalent to `let first = value.a` and `let second = value.b`. The source
-expression is evaluated once. `.a` and `.b` are field selectors relative to
-that source, not positional patterns or standalone expressions. Fields may be
-listed in any order, but implicit/positional destructuring
-(`let {first, second} = value`) is not supported. Missing fields or repeated binding names are
-compile-time errors. Structural typing determines field compatibility; source
-record fields not listed are ignored. Initially restricted to `let` bindings;
-recursive patterns and `var` destructuring are deferred.
+This binds `first = value.a` and `second = value.b`. The source is evaluated
+once; `.a` and `.b` select fields of that source, not positional values.
+
+**Proposed multiple assignment** mixes new bindings with reassignment of
+existing mutable bindings:
+
+```sirius
+var memo = Memo(expensive, Dict[i64, i64]())
+{memo, let value} = memo.eval(42)
+```
+
+Here `eval` returns a record `{memo = updated, value = computed}`. In the
+pattern, a bare name reassigns an existing `var`, `let name` declares an
+immutable binding, and `var name` declares a mutable binding. Names select
+same-named fields by default; `name = .field` selects a differently named
+field:
+
+```sirius
+{let a, var b, c = .other} = result
+```
+
+The right-hand side is evaluated once and all selected fields are read before
+any target changes; assignments then take effect simultaneously. Targets must
+be distinct; missing fields, reassignment of immutable bindings, and type
+changes to existing bindings are compile-time errors. Unlisted fields are
+ignored. Destructuring is named, never positional; nested patterns are
+initially excluded. The existing `let {name = .field}` form remains valid.
 
 Record updates use spreading:
 
@@ -623,6 +643,20 @@ Strings are immutable UTF-8 values with CoW storage.
 The standard library provides concatenation, comparison, searching, slicing, splitting, joining, replacement, and explicit formatting.
 
 `byte_at(i)` returns `Optional[i64]` containing the unsigned UTF-8 byte at zero-based index `i` (`None` when out of bounds). Byte-oriented operations are distinct from Unicode-aware operations. Efficient string construction may use a standard-library builder backed by private mutable storage.
+
+### String interpolation
+
+`f"..."` and `f'...'` interpolate `${expr}`; ordinary strings remain literal. Expressions may be arbitrary Sirius expressions, evaluated once from left to right. String results are inserted unchanged; all other results are converted using `str()`. The resulting value is an ordinary immutable string.
+
+```sirius
+let name = "Alice"
+let numbers = [1, 2, 3]
+let message = f"Hello ${name}; numbers: ${numbers}"
+let literal = f"Braces: {x}; marker: \${name}"
+```
+
+`str()` is defined for every type, including scalars, records, arrays, dictionaries, optionals, and tagged unions. Composite values are formatted recursively; embedded strings are quoted and escaped, whereas `str(string)` returns the string unchanged. Custom representations use ordinary functions returning strings, not inline format specifiers. Only `${` begins an interpolation; other braces and dollar signs are literal, and `\${` produces a literal `${`.
+
 
 ## 10. Memory and Runtime
 
