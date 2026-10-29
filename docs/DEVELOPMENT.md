@@ -36,6 +36,25 @@ python tools/test_all.py --list
 python tools/test_all.py                      # entire active suite; expensive
 ```
 
+The suite prepares one shared MIR runner before the first selected driver that
+requests it. Setup time is printed separately from individual test timings.
+Each test receives the same suite-local executable, including tests without a
+`--runner` option. A suite using only smoke checks does not build a runner, and
+`--list` never builds one. The content-addressed cache keeps the original binary
+for later suites; the suite-local copy survives cache resets during tests and is
+removed when the suite finishes.
+
+To select an existing executable instead of building the shared runner:
+
+```sh
+python tools/test_all.py --runner ./sirius-run
+```
+
+Standalone drivers retain their usual cache behavior. Explicit fresh builds and
+tests using another C toolchain bypass the shared runner. Tests that deliberately
+compile an independent runner still do that work; suite sharing does not remove
+the one-time build cost when compiler sources or the bootstrap change.
+
 All active Python test drivers remain independently executable as
 `python tools/test_<name>.py`. The runner runs them sequentially in sorted
 order, using a separate process group and a configurable timeout per driver.

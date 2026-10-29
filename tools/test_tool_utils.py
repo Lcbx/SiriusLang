@@ -1,15 +1,114 @@
 #!/usr/bin/env python
 """Unit tests for shared process and newline comparison utilities."""
 import subprocess
+from contextlib import redirect_stdout
+from io import StringIO
+import os
+import sys
 from pathlib import Path, PureWindowsPath
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from test_all import GROUP_PATTERNS, groups_for, run_script, select_scripts
+import test_all
+from test_all import GROUP_PATTERNS, groups_for, needs_mir_runner, prepare_mir_runner, run_script, select_scripts
 from test_fixture_layout import check_pairs, check_json_cases
 from profile_mir_allocations import parse_report, same_generated_c
 
 from project_paths import executable_path, normalize_newlines
-from build_support import assert_native, copy_binary
+from build_support import MIR_RUNNER_ENV, MIR_RUNNER_TOOLCHAIN_ENV, assert_native, copy_binary
+
+
+def check_suite_runner(root: Path) -> None:
+	first = root / 'test_first.py'
+	second = root / 'test_second.py'
+	for script in (first, second):
+		script.write_text("cache.native_tool('run_cli')\n", encoding='utf-8')
+	assert needs_mir_runner(first)
+	other = root / 'not_a_runner.py'
+	for source in ("cache.native_tool('modular_cli')\n", "# cache.native_tool('run_cli')\n", 'broken ('):
+		other.write_text(source, encoding='utf-8')
+		assert not needs_mir_runner(other)
+	prepared = []
+	seen = []
+	def prepare(tools, destination, timeout, env, supplied):
+		destination.write_bytes(b'runner')
+		prepared.append(destination)
+		return {**env, MIR_RUNNER_ENV: str(destination), MIR_RUNNER_TOOLCHAIN_ENV: 'test'}
+	def run(path, project, timeout, *, env):
+		binary = Path(env[MIR_RUNNER_ENV])
+		assert binary.is_file()
+		seen.append(binary)
+		return 0, False
+	with patch.object(sys, 'argv', ['test_all.py']), \
+		patch.object(test_all, 'select_scripts', return_value=[first, second]), \
+		patch.object(test_all, 'prepare_mir_runner', side_effect=prepare), \
+		patch.object(test_all, 'run_script', side_effect=run):
+		test_all.main()
+	assert len(prepared) == 1 and seen == [prepared[0], prepared[0]]
+	assert not prepared[0].exists(), 'Suite runner survived its session'
+	with patch.object(sys, 'argv', ['test_all.py', '--list']), \
+		patch.object(test_all, 'select_scripts', return_value=[first]), \
+		patch.object(test_all, 'prepare_mir_runner', side_effect=AssertionError('unexpected runner setup')):
+		test_all.main()
+
+
+def check_runner_setup(root: Path) -> None:
+	cache = SimpleNamespace(cc='cc', toolchain='test toolchain')
+	destination = root / 'prepared-runner'
+	base_env = {'EXAMPLE': 'unchanged'}
+	def build(path, project, timeout, *, arguments, env):
+		assert arguments == ('--cc', 'cc', '--output', str(destination)) and timeout == 5
+		assert env == base_env
+		destination.write_bytes(b'built runner')
+		return 0, False
+	with patch.object(test_all, 'require_cc', return_value='cc'), \
+		patch.object(test_all, 'BuildCache', return_value=cache), \
+		patch.object(test_all, 'run_script', side_effect=build) as process:
+		env = prepare_mir_runner(root, destination, 5, base_env, None)
+		assert process.call_count == 1 and Path(env[MIR_RUNNER_ENV]) == destination
+		assert env[MIR_RUNNER_TOOLCHAIN_ENV] == cache.toolchain and base_env == {'EXAMPLE': 'unchanged'}
+		for result in ((None, True), (7, False)):
+			process.side_effect = None
+			process.return_value = result
+			try:
+				prepare_mir_runner(root, destination, 5, base_env, None)
+			except SystemExit:
+				pass
+			else:
+				raise AssertionError('Runner setup failure was ignored')
+		process.side_effect = AssertionError('Supplied runner triggered a build')
+		supplied = root / 'prebuilt'
+		supplied.write_bytes(b'prebuilt runner')
+		prepare_mir_runner(root, destination, 5, base_env, supplied)
+		assert destination.read_bytes() == b'prebuilt runner'
+
+
+def check_runner_children(root: Path) -> None:
+	binary = root / 'shared-runner'
+	binary.write_bytes(b'runner')
+	report = root / 'runner-paths'
+	child = root / 'test_runner_child.py'
+	child.write_text('''import os
+from pathlib import Path
+from build_support import BuildCache, MIR_RUNNER_ENV
+cache = BuildCache.__new__(BuildCache)
+cache.toolchain = 'child toolchain'
+cache.rebuild = False
+def unexpected_build():
+    raise AssertionError('Child rebuilt the runner')
+cache.seed = unexpected_build
+entry = 'run_cli'
+runner = cache.native_tool(entry)
+assert str(runner) == os.environ[MIR_RUNNER_ENV]
+with open(os.environ['RUNNER_REPORT'], 'a', encoding='utf-8') as output:
+    output.write(str(runner) + '\\n')
+''', encoding='utf-8')
+	env = {**os.environ, MIR_RUNNER_ENV: str(binary), MIR_RUNNER_TOOLCHAIN_ENV: 'child toolchain',
+		'PYTHONPATH': str(Path(__file__).resolve().parent), 'RUNNER_REPORT': str(report)}
+	for i in range(2):
+		assert run_script(child, root, 5, env=env) == (0, False)
+	assert report.read_text(encoding='utf-8').splitlines() == [str(binary), str(binary)]
 
 
 def main() -> None:
@@ -102,6 +201,10 @@ def main() -> None:
 		slow = root / 'test_slow.py'
 		slow.write_text('import time\ntime.sleep(2)\n', encoding='utf-8')
 		assert run_script(slow, root, 0.05) == (None, True)
+		with redirect_stdout(StringIO()):
+			check_suite_runner(root)
+			check_runner_setup(root)
+			check_runner_children(root)
 	print('PASS tool helpers: CRLF, output, exit status, diagnostics')
 
 

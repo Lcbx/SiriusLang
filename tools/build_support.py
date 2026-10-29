@@ -18,6 +18,8 @@ from project_paths import ROOT, executable_path, normalize_newlines
 
 BUILD = ROOT / '.build' / 'cache'
 C_FLAGS = ('-std=c11', '-O0', '-Wall', '-Wextra', '-Werror', '-pedantic')
+MIR_RUNNER_ENV = 'SIRIUS_TEST_MIR_RUNNER'
+MIR_RUNNER_TOOLCHAIN_ENV = 'SIRIUS_TEST_MIR_RUNNER_TOOLCHAIN'
 # Windows PE executables default to a small stack; self-hosting needs more.
 # MSVC link.exe and MinGW GNU ld use different flags. Include the math library
 # only where it is separate from the C runtime (not with the MSVC/UCRT target).
@@ -71,6 +73,7 @@ def execute(command: list[str]) -> subprocess.CompletedProcess[str]:
 class BuildCache:
 	def __init__(self, cc: str, rebuild: bool = False):
 		self.cc = cc
+		self.rebuild = rebuild
 		if rebuild:
 			shutil.rmtree(BUILD, ignore_errors=True)
 		identity = execute([cc, '--version']).stdout.splitlines()[0]
@@ -124,7 +127,14 @@ class BuildCache:
 		return self._binary('seed', ROOT / 'bootstrap/compiler.c', ())
 
 	def native_tool(self, entry: str) -> Path:
-		"""Build a Sirius CLI from its native module root with the checked-in C seed."""
+		"""Reuse the suite runner, or build a CLI with the checked-in C seed."""
+		if entry == 'run_cli' and not self.rebuild:
+			shared = os.environ.get(MIR_RUNNER_ENV)
+			if shared and os.environ.get(MIR_RUNNER_TOOLCHAIN_ENV) == self.toolchain:
+				binary = Path(shared).resolve()
+				if not binary.is_file():
+					raise RuntimeError(f'Shared MIR runner is missing: {binary}')
+				return binary
 		sources = tuple(path for path in sorted((ROOT / 'src').glob('*.sirius')))
 		seed = self.seed()
 		runtime = self.runtime()

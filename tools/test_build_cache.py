@@ -2,10 +2,45 @@
 """Check content-addressed cache reuse, invalidation, and concurrent publishing."""
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+import os
 import tempfile
+from unittest.mock import patch
 
 import build_support
-from build_support import BuildCache, require_cc
+from build_support import BuildCache, MIR_RUNNER_ENV, MIR_RUNNER_TOOLCHAIN_ENV, require_cc
+
+
+def check_shared_runner(cache: BuildCache, root: Path) -> None:
+	shared = root / 'shared-runner'
+	shared.write_bytes(b'suite executable')
+	env = {MIR_RUNNER_ENV: str(shared), MIR_RUNNER_TOOLCHAIN_ENV: cache.toolchain}
+	entry = 'run_cli'
+	with patch.dict(os.environ, env), patch.object(cache, 'seed', side_effect=AssertionError('build requested')):
+		assert cache.native_tool(entry) == shared.resolve()
+		shared.unlink()
+		try:
+			cache.native_tool(entry)
+		except RuntimeError as error:
+			assert 'Shared MIR runner is missing' in str(error)
+		else:
+			raise AssertionError('Missing suite runner was silently rebuilt')
+	shared.write_bytes(b'suite executable')
+	# Different C compilers, other tools and explicit rebuilds use normal builds.
+	class NormalBuild(Exception):
+		pass
+	for tool, toolchain, rebuild in (
+		('modular_cli', cache.toolchain, False),
+		(entry, 'another toolchain', False),
+		(entry, cache.toolchain, True),
+	):
+		with patch.dict(os.environ, {**env, MIR_RUNNER_TOOLCHAIN_ENV: toolchain}), \
+			patch.object(cache, 'rebuild', rebuild), patch.object(cache, 'seed', side_effect=NormalBuild):
+			try:
+				cache.native_tool(tool)
+			except NormalBuild:
+				pass
+			else:
+				raise AssertionError('A fresh/different tool build used the suite runner')
 
 
 def main() -> None:
@@ -14,6 +49,7 @@ def main() -> None:
 		build_support.BUILD = Path(tmp)
 		try:
 			cache = BuildCache(require_cc())
+			check_shared_runner(cache, Path(tmp))
 			built = []
 			def write(output: Path, _: Path) -> None:
 				built.append(output)
