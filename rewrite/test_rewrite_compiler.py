@@ -3,7 +3,10 @@
 import subprocess
 import re
 import tempfile
+import sys
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
 
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, executable_path, normalize_newlines

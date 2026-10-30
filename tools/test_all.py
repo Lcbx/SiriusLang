@@ -20,9 +20,10 @@ from build_support import (BuildCache, MIR_RUNNER_ENV, MIR_RUNNER_TOOLCHAIN_ENV,
 from project_paths import executable_path
 
 
-# Filename-based groups keep drivers independently executable from tools/.
+# Filename-based groups keep drivers independently executable.
 # New scripts should follow an existing prefix or be added to the appropriate group.
 GROUP_PATTERNS = {
+	'rewrite': ('test_rewrite_*',),
 	'smoke': ('test_tool_utils', 'test_fixture_layout', 'test_docs', 'test_compiler_layout'),
 	'frontend': ('test_tokenizer', 'test_parser', 'test_types', 'test_hir_*', 'test_compiler*'),
 	'mir': ('test_mir', 'test_mir_*', 'test_enum_empty_opt',
@@ -54,7 +55,10 @@ def select_scripts(root: Path, include: tuple[str, ...] = (), exclude: tuple[str
 	def matches(path: Path, patterns: tuple[str, ...]) -> bool:
 		return any(fnmatchcase(path.name, pattern) or fnmatchcase(path.stem, pattern) for pattern in patterns)
 
-	return [path for path in sorted(root.glob('test_*.py'))
+	candidates = list(root.glob('test_*.py'))
+	if root.name == 'tools':
+		candidates.extend((root.parent / 'rewrite').glob('test_*.py'))
+	return [path for path in sorted(candidates, key=lambda path: path.name)
 		if path.name != Path(__file__).name
 		and (not include or matches(path, include)) and not matches(path, exclude)
 		and (not groups or any(group in groups_for(path) for group in groups))]

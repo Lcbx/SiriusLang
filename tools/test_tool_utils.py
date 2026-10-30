@@ -201,6 +201,14 @@ def main() -> None:
 		assert groups_for(root / 'test_enum_empty_opt.py') == ('mir',)
 		assert groups_for(root / 'test_a.py') == ()
 		assert 'smoke' in GROUP_PATTERNS
+		tools = root / 'project' / 'tools'
+		rewrite = tools.parent / 'rewrite'
+		tools.mkdir(parents=True)
+		rewrite.mkdir()
+		(tools / 'test_a.py').touch()
+		(rewrite / 'test_rewrite_lexer.py').touch()
+		assert [p.name for p in select_scripts(tools)] == ['test_a.py', 'test_rewrite_lexer.py']
+		assert select_scripts(tools, groups=('rewrite',)) == [rewrite / 'test_rewrite_lexer.py']
 		fixtures = root / 'fixtures'
 		output = root / 'expected_output'
 		fixtures.mkdir(); output.mkdir()

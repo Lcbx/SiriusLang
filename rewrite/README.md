@@ -7,7 +7,7 @@ compiler, not the rewrite. The existing bootstrap does not use this directory.
 The first component is a lexer with compact integer kinds derived from
 `TokenKind.index(label)`. These indices are internal to the rewrite, not
 compatible with the existing compiler's serialized codes. Token positions are
-byte offsets. Test with `python tools/test_rewrite_lexer.py`.
+byte offsets. Test with `python rewrite/test_rewrite_lexer.py`.
 For paired native lexer timings run `python tools/benchmark_rewrite_lexer.py`;
 this does not measure end-to-end compilation.
 
@@ -93,9 +93,10 @@ loops lower to scalar copies, comparisons, increments and existing branches;
 they do not allocate an array of elements.
 It does not yet implement the existing compiler's artifact formats or CLI.
 
-`python tools/test_rewrite_compiler.py` builds the compiler both natively and
+`python rewrite/test_rewrite_compiler.py` builds the compiler both natively and
 as an interpreted MIR module, checks invalid inputs, and compares supported
 programs with the existing native and interpreted implementations.
+Run both rewrite test scripts with `python tools/test_all.py --group rewrite`.
 `python tools/benchmark_rewrite_compiler.py` measures a small supported program;
 its results do not represent full compiler performance.
 Use `--bindings 1000` to exercise many distinct local names. On the measured

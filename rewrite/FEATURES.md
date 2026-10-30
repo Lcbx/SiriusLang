@@ -224,5 +224,5 @@ def main() -> i64
 
 Recursion, `recur`, typed overloads and additional string/collection cases have
 executable examples in the [language fixtures](../tests/language/fixtures).
-`python tools/test_rewrite_compiler.py` checks every complete block above
+`python rewrite/test_rewrite_compiler.py` checks every complete block above
 with the existing native compiler and MIR interpreter (including printed output).
