@@ -4,6 +4,7 @@ export enum ScalarType
 	Integer
 	Boolean
 	Text
+	OptionalInteger
 
 export rec Checked(parsed: Parser.State, references: Array[i64], types: Array[i64], error: string, line: i64)
 rec Binding(node: i64, mutable: bool, depth: i64)
@@ -21,12 +22,35 @@ export def check(parsed: Parser.State) -> Checked
 	let integer = ScalarType.index(Integer)
 	let boolean = ScalarType.index(Boolean)
 	let text = ScalarType.index(Text)
+	let optional = ScalarType.index(OptionalInteger)
 	for i in 0..len(parsed.nodes)
 		let node = parsed.nodes[!i]
 		var reference = -1
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.OptionalUnwrap | Parser.OptionalExit
+				type = integer
+				if types[!node.left] != optional
+					error = "unwrapping requires Optional[i64]"
+			Parser.StringByteAt | Parser.StringFind
+				type = optional
+				var argument = text
+				if Parser.kind_is(node.kind, Parser.StringByteAt())
+					argument = integer
+				if types[!node.left] != text or types[!node.right] != argument
+					error = "invalid string lookup operands"
+			Parser.SliceBounds
+				if types[!node.left] != integer or types[!node.right] != integer
+					error = "slice bounds must be i64"
+			Parser.StringSlice
+				type = text
+				if types[!node.left] != text
+					error = "slice requires string"
+			Parser.StringStarts | Parser.StringEnds
+				type = boolean
+				if types[!node.left] != text or types[!node.right] != text
+					error = "string predicate requires strings"
 			Parser.RangeBinding
 				type = integer
 				if types[!node.left] != integer or types[!node.right] != integer
@@ -69,6 +93,8 @@ export def check(parsed: Parser.State) -> Checked
 						expected = boolean
 					elif name(parsed, node.right) == "string"
 						expected = text
+					elif name(parsed, node.right) == "Optional"
+						expected = optional
 					if type != expected
 						error = "binding type mismatch"
 				bindings = bindings.insert(target, Binding(i, Parser.kind_is(node.kind, Parser.MutableBinding()), depth))
@@ -76,12 +102,14 @@ export def check(parsed: Parser.State) -> Checked
 				type = integer
 			Parser.BooleanLiteral
 				type = boolean
-			Parser.StringLiteral
+			Parser.StringLiteral | Parser.StringPart
 				type = text
 			Parser.Length
 				type = integer
 				if types[!node.left] != text
 					error = "len requires string"
+			Parser.StringConvert
+				type = text
 			Parser.Add
 				type = types[!node.left]
 				if (type != integer and type != text) or types[!node.right] != type
@@ -90,16 +118,24 @@ export def check(parsed: Parser.State) -> Checked
 				type = boolean
 				if types[!node.left] != boolean
 					error = "not requires bool"
-			Parser.AndStart | Parser.OrStart
+			Parser.OrStart
+				type = boolean
+				if types[!node.left] == optional
+					type = integer
+				elif types[!node.left] != boolean
+					error = "or requires bool or Optional[i64]"
+			Parser.AndStart
 				type = boolean
 				if types[!node.left] != boolean
 					error = "logical operator requires bool"
 			Parser.LogicalEnd
-				type = boolean
-				if types[!node.right] != boolean
-					error = "logical operator requires bool"
-			Parser.Print
 				type = types[!node.left]
+				if types[!node.right] != type
+					error = "logical/default operand type mismatch"
+			Parser.Print | Parser.Eprint
+				type = types[!node.left]
+				if type == optional
+					error = "printing Optional requires an i64 default"
 			Parser.If | Parser.While
 				if types[!node.left] != boolean
 					error = "condition must be bool"
@@ -118,7 +154,7 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Compare
 				type = boolean
 				let op = name(parsed, node.token)
-				if types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
+				if types[!node.left] == optional or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
 					error = "invalid comparison operands"
 			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight | Parser.Return
 				type = integer

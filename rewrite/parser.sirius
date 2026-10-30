@@ -4,7 +4,17 @@ import lexer alias Lex
 export enum NodeKind
 	IntegerLiteral
 	StringLiteral
+	StringPart
 	Length
+	StringConvert
+	SliceBounds
+	StringSlice
+	StringStarts
+	StringEnds
+	StringByteAt
+	StringFind
+	OptionalUnwrap
+	OptionalExit
 	BooleanLiteral
 	Compare
 	AndStart
@@ -32,6 +42,7 @@ export enum NodeKind
 	MutableBinding
 	Assign
 	Print
+	Eprint
 	Return
 	Break
 	Continue
@@ -109,6 +120,66 @@ def precedence(op: string) -> i64
 		return 5
 	return 0
 
+def interpolated(p: State) -> Parsed
+	let token_id = p.index
+	let token = current(p)
+	let resume = p.index + 1
+	var state = p
+	var start = token.start + 2 # f and quote
+	var pos = start
+	var result = -1
+	while pos < token.end - 1
+		let byte = p.source.byte_at(pos) or 0
+		if byte == 92 # escaped characters, including \${
+			pos += 2
+			continue
+		if byte != 36 or (p.source.byte_at(pos + 1) or 0) != 123
+			pos += 1
+			continue
+		let literal = node(state, StringPart(), start, pos, token_id)
+		state = literal.state
+		if result < 0
+			result = literal.node
+		else
+			let joined = node(state, Add(), result, literal.node, token_id)
+			state = joined.state
+			result = joined.node
+		let end = Lex.interpolation_end(p.source, pos + 2)
+		if end < 0
+			return Parsed(fail(state, "unclosed interpolation"), -1)
+		# Reuse the ordinary expression parser in the same arena and scope.
+		# Parentheses suppress indentation; remap tokens to original byte offsets.
+		let embedded = Lex.tokenize("(" + p.source.slice(pos + 2, end) + ")")
+		let first = len(state.tokens)
+		for i in 1..len(embedded)
+			let part = embedded[!i]
+			if part.kind >= Lex.TokenKind.index(Lex.InvalidChar)
+				return Parsed(fail(state, "invalid interpolation expression: " + Lex.label(part.kind)), -1)
+			let offset = pos + 1 + part.start
+			state.tokens = state.tokens.append(Lex.Token(part.kind, offset, pos + 1 + part.end, token.line, token.column + offset - token.start))
+		state.index = first
+		let value = expression(state, 1)
+		# The wrapper's final ')' maps to the source interpolation's '}'.
+		state = expect(value.state, "}")
+		let formatted = node(state, StringConvert(), value.node, -1, token_id)
+		let joined = node(formatted.state, Add(), result, formatted.node, token_id)
+		state = joined.state
+		if state.error != ""
+			return Parsed(state, -1)
+		result = joined.node
+		pos = end + 1
+		start = pos
+	let last = node(state, StringPart(), start, token.end - 1, token_id)
+	state = last.state
+	if result < 0
+		result = last.node
+	else
+		let joined = node(state, Add(), result, last.node, token_id)
+		state = joined.state
+		result = joined.node
+	state.index = resume
+	return Parsed(state, result)
+
 def expression(p: State, minimum: i64) -> Parsed
 	var next = p
 	let token = next.index
@@ -128,14 +199,19 @@ def expression(p: State, minimum: i64) -> Parsed
 	elif text(next) == "true" or text(next) == "false"
 		next.index += 1
 		result = node(next, BooleanLiteral(), -1, -1, token)
+	elif current(next).kind == Lex.TokenKind.index(Lex.InterpolatedString)
+		result = interpolated(next)
 	elif current(next).kind == Lex.TokenKind.index(Lex.String)
 		next.index += 1
 		result = node(next, StringLiteral(), -1, -1, token)
-	elif text(next) == "len" and next_text(next) == "("
+	elif (text(next) == "len" or text(next) == "str") and next_text(next) == "("
+		var kind: NodeKind = Length()
+		if text(next) == "str"
+			kind = NodeKind.StringConvert(StringConvert())
 		next.index += 1
 		next = expect(next, "(")
 		let value = expression(next, 1)
-		result = node(expect(value.state, ")"), Length(), value.node, -1, token)
+		result = node(expect(value.state, ")"), kind, value.node, -1, token)
 	elif current(next).kind == Lex.TokenKind.index(Lex.Integer)
 		next.index += 1
 		result = node(next, IntegerLiteral(), -1, -1, token)
@@ -146,6 +222,37 @@ def expression(p: State, minimum: i64) -> Parsed
 		return Parsed(fail(next, "expected integer expression"), -1)
 	while result.state.error == ""
 		let op = text(result.state)
+		if op == "!"
+			var after = result.state
+			let unwrap_token = after.index
+			after.index += 1
+			result = node(after, OptionalUnwrap(), result.node, -1, unwrap_token)
+			continue
+		if op == "."
+			var after = result.state
+			after.index += 1
+			let method_token = after.index
+			let method = text(after)
+			if method != "slice" and method != "starts_with" and method != "ends_with" and method != "byte_at" and method != "find"
+				return Parsed(fail(after, "unsupported string method"), -1)
+			after.index += 1
+			after = expect(after, "(")
+			let first = expression(after, 1)
+			if method == "slice"
+				after = expect(first.state, ",")
+				let last = expression(after, 1)
+				let bounds = node(expect(last.state, ")"), SliceBounds(), first.node, last.node, method_token)
+				result = node(bounds.state, StringSlice(), result.node, bounds.node, method_token)
+			else
+				var kind: NodeKind = StringStarts()
+				if method == "ends_with"
+					kind = NodeKind.StringEnds(StringEnds())
+				elif method == "byte_at"
+					kind = NodeKind.StringByteAt(StringByteAt())
+				elif method == "find"
+					kind = NodeKind.StringFind(StringFind())
+				result = node(expect(first.state, ")"), kind, result.node, first.node, method_token)
+			continue
 		let priority = precedence(op)
 		if priority < minimum
 			break
@@ -296,21 +403,40 @@ def block(initial: State, loop_start: i64) -> State
 			if text(p) == ":"
 				p = expect(p, ":")
 				annotation = p.index
-				if text(p) != "i64" and text(p) != "bool" and text(p) != "string"
-					return fail(p, "expected i64, bool or string")
-				p.index += 1
+				if text(p) == "Optional"
+					p.index += 1
+					p = expect(p, "[")
+					p = expect(p, "i64")
+					p = expect(p, "]")
+				elif text(p) != "i64" and text(p) != "bool" and text(p) != "string"
+					return fail(p, "expected i64, bool, string or Optional[i64]")
+				else
+					p.index += 1
 			p = expect(p, "=")
-			let value = expression(p, 1)
+			var value = expression(p, 1)
+			if value.state.error == "" and text(value.state) == "else"
+				p = expect(value.state, "else")
+				p = expect(p, "return")
+				let start = node(p, OptionalExit(), value.node, -1, token)
+				let fallback = expression(start.state, 1)
+				p = node(fallback.state, Return(), fallback.node, -1, token).state
+				if p.error != ""
+					return p
+				p.nodes[!start.node].right = len(p.nodes)
+				value = Parsed(p, start.node)
 			var kind: NodeKind = Binding()
 			if mutable
 				kind = NodeKind.MutableBinding(MutableBinding())
 			p = node(value.state, kind, value.node, annotation, name).state
-		elif text(p) == "print"
-			p = expect(p, "print")
+		elif (text(p) == "print" or text(p) == "eprint") and next_text(p) == "("
+			var kind: NodeKind = Print()
+			if text(p) == "eprint"
+				kind = NodeKind.Eprint(Eprint())
+			p.index += 1
 			p = expect(p, "(")
 			let value = expression(p, 1)
 			p = expect(value.state, ")")
-			p = node(p, Print(), value.node, -1, token).state
+			p = node(p, kind, value.node, -1, token).state
 		elif text(p) == "return"
 			p = expect(p, "return")
 			let value = expression(p, 1)

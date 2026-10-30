@@ -47,6 +47,15 @@ def main() -> None:
 			if name not in source_names:
 				assert run([str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library), str(fixture)]) == expected, name
 		print(f'PASS rewrite lexer: {len(cases)} native cases; fixtures and generated cases on MIR')
+		# Interpolation is new to the rewrite; token spans are specified directly.
+		for literal in [b'f"${1}"', b"f'${1}'", b'f"${"}"}"', b'f"${f"${2}"}"', b'f"\\${literal}"']:
+			fixture = root / 'interpolation.sirius'
+			fixture.write_bytes(literal + b'\n')
+			expected = (f'FSTRING 0:{len(literal)} 1:1 '.encode() + literal + b'\n'
+				+ f'NEWLINE {len(literal)}:{len(literal) + 1} 1:{len(literal) + 1}\nEOF {len(literal) + 1}:{len(literal) + 1} 2:1\n'.encode())
+			for command in [[str(new)], [str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library)]]:
+				assert run(command + [str(fixture)]) == expected, literal
+		print('PASS interpolation token boundaries: native and MIR')
 
 
 if __name__ == '__main__':

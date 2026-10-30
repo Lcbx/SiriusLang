@@ -9,6 +9,21 @@ def slot(id: i64) -> string
 def string_slot(id: i64) -> string
 	return "s[" + str(id) + "]"
 
+def optional_slot(id: i64) -> string
+	return "o[" + str(id) + "]"
+
+def output(input: i64, type: IR.OutputType, stderr: bool) -> string
+	var function = "s_print_"
+	if stderr
+		function = "s_eprint_"
+	match type
+		IR.Integer
+			return function + "i64(signed_value(" + slot(input) + "));\n"
+		IR.Boolean
+			return function + "bool(" + slot(input) + " != 0);\n"
+		IR.Text
+			return function + "string(" + string_slot(input) + ");\n"
+
 # Fixed-width octal escapes preserve every UTF-8 byte, including embedded NUL.
 def c_bytes(value: string) -> string
 	var parts = Array[string]()
@@ -30,12 +45,48 @@ export def compile(source: string) -> Result
 	lines = lines.append("uint64_t v[" + str(program.slots) + "];\n")
 	if has_strings
 		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0};\n")
+	if IR.has_optionals(program)
+		lines = lines.append("S_Optional_i64 o[" + str(program.slots) + "];\n")
 	lines = lines.append("goto L0;\n")
 	for index in 0..len(program.instructions)
 		let instruction = program.instructions[!index]
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.OptionalUnwrap(dst, input)
+				let value = optional_slot(input)
+				lines = lines.append("if (!" + value + ".has_value) s_panic(\"missing optional value\");\n")
+				lines = lines.append(slot(dst) + " = (uint64_t)" + value + ".value;\n")
+			IR.StringByteAt(dst, left, right)
+				lines = lines.append(optional_slot(dst) + " = s_string_byte_at(" + string_slot(left) + ", signed_value(" + slot(right) + "));\n")
+			IR.StringFind(dst, left, right)
+				lines = lines.append(optional_slot(dst) + " = s_string_find(" + string_slot(left) + ", " + string_slot(right) + ");\n")
+			IR.OptionalCopy(dst, input)
+				lines = lines.append(optional_slot(dst) + " = " + optional_slot(input) + ";\n")
+			IR.OptionalDefault(dst, input, target)
+				let value = optional_slot(input)
+				lines = lines.append(slot(dst) + " = " + value + ".has_value ? (uint64_t)" + value + ".value : UINT64_C(0);\n")
+				lines = lines.append("if (" + value + ".has_value) goto L" + str(target) + ";\n")
+			IR.StringFormat(dst, input, type)
+				let target = "store_string(&" + string_slot(dst) + ", "
+				match type
+					IR.Integer
+						lines = lines.append(target + "s_string_from_i64(signed_value(" + slot(input) + ")));\n")
+					IR.Boolean
+						lines = lines.append(target + "s_string_from_utf8(" + slot(input) + " ? \"true\" : \"false\"));\n")
+					IR.OptionalInteger
+						let value = optional_slot(input)
+						# Some( plus a signed i64 and closing parenthesis fits 27 bytes.
+						lines = lines.append("if (" + value + ".has_value) { char text[32]; snprintf(text, sizeof text, \"Some(%\" PRId64 \")\", " + value + ".value); " + target + "s_string_from_utf8(text)); } else { " + target + "s_string_from_utf8(\"None\")); }\n")
+			IR.Output(input, type, stderr)
+				lines = lines.append(output(input, type, stderr))
+			IR.StringSlice(dst, input, start, end)
+				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_slice(" + string_slot(input) + ", signed_value(" + slot(start) + "), signed_value(" + slot(end) + ")));\n")
+			(IR.StringStarts | IR.StringEnds)(dst, left, right)
+				var method = "s_string_starts_with"
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.StringEnds)
+					method = "s_string_ends_with"
+				lines = lines.append(slot(dst) + " = " + method + "(" + string_slot(left) + ", " + string_slot(right) + ");\n")
 			IR.StringConstant(dst, value)
 				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_from_bytes(" + c_bytes(value) + ", " + str(len(value)) + "));\n")
 			IR.StringCopy(dst, input)
@@ -44,8 +95,6 @@ export def compile(source: string) -> Result
 				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_concat(" + string_slot(left) + ", " + string_slot(right) + "));\n")
 			IR.StringLength(dst, input)
 				lines = lines.append(slot(dst) + " = s_string_length(" + string_slot(input) + ");\n")
-			IR.StringPrint(input)
-				lines = lines.append("s_print_string(" + string_slot(input) + ");\n")
 			IR.StringCompare(dst, left, right, op)
 				lines = lines.append(slot(dst) + " = s_string_compare(" + string_slot(left) + ", " + string_slot(right) + ") " + op + " 0;\n")
 			IR.ShortCircuit(dst, input, target, when_true)
@@ -69,8 +118,6 @@ export def compile(source: string) -> Result
 				lines = lines.append(slot(dst) + " = UINT64_C(0) - " + slot(input) + ";\n")
 			IR.Not(dst, input)
 				lines = lines.append(slot(dst) + " = !" + slot(input) + ";\n")
-			IR.PrintBool(input)
-				lines = lines.append("puts(" + slot(input) + " ? \"true\" : \"false\");\n")
 			IR.Add(dst, left, right)
 				lines = lines.append(slot(dst) + " = " + slot(left) + " + " + slot(right) + ";\n")
 			IR.Subtract(dst, left, right)
@@ -99,8 +146,6 @@ export def compile(source: string) -> Result
 				lines = lines.append(slot(dst) + " = " + value + ";\n")
 			IR.Copy(dst, input)
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
-			IR.Print(input)
-				lines = lines.append("printf(\"%\" PRId64 \"\\n\", signed_value(" + slot(input) + "));\n")
 			IR.Return(input)
 				if has_strings
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")

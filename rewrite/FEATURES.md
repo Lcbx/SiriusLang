@@ -41,7 +41,7 @@ are the source of truth; the language design also describes future features.
 | Value semantics | Records, arrays and dictionaries preserve snapshots across updates; nested record/array updates use copy-on-write. Reference counting manages acyclic storage. |
 | Dictionaries | `Dict[K,V]()`, `.insert`, `.get`, and `len`. Keys include scalars and supported structural records, optionals and unions; array-containing keys are rejected. |
 | Equality | Scalars, records, optionals and tagged unions support `==`/`!=`; record equality recursively compares contained collections. Direct array `==` is rejected (reserved for elementwise comparison). |
-| Optionals | Optional indexing, dictionary lookups and filesystem reads produce optionals. `value or fallback` evaluates the fallback only on absence, even when the payload is zero/false. `let x = optional else return value` unwraps or exits. |
+| Optionals | Optional indexing, dictionary lookups and filesystem reads produce optionals. `value or fallback` evaluates the fallback only on absence, even when the payload is zero/false. `let x = optional else return value` unwraps or exits; `optional!` unwraps or traps. |
 | Unions | `let Result = Ok | Error`, `enum`, payload destructuring, bare-tag matches, grouped tags `A | B`, and shared compatible bindings `(A | B)(x)`. Matches must be exhaustive. `Result.index(value_or_label)` follows declaration order. |
 | Union coercions | Expected union types guide constructor injection, including `Array[Result]` literals and typed collection updates. Stored structural records lose constructor labels; use `Result.Ok(record)` to disambiguate identical payload shapes. |
 | Strings and I/O | Concatenation, comparison, byte length `len`, `str(i64)`, `.slice`, `.byte_at`, `.find`, `.starts_with`, `.ends_with`, separator `.join`, scalar `print`, and `arguments()`. String offsets are UTF-8 byte offsets. |
@@ -215,6 +215,7 @@ def main() -> i64
 	let text = "hello world"
 	print(text.slice(0, 5)) # hello
 	print(text.byte_at(1) or -1) # 101
+	print(text.byte_at(0)!) # 104
 	print(text.find("world") or -1) # 6
 	print(text.starts_with("hello") and text.ends_with("world")) # true
 	print(", ".join(["one", str(2)])) # one, 2

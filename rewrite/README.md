@@ -26,11 +26,37 @@ upper-bound name remains live (use `end + 0` to snapshot its value).
 path must return an integer.
 String literals, `string` annotations, bindings, assignment, `+`/`+=`,
 comparisons, `len(string)` (UTF-8 byte length), and printing are supported.
+`str` formats integers (including minimum `i64`), booleans (`true`/`false`),
+strings (unchanged), and `Optional[i64]` (`Some(value)`/`None`).
+`eprint` writes integers, booleans and strings to stderr
+with a newline, using the same ownership rules as `print`.
+Both lower to `Output(input, type, stderr)`; the C emitter chooses the specialized
+runtime function, and the interpreter dispatches on the same explicit type.
 Single/double quotes and escapes `\n`, `\t`, `\r`, `\\`, `\"`, `\'`, `\0`
 work; embedded NUL bytes retain their length. Native string slots own runtime
 references, release overwritten values, and are cleaned up on every return.
-IR verification rejects mixing string and scalar storage. String methods and
-formatting remain unsupported. Scalar-only C programs need no string slots.
+IR verification rejects mixing string and scalar storage. String `.slice(start,
+end)`, `.starts_with(prefix)` and `.ends_with(suffix)` support chaining on any
+string expression. Slice offsets are bytes and must satisfy
+`0 <= start <= end <= len(text)`; empty slices and empty prefixes/suffixes work.
+String `.byte_at(index)` and `.find(needle)` return `Optional[i64]`; inferred
+or annotated optional bindings support copying and assignment. `optional or i64`
+evaluates its fallback only on absence, including when the present payload is zero.
+Byte indices outside the string return absence; search returns the first byte
+offset, with zero for an empty needle. Postfix `optional!` unwraps or traps on
+absence. `let value = optional else return expression` (also `var`) unwraps
+on success and evaluates the return expression only on absence. The new binding
+is visible after the statement; its annotation describes the unwrapped `i64`.
+`f"...${expression}..."` and `f'...${expression}...'` evaluate embedded
+expressions once from left to right and insert their `str` representation.
+Nested interpolation, quoted strings and ordinary expressions work inside `${}`;
+`\${` escapes the marker. Other braces/dollars and ordinary strings stay literal.
+Expressions retain the surrounding scope and original source positions. Strings
+remain single-line, without inline format specifiers. Interpolation lowers to
+formatting and ordinary string concatenation, with the same ownership rules.
+Optional comparison, direct optional printing and other optional payload types
+remain unsupported. Scalar-only C
+programs need no string slots.
 Boolean literals, bindings, `not`, printing, and scalar comparisons can
 supply conditions. Nested blocks have local scopes.
 Division truncates toward zero; remainder has the numerator's sign. Both trap

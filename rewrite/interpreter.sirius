@@ -1,5 +1,20 @@
 import ir alias IR
 
+def output(value, stderr: bool) -> i64
+	if stderr
+		eprint(value)
+	else
+		print(value)
+	return 0
+
+def present(input: Optional[i64]) -> bool
+	let value = input else return false
+	return true
+
+def format_optional(input: Optional[i64]) -> string
+	let value = input else return "None"
+	return "Some(" + str(value) + ")"
+
 def compare(left, right, op: string) -> bool
 	if op == "=="
 		return left == right
@@ -20,16 +35,71 @@ export def run(program: IR.Program) -> i64
 		return 1
 	var slots = Array[i64]()
 	var strings = Array[string]()
+	var optionals = Array[Optional[i64]]()
 	for i in 0..program.slots
 		slots = slots.append(0)
 	if IR.has_strings(program)
 		for i in 0..program.slots
 			strings = strings.append("")
+	if IR.has_optionals(program)
+		for i in 0..program.slots
+			optionals = optionals.append("".byte_at(0))
 	var pc = 0
 	while pc < len(program.instructions)
 		let instruction = program.instructions[!pc]
 		var next = pc + 1
 		match instruction
+			IR.OptionalUnwrap(dst, input)
+				if not present(optionals[!input])
+					eprint("ERROR: missing optional value")
+					return 1
+				slots[!dst] = optionals[!input] or 0
+			IR.StringByteAt(dst, left, right)
+				optionals[!dst] = strings[!left].byte_at(slots[!right])
+			IR.StringFind(dst, left, right)
+				optionals[!dst] = strings[!left].find(strings[!right])
+			IR.OptionalCopy(dst, input)
+				optionals[!dst] = optionals[!input]
+			IR.OptionalDefault(dst, input, target)
+				slots[!dst] = optionals[!input] or 0
+				if present(optionals[!input])
+					next = target
+			IR.StringFormat(dst, input, type)
+				match type
+					IR.Integer
+						strings[!dst] = str(slots[!input])
+					IR.Boolean
+						var value = "false"
+						if slots[!input] != 0
+							value = "true"
+						strings[!dst] = value
+					IR.OptionalInteger
+						strings[!dst] = format_optional(optionals[!input])
+			IR.Output(input, type, stderr)
+				match type
+					IR.Integer
+						output(slots[!input], stderr)
+					IR.Boolean
+						output(slots[!input] != 0, stderr)
+					IR.Text
+						output(strings[!input], stderr)
+			IR.StringSlice(dst, input, start, end)
+				let from = slots[!start]
+				let to = slots[!end]
+				if from < 0 or to < from or to > len(strings[!input])
+					eprint("ERROR: string slice out of bounds")
+					return 1
+				strings[!dst] = strings[!input].slice(from, to)
+			(IR.StringStarts | IR.StringEnds)(dst, left, right)
+				var result = false
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.StringStarts)
+					result = strings[!left].starts_with(strings[!right])
+				else
+					result = strings[!left].ends_with(strings[!right])
+				var value = 0
+				if result
+					value = 1
+				slots[!dst] = value
 			IR.StringConstant(dst, value)
 				strings[!dst] = value
 			IR.StringCopy(dst, input)
@@ -38,8 +108,6 @@ export def run(program: IR.Program) -> i64
 				strings[!dst] = strings[!left] + strings[!right]
 			IR.StringLength(dst, input)
 				slots[!dst] = len(strings[!input])
-			IR.StringPrint(input)
-				print(strings[!input])
 			IR.StringCompare(dst, left, right, op)
 				var value = 0
 				if compare(strings[!left], strings[!right], op)
@@ -70,8 +138,6 @@ export def run(program: IR.Program) -> i64
 				if slots[!input] == 0
 					value = 1
 				slots[!dst] = value
-			IR.PrintBool(input)
-				print(slots[!input] != 0)
 			IR.Add(dst, left, right)
 				slots[!dst] = slots[!left] + slots[!right]
 			IR.Subtract(dst, left, right)
@@ -106,8 +172,6 @@ export def run(program: IR.Program) -> i64
 					slots[!dst] = slots[!left] >> count
 			IR.Copy(dst, input)
 				slots[!dst] = slots[!input]
-			IR.Print(input)
-				print(slots[!input])
 			IR.Return(input)
 				return slots[!input]
 		pc = next

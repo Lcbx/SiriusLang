@@ -9,6 +9,7 @@ export enum TokenKind
 	Indent
 	Dedent
 	Eof
+	InterpolatedString
 	InvalidChar
 	InvalidIndent
 	UnclosedString
@@ -36,6 +37,8 @@ export def label(kind: i64) -> string
 		return "DEDENT"
 	if kind == TokenKind.index(Eof)
 		return "EOF"
+	if kind == TokenKind.index(InterpolatedString)
+		return "FSTRING"
 	if kind == TokenKind.index(InvalidChar)
 		return "INVALID_CHAR"
 	if kind == TokenKind.index(InvalidIndent)
@@ -56,6 +59,56 @@ def digit(c: i64) -> bool
 
 def letter(c: i64) -> bool
 	return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 # A-Z, a-z, _
+
+# Scan quoted values recursively so quotes/braces inside expressions do not
+# terminate the enclosing interpolation. Raw newlines remain invalid in strings.
+export def string_end(source: string, start: i64) -> i64
+	let formatted = byte(source, start) == 102 # f
+	var quote_at = start
+	if formatted
+		quote_at += 1
+	let quote = byte(source, quote_at)
+	var pos = quote_at + 1
+	while pos < len(source)
+		let c = byte(source, pos)
+		if c == 10 or c == 13
+			return -1
+		if c == quote
+			return pos + 1
+		if c == 92
+			let escaped = byte(source, pos + 1)
+			if escaped < 0 or escaped == 10 or escaped == 13
+				return -1
+			pos += 2
+		elif formatted and c == 36 and byte(source, pos + 1) == 123 # ${
+			let end = interpolation_end(source, pos + 2)
+			if end < 0
+				return -1
+			pos = end + 1
+		else
+			pos += 1
+	return -1
+
+export def interpolation_end(source: string, start: i64) -> i64
+	var pos = start
+	var braces = 0
+	while pos < len(source)
+		let c = byte(source, pos)
+		if c == 10 or c == 13
+			return -1
+		if c == 34 or c == 39 or (c == 102 and (byte(source, pos + 1) == 34 or byte(source, pos + 1) == 39))
+			pos = string_end(source, pos)
+			if pos < 0
+				return -1
+			continue
+		if c == 125 # }
+			if braces == 0
+				return pos
+			braces -= 1
+		elif c == 123 # {
+			braces += 1
+		pos += 1
+	return -1
 
 def operator_length(c: i64, n: i64, third: i64) -> i64
 	# **=, //=, <<=, >>=
@@ -133,7 +186,12 @@ export def tokenize(source: string) -> Array[Token]
 			continue
 		let start = pos
 		var kind = TokenKind.index(Operator)
-		if letter(c)
+		if c == 102 and (byte(source, pos + 1) == 34 or byte(source, pos + 1) == 39)
+			kind = TokenKind.index(InterpolatedString)
+			pos = string_end(source, start)
+			if pos < 0
+				return tokens.append(Token(TokenKind.index(UnclosedString), start, start + 1, line, column))
+		elif letter(c)
 			kind = TokenKind.index(Name)
 			pos += 1
 			while letter(byte(source, pos)) or digit(byte(source, pos))

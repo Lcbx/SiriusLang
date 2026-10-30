@@ -187,8 +187,63 @@ def main() -> None:
 			('var text = "outer"\n\tif true\n\t\tlet text = "inner"\n\t\tprint(text)\n\tprint(text)\n\ttext != "outer" else return 0\n\treturn 0', b'inner\nouter\n'),
 			('print("")\n\tprint(len(("ab" + "cd") + "é"))\n\tprint(false and ("a" == "b"))\n\treturn 0', b'\n6\nfalse\n'),
 		]
+		string_cases += [
+			('let text = "hello world"\n\tprint(text.slice(0, 5))\n\tprint(text.slice(6, len(text)))\n\tprint(len(text.slice(0, 0)))\n\tprint(len(text.slice(len(text), len(text))))\n\treturn 0', b'hello\nworld\n0\n0\n'),
+			('print("AéZ".slice(1, 3))\n\tprint(len("AéZ".slice(1, 2)))\n\tprint("a\\0bc".slice(1, 3))\n\tprint("a\\0bc".starts_with("a\\0"))\n\tprint("a\\0bc".ends_with("\\0bc"))\n\treturn 0', 'é\n1\n\0b\ntrue\ntrue\n'.encode()),
+			('print("".starts_with(""))\n\tprint("".ends_with(""))\n\tprint("a".starts_with("ab"))\n\tprint("a".ends_with("ab"))\n\tprint("abc".starts_with("b"))\n\tprint("abc".ends_with("b"))\n\treturn 0', b'true\ntrue\nfalse\nfalse\nfalse\nfalse\n'),
+			('let text = "abcd"\n\tprint((text + "!").slice(1, 4).ends_with("d"))\n\tprint(text.slice(1, 3).slice(0, 1) + "x")\n\tprint(not text.starts_with("z"))\n\treturn 0', b'true\nbx\ntrue\n'),
+			('var text = "abcd"\n\tlet saved = text\n\tfor i in 0..4\n\t\ttext = text.slice(1, len(text))\n\tprint(len(text))\n\tprint(saved)\n\treturn 0', b'0\nabcd\n'),
+			('print(true or "abc".slice(-1, 2).starts_with("a"))\n\tprint(false and len("abc".slice(0, 4)) == 0)\n\treturn 0', b'true\nfalse\n'),
+		]
+		string_cases += [
+			('print(str(0))\n\tprint(str(-3))\n\tprint(str(9223372036854775807))\n\tprint(str(-9223372036854775807 - 1))\n\treturn 0', b'0\n-3\n9223372036854775807\n-9223372036854775808\n'),
+			('print(str(1234).slice(1, 3))\n\tprint(str(-42).starts_with("-"))\n\tprint("value=" + str(6 * 7))\n\treturn 0', b'23\ntrue\nvalue=42\n'),
+			('var text = str(0)\n\tlet saved = text\n\tfor i in 0..4\n\t\ttext = str(i)\n\tprint(text)\n\tprint(saved)\n\treturn 0', b'3\n0\n'),
+		]
+		string_cases += [
+			('print("abc".byte_at(0) or -1)\n\tprint("abc".byte_at(-1) or -1)\n\tprint("abc".byte_at(3) or -1)\n\tprint("".byte_at(0) or -1)\n\treturn 0', b'97\n-1\n-1\n-1\n'),
+			('print("Aé\\0".byte_at(1) or -1)\n\tprint("Aé\\0".byte_at(2) or -1)\n\tprint("Aé\\0".byte_at(3) or 99)\n\treturn 0', b'195\n169\n0\n'),
+			('print("abcabc".find("bc") or -1)\n\tprint("abc".find("a") or 99)\n\tprint("abc".find("z") or -1)\n\tprint("".find("") or 99)\n\tprint("abc".find("") or 99)\n\treturn 0', b'1\n0\n-1\n0\n0\n'),
+			('print("a\\0b".find("\\0b") or -1)\n\tprint("éx".find("x") or -1)\n\tprint(("ab" + "cd").slice(1, 4).find("c") or -1)\n\treturn 0', b'1\n2\n1\n'),
+			('var found: Optional[i64] = "abc".find("a")\n\tlet saved = found\n\tfound = "abc".find("z")\n\tprint(saved or 99)\n\tprint(found or -1)\n\tfound = saved\n\tprint(found or 99)\n\treturn 0', b'0\n-1\n0\n'),
+			('print("x".find("x") or (1 / 0))\n\tprint("\\0".byte_at(0) or len("x".slice(-1, 2)))\n\tprint(false or ("x".find("x") or -1) == 0)\n\treturn 0', b'0\n0\ntrue\n'),
+			('var found = "".byte_at(0)\n\tfor i in 0..3\n\t\tfound = "abc".byte_at(i)\n\t\tprint(found or -1)\n\tprint("".find("x") or ("abc".find("b") or -1))\n\treturn 0', b'97\n98\n99\n1\n'),
+		]
+		invalid += [
+			'print("x".byte_at(true) or 0)\n\treturn 0', 'print(1.find("x") or 0)\n\treturn 0',
+			'print("x".find(1) or 0)\n\treturn 0', 'print("x".byte_at())\n\treturn 0',
+			'print("x".find("x", "y"))\n\treturn 0', 'print("x".find("x"))\n\treturn 0',
+			'eprint("x".byte_at(0))\n\treturn 0', 'return "x".find("x")',
+			'print("x".find("x") or false)\n\treturn 0', 'print("x".find("x") and true)\n\treturn 0',
+			'print("x".find("x") == "x".find("x"))\n\treturn 0', 'print("x".find("x") or unknown)\n\treturn 0',
+			'var found = "x".find("x")\n\tfound = 1\n\treturn 0', 'let x: Optional[string] = "x".find("x")\n\treturn 0',
+			'let x: i64 = "x".find("x")\n\treturn 0', 'let x: Optional[i64] = 1\n\treturn 0',
+		]
+		string_cases += [
+			('print("abc".find("b")!)\n\tprint("\\0".byte_at(0)! + 1)\n\tprint(str("abc".byte_at(2)!).slice(0, 2))\n\treturn 0', b'1\n1\n99\n'),
+			('let byte: i64 = "abc".byte_at(0) else return 1\n\tvar position = "abc".find("b") else return 1\n\tposition += 1\n\tprint(byte)\n\tprint(position)\n\treturn 0', b'97\n2\n'),
+			('let byte = "\\0".byte_at(0) else return 1 / 0\n\tprint(byte)\n\treturn 0', b'0\n'),
+			('let kept = "alive"\n\tprint(kept)\n\tlet byte = "".byte_at(0) else return len(kept) - 5\n\tprint(byte)\n\treturn 1', b'alive\n'),
+			('let position = 8\n\tif true\n\t\tlet position = "".find("x") else return position - 8\n\t\tprint(position)\n\treturn 1', b''),
+			('var total = 0\n\tfor i in 0..3\n\t\tlet byte = "abc".byte_at(i) else return 1\n\t\ttotal += byte\n\tprint(total)\n\treturn 0', b'294\n'),
+			('var i = 0\n\twhile i < 3\n\t\tlet byte = "a".byte_at(i) else return 0\n\t\tprint(byte)\n\t\ti += 1\n\treturn 1', b'97\n'),
+			('print(true or "".byte_at(0)! == 0)\n\tprint(false and "".find("x")! == 0)\n\treturn 0', b'true\nfalse\n'),
+		]
+		invalid += [
+			'print(1!)\n\treturn 0', 'print("x"!)\n\treturn 0', 'print("x".find("x")!!)\n\treturn 0',
+			'let x = 1 else return 0\n\treturn 0', 'var x = true else return 0\n\treturn 0',
+			'let x: bool = "x".find("x") else return 0\n\treturn 0',
+			'let x = "x".find("x") else return true\n\treturn 0',
+			'let x = "x".find("x") else return unknown\n\treturn 0',
+			'let x = "x".find("x") else return x\n\treturn 0',
+			'let x = "x".find("x") else break\n\treturn 0',
+			'let x = "x".find("x") else return\n\treturn 0',
+			'let x = "x".find("x") else return 0',
+			'let x = "x".find("x") else return 0\n\tx = 2\n\treturn 0',
+		]
 		valid += string_cases
-		valid.append(('let len = 3\n\tprint(len)\n\treturn 0', b'3\n'))
+		valid.append(('let len = 3\n\tlet str = 4\n\tprint(len)\n\tprint(str)\n\treturn 0', b'3\n4\n'))
+		valid.append(('var eprint = 5\n\teprint += 1\n\tprint(eprint)\n\treturn 0', b'6\n'))
 		invalid += ['return "x"', 'let text: string = 1\n\treturn 0',
 			'var text = "x"\n\ttext = 1\n\treturn 0', 'print("a" + 1)\n\treturn 0',
 			'print("a" - "b")\n\treturn 0', 'print("a" == 1)\n\treturn 0',
@@ -196,17 +251,52 @@ def main() -> None:
 			'print(len(1))\n\treturn 0', 'print("\\q")\n\treturn 0',
 			'let text = "x"\n\ttext += "y"\n\treturn 0',
 			'for i in "a".."z"\n\t\tprint(i)\n\treturn 0']
+		invalid += ['print(1.slice(0, 1))\n\treturn 0', 'print("x".slice(true, 1))\n\treturn 0',
+			'print("x".slice(0, "1"))\n\treturn 0', 'print("x".starts_with(1))\n\treturn 0',
+			'print(false.ends_with("x"))\n\treturn 0', 'print("x".slice(0))\n\treturn 0',
+			'print("x".slice(0, 1, 2))\n\treturn 0', 'print("x".ends_with())\n\treturn 0',
+			'print("x".starts_with("x", "y"))\n\treturn 0', 'print("x".unknown("x"))\n\treturn 0']
+		invalid += ['print(str())\n\treturn 0', 'print(str(1, 2))\n\treturn 0',
+			'eprint()\n\treturn 0', 'eprint(1, 2)\n\treturn 0']
+		io_cases = [
+			('eprint(42)\n\teprint(-9223372036854775807 - 1)\n\teprint(true)\n\teprint(false)\n\teprint("é\\0x")\n\tprint("ok")\n\treturn 0', b'ok\n', '42\n-9223372036854775808\ntrue\nfalse\né\0x\n'.encode()),
+			('for i in 0..3\n\t\teprint("item " + str(i))\n\teprint("")\n\treturn 0', b'', b'item 0\nitem 1\nitem 2\n\n'),
+			('var text = "saved"\n\teprint(text)\n\ttext = str(7)\n\ttext == "7" else return 1\n\teprint(text)\n\treturn 0', b'', b'saved\n7\n'),
+		]
+		# Design features absent from the old compiler use independent expectations.
+		interpolation_cases = [
+			('print(f"")\n\tprint(f"{braces} $name $$")\n\tprint("${unknown}")\n\treturn 0', b'\n{braces} $name $$\n${unknown}\n', b''),
+			('let name = "Alice"\n\tprint(f"Hello ${name}; ${6 * 7}; ${true}; ${false}")\n\tprint(f\'single ${-2}\')\n\treturn 0', b'Hello Alice; 42; true; false\nsingle -2\n', b''),
+			('print(f"${"}" + "{"}:${len("ab")}:${"abc".find("b") or -1}")\n\treturn 0', b'}{:2:1\n', b''),
+			('print(f"outer ${f"inner ${1 + 2}"} end")\n\tprint(f\'${f"${true}"}\')\n\treturn 0', b'outer inner 3 end\ntrue\n', b''),
+			('print(f"literal \\${unknown}; ${2}; \\\\${3}")\n\tprint(f"\\n\\t${"é\\0"}Z")\n\treturn 0', 'literal ${unknown}; 2; \\3\n\n\té\0Z\n'.encode(), b''),
+			('var text = "old"\n\tlet saved = text\n\tfor i in 0..4\n\t\ttext = f"${text}${i}"\n\tprint(saved)\n\tprint(text)\n\treturn 0', b'old\nold0123\n', b''),
+			('print(f"${-9223372036854775807 - 1}:${9223372036854775807}")\n\tprint(f"${"\\0".byte_at(0)}:${"".byte_at(0)}")\n\treturn 0', b'-9223372036854775808:9223372036854775807\nSome(0):None\n', b''),
+			('print(str(true))\n\tprint(str(false))\n\tprint(str("é\\0"))\n\tprint(str("abc".find("b")))\n\tprint(str("abc".find("z")))\n\treturn 0', 'true\nfalse\né\0\nSome(1)\nNone\n'.encode(), b''),
+			('print(f"${false and 1 / 0 == 0}:${true or 1 / 0 == 0}")\n\tprint(true or len(f"${1 / 0}") == 0)\n\treturn 0', b'false:true\ntrue\n', b''),
+			('print(f"${"abc".find("a") or 1 / 0}".starts_with("0"))\n\tprint(len(f"a${2}b"))\n\treturn 0', b'true\n3\n', b''),
+			('let text = f"${true}"\n\teprint(f"value=${text}")\n\ttext == "true" else return 1\n\treturn 0', b'', b'value=true\n'),
+			('let found = "x".find("x") else return 1\n\tprint(f"${found}")\n\treturn 0', b'0\n', b''),
+		]
+		invalid += ['print(f"${}")\n\treturn 0', 'print(f"${unknown}")\n\treturn 0',
+			'print(f"${1 + }")\n\treturn 0', 'print(f"${1:02}")\n\treturn 0',
+			'print(f"${1 2}")\n\treturn 0', 'print(f"${1")\n\treturn 0',
+			'print(f"${(1]}")\n\treturn 0', 'print(f"bad\\q")\n\treturn 0',
+			'print(f"${f"${unknown}"}")\n\treturn 0', 'print(f"${true + 1}")\n\treturn 0',
+			'print(f"${1; 2}")\n\treturn 0', 'print(f"${1 # hidden}")\n\treturn 0',
+			'print(f"${"unclosed}")\n\treturn 0', 'print("\\${name}")\n\treturn 0']
+		cases = interpolation_cases + [(body, expected, b'') for body, expected in valid] + io_cases
 		# Audit the generated ownership operations as well as the runtime itself.
 		audit_runtime = root / 'audit-runtime.o'
 		execute([cache.cc, *C_FLAGS, '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'),
 			'-c', str(ROOT / 'runtime/sirius_runtime.c'), '-o', str(audit_runtime)])
-		for index, (body, expected) in enumerate(valid):
+		for index, (body, expected, expected_error) in enumerate(cases):
 			source = root / 'input.sirius'
 			source.write_text('def main() -> i64\n\t' + body + '\n', encoding='utf-8')
 			outputs = []
 			for mode, command in enumerate(commands):
 				interpreted = run(command + ['--run', str(source)])
-				assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected, (index, mode, interpreted)
+				assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected and normalize_newlines(interpreted.stderr) == expected_error, (index, mode, interpreted)
 				generated = root / f'out{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 0, (index, mode, result.stderr)
@@ -214,21 +304,23 @@ def main() -> None:
 				binary = executable_path(root / f'program{mode}')
 				compile_c(cache.cc, generated, binary, cache.runtime())
 				executed = run([str(binary)])
-				assert executed.returncode == 0 and normalize_newlines(executed.stdout) == expected, (index, mode, executed)
-				if (body, expected) in string_cases:
+				assert executed.returncode == 0 and normalize_newlines(executed.stdout) == expected and normalize_newlines(executed.stderr) == expected_error, (index, mode, executed)
+				if (body, expected) in string_cases or (body, expected, expected_error) in io_cases + interpolation_cases:
 					compile_c(cache.cc, generated, binary, audit_runtime)
 					audited = run([str(binary)])
-					assert audited.returncode == 0 and normalize_newlines(audited.stdout) == expected and not audited.stderr, (index, mode, audited)
+					assert audited.returncode == 0 and normalize_newlines(audited.stdout) == expected and normalize_newlines(audited.stderr) == expected_error, (index, mode, audited)
 			assert outputs[0] == outputs[1], index
+			if (body, expected, expected_error) in interpolation_cases:
+				continue
 			interpreted = run([str(runner), str(source)])
-			assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected, (index, interpreted.stderr, interpreted.stdout)
+			assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected and normalize_newlines(interpreted.stderr) == expected_error, (index, interpreted)
 			reference_c = root / 'reference.c'
 			result = run([str(reference), str(source), str(reference_c)])
 			assert result.returncode == 0, (index, result.stdout, result.stderr)
 			reference_binary = executable_path(root / 'reference')
 			compile_c(cache.cc, reference_c, reference_binary, cache.runtime())
 			executed = run([str(reference_binary)])
-			assert executed.returncode == 0 and normalize_newlines(executed.stdout) == expected, (index, executed)
+			assert executed.returncode == 0 and normalize_newlines(executed.stdout) == expected and normalize_newlines(executed.stderr) == expected_error, (index, executed)
 		for body in invalid:
 			source = root / 'input.sirius'
 			source.write_text('def main() -> i64\n\t' + body + '\n', encoding='utf-8')
@@ -238,8 +330,8 @@ def main() -> None:
 				generated = root / f'invalid{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (body, mode, result.stderr)
-		print(f'PASS rewrite compiler: {len(valid)} valid and {len(invalid)} invalid programs, native and MIR')
-		print(f'PASS string ownership: {len(string_cases)} cases, ARC audited')
+		print(f'PASS rewrite compiler: {len(cases)} valid and {len(invalid)} invalid programs, native and MIR')
+		print(f'PASS output ownership: {len(string_cases) + len(io_cases) + len(interpolation_cases)} cases, ARC audited')
 		traps = [('1 / 0', b'division by zero'), ('1 % 0', b'division by zero'),
 			('(-9223372036854775807 - 1) / -1', b'integer overflow'),
 			('(-9223372036854775807 - 1) % -1', b'integer overflow'),
@@ -254,15 +346,31 @@ def main() -> None:
 		trap_programs += [('var x = 3\n\tx /= 0', b'division by zero'),
 			('var x = -9223372036854775807 - 1\n\tx /= -1', b'integer overflow'),
 			('false else return 1 / 0', b'division by zero'),
-			('(1 / 0 == 0) else return 0', b'division by zero')]
-		for body, reason in trap_programs:
+			('(1 / 0 == 0) else return 0', b'division by zero'),
+			('print("abc".slice(-1, 2))', b'string slice out of bounds'),
+			('print("abc".slice(2, 1))', b'string slice out of bounds'),
+			('print("abc".slice(0, 4))', b'string slice out of bounds'),
+			('print("abc".slice(4, 4))', b'string slice out of bounds'),
+			('print("".byte_at(0) or (1 / 0))', b'division by zero'),
+			('print("x".find("z") or len("x".slice(-1, 2)))', b'string slice out of bounds'),
+			('print("".byte_at(0)!)', b'missing optional value'),
+			('print("abc".find("z")!)', b'missing optional value'),
+			('let x = "".byte_at(0) else return 1 / 0\n\tprint(x)', b'division by zero')]
+		interpolation_traps = [
+			('print(f"prefix ${1 / 0}")', b'division by zero'),
+			('print(f"${"".byte_at(0)!}")', b'missing optional value'),
+			('print(f"${1 / 0}${"".byte_at(0)!}")', b'division by zero'),
+			('print(f"${"".byte_at(0)!}${1 / 0}")', b'missing optional value'),
+		]
+		for body, reason in trap_programs + interpolation_traps:
 			source = root / 'trap.sirius'
 			source.write_text(f'def main() -> i64\n\t{body}\n\treturn 0\n', encoding='utf-8')
-			for command in commands + [[str(runner)]]:
+			shared = (body, reason) not in interpolation_traps
+			for command in commands + ([[str(runner)]] if shared else []):
 				arguments = ['--run'] if command in commands else []
 				outcome = run(command + arguments + [str(source)])
 				assert outcome.returncode != 0 and reason in outcome.stderr and not outcome.stdout, (body, outcome)
-			for command in commands + [[str(reference)]]:
+			for command in commands + ([[str(reference)]] if shared else []):
 				generated = root / 'trap.c'
 				outcome = run(command + [str(source), str(generated)])
 				assert outcome.returncode == 0, outcome
@@ -270,7 +378,7 @@ def main() -> None:
 				compile_c(cache.cc, generated, binary, cache.runtime())
 				outcome = run([str(binary)])
 				assert outcome.returncode != 0 and reason in outcome.stderr and not outcome.stdout, (body, outcome)
-		print(f'PASS arithmetic traps: {len(trap_programs)} cases, native and MIR')
+		print(f'PASS arithmetic traps: {len(trap_programs) + len(interpolation_traps)} cases, native and MIR')
 		examples = re.findall(r'```sirius\n(.*?)```', (ROOT / 'rewrite/FEATURES.md').read_text(encoding='utf-8'), re.S)
 		for index, example in enumerate(examples):
 			source = root / 'feature.sirius'

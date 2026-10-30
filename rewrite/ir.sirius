@@ -2,7 +2,6 @@
 export rec Constant(dst: i64, value: i64)
 export rec Negate(dst: i64, input: i64)
 export rec Not(dst: i64, input: i64)
-export rec PrintBool(input: i64)
 export rec Add(dst: i64, left: i64, right: i64)
 export rec Subtract(dst: i64, left: i64, right: i64)
 export rec Multiply(dst: i64, left: i64, right: i64)
@@ -13,7 +12,14 @@ export rec BitOr(dst: i64, left: i64, right: i64)
 export rec ShiftLeft(dst: i64, left: i64, right: i64)
 export rec ShiftRight(dst: i64, left: i64, right: i64)
 export rec Copy(dst: i64, input: i64)
-export rec Print(input: i64)
+export rec Integer()
+export rec Boolean()
+export rec Text()
+export let OutputType = Integer | Boolean | Text
+export rec OptionalInteger()
+export let FormatType = Integer | Boolean | OptionalInteger
+
+export rec Output(input: i64, type: OutputType, stderr: bool)
 export rec Return(input: i64)
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
@@ -25,20 +31,35 @@ export rec StringConstant(dst: i64, value: string)
 export rec StringCopy(dst: i64, input: i64)
 export rec StringConcat(dst: i64, left: i64, right: i64)
 export rec StringLength(dst: i64, input: i64)
-export rec StringPrint(input: i64)
 export rec StringCompare(dst: i64, left: i64, right: i64, op: string)
-export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Return | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
+export rec StringSlice(dst: i64, input: i64, start: i64, end: i64)
+export rec StringStarts(dst: i64, left: i64, right: i64)
+export rec StringEnds(dst: i64, left: i64, right: i64)
+export rec StringFormat(dst: i64, input: i64, type: FormatType)
+export rec StringByteAt(dst: i64, left: i64, right: i64)
+export rec StringFind(dst: i64, left: i64, right: i64)
+export rec OptionalCopy(dst: i64, input: i64)
+export rec OptionalUnwrap(dst: i64, input: i64)
+# Always initializes the scalar destination; only a present value skips fallback.
+export rec OptionalDefault(dst: i64, input: i64, target: i64)
+export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 
 export def has_strings(program: Program) -> bool
-	# Verified string inputs must ultimately be initialized by a literal.
+	# Verified string inputs originate in literals or formatting.
 	for instruction in program.instructions
-		if Instruction.index(instruction) == Instruction.index(StringConstant)
+		if Instruction.index(instruction) == Instruction.index(StringConstant) or Instruction.index(instruction) == Instruction.index(StringFormat)
 			return true
 	return false
 
-# Storage kinds: 1 scalar, 2 string. Bits in strings mark string input operands.
-rec Flow(dst: i64, first: i64, second: i64, next: i64, other: i64, kind: i64, strings: i64)
+export def has_optionals(program: Program) -> bool
+	for instruction in program.instructions
+		if Instruction.index(instruction) == Instruction.index(StringByteAt) or Instruction.index(instruction) == Instruction.index(StringFind)
+			return true
+	return false
+
+# Storage kinds: 1 scalar, 2 string, 3 Optional[i64]. Input masks mark operands.
+rec Flow(dst: i64, first: i64, second: i64, third: i64, next: i64, other: i64, kind: i64, strings: i64, optionals: i64)
 
 def in_bounds(slot: i64, count: i64) -> bool
 	return slot >= 0 and slot < count
@@ -63,13 +84,66 @@ export def verify(program: Program) -> string
 		var dst = -1
 		var first = -1
 		var second = -1
+		var third = -1
 		var next = i + 1
 		var other = -1
 		var writes = false
 		var kind = 1
 		var strings = 0
+		var optionals = 0
 		let instruction = program.instructions[!i]
 		match instruction
+			StringFormat(target, input, type)
+				dst = target
+				first = input
+				writes = true
+				kind = 2
+				if type == FormatType.OptionalInteger(OptionalInteger())
+					optionals = 1
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+			(StringByteAt | StringFind)(target, left, right)
+				dst = target
+				first = left
+				second = right
+				writes = true
+				kind = 3
+				strings = 1
+				if Instruction.index(instruction) == Instruction.index(StringFind)
+					strings = 3
+				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
+					return "undefined input slot"
+			(OptionalCopy | OptionalUnwrap)(target, input)
+				dst = target
+				first = input
+				writes = true
+				kind = 3
+				if Instruction.index(instruction) == Instruction.index(OptionalUnwrap)
+					kind = 1
+				optionals = 1
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+			OptionalDefault(target_slot, input, target)
+				has_control = true
+				dst = target_slot
+				writes = true
+				first = input
+				other = target
+				optionals = 1
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not in_bounds(target, count)
+					return "invalid jump target"
+			StringSlice(target, input, start, end)
+				dst = target
+				first = input
+				second = start
+				third = end
+				writes = true
+				kind = 2
+				strings = 1
+				if not in_bounds(input, program.slots) or not in_bounds(start, program.slots) or not in_bounds(end, program.slots)
+					return "undefined input slot"
 			StringConstant(target, value)
 				dst = target
 				writes = true
@@ -88,13 +162,15 @@ export def verify(program: Program) -> string
 					strings = 1
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
-			(Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | StringConcat)(target, left, right)
+			(Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | StringConcat | StringStarts | StringEnds)(target, left, right)
 				dst = target
 				first = left
 				second = right
 				writes = true
 				if Instruction.index(instruction) == Instruction.index(StringConcat)
 					kind = 2
+					strings = 3
+				elif Instruction.index(instruction) == Instruction.index(StringStarts) or Instruction.index(instruction) == Instruction.index(StringEnds)
 					strings = 3
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
@@ -109,9 +185,9 @@ export def verify(program: Program) -> string
 					return "undefined input slot"
 				if op != "==" and op != "!=" and op != "<" and op != "<=" and op != ">" and op != ">="
 					return "invalid comparison"
-			(Print | PrintBool | StringPrint)(input)
+			Output(input, type, stderr)
 				first = input
-				if Instruction.index(instruction) == Instruction.index(StringPrint)
+				if type == OutputType.Text(Text())
 					strings = 1
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
@@ -148,7 +224,7 @@ export def verify(program: Program) -> string
 				next = i + 1
 		if writes and not in_bounds(dst, program.slots)
 			return "invalid destination slot"
-		flows = flows.append(Flow(dst, first, second, next, other, kind, strings))
+		flows = flows.append(Flow(dst, first, second, third, next, other, kind, strings, optionals))
 	if not returned
 		return "missing return"
 	# Each slot has one storage kind, independent of control-flow reachability.
@@ -161,15 +237,19 @@ export def verify(program: Program) -> string
 				return "slot type mismatch"
 			kinds[!flow.dst] = flow.kind
 	for flow in flows
-		for operand in 0..2
+		for operand in 0..3
 			var input = flow.first
 			if operand == 1
 				input = flow.second
+			elif operand == 2
+				input = flow.third
 			if input < 0
 				continue
 			var expected = 1
 			if (flow.strings & (1 << operand)) != 0
 				expected = 2
+			elif (flow.optionals & (1 << operand)) != 0
+				expected = 3
 			if kinds[!input] == 0
 				return "undefined input slot"
 			if kinds[!input] != expected
@@ -187,7 +267,7 @@ export def verify(program: Program) -> string
 		for flow in flows
 			if finished
 				return "unreachable instruction"
-			for input in [flow.first, flow.second]
+			for input in [flow.first, flow.second, flow.third]
 				if input >= 0 and not initialized(blank, input)
 					return "undefined input slot"
 			if flow.dst >= 0
@@ -234,7 +314,7 @@ export def verify(program: Program) -> string
 		if not reached[!i]
 			return "unreachable instruction"
 		let flow = flows[!i]
-		for input in [flow.first, flow.second]
+		for input in [flow.first, flow.second, flow.third]
 			if input >= 0 and not initialized(incoming[!i], input)
 				return "undefined input slot"
 	return ""
@@ -262,6 +342,9 @@ export def prune(program: Program) -> Program
 			continue
 		reached[!pc] = true
 		match program.instructions[!pc]
+			OptionalDefault(dst, input, target)
+				queue = queue.append(target)
+				queue = queue.append(pc + 1)
 			Jump(target)
 				queue = queue.append(target)
 			Branch(input, target)
@@ -272,7 +355,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
+			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -285,6 +368,10 @@ export def prune(program: Program) -> Program
 			continue
 		let instruction = program.instructions[!i]
 		match instruction
+			OptionalDefault(dst, input, target)
+				if target < 0 or target >= count
+					return Program([], 0, "invalid jump target", 0)
+				result = result.append(OptionalDefault(dst, input, ids[!target]))
 			Jump(target)
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
@@ -297,6 +384,6 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
+			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)

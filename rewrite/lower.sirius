@@ -4,11 +4,11 @@ import ir alias IR
 
 rec Decoded(value: string, error: string)
 
-def decode(source: string, begin: i64, end: i64) -> Decoded
+def decode(source: string, begin: i64, end: i64, interpolated: bool) -> Decoded
 	var parts = Array[string]()
-	var start = begin + 1
+	var start = begin
 	var i = start
-	while i < end - 1
+	while i < end
 		if (source.byte_at(i) or 0) != 92
 			i += 1
 			continue
@@ -26,15 +26,19 @@ def decode(source: string, begin: i64, end: i64) -> Decoded
 			value = "\0"
 		elif escaped == 92 or escaped == 34 or escaped == 39
 			value = source.slice(i, i + 1)
+		elif interpolated and escaped == 36 and (source.byte_at(i + 1) or 0) == 123
+			value = "$"
 		else
 			return Decoded("", "unsupported string escape")
 		parts = parts.append(value)
 		i += 1
 		start = i
-	parts = parts.append(source.slice(start, end - 1))
+	parts = parts.append(source.slice(start, end))
 	return Decoded("".join(parts), "")
 
 def copy(dst: i64, input: i64, type: i64) -> IR.Instruction
+	if type == Semantic.ScalarType.index(Semantic.OptionalInteger)
+		return IR.OptionalCopy(dst, input)
 	if type == Semantic.ScalarType.index(Semantic.Text)
 		return IR.StringCopy(dst, input)
 	return IR.Copy(dst, input)
@@ -50,14 +54,48 @@ export def lower(source: string) -> IR.Program
 	for i in 0..len(parsed.nodes)
 		let node = parsed.nodes[!i]
 		match node.kind
-			Parser.StringLiteral
+			Parser.OptionalUnwrap
+				instructions = instructions.append(IR.OptionalUnwrap(i, node.left))
+			Parser.OptionalExit
+				instructions = instructions.append(IR.OptionalDefault(i, node.left, node.right))
+			Parser.StringByteAt
+				instructions = instructions.append(IR.StringByteAt(i, node.left, node.right))
+			Parser.StringFind
+				instructions = instructions.append(IR.StringFind(i, node.left, node.right))
+			Parser.SliceBounds
+				instructions = instructions.append(IR.Nop())
+			Parser.StringSlice
+				let bounds = parsed.nodes[!node.right]
+				instructions = instructions.append(IR.StringSlice(i, node.left, bounds.left, bounds.right))
+			Parser.StringStarts
+				instructions = instructions.append(IR.StringStarts(i, node.left, node.right))
+			Parser.StringEnds
+				instructions = instructions.append(IR.StringEnds(i, node.left, node.right))
+			Parser.StringLiteral | Parser.StringPart
 				let token = parsed.tokens[!node.token]
-				let literal = decode(source, token.start, token.end)
+				let part = Parser.kind_is(node.kind, Parser.StringPart())
+				var begin = token.start + 1
+				var end = token.end - 1
+				if part
+					begin = node.left
+					end = node.right
+				let literal = decode(source, begin, end, part)
 				if literal.error != ""
 					return IR.Program(instructions, 0, literal.error, token.line)
 				instructions = instructions.append(IR.StringConstant(i, literal.value))
 			Parser.Length
 				instructions = instructions.append(IR.StringLength(i, node.left))
+			Parser.StringConvert
+				let type = checked.types[!node.left]
+				if type == Semantic.ScalarType.index(Semantic.Text)
+					instructions = instructions.append(IR.StringCopy(i, node.left))
+				else
+					var format: IR.FormatType = IR.Integer()
+					if type == Semantic.ScalarType.index(Semantic.Boolean)
+						format = IR.FormatType.Boolean(IR.Boolean())
+					elif type == Semantic.ScalarType.index(Semantic.OptionalInteger)
+						format = IR.FormatType.OptionalInteger(IR.OptionalInteger())
+					instructions = instructions.append(IR.StringFormat(i, node.left, format))
 			Parser.RangeBinding
 				instructions = instructions.append(IR.Copy(i, node.left))
 			Parser.One
@@ -74,7 +112,10 @@ export def lower(source: string) -> IR.Program
 			Parser.RangeStep
 				instructions = instructions.append(IR.Add(node.left, node.left, node.right))
 			Parser.AndStart | Parser.OrStart
-				instructions = instructions.append(IR.ShortCircuit(i, node.left, node.right, Parser.kind_is(node.kind, Parser.OrStart())))
+				if checked.types[!node.left] == Semantic.ScalarType.index(Semantic.OptionalInteger)
+					instructions = instructions.append(IR.OptionalDefault(i, node.left, node.right))
+				else
+					instructions = instructions.append(IR.ShortCircuit(i, node.left, node.right, Parser.kind_is(node.kind, Parser.OrStart())))
 			Parser.LogicalEnd
 				instructions = instructions.append(IR.Copy(node.left, node.right))
 			Parser.BooleanLiteral
@@ -139,13 +180,13 @@ export def lower(source: string) -> IR.Program
 				instructions = instructions.append(copy(i, node.left, checked.types[!i]))
 			Parser.Assign
 				instructions = instructions.append(copy(checked.references[!i], node.left, checked.types[!i]))
-			Parser.Print
+			Parser.Print | Parser.Eprint
+				var type: IR.OutputType = IR.Integer()
 				if checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Boolean)
-					instructions = instructions.append(IR.PrintBool(node.left))
+					type = IR.OutputType.Boolean(IR.Boolean())
 				elif checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Text)
-					instructions = instructions.append(IR.StringPrint(node.left))
-				else
-					instructions = instructions.append(IR.Print(node.left))
+					type = IR.OutputType.Text(IR.Text())
+				instructions = instructions.append(IR.Output(node.left, type, Parser.kind_is(node.kind, Parser.Eprint())))
 			Parser.Return
 				instructions = instructions.append(IR.Return(node.left))
 	# A reachable sentinel exposes a missing return; dead block markers are pruned.

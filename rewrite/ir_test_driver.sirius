@@ -17,11 +17,11 @@ def main() -> i64
 		return 5
 	if not check([IR.Constant(0, 3), IR.Add(0, 0, 1), IR.Return(0)], 2, "undefined input slot")
 		return 6
-	if not check([IR.Constant(0, 3), IR.Print(-1)], 1, "undefined input slot")
+	if not check([IR.Constant(0, 3), IR.Output(-1, IR.Integer(), false)], 1, "undefined input slot")
 		return 7
 	if not check([IR.Constant(0, 3), IR.Return(1)], 1, "undefined input slot")
 		return 8
-	if not check([IR.Constant(0, 3), IR.Return(0), IR.Print(0)], 1, "unreachable instruction")
+	if not check([IR.Constant(0, 3), IR.Return(0), IR.Output(0, IR.Integer(), false)], 1, "unreachable instruction")
 		return 9
 	if not check([IR.Constant(0, 3), IR.Negate(0, 0), IR.Copy(1, 0), IR.Return(1)], 2, "")
 		return 10
@@ -43,7 +43,7 @@ def main() -> i64
 		return 18
 	if not check([IR.Not(0, 0), IR.Return(0)], 1, "undefined input slot")
 		return 19
-	if not check([IR.PrintBool(0), IR.Constant(0, 0), IR.Return(0)], 1, "undefined input slot")
+	if not check([IR.Output(0, IR.Boolean(), false), IR.Constant(0, 0), IR.Return(0)], 1, "undefined input slot")
 		return 20
 	let pruned = IR.prune(IR.Program([IR.Constant(0, 1), IR.Jump(3), IR.Nop(), IR.Return(0), IR.Nop()], 1, "", 0))
 	if len(pruned.instructions) != 3 or IR.verify(pruned) != ""
@@ -110,4 +110,73 @@ def main() -> i64
 	let strings = IR.Program([IR.StringConstant(0, "a\0b"), IR.StringCopy(0, 0), IR.StringConcat(0, 0, 0), IR.StringLength(1, 0), IR.Return(1)], 2, "", 0)
 	if IR.verify(strings) != "" or Interpreter.run(strings) != 6
 		return 45
+	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.StringSlice(2, 0, 1, 3), IR.Constant(3, 2), IR.Constant(4, 0), IR.Return(4)], 5, "undefined input slot")
+		return 46
+	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.StringSlice(2, 0, 1, 0), IR.Return(1)], 3, "slot type mismatch")
+		return 47
+	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.StringSlice(2, 0, 1, -1), IR.Return(1)], 3, "undefined input slot")
+		return 48
+	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.StringStarts(2, 0, 1), IR.Return(1)], 3, "slot type mismatch")
+		return 49
+	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.Constant(2, 1), IR.Branch(2, 6), IR.Constant(3, 2), IR.Jump(7), IR.Nop(), IR.StringSlice(4, 0, 1, 3), IR.Constant(5, 0), IR.Return(5)], 6, "undefined input slot")
+		return 50
+	let sliced = IR.Program([IR.StringConstant(0, "a\0bc"), IR.Constant(1, 1), IR.Constant(2, 3), IR.StringSlice(0, 0, 1, 2), IR.StringLength(3, 0), IR.Return(3)], 4, "", 0)
+	if IR.verify(sliced) != "" or Interpreter.run(sliced) != 2
+		return 51
+	if not check([IR.StringConstant(0, "x"), IR.StringFormat(1, 0, IR.Integer()), IR.Constant(2, 0), IR.Return(2)], 3, "slot type mismatch")
+		return 52
+	if not check([IR.Constant(0, 1), IR.Output(0, IR.Text(), true), IR.Return(0)], 1, "slot type mismatch")
+		return 53
+	if not check([IR.StringConstant(0, "x"), IR.Output(0, IR.Integer(), true), IR.Constant(1, 0), IR.Return(1)], 2, "slot type mismatch")
+		return 54
+	if not check([IR.Output(0, IR.Boolean(), true), IR.Constant(0, 1), IR.Return(0)], 1, "undefined input slot")
+		return 55
+	let formatted = IR.Program([IR.Constant(0, -9223372036854775807 - 1), IR.StringFormat(1, 0, IR.Integer()), IR.StringLength(2, 1), IR.Return(2)], 3, "", 0)
+	if not IR.has_strings(formatted) or IR.verify(formatted) != "" or Interpreter.run(formatted) != 20
+		return 56
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 0), IR.Return(1)], 3, "slot type mismatch")
+		return 57
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringFind(2, 0, 1), IR.Return(1)], 3, "slot type mismatch")
+		return 58
+	if not check([IR.OptionalCopy(0, 1), IR.Constant(2, 0), IR.Return(2)], 3, "undefined input slot")
+		return 59
+	if not check([IR.Constant(0, 1), IR.OptionalDefault(1, 0, 3), IR.Constant(1, 9), IR.Return(1)], 2, "slot type mismatch")
+		return 60
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalDefault(3, 2, 9), IR.Return(3)], 4, "invalid jump target")
+		return 61
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.Branch(1, 5), IR.StringByteAt(2, 0, 1), IR.Jump(6), IR.Nop(), IR.OptionalDefault(3, 2, 8), IR.Constant(3, 9), IR.Return(3)], 4, "undefined input slot")
+		return 62
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.Return(2)], 3, "slot type mismatch")
+		return 63
+	let present = IR.Program([IR.StringConstant(0, "\0"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalCopy(2, 2), IR.OptionalDefault(3, 2, 6), IR.Constant(3, 9), IR.Return(3)], 4, "", 0)
+	if not IR.has_optionals(present) or IR.verify(present) != "" or Interpreter.run(present) != 0
+		return 64
+	let absent = IR.Program([IR.StringConstant(0, ""), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalDefault(3, 2, 5), IR.Constant(3, 9), IR.Return(3)], 4, "", 0)
+	if IR.verify(absent) != "" or Interpreter.run(absent) != 9
+		return 65
+	if not check([IR.Constant(0, 1), IR.OptionalUnwrap(1, 0), IR.Return(1)], 2, "slot type mismatch")
+		return 66
+	if not check([IR.OptionalUnwrap(0, 1), IR.Return(0)], 2, "undefined input slot")
+		return 67
+	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalUnwrap(2, 2), IR.Return(1)], 3, "slot type mismatch")
+		return 68
+	let unwrapped = IR.Program([IR.StringConstant(0, "\0"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalUnwrap(3, 2), IR.Return(3)], 4, "", 0)
+	if IR.verify(unwrapped) != "" or Interpreter.run(unwrapped) != 0
+		return 69
+	for type in [IR.OutputType.Integer(IR.Integer()), IR.OutputType.Boolean(IR.Boolean()), IR.OutputType.Text(IR.Text())]
+		for stderr in [false, true]
+			var initialized: IR.Instruction = IR.Constant(0, 0)
+			if type == IR.OutputType.Text(IR.Text())
+				initialized = IR.Instruction.StringConstant(IR.StringConstant(0, "x"))
+			if not check([IR.Output(0, type, stderr), initialized, IR.Constant(1, 0), IR.Return(1)], 2, "undefined input slot")
+				return 70
+			if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringFind(2, 0, 0), IR.Output(2, type, stderr), IR.Return(1)], 3, "slot type mismatch")
+				return 71
+	if not check([IR.Constant(0, 1), IR.StringFormat(1, 0, IR.OptionalInteger()), IR.Return(0)], 2, "slot type mismatch")
+		return 72
+	if not check([IR.StringFormat(0, 1, IR.Boolean()), IR.Constant(1, 0), IR.Return(1)], 2, "undefined input slot")
+		return 73
+	let optional_text = IR.Program([IR.StringConstant(0, "x"), IR.StringFind(1, 0, 0), IR.StringFormat(2, 1, IR.OptionalInteger()), IR.StringLength(3, 2), IR.Return(3)], 4, "", 0)
+	if IR.verify(optional_text) != "" or Interpreter.run(optional_text) != 7
+		return 74
 	return 0
