@@ -1,4 +1,5 @@
 import ir alias IR
+import interpreter alias Interpreter
 
 def check(instructions: Array[IR.Instruction], slots: i64, expected: string) -> bool
 	return IR.verify(IR.Program(instructions, slots, "", 0)) == expected
@@ -47,4 +48,66 @@ def main() -> i64
 	let pruned = IR.prune(IR.Program([IR.Constant(0, 1), IR.Jump(3), IR.Nop(), IR.Return(0), IR.Nop()], 1, "", 0))
 	if len(pruned.instructions) != 3 or IR.verify(pruned) != ""
 		return 21
+	if not check([IR.ShortCircuit(0, 1, 1, false), IR.Return(0)], 2, "undefined input slot")
+		return 22
+	if not check([IR.Constant(0, 0), IR.ShortCircuit(2, 0, 2, false), IR.Return(0)], 2, "invalid destination slot")
+		return 23
+	if not check([IR.Constant(0, 0), IR.ShortCircuit(1, 0, 9, false), IR.Return(1)], 2, "invalid jump target")
+		return 24
+	# The right side loops forever if evaluated. Both deciding values must skip it.
+	for deciding in [false, true]
+		var value = 0
+		if deciding
+			value = 1
+		let program = IR.Program([IR.Constant(0, value), IR.ShortCircuit(1, 0, 3, deciding), IR.Jump(2), IR.Return(1)], 2, "", 0)
+		if IR.verify(program) != "" or Interpreter.run(program) != value
+			return 25
+		let compact = IR.prune(program)
+		if IR.verify(compact) != "" or Interpreter.run(compact) != value
+			return 26
+	# A slot written only in the right operand is not initialized on the skip edge.
+	if not check([IR.Constant(0, 0), IR.ShortCircuit(1, 0, 3, false), IR.Constant(2, 1), IR.Return(2)], 3, "undefined input slot")
+		return 27
+	if not check([IR.Constant(0, 1), IR.ShortCircuit(0, 0, 2, true), IR.Return(0)], 1, "")
+		return 28
+	if not check([IR.Constant(0, 1), IR.Divide(0, 0, 1), IR.Return(0)], 2, "undefined input slot")
+		return 29
+	if not check([IR.Constant(0, 1), IR.Remainder(2, 0, 0), IR.Return(0)], 2, "invalid destination slot")
+		return 30
+	if not check([IR.Constant(0, 1), IR.ShiftLeft(0, 0, 1), IR.Return(0)], 2, "undefined input slot")
+		return 31
+	if not check([IR.Constant(0, 1), IR.ShiftRight(2, 0, 0), IR.Return(0)], 2, "invalid destination slot")
+		return 32
+	# Exercise sign bits, adjacent words and partially filled final words.
+	for slot in [0, 1, 62, 63, 64, 65, 126, 127, 128]
+		if not check([IR.Constant(slot, 1), IR.Copy(slot, slot), IR.Return(slot)], slot + 1, "")
+			return 33
+		if not check([IR.Constant(slot, 1), IR.Return(slot + 1)], slot + 2, "undefined input slot")
+			return 34
+	for slot in [63, 64, 65, 127, 128]
+		if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.Constant(slot, 9), IR.Jump(5), IR.Constant(slot, 8), IR.Return(slot)], slot + 1, "")
+			return 35
+		# A write on one branch must not leak through shared CoW fact rows.
+		if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.Constant(slot, 9), IR.Jump(5), IR.Nop(), IR.Return(slot)], slot + 1, "undefined input slot")
+			return 36
+		if not check([IR.Constant(0, 0), IR.Branch(0, 4), IR.Constant(slot, 7), IR.Jump(1), IR.Return(slot)], slot + 1, "undefined input slot")
+			return 37
+		# The longer predecessor removes a fact after the join was visited.
+		if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.Constant(slot, 9), IR.Jump(7), IR.Nop(), IR.Nop(), IR.Jump(7), IR.Return(slot)], slot + 1, "undefined input slot")
+			return 38
+		if not check([IR.Constant(0, 1), IR.Constant(slot, 9), IR.Branch(0, 5), IR.Copy(slot, slot), IR.Jump(2), IR.Return(slot)], slot + 1, "")
+			return 39
+	if not check([IR.StringConstant(0, "x"), IR.Return(0)], 1, "slot type mismatch")
+		return 40
+	if not check([IR.Constant(0, 1), IR.StringCopy(1, 0), IR.Return(0)], 2, "slot type mismatch")
+		return 41
+	if not check([IR.StringConstant(0, "x"), IR.Constant(0, 1), IR.Return(0)], 1, "slot type mismatch")
+		return 42
+	if not check([IR.StringCopy(0, 0), IR.Constant(1, 0), IR.Return(1)], 2, "undefined input slot")
+		return 43
+	if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.StringConstant(1, "x"), IR.Jump(5), IR.Nop(), IR.StringLength(2, 1), IR.Return(2)], 3, "undefined input slot")
+		return 44
+	let strings = IR.Program([IR.StringConstant(0, "a\0b"), IR.StringCopy(0, 0), IR.StringConcat(0, 0, 0), IR.StringLength(1, 0), IR.Return(1)], 2, "", 0)
+	if IR.verify(strings) != "" or Interpreter.run(strings) != 6
+		return 45
 	return 0

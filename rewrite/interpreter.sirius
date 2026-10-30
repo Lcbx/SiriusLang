@@ -1,6 +1,6 @@
 import ir alias IR
 
-def compare(left: i64, right: i64, op: string) -> bool
+def compare(left, right, op: string) -> bool
 	if op == "=="
 		return left == right
 	if op == "!="
@@ -19,13 +19,36 @@ export def run(program: IR.Program) -> i64
 		eprint("ERROR " + str(program.line) + ": " + error)
 		return 1
 	var slots = Array[i64]()
+	var strings = Array[string]()
 	for i in 0..program.slots
 		slots = slots.append(0)
+	if IR.has_strings(program)
+		for i in 0..program.slots
+			strings = strings.append("")
 	var pc = 0
 	while pc < len(program.instructions)
 		let instruction = program.instructions[!pc]
 		var next = pc + 1
 		match instruction
+			IR.StringConstant(dst, value)
+				strings[!dst] = value
+			IR.StringCopy(dst, input)
+				strings[!dst] = strings[!input]
+			IR.StringConcat(dst, left, right)
+				strings[!dst] = strings[!left] + strings[!right]
+			IR.StringLength(dst, input)
+				slots[!dst] = len(strings[!input])
+			IR.StringPrint(input)
+				print(strings[!input])
+			IR.StringCompare(dst, left, right, op)
+				var value = 0
+				if compare(strings[!left], strings[!right], op)
+					value = 1
+				slots[!dst] = value
+			IR.ShortCircuit(dst, input, target, when_true)
+				slots[!dst] = slots[!input]
+				if (slots[!input] != 0) == when_true
+					next = target
 			IR.Compare(dst, left, right, op)
 				var value = 0
 				if compare(slots[!left], slots[!right], op)
@@ -55,10 +78,32 @@ export def run(program: IR.Program) -> i64
 				slots[!dst] = slots[!left] - slots[!right]
 			IR.Multiply(dst, left, right)
 				slots[!dst] = slots[!left] * slots[!right]
+			(IR.Divide | IR.Remainder)(dst, left, right)
+				let numerator = slots[!left]
+				let denominator = slots[!right]
+				if denominator == 0
+					eprint("ERROR: division by zero")
+					return 1
+				if numerator == (-9223372036854775807 - 1) and denominator == -1
+					eprint("ERROR: integer overflow")
+					return 1
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.Divide)
+					slots[!dst] = numerator / denominator
+				else
+					slots[!dst] = numerator % denominator
 			IR.BitAnd(dst, left, right)
 				slots[!dst] = slots[!left] & slots[!right]
 			IR.BitOr(dst, left, right)
 				slots[!dst] = slots[!left] | slots[!right]
+			(IR.ShiftLeft | IR.ShiftRight)(dst, left, right)
+				let count = slots[!right]
+				if count < 0 or count >= 64
+					eprint("ERROR: shift count out of range")
+					return 1
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.ShiftLeft)
+					slots[!dst] = slots[!left] << count
+				else
+					slots[!dst] = slots[!left] >> count
 			IR.Copy(dst, input)
 				slots[!dst] = slots[!input]
 			IR.Print(input)

@@ -6,20 +6,54 @@ export rec Result(code: string, error: string, line: i64)
 def slot(id: i64) -> string
 	return "v[" + str(id) + "]"
 
+def string_slot(id: i64) -> string
+	return "s[" + str(id) + "]"
+
+# Fixed-width octal escapes preserve every UTF-8 byte, including embedded NUL.
+def c_bytes(value: string) -> string
+	var parts = Array[string]()
+	for i in 0..len(value)
+		let byte = value.byte_at(i) or 0
+		parts = parts.append("\\" + str(byte / 64) + str((byte / 8) % 8) + str(byte % 8))
+	return "\"" + "".join(parts) + "\""
+
 export def compile(source: string) -> Result
 	let program = Lower.lower(source)
 	let error = IR.verify(program)
 	if error != ""
 		return Result("", error, program.line)
-	var lines = ["#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n#include <string.h>\n"]
+	let has_strings = IR.has_strings(program)
+	var lines = ["#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n#include <string.h>\n#include \"sirius_runtime.h\"\n"]
+	if has_strings
+		lines = lines.append("static void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\nint main(void) {\n")
 	lines = lines.append("uint64_t v[" + str(program.slots) + "];\n")
+	if has_strings
+		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0};\n")
 	lines = lines.append("goto L0;\n")
 	for index in 0..len(program.instructions)
 		let instruction = program.instructions[!index]
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.StringConstant(dst, value)
+				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_from_bytes(" + c_bytes(value) + ", " + str(len(value)) + "));\n")
+			IR.StringCopy(dst, input)
+				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_retain(" + string_slot(input) + "));\n")
+			IR.StringConcat(dst, left, right)
+				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_concat(" + string_slot(left) + ", " + string_slot(right) + "));\n")
+			IR.StringLength(dst, input)
+				lines = lines.append(slot(dst) + " = s_string_length(" + string_slot(input) + ");\n")
+			IR.StringPrint(input)
+				lines = lines.append("s_print_string(" + string_slot(input) + ");\n")
+			IR.StringCompare(dst, left, right, op)
+				lines = lines.append(slot(dst) + " = s_string_compare(" + string_slot(left) + ", " + string_slot(right) + ") " + op + " 0;\n")
+			IR.ShortCircuit(dst, input, target, when_true)
+				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
+				var condition = "!" + slot(input)
+				if when_true
+					condition = slot(input)
+				lines = lines.append("if (" + condition + ") goto L" + str(target) + ";\n")
 			IR.Compare(dst, left, right, op)
 				lines = lines.append(slot(dst) + " = signed_value(" + slot(left) + ") " + op + " signed_value(" + slot(right) + ");\n")
 			IR.Branch(input, target)
@@ -43,15 +77,33 @@ export def compile(source: string) -> Result
 				lines = lines.append(slot(dst) + " = " + slot(left) + " - " + slot(right) + ";\n")
 			IR.Multiply(dst, left, right)
 				lines = lines.append(slot(dst) + " = " + slot(left) + " * " + slot(right) + ";\n")
+			(IR.Divide | IR.Remainder)(dst, left, right)
+				let numerator = "signed_value(" + slot(left) + ")"
+				let denominator = "signed_value(" + slot(right) + ")"
+				lines = lines.append("if (" + denominator + " == 0) s_panic(\"division by zero\");\n")
+				lines = lines.append("if (" + numerator + " == INT64_MIN && " + denominator + " == -1) s_panic(\"integer overflow\");\n")
+				var op = " / "
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.Remainder)
+					op = " % "
+				lines = lines.append(slot(dst) + " = " + numerator + op + denominator + ";\n")
 			IR.BitAnd(dst, left, right)
 				lines = lines.append(slot(dst) + " = " + slot(left) + " & " + slot(right) + ";\n")
 			IR.BitOr(dst, left, right)
 				lines = lines.append(slot(dst) + " = " + slot(left) + " | " + slot(right) + ";\n")
+			(IR.ShiftLeft | IR.ShiftRight)(dst, left, right)
+				let count = slot(right)
+				lines = lines.append("if (" + count + " >= UINT64_C(64)) s_panic(\"shift count out of range\");\n")
+				var value = slot(left) + " << " + count
+				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.ShiftRight)
+					value = slot(left) + " >> " + count
+				lines = lines.append(slot(dst) + " = " + value + ";\n")
 			IR.Copy(dst, input)
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Print(input)
 				lines = lines.append("printf(\"%\" PRId64 \"\\n\", signed_value(" + slot(input) + "));\n")
 			IR.Return(input)
+				if has_strings
+					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")
 				lines = lines.append("return (int)signed_value(" + slot(input) + ");\n")
 				fallthrough = false
 		if fallthrough

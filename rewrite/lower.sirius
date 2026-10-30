@@ -2,6 +2,43 @@ import parser alias Parser
 import semantic alias Semantic
 import ir alias IR
 
+rec Decoded(value: string, error: string)
+
+def decode(source: string, begin: i64, end: i64) -> Decoded
+	var parts = Array[string]()
+	var start = begin + 1
+	var i = start
+	while i < end - 1
+		if (source.byte_at(i) or 0) != 92
+			i += 1
+			continue
+		parts = parts.append(source.slice(start, i))
+		i += 1
+		let escaped = source.byte_at(i) or 0
+		var value = ""
+		if escaped == 110
+			value = "\n"
+		elif escaped == 116
+			value = "\t"
+		elif escaped == 114
+			value = "\r"
+		elif escaped == 48
+			value = "\0"
+		elif escaped == 92 or escaped == 34 or escaped == 39
+			value = source.slice(i, i + 1)
+		else
+			return Decoded("", "unsupported string escape")
+		parts = parts.append(value)
+		i += 1
+		start = i
+	parts = parts.append(source.slice(start, end - 1))
+	return Decoded("".join(parts), "")
+
+def copy(dst: i64, input: i64, type: i64) -> IR.Instruction
+	if type == Semantic.ScalarType.index(Semantic.Text)
+		return IR.StringCopy(dst, input)
+	return IR.Copy(dst, input)
+
 export def lower(source: string) -> IR.Program
 	let parsed = Parser.parse(source)
 	var instructions = Array[IR.Instruction]()
@@ -13,6 +50,33 @@ export def lower(source: string) -> IR.Program
 	for i in 0..len(parsed.nodes)
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.StringLiteral
+				let token = parsed.tokens[!node.token]
+				let literal = decode(source, token.start, token.end)
+				if literal.error != ""
+					return IR.Program(instructions, 0, literal.error, token.line)
+				instructions = instructions.append(IR.StringConstant(i, literal.value))
+			Parser.Length
+				instructions = instructions.append(IR.StringLength(i, node.left))
+			Parser.RangeBinding
+				instructions = instructions.append(IR.Copy(i, node.left))
+			Parser.One
+				instructions = instructions.append(IR.Constant(i, 1))
+			Parser.RangeCompare
+				# Match the existing compiler: a bare upper-bound name uses
+				# its binding slot, while other expressions retain their value.
+				var upper = node.right
+				if Parser.kind_is(parsed.nodes[!upper].kind, Parser.Variable())
+					upper = checked.references[!upper]
+				instructions = instructions.append(IR.Compare(i, node.left, upper, "<"))
+			Parser.RangeCondition
+				instructions = instructions.append(IR.Branch(node.left, node.right))
+			Parser.RangeStep
+				instructions = instructions.append(IR.Add(node.left, node.left, node.right))
+			Parser.AndStart | Parser.OrStart
+				instructions = instructions.append(IR.ShortCircuit(i, node.left, node.right, Parser.kind_is(node.kind, Parser.OrStart())))
+			Parser.LogicalEnd
+				instructions = instructions.append(IR.Copy(node.left, node.right))
 			Parser.BooleanLiteral
 				let token = parsed.tokens[!node.token]
 				var value = 0
@@ -21,7 +85,11 @@ export def lower(source: string) -> IR.Program
 				instructions = instructions.append(IR.Constant(i, value))
 			Parser.Compare
 				let token = parsed.tokens[!node.token]
-				instructions = instructions.append(IR.Compare(i, node.left, node.right, source.slice(token.start, token.end)))
+				let op = source.slice(token.start, token.end)
+				if checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Text)
+					instructions = instructions.append(IR.StringCompare(i, node.left, node.right, op))
+				else
+					instructions = instructions.append(IR.Compare(i, node.left, node.right, op))
 			Parser.If | Parser.While
 				instructions = instructions.append(IR.Branch(node.left, node.right))
 			Parser.Else | Parser.Break
@@ -45,24 +113,37 @@ export def lower(source: string) -> IR.Program
 			Parser.Not
 				instructions = instructions.append(IR.Not(i, node.left))
 			Parser.Add
-				instructions = instructions.append(IR.Add(i, node.left, node.right))
+				if checked.types[!i] == Semantic.ScalarType.index(Semantic.Text)
+					instructions = instructions.append(IR.StringConcat(i, node.left, node.right))
+				else
+					instructions = instructions.append(IR.Add(i, node.left, node.right))
 			Parser.Subtract
 				instructions = instructions.append(IR.Subtract(i, node.left, node.right))
 			Parser.Multiply
 				instructions = instructions.append(IR.Multiply(i, node.left, node.right))
+			Parser.Divide
+				instructions = instructions.append(IR.Divide(i, node.left, node.right))
+			Parser.Remainder
+				instructions = instructions.append(IR.Remainder(i, node.left, node.right))
 			Parser.BitAnd
 				instructions = instructions.append(IR.BitAnd(i, node.left, node.right))
 			Parser.BitOr
 				instructions = instructions.append(IR.BitOr(i, node.left, node.right))
+			Parser.ShiftLeft
+				instructions = instructions.append(IR.ShiftLeft(i, node.left, node.right))
+			Parser.ShiftRight
+				instructions = instructions.append(IR.ShiftRight(i, node.left, node.right))
 			Parser.Variable
-				instructions = instructions.append(IR.Copy(i, checked.references[!i]))
+				instructions = instructions.append(copy(i, checked.references[!i], checked.types[!i]))
 			Parser.Binding | Parser.MutableBinding
-				instructions = instructions.append(IR.Copy(i, node.left))
+				instructions = instructions.append(copy(i, node.left, checked.types[!i]))
 			Parser.Assign
-				instructions = instructions.append(IR.Copy(checked.references[!i], node.left))
+				instructions = instructions.append(copy(checked.references[!i], node.left, checked.types[!i]))
 			Parser.Print
 				if checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Boolean)
 					instructions = instructions.append(IR.PrintBool(node.left))
+				elif checked.types[!node.left] == Semantic.ScalarType.index(Semantic.Text)
+					instructions = instructions.append(IR.StringPrint(node.left))
 				else
 					instructions = instructions.append(IR.Print(node.left))
 			Parser.Return

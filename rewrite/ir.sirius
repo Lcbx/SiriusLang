@@ -6,22 +6,45 @@ export rec PrintBool(input: i64)
 export rec Add(dst: i64, left: i64, right: i64)
 export rec Subtract(dst: i64, left: i64, right: i64)
 export rec Multiply(dst: i64, left: i64, right: i64)
+export rec Divide(dst: i64, left: i64, right: i64)
+export rec Remainder(dst: i64, left: i64, right: i64)
 export rec BitAnd(dst: i64, left: i64, right: i64)
 export rec BitOr(dst: i64, left: i64, right: i64)
+export rec ShiftLeft(dst: i64, left: i64, right: i64)
+export rec ShiftRight(dst: i64, left: i64, right: i64)
 export rec Copy(dst: i64, input: i64)
 export rec Print(input: i64)
 export rec Return(input: i64)
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
+# Copy the left value on both edges; skip the right operand when it decides.
+export rec ShortCircuit(dst: i64, input: i64, target: i64, when_true: bool)
 export rec Jump(target: i64)
 export rec Nop()
-export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Return | Compare | Branch | Jump | Nop
+export rec StringConstant(dst: i64, value: string)
+export rec StringCopy(dst: i64, input: i64)
+export rec StringConcat(dst: i64, left: i64, right: i64)
+export rec StringLength(dst: i64, input: i64)
+export rec StringPrint(input: i64)
+export rec StringCompare(dst: i64, left: i64, right: i64, op: string)
+export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Return | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 
-rec Flow(dst: i64, first: i64, second: i64, next: i64, other: i64)
+export def has_strings(program: Program) -> bool
+	# Verified string inputs must ultimately be initialized by a literal.
+	for instruction in program.instructions
+		if Instruction.index(instruction) == Instruction.index(StringConstant)
+			return true
+	return false
+
+# Storage kinds: 1 scalar, 2 string. Bits in strings mark string input operands.
+rec Flow(dst: i64, first: i64, second: i64, next: i64, other: i64, kind: i64, strings: i64)
 
 def in_bounds(slot: i64, count: i64) -> bool
 	return slot >= 0 and slot < count
+
+def initialized(facts: Array[i64], slot: i64) -> bool
+	return (facts[!(slot / 64)] & (1 << (slot % 64))) != 0
 
 # Reachable predecessors contribute definite initialization by intersection.
 # A worklist revisits joins when a loop or a later predecessor removes a fact.
@@ -43,34 +66,53 @@ export def verify(program: Program) -> string
 		var next = i + 1
 		var other = -1
 		var writes = false
-		match program.instructions[!i]
+		var kind = 1
+		var strings = 0
+		let instruction = program.instructions[!i]
+		match instruction
+			StringConstant(target, value)
+				dst = target
+				writes = true
+				kind = 2
 			Constant(target, value)
 				dst = target
 				writes = true
-			(Negate | Not | Copy)(target, input)
+			(Negate | Not | Copy | StringCopy | StringLength)(target, input)
 				dst = target
 				first = input
 				writes = true
+				if Instruction.index(instruction) == Instruction.index(StringCopy)
+					kind = 2
+					strings = 1
+				elif Instruction.index(instruction) == Instruction.index(StringLength)
+					strings = 1
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
-			(Add | Subtract | Multiply | BitAnd | BitOr)(target, left, right)
+			(Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | StringConcat)(target, left, right)
 				dst = target
 				first = left
 				second = right
 				writes = true
+				if Instruction.index(instruction) == Instruction.index(StringConcat)
+					kind = 2
+					strings = 3
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
-			Compare(target, left, right, op)
+			(Compare | StringCompare)(target, left, right, op)
 				dst = target
 				first = left
 				second = right
 				writes = true
+				if Instruction.index(instruction) == Instruction.index(StringCompare)
+					strings = 3
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
 				if op != "==" and op != "!=" and op != "<" and op != "<=" and op != ">" and op != ">="
 					return "invalid comparison"
-			(Print | PrintBool)(input)
+			(Print | PrintBool | StringPrint)(input)
 				first = input
+				if Instruction.index(instruction) == Instruction.index(StringPrint)
+					strings = 1
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			Return(input)
@@ -87,6 +129,16 @@ export def verify(program: Program) -> string
 					return "undefined input slot"
 				if not in_bounds(target, count)
 					return "invalid jump target"
+			ShortCircuit(target_slot, input, target, when_true)
+				has_control = true
+				dst = target_slot
+				writes = true
+				first = input
+				other = target
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not in_bounds(target, count)
+					return "invalid jump target"
 			Jump(target)
 				has_control = true
 				next = target
@@ -96,12 +148,39 @@ export def verify(program: Program) -> string
 				next = i + 1
 		if writes and not in_bounds(dst, program.slots)
 			return "invalid destination slot"
-		flows = flows.append(Flow(dst, first, second, next, other))
+		flows = flows.append(Flow(dst, first, second, next, other, kind, strings))
 	if not returned
 		return "missing return"
-	var blank = Array[bool]()
+	# Each slot has one storage kind, independent of control-flow reachability.
+	var kinds = Array[i64]()
 	for i in 0..program.slots
-		blank = blank.append(false)
+		kinds = kinds.append(0)
+	for flow in flows
+		if flow.dst >= 0
+			if kinds[!flow.dst] != 0 and kinds[!flow.dst] != flow.kind
+				return "slot type mismatch"
+			kinds[!flow.dst] = flow.kind
+	for flow in flows
+		for operand in 0..2
+			var input = flow.first
+			if operand == 1
+				input = flow.second
+			if input < 0
+				continue
+			var expected = 1
+			if (flow.strings & (1 << operand)) != 0
+				expected = 2
+			if kinds[!input] == 0
+				return "undefined input slot"
+			if kinds[!input] != expected
+				return "slot type mismatch"
+	# One word holds 64 facts, including bit 63 in the signed i64 sign bit.
+	var words = program.slots / 64
+	if program.slots % 64 != 0
+		words += 1
+	var blank = Array[i64]()
+	for i in 0..words
+		blank = blank.append(0)
 	# Straight-line code has one predecessor per instruction; no matrix needed.
 	if not has_control
 		var finished = false
@@ -109,13 +188,14 @@ export def verify(program: Program) -> string
 			if finished
 				return "unreachable instruction"
 			for input in [flow.first, flow.second]
-				if input >= 0 and not blank[!input]
+				if input >= 0 and not initialized(blank, input)
 					return "undefined input slot"
 			if flow.dst >= 0
-				blank[!flow.dst] = true
+				let word = flow.dst / 64
+				blank[!word] = blank[!word] | (1 << (flow.dst % 64))
 			finished = flow.next < 0
 		return ""
-	var incoming = Array[Array[bool]]()
+	var incoming = Array[Array[i64]]()
 	var reached = Array[bool]()
 	for i in 0..count
 		incoming = incoming.append(blank)
@@ -129,7 +209,8 @@ export def verify(program: Program) -> string
 		let flow = flows[!index]
 		var outgoing = incoming[!index]
 		if flow.dst >= 0
-			outgoing[!flow.dst] = true
+			let word = flow.dst / 64
+			outgoing[!word] = outgoing[!word] | (1 << (flow.dst % 64))
 		for successor in [flow.next, flow.other]
 			if successor < 0
 				continue
@@ -141,9 +222,10 @@ export def verify(program: Program) -> string
 				reached[!successor] = true
 			else
 				var merged = incoming[!successor]
-				for slot in 0..program.slots
-					if merged[!slot] and not outgoing[!slot]
-						merged[!slot] = false
+				for word in 0..words
+					let common = merged[!word] & outgoing[!word]
+					if common != merged[!word]
+						merged[!word] = common
 						changed = true
 				incoming[!successor] = merged
 			if changed
@@ -153,7 +235,7 @@ export def verify(program: Program) -> string
 			return "unreachable instruction"
 		let flow = flows[!i]
 		for input in [flow.first, flow.second]
-			if input >= 0 and not incoming[!i][!input]
+			if input >= 0 and not initialized(incoming[!i], input)
 				return "undefined input slot"
 	return ""
 
@@ -185,9 +267,12 @@ export def prune(program: Program) -> Program
 			Branch(input, target)
 				queue = queue.append(target)
 				queue = queue.append(pc + 1)
+			ShortCircuit(dst, input, target, when_true)
+				queue = queue.append(target)
+				queue = queue.append(pc + 1)
 			Return
 				continue
-			Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Compare | Nop
+			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -208,6 +293,10 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(Branch(input, ids[!target]))
-			Constant | Negate | Not | Add | Subtract | Multiply | BitAnd | BitOr | Copy | Print | PrintBool | Compare | Nop | Return
+			ShortCircuit(dst, input, target, when_true)
+				if target < 0 or target >= count
+					return Program([], 0, "invalid jump target", 0)
+				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
+			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Print | PrintBool | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringPrint | StringCompare
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)

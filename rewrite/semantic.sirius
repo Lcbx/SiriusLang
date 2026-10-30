@@ -3,6 +3,7 @@ import parser alias Parser
 export enum ScalarType
 	Integer
 	Boolean
+	Text
 
 export rec Checked(parsed: Parser.State, references: Array[i64], types: Array[i64], error: string, line: i64)
 rec Binding(node: i64, mutable: bool, depth: i64)
@@ -19,12 +20,30 @@ export def check(parsed: Parser.State) -> Checked
 	var depth = 0
 	let integer = ScalarType.index(Integer)
 	let boolean = ScalarType.index(Boolean)
+	let text = ScalarType.index(Text)
 	for i in 0..len(parsed.nodes)
 		let node = parsed.nodes[!i]
 		var reference = -1
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.RangeBinding
+				type = integer
+				if types[!node.left] != integer or types[!node.right] != integer
+					error = "range bounds must be i64"
+				if depth == len(scopes)
+					scopes = scopes.append(bindings)
+				else
+					scopes[!depth] = bindings
+				depth += 1
+				# The loop binder encloses the body, which may shadow it.
+				bindings = bindings.insert(name(parsed, node.token), Binding(i, false, depth - 1))
+			Parser.RangeCompare
+				type = boolean
+			Parser.One
+				type = integer
+			Parser.RangeCondition | Parser.RangeStep
+				type = -1
 			Parser.Variable | Parser.Assign
 				let target = name(parsed, node.token)
 				let binding = bindings.get(target) or Binding(-1, false, -1)
@@ -48,6 +67,8 @@ export def check(parsed: Parser.State) -> Checked
 					var expected = integer
 					if name(parsed, node.right) == "bool"
 						expected = boolean
+					elif name(parsed, node.right) == "string"
+						expected = text
 					if type != expected
 						error = "binding type mismatch"
 				bindings = bindings.insert(target, Binding(i, Parser.kind_is(node.kind, Parser.MutableBinding()), depth))
@@ -55,10 +76,28 @@ export def check(parsed: Parser.State) -> Checked
 				type = integer
 			Parser.BooleanLiteral
 				type = boolean
+			Parser.StringLiteral
+				type = text
+			Parser.Length
+				type = integer
+				if types[!node.left] != text
+					error = "len requires string"
+			Parser.Add
+				type = types[!node.left]
+				if (type != integer and type != text) or types[!node.right] != type
+					error = "invalid addition operands"
 			Parser.Not
 				type = boolean
 				if types[!node.left] != boolean
 					error = "not requires bool"
+			Parser.AndStart | Parser.OrStart
+				type = boolean
+				if types[!node.left] != boolean
+					error = "logical operator requires bool"
+			Parser.LogicalEnd
+				type = boolean
+				if types[!node.right] != boolean
+					error = "logical operator requires bool"
 			Parser.Print
 				type = types[!node.left]
 			Parser.If | Parser.While
@@ -79,9 +118,9 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Compare
 				type = boolean
 				let op = name(parsed, node.token)
-				if types[!node.left] != types[!node.right] or (types[!node.left] != integer and op != "==" and op != "!=")
+				if types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
 					error = "invalid comparison operands"
-			Parser.Negate | Parser.Add | Parser.Subtract | Parser.Multiply | Parser.BitAnd | Parser.BitOr | Parser.Return
+			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight | Parser.Return
 				type = integer
 				if types[!node.left] != integer
 					error = "expected i64 operand"
