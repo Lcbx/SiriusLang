@@ -1,6 +1,10 @@
 import ir alias IR
 import lower alias Lower
 
+let OCTAL_RADIX = 8
+let OCTAL_HIGH_PLACE = 64
+let OPTIONAL_FORMAT_BUFFER_SIZE = 32
+
 export rec Result(code: string, error: string, line: i64)
 
 def slot(id: i64) -> string
@@ -29,30 +33,72 @@ def c_bytes(value: string) -> string
 	var parts = Array[string]()
 	for i in 0..len(value)
 		let byte = value.byte_at(i) or 0
-		parts = parts.append("\\" + str(byte / 64) + str((byte / 8) % 8) + str(byte % 8))
+		parts = parts.append("\\" + str(byte / OCTAL_HIGH_PLACE) + str((byte / OCTAL_RADIX) % OCTAL_RADIX) + str(byte % OCTAL_RADIX))
 	return "\"" + "".join(parts) + "\""
 
-export def compile(source: string) -> Result
-	let program = Lower.lower(source)
-	let error = IR.verify(program)
-	if error != ""
-		return Result("", error, program.line)
-	let has_strings = IR.has_strings(program)
-	var lines = ["#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n#include <string.h>\n#include \"sirius_runtime.h\"\n"]
+def c_type(type: i64, table: IR.TypeTable) -> string
+	if type == IR.TYPE_STRING
+		return "S_String *"
+	if IR.is_optional(table, type)
+		return "S_Optional_i64 "
+	if type == IR.TYPE_BOOL
+		return "bool "
+	return "uint64_t "
+
+def value_slot(id: i64, type: i64, table: IR.TypeTable) -> string
+	if type == IR.TYPE_STRING
+		return string_slot(id)
+	if IR.is_optional(table, type)
+		return optional_slot(id)
+	return slot(id)
+
+def declaration(function: IR.Function, id: i64, table: IR.TypeTable) -> string
+	var parameters = Array[string]()
+	for i in 0..len(function.parameters)
+		parameters = parameters.append(c_type(function.parameters[!i], table) + "p" + str(i))
+	var arguments = ", ".join(parameters)
+	if len(parameters) == 0
+		arguments = "void"
+	return "static inline " + c_type(function.result, table) + "f" + str(id) + "(" + arguments + ")"
+
+def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
+	let program = function.body
+	let has_strings = IR.function_has_strings(function)
+	var lines = [declaration(function, id, table) + " {\n"]
+	var has_scalars = false
+	for type in function.types
+		if type == IR.TYPE_I64 or type == IR.TYPE_BOOL
+			has_scalars = true
+	if has_scalars
+		lines = lines.append("uint64_t v[" + str(program.slots) + "]; (void)v;\n")
 	if has_strings
-		lines = lines.append("static void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
-	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\nint main(void) {\n")
-	lines = lines.append("uint64_t v[" + str(program.slots) + "];\n")
-	if has_strings
-		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0};\n")
-	if IR.has_optionals(program)
-		lines = lines.append("S_Optional_i64 o[" + str(program.slots) + "];\n")
+		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0}; (void)s;\n")
+	if IR.function_has_optionals(function, table)
+		lines = lines.append("S_Optional_i64 o[" + str(program.slots) + "]; (void)o;\n")
+	# Arguments are borrowed. Parameter slots retain their own references so all
+	# string slots follow the same overwrite/return cleanup rule.
+	for i in 0..len(function.parameters)
+		let type = function.parameters[!i]
+		if type == IR.TYPE_STRING
+			lines = lines.append("store_string(&" + string_slot(i) + ", s_string_retain(p" + str(i) + "));\n")
+		else
+			lines = lines.append(value_slot(i, type, table) + " = p" + str(i) + ";\n")
 	lines = lines.append("goto L0;\n")
 	for index in 0..len(program.instructions)
 		let instruction = program.instructions[!index]
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.Call(dst, target, arguments)
+				var inputs = Array[string]()
+				for input in arguments
+					inputs = inputs.append(value_slot(input, function.types[!input], table))
+				let call = "f" + str(target) + "(" + ", ".join(inputs) + ")"
+				let type = function.types[!dst]
+				if type == IR.TYPE_STRING
+					lines = lines.append("store_string(&" + string_slot(dst) + ", " + call + ");\n")
+				else
+					lines = lines.append(value_slot(dst, type, table) + " = " + call + ";\n")
 			IR.OptionalUnwrap(dst, input)
 				let value = optional_slot(input)
 				lines = lines.append("if (!" + value + ".has_value) s_panic(\"missing optional value\");\n")
@@ -77,7 +123,7 @@ export def compile(source: string) -> Result
 					IR.OptionalInteger
 						let value = optional_slot(input)
 						# Some( plus a signed i64 and closing parenthesis fits 27 bytes.
-						lines = lines.append("if (" + value + ".has_value) { char text[32]; snprintf(text, sizeof text, \"Some(%\" PRId64 \")\", " + value + ".value); " + target + "s_string_from_utf8(text)); } else { " + target + "s_string_from_utf8(\"None\")); }\n")
+						lines = lines.append("if (" + value + ".has_value) { char text[" + str(OPTIONAL_FORMAT_BUFFER_SIZE) + "]; snprintf(text, sizeof text, \"Some(%\" PRId64 \")\", " + value + ".value); " + target + "s_string_from_utf8(text)); } else { " + target + "s_string_from_utf8(\"None\")); }\n")
 			IR.Output(input, type, stderr)
 				lines = lines.append(output(input, type, stderr))
 			IR.StringSlice(dst, input, start, end)
@@ -139,7 +185,7 @@ export def compile(source: string) -> Result
 				lines = lines.append(slot(dst) + " = " + slot(left) + " | " + slot(right) + ";\n")
 			(IR.ShiftLeft | IR.ShiftRight)(dst, left, right)
 				let count = slot(right)
-				lines = lines.append("if (" + count + " >= UINT64_C(64)) s_panic(\"shift count out of range\");\n")
+				lines = lines.append("if (" + count + " >= UINT64_C(" + str(IR.INTEGER_BITS) + ")) s_panic(\"shift count out of range\");\n")
 				var value = slot(left) + " << " + count
 				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.ShiftRight)
 					value = slot(left) + " >> " + count
@@ -147,11 +193,37 @@ export def compile(source: string) -> Result
 			IR.Copy(dst, input)
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Return(input)
+				var value = value_slot(input, function.result, table)
+				if function.result == IR.TYPE_STRING
+					value = "s_string_retain(" + value + ")"
+				lines = lines.append("{ " + c_type(function.result, table) + "result = " + value + ";\n")
 				if has_strings
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")
-				lines = lines.append("return (int)signed_value(" + slot(input) + ");\n")
+				lines = lines.append("return result; }\n")
 				fallthrough = false
 		if fallthrough
 			lines = lines.append("goto L" + str(index + 1) + ";\n")
 	lines = lines.append("}\n")
+	return "".join(lines)
+
+export def emit(module: IR.Module) -> Result
+	let error = IR.verify_module(module)
+	if error != ""
+		return Result("", error, module.line)
+	var lines = ["#include <stdint.h>\n#include <inttypes.h>\n#include <stdio.h>\n#include <string.h>\n#include \"sirius_runtime.h\"\n"]
+	var has_strings = false
+	for function in module.functions
+		if IR.function_has_strings(function)
+			has_strings = true
+	if has_strings
+		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
+	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")
+	for id in 0..len(module.functions)
+		lines = lines.append(declaration(module.functions[!id], id, module.type_table) + ";\n")
+	for id in 0..len(module.functions)
+		lines = lines.append(emit_function(module.functions[!id], id, module.type_table))
+	lines = lines.append("int main(void) { return (int)signed_value(f" + str(module.entry) + "()); }\n")
 	return Result("".join(lines), "", 0)
+
+export def compile(source: string) -> Result
+	return emit(Lower.lower(source))

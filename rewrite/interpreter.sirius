@@ -1,5 +1,7 @@
 import ir alias IR
 
+let EXIT_RUNTIME_ERROR = 1
+
 def output(value, stderr: bool) -> i64
 	if stderr
 		eprint(value)
@@ -28,31 +30,64 @@ def compare(left, right, op: string) -> bool
 		return left > right
 	return left >= right
 
-export def run(program: IR.Program) -> i64
-	let error = IR.verify(program)
-	if error != ""
-		eprint("ERROR " + str(program.line) + ": " + error)
-		return 1
+rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]])
+
+def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var slots = Array[i64]()
 	var strings = Array[string]()
 	var optionals = Array[Optional[i64]]()
-	for i in 0..program.slots
+	for i in 0..function.body.slots
 		slots = slots.append(0)
-	if IR.has_strings(program)
-		for i in 0..program.slots
+	if IR.function_has_strings(function)
+		for i in 0..function.body.slots
 			strings = strings.append("")
-	if IR.has_optionals(program)
-		for i in 0..program.slots
+	if IR.function_has_optionals(function, table)
+		for i in 0..function.body.slots
 			optionals = optionals.append("".byte_at(0))
+	return Frame(id, 0, -1, slots, strings, optionals)
+
+def execute(module: IR.Module) -> i64
+	let initial = empty_frame(module.functions[!module.entry], module.entry, module.type_table)
+	var slots = initial.slots
+	var strings = initial.strings
+	var optionals = initial.optionals
+	var function_id = module.entry
+	var program = module.functions[!function_id].body
+	var stack = Array[Frame]()
+	var depth = 0
 	var pc = 0
 	while pc < len(program.instructions)
 		let instruction = program.instructions[!pc]
 		var next = pc + 1
 		match instruction
+			IR.Call(dst, target, arguments)
+				let callee = module.functions[!target]
+				var frame = empty_frame(callee, target, module.type_table)
+				for i in 0..len(arguments)
+					let input = arguments[!i]
+					let type = callee.parameters[!i]
+					if type == IR.TYPE_STRING
+						frame.strings[!i] = strings[!input]
+					elif IR.is_optional(module.type_table, type)
+						frame.optionals[!i] = optionals[!input]
+					else
+						frame.slots[!i] = slots[!input]
+				let saved = Frame(function_id, next, dst, slots, strings, optionals)
+				if depth == len(stack)
+					stack = stack.append(saved)
+				else
+					stack[!depth] = saved
+				depth += 1
+				function_id = target
+				program = callee.body
+				slots = frame.slots
+				strings = frame.strings
+				optionals = frame.optionals
+				next = 0
 			IR.OptionalUnwrap(dst, input)
 				if not present(optionals[!input])
 					eprint("ERROR: missing optional value")
-					return 1
+					return EXIT_RUNTIME_ERROR
 				slots[!dst] = optionals[!input] or 0
 			IR.StringByteAt(dst, left, right)
 				optionals[!dst] = strings[!left].byte_at(slots[!right])
@@ -88,7 +123,7 @@ export def run(program: IR.Program) -> i64
 				let to = slots[!end]
 				if from < 0 or to < from or to > len(strings[!input])
 					eprint("ERROR: string slice out of bounds")
-					return 1
+					return EXIT_RUNTIME_ERROR
 				strings[!dst] = strings[!input].slice(from, to)
 			(IR.StringStarts | IR.StringEnds)(dst, left, right)
 				var result = false
@@ -149,10 +184,10 @@ export def run(program: IR.Program) -> i64
 				let denominator = slots[!right]
 				if denominator == 0
 					eprint("ERROR: division by zero")
-					return 1
-				if numerator == (-9223372036854775807 - 1) and denominator == -1
+					return EXIT_RUNTIME_ERROR
+				if numerator == (-IR.I64_MAX - 1) and denominator == -1
 					eprint("ERROR: integer overflow")
-					return 1
+					return EXIT_RUNTIME_ERROR
 				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.Divide)
 					slots[!dst] = numerator / denominator
 				else
@@ -163,9 +198,9 @@ export def run(program: IR.Program) -> i64
 				slots[!dst] = slots[!left] | slots[!right]
 			(IR.ShiftLeft | IR.ShiftRight)(dst, left, right)
 				let count = slots[!right]
-				if count < 0 or count >= 64
+				if count < 0 or count >= IR.INTEGER_BITS
 					eprint("ERROR: shift count out of range")
-					return 1
+					return EXIT_RUNTIME_ERROR
 				if IR.Instruction.index(instruction) == IR.Instruction.index(IR.ShiftLeft)
 					slots[!dst] = slots[!left] << count
 				else
@@ -173,6 +208,47 @@ export def run(program: IR.Program) -> i64
 			IR.Copy(dst, input)
 				slots[!dst] = slots[!input]
 			IR.Return(input)
-				return slots[!input]
+				if depth == 0
+					return slots[!input]
+				let type = module.functions[!function_id].result
+				var scalar = 0
+				var text = ""
+				var optional = "".byte_at(0)
+				if type == IR.TYPE_STRING
+					text = strings[!input]
+				elif IR.is_optional(module.type_table, type)
+					optional = optionals[!input]
+				else
+					scalar = slots[!input]
+				depth -= 1
+				let saved = stack[!depth]
+				stack[!depth] = Frame(-1, 0, -1, [], [], [])
+				function_id = saved.function
+				program = module.functions[!function_id].body
+				slots = saved.slots
+				strings = saved.strings
+				optionals = saved.optionals
+				if type == IR.TYPE_STRING
+					strings[!saved.dst] = text
+				elif IR.is_optional(module.type_table, type)
+					optionals[!saved.dst] = optional
+				else
+					slots[!saved.dst] = scalar
+				next = saved.pc
 		pc = next
-	return 1
+	return EXIT_RUNTIME_ERROR
+
+export def run_module(module: IR.Module) -> i64
+	let error = IR.verify_module(module)
+	if error != ""
+		eprint("ERROR " + str(module.line) + ": " + error)
+		return EXIT_RUNTIME_ERROR
+	return execute(module)
+
+# Keep the storage-verifier fixtures independent of source-level type metadata.
+export def run(program: IR.Program) -> i64
+	let error = IR.verify(program)
+	if error != ""
+		eprint("ERROR " + str(program.line) + ": " + error)
+		return EXIT_RUNTIME_ERROR
+	return execute(IR.Module([IR.Function("main", program, [], IR.TYPE_I64, [])], 0, IR.runtime_types(), "", 0))

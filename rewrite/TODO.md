@@ -6,10 +6,13 @@ dependencies. Python handles test/build orchestration only.
 
 ## Baseline and completion criteria
 
-Today the original compiler builds the rewrite. The rewrite accepts one
-`main() -> i64`, scalar/string expressions, `Optional[i64]`, interpolation and
-local control flow. Its flat verified IR has no user-defined functions,
-aggregate storage or module loader. See [README.md](README.md) for the subset;
+Today the original compiler builds the rewrite. The executable subset accepts
+typed functions with one `main() -> i64`, scalar/string expressions,
+`Optional[i64]`, interpolation and local control flow. Forward and mutually
+recursive calls execute natively and through explicit interpreter frames.
+Per-function flat IR carries checked types and call targets; the verifier checks
+all bodies, including unused functions. Aggregate storage and a module loader
+remain unimplemented. See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
 
@@ -29,16 +32,35 @@ Self-compilation is complete when:
 
 ### 1. Functions and a shared type model
 
-- [ ] Parse multiple declarations and function bodies; collect signatures before
-  checking bodies so forward calls and mutual recursion work.
-- [ ] Introduce canonical type IDs for scalars and composed types. Carry checked
+- [x] Parse multiple declarations and function bodies; collect signatures before
+  checking bodies so forward calls and mutual recursion type-check. Checked calls
+  carry resolved function IDs, and signatures carry the existing scalar type IDs.
+  Covered natively and through MIR by `test_rewrite_frontend.py`.
+- [x] Introduce canonical type IDs for scalars and composed types. Carry checked
   types, resolved names and call targets into per-function IR; do not recover
-  types from syntax during C emission.
-- [ ] Add typed parameters, results, direct calls and per-call interpreter frames.
+  types from syntax during C emission. `IR.TypeTable` interns `Optional` descriptors
+  by payload type ID, including nested types; three scalar IDs are reserved.
+  The checker and both IR consumers share the table. Noncanonical caches,
+  duplicate descriptors and invalid/cyclic payload links fail verification.
+  `test_rewrite_types.py` covers interning, table snapshots and different optional
+  IDs across native/MIR execution and C emission, with ARC checks. Runtime values
+  still require `i64` optional payloads; aggregate descriptors will accompany
+  milestone 2, and broader optional payload execution remains in milestone 3.
+- [x] Add typed parameters, results, direct calls and per-call interpreter frames.
   Preserve source-order argument evaluation and verify each function's inputs,
   returns, control flow and slot types.
-- [ ] Define argument borrowing, owned results and cleanup on every return,
+- [x] Define argument borrowing, owned results and cleanup on every return,
   initially for strings. Generate C declarations before function definitions.
+
+`test_rewrite_functions.py` covers recursive and mutually recursive scalar/string
+calls, mixed argument types, source order, lazy defaults, early exits, string
+snapshots, invalid calls, missing returns and callee traps. Generated programs
+run with ARC auditing; direct IR tests also audit interpreter string frames.
+The pre-call compiler baseline already fails ARC credit checks when linked to an
+audited runtime: C emission fails even for `return 0`, and `--run` fails for
+`print("ok")`. Full compiler-process auditing remains a blocker for the stage 7
+audited bootstrap checks; these failures are separate from generated-program
+ownership and direct interpreter-frame auditing.
 
 Exit check: recursive and mutually recursive scalar/string functions run natively
 and through the rewrite interpreter; wrong arity/types and missing returns fail.

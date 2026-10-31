@@ -1,3 +1,93 @@
+# A type ID is an index in a canonical table, not an encoded type kind.
+export enum TypeKind
+	I64
+	Bool
+	String
+	Optional
+
+export let NO_TYPE = -1
+export let TYPE_I64 = 0
+export let TYPE_BOOL = 1
+export let TYPE_STRING = 2
+let PRIMITIVE_TYPE_COUNT = 3
+
+export rec TypeDescriptor(kind: TypeKind, payload: i64)
+export rec TypeTable(entries: Array[TypeDescriptor], optionals: Dict[i64, i64])
+export rec InternedType(table: TypeTable, id: i64)
+
+export def initial_types() -> TypeTable
+	return TypeTable([TypeDescriptor(TypeKind.I64(I64()), NO_TYPE), TypeDescriptor(TypeKind.Bool(Bool()), NO_TYPE), TypeDescriptor(TypeKind.String(String()), NO_TYPE)], Dict[i64, i64]())
+
+export def valid_type(table: TypeTable, id: i64) -> bool
+	return id >= 0 and id < len(table.entries)
+
+export def has_kind(table: TypeTable, id: i64, kind: TypeKind) -> bool
+	return valid_type(table, id) and table.entries[!id].kind == kind
+
+export def is_optional(table: TypeTable, id: i64) -> bool
+	return has_kind(table, id, TypeKind.Optional(Optional()))
+
+export def optional_payload(table: TypeTable, id: i64) -> i64
+	if not is_optional(table, id)
+		return NO_TYPE
+	return table.entries[!id].payload
+
+export def find_optional(table: TypeTable, payload: i64) -> i64
+	return table.optionals.get(payload) or NO_TYPE
+
+export def intern_optional(table: TypeTable, payload: i64) -> InternedType
+	if not valid_type(table, payload)
+		return InternedType(table, NO_TYPE)
+	let existing = find_optional(table, payload)
+	if existing != NO_TYPE
+		return InternedType(table, existing)
+	var result = table
+	let id = len(result.entries)
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload))
+	result.optionals = result.optionals.insert(payload, id)
+	return InternedType(result, id)
+
+# The current string lookup instructions require this type even without an
+# Optional annotation. Its ID is obtained by interning, never from TypeKind.
+export def runtime_types() -> TypeTable
+	return intern_optional(initial_types(), TYPE_I64).table
+
+export def verify_types(table: TypeTable) -> string
+	if len(table.entries) < PRIMITIVE_TYPE_COUNT
+		return "missing primitive types"
+	let primitives = initial_types()
+	for id in 0..PRIMITIVE_TYPE_COUNT
+		if table.entries[!id] != primitives.entries[!id]
+			return "invalid primitive descriptor"
+	if len(table.optionals) != len(table.entries) - PRIMITIVE_TYPE_COUNT
+		return "invalid optional type cache"
+	for id in PRIMITIVE_TYPE_COUNT..len(table.entries)
+		let descriptor = table.entries[!id]
+		if not is_optional(table, id)
+			return "duplicate primitive type"
+		# Interning children first makes the graph acyclic, including nested
+		# optionals. Requiring the unique cache entry also rejects duplicates.
+		if descriptor.payload < 0 or descriptor.payload >= id
+			return "invalid optional payload type"
+		if find_optional(table, descriptor.payload) != id
+			return "noncanonical optional type"
+	return ""
+
+export def runtime_type(table: TypeTable, id: i64) -> bool
+	if not valid_type(table, id)
+		return false
+	match table.entries[!id].kind
+		I64 | Bool | String
+			return true
+		Optional
+			return optional_payload(table, id) == TYPE_I64
+
+export let INTEGER_BITS = 64
+export let I64_MAX = 9223372036854775807
+let FIRST_INPUT_MASK = 1
+let FIRST_TWO_INPUTS_MASK = 3
+let FIXED_INPUT_COUNT = 3
+
 # Scalar slots hold i64 values or normalized booleans (0/1).
 export rec Constant(dst: i64, value: i64)
 export rec Negate(dst: i64, input: i64)
@@ -21,6 +111,7 @@ export let FormatType = Integer | Boolean | OptionalInteger
 
 export rec Output(input: i64, type: OutputType, stderr: bool)
 export rec Return(input: i64)
+export rec Call(dst: i64, function: i64, arguments: Array[i64])
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
 # Copy the left value on both edges; skip the right operand when it decides.
@@ -42,8 +133,22 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Always initializes the scalar destination; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
+export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
+export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
+
+export def function_has_strings(function: Function) -> bool
+	for type in function.types
+		if type == TYPE_STRING
+			return true
+	return has_strings(function.body)
+
+export def function_has_optionals(function: Function, table: TypeTable) -> bool
+	for type in function.types
+		if is_optional(table, type)
+			return true
+	return has_optionals(function.body)
 
 export def has_strings(program: Program) -> bool
 	# Verified string inputs originate in literals or formatting.
@@ -58,18 +163,33 @@ export def has_optionals(program: Program) -> bool
 			return true
 	return false
 
-# Storage kinds: 1 scalar, 2 string, 3 Optional[i64]. Input masks mark operands.
-rec Flow(dst: i64, first: i64, second: i64, third: i64, next: i64, other: i64, kind: i64, strings: i64, optionals: i64)
+enum StorageKind
+	Uninitialized
+	Scalar
+	StringReference
+	OptionalValue
+
+rec Flow(dst: i64, inputs: Array[i64], types: Array[i64], next: i64, other: i64, type: i64)
+
+def storage(table: TypeTable, type: i64) -> StorageKind
+	if type == TYPE_STRING
+		return StringReference()
+	if is_optional(table, type)
+		return OptionalValue()
+	return Scalar()
 
 def in_bounds(slot: i64, count: i64) -> bool
 	return slot >= 0 and slot < count
 
 def initialized(facts: Array[i64], slot: i64) -> bool
-	return (facts[!(slot / 64)] & (1 << (slot % 64))) != 0
+	return (facts[!(slot / INTEGER_BITS)] & (1 << (slot % INTEGER_BITS))) != 0
 
 # Reachable predecessors contribute definite initialization by intersection.
 # A worklist revisits joins when a loop or a later predecessor removes a fact.
 export def verify(program: Program) -> string
+	return verify_body(program, [], [], TYPE_I64, [], runtime_types())
+
+def verify_body(program: Program, types: Array[i64], parameters: Array[i64], result: i64, functions: Array[Function], table: TypeTable) -> string
 	if program.error != ""
 		return program.error
 	if program.slots < 0
@@ -80,6 +200,11 @@ export def verify(program: Program) -> string
 	var flows = Array[Flow]()
 	var returned = false
 	var has_control = false
+	let integer = TYPE_I64
+	let boolean = TYPE_BOOL
+	let text = TYPE_STRING
+	let optional = find_optional(table, TYPE_I64)
+	let typed = len(types) != 0
 	for i in 0..count
 		var dst = -1
 		var first = -1
@@ -88,18 +213,34 @@ export def verify(program: Program) -> string
 		var next = i + 1
 		var other = -1
 		var writes = false
-		var kind = 1
 		var strings = 0
 		var optionals = 0
+		var inputs = Array[i64]()
+		var input_types = Array[i64]()
+		var output_type = integer
 		let instruction = program.instructions[!i]
 		match instruction
+			Call(target, function, arguments)
+				if not in_bounds(function, len(functions))
+					return "invalid call target"
+				let callee = functions[!function]
+				if len(arguments) != len(callee.parameters)
+					return "argument count mismatch"
+				dst = target
+				writes = true
+				output_type = callee.result
+				inputs = arguments
+				input_types = callee.parameters
+				for input in inputs
+					if not in_bounds(input, program.slots)
+						return "undefined input slot"
 			StringFormat(target, input, type)
 				dst = target
 				first = input
 				writes = true
-				kind = 2
+				output_type = text
 				if type == FormatType.OptionalInteger(OptionalInteger())
-					optionals = 1
+					optionals = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			(StringByteAt | StringFind)(target, left, right)
@@ -107,20 +248,20 @@ export def verify(program: Program) -> string
 				first = left
 				second = right
 				writes = true
-				kind = 3
-				strings = 1
+				output_type = optional
+				strings = FIRST_INPUT_MASK
 				if Instruction.index(instruction) == Instruction.index(StringFind)
-					strings = 3
+					strings = FIRST_TWO_INPUTS_MASK
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
 			(OptionalCopy | OptionalUnwrap)(target, input)
 				dst = target
 				first = input
 				writes = true
-				kind = 3
+				output_type = optional
 				if Instruction.index(instruction) == Instruction.index(OptionalUnwrap)
-					kind = 1
-				optionals = 1
+					output_type = integer
+				optionals = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			OptionalDefault(target_slot, input, target)
@@ -129,7 +270,7 @@ export def verify(program: Program) -> string
 				writes = true
 				first = input
 				other = target
-				optionals = 1
+				optionals = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 				if not in_bounds(target, count)
@@ -140,14 +281,14 @@ export def verify(program: Program) -> string
 				second = start
 				third = end
 				writes = true
-				kind = 2
-				strings = 1
+				output_type = text
+				strings = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots) or not in_bounds(start, program.slots) or not in_bounds(end, program.slots)
 					return "undefined input slot"
 			StringConstant(target, value)
 				dst = target
 				writes = true
-				kind = 2
+				output_type = text
 			Constant(target, value)
 				dst = target
 				writes = true
@@ -156,10 +297,10 @@ export def verify(program: Program) -> string
 				first = input
 				writes = true
 				if Instruction.index(instruction) == Instruction.index(StringCopy)
-					kind = 2
-					strings = 1
+					output_type = text
+					strings = FIRST_INPUT_MASK
 				elif Instruction.index(instruction) == Instruction.index(StringLength)
-					strings = 1
+					strings = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			(Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | StringConcat | StringStarts | StringEnds)(target, left, right)
@@ -168,10 +309,10 @@ export def verify(program: Program) -> string
 				second = right
 				writes = true
 				if Instruction.index(instruction) == Instruction.index(StringConcat)
-					kind = 2
-					strings = 3
+					output_type = text
+					strings = FIRST_TWO_INPUTS_MASK
 				elif Instruction.index(instruction) == Instruction.index(StringStarts) or Instruction.index(instruction) == Instruction.index(StringEnds)
-					strings = 3
+					strings = FIRST_TWO_INPUTS_MASK
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
 			(Compare | StringCompare)(target, left, right, op)
@@ -180,7 +321,7 @@ export def verify(program: Program) -> string
 				second = right
 				writes = true
 				if Instruction.index(instruction) == Instruction.index(StringCompare)
-					strings = 3
+					strings = FIRST_TWO_INPUTS_MASK
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
 				if op != "==" and op != "!=" and op != "<" and op != "<=" and op != ">" and op != ">="
@@ -188,13 +329,17 @@ export def verify(program: Program) -> string
 			Output(input, type, stderr)
 				first = input
 				if type == OutputType.Text(Text())
-					strings = 1
+					strings = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			Return(input)
 				first = input
 				next = -1
 				returned = true
+				if result == text
+					strings = FIRST_INPUT_MASK
+				elif result == optional
+					optionals = FIRST_INPUT_MASK
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
 			Branch(input, target)
@@ -224,55 +369,108 @@ export def verify(program: Program) -> string
 				next = i + 1
 		if writes and not in_bounds(dst, program.slots)
 			return "invalid destination slot"
-		flows = flows.append(Flow(dst, first, second, third, next, other, kind, strings, optionals))
+		for operand in 0..FIXED_INPUT_COUNT
+			let input = [first, second, third][!operand]
+			if input < 0
+				continue
+			var type = integer
+			if (strings & (1 << operand)) != 0
+				type = text
+			elif (optionals & (1 << operand)) != 0
+				type = optional
+			inputs = inputs.append(input)
+			input_types = input_types.append(type)
+		# Preserve bool/i64 distinctions in typed functions; legacy Program tests
+		# retain their storage-only contract.
+		match instruction
+			Constant(target, value)
+				if typed
+					output_type = types[!target]
+					if output_type != integer and output_type != boolean
+						return "slot type mismatch"
+					if output_type == boolean and value != 0 and value != 1
+						return "invalid boolean constant"
+			Copy(target, input)
+				if typed
+					output_type = types[!target]
+					if output_type != integer and output_type != boolean
+						return "slot type mismatch"
+					input_types[!0] = output_type
+			Not
+				output_type = boolean
+				input_types[!0] = boolean
+			Compare(target, left, right, op)
+				output_type = boolean
+				if typed and types[!left] == boolean and (op == "==" or op == "!=")
+					input_types = [boolean, boolean]
+			StringCompare | StringStarts | StringEnds
+				output_type = boolean
+			Branch
+				input_types[!0] = boolean
+			ShortCircuit
+				output_type = boolean
+				input_types[!0] = boolean
+			Return
+				input_types[!0] = result
+			Output(input, type, stderr)
+				if type == OutputType.Boolean(Boolean())
+					input_types[!0] = boolean
+			StringFormat(target, input, type)
+				if type == FormatType.Boolean(Boolean())
+					input_types[!0] = boolean
+			Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+				if not runtime_type(table, output_type)
+					return "invalid instruction type"
+		if typed
+			if dst >= 0 and types[!dst] != output_type
+				return "slot type mismatch"
+			for operand in 0..len(inputs)
+				if types[!inputs[!operand]] != input_types[!operand]
+					return "slot type mismatch"
+		flows = flows.append(Flow(dst, inputs, input_types, next, other, output_type))
 	if not returned
 		return "missing return"
 	# Each slot has one storage kind, independent of control-flow reachability.
-	var kinds = Array[i64]()
+	let uninitialized: StorageKind = Uninitialized()
+	var kinds = Array[StorageKind]()
 	for i in 0..program.slots
-		kinds = kinds.append(0)
+		kinds = kinds.append(uninitialized)
+	for i in 0..len(parameters)
+		kinds[!i] = storage(table, parameters[!i])
 	for flow in flows
 		if flow.dst >= 0
-			if kinds[!flow.dst] != 0 and kinds[!flow.dst] != flow.kind
+			if kinds[!flow.dst] != uninitialized and kinds[!flow.dst] != storage(table, flow.type)
 				return "slot type mismatch"
-			kinds[!flow.dst] = flow.kind
+			kinds[!flow.dst] = storage(table, flow.type)
 	for flow in flows
-		for operand in 0..3
-			var input = flow.first
-			if operand == 1
-				input = flow.second
-			elif operand == 2
-				input = flow.third
-			if input < 0
-				continue
-			var expected = 1
-			if (flow.strings & (1 << operand)) != 0
-				expected = 2
-			elif (flow.optionals & (1 << operand)) != 0
-				expected = 3
-			if kinds[!input] == 0
+		for operand in 0..len(flow.inputs)
+			let input = flow.inputs[!operand]
+			let expected = storage(table, flow.types[!operand])
+			if kinds[!input] == uninitialized
 				return "undefined input slot"
 			if kinds[!input] != expected
 				return "slot type mismatch"
 	# One word holds 64 facts, including bit 63 in the signed i64 sign bit.
-	var words = program.slots / 64
-	if program.slots % 64 != 0
+	var words = program.slots / INTEGER_BITS
+	if program.slots % INTEGER_BITS != 0
 		words += 1
 	var blank = Array[i64]()
 	for i in 0..words
 		blank = blank.append(0)
+	for i in 0..len(parameters)
+		blank[!(i / INTEGER_BITS)] = blank[!(i / INTEGER_BITS)] | (1 << (i % INTEGER_BITS))
 	# Straight-line code has one predecessor per instruction; no matrix needed.
 	if not has_control
 		var finished = false
 		for flow in flows
 			if finished
 				return "unreachable instruction"
-			for input in [flow.first, flow.second, flow.third]
+			for input in flow.inputs
 				if input >= 0 and not initialized(blank, input)
 					return "undefined input slot"
 			if flow.dst >= 0
-				let word = flow.dst / 64
-				blank[!word] = blank[!word] | (1 << (flow.dst % 64))
+				let word = flow.dst / INTEGER_BITS
+				blank[!word] = blank[!word] | (1 << (flow.dst % INTEGER_BITS))
 			finished = flow.next < 0
 		return ""
 	var incoming = Array[Array[i64]]()
@@ -289,8 +487,8 @@ export def verify(program: Program) -> string
 		let flow = flows[!index]
 		var outgoing = incoming[!index]
 		if flow.dst >= 0
-			let word = flow.dst / 64
-			outgoing[!word] = outgoing[!word] | (1 << (flow.dst % 64))
+			let word = flow.dst / INTEGER_BITS
+			outgoing[!word] = outgoing[!word] | (1 << (flow.dst % INTEGER_BITS))
 		for successor in [flow.next, flow.other]
 			if successor < 0
 				continue
@@ -314,7 +512,7 @@ export def verify(program: Program) -> string
 		if not reached[!i]
 			return "unreachable instruction"
 		let flow = flows[!i]
-		for input in [flow.first, flow.second, flow.third]
+		for input in flow.inputs
 			if input >= 0 and not initialized(incoming[!i], input)
 				return "undefined input slot"
 	return ""
@@ -355,7 +553,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -384,6 +582,120 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
+
+export def verify_module(module: Module) -> string
+	if module.error != ""
+		return module.error
+	let type_error = verify_types(module.type_table)
+	if type_error != ""
+		return type_error
+	if not in_bounds(module.entry, len(module.functions))
+		return "invalid entry function"
+	let entry = module.functions[!module.entry]
+	if len(entry.parameters) != 0 or entry.result != TYPE_I64
+		return "invalid entry signature"
+	# Validate all signatures before inspecting recursive calls.
+	for function in module.functions
+		if not valid_type(module.type_table, function.result)
+			return "invalid result type"
+		if not runtime_type(module.type_table, function.result)
+			return "unsupported optional payload"
+		if len(function.types) != function.body.slots or len(function.parameters) > function.body.slots
+			return "invalid function slots"
+		for i in 0..len(function.parameters)
+			let type = function.parameters[!i]
+			if not valid_type(module.type_table, type) or function.types[!i] != type
+				return "invalid parameter type"
+			if not runtime_type(module.type_table, type)
+				return "unsupported optional payload"
+		for type in function.types
+			if type != NO_TYPE and not valid_type(module.type_table, type)
+				return "invalid slot type"
+			if type != NO_TYPE and not runtime_type(module.type_table, type)
+				return "unsupported optional payload"
+	for function in module.functions
+		let error = verify_body(function.body, function.types, function.parameters, function.result, module.functions, module.type_table)
+		if error != ""
+			return function.name + ": " + error
+	return ""
+
+# Lowering initially uses arena IDs for both slots and instruction positions.
+# Convert each function's interval to local IDs before pruning its control flow.
+export def rebase(instruction: Instruction, base: i64) -> Instruction
+	match instruction
+		Call(dst, function, arguments)
+			var inputs = Array[i64]()
+			for input in arguments
+				inputs = inputs.append(input - base)
+			return Call(dst - base, function, inputs)
+		Constant(dst, value)
+			return Constant(dst - base, value)
+		StringConstant(dst, value)
+			return StringConstant(dst - base, value)
+		Negate(dst, input)
+			return Negate(dst - base, input - base)
+		Not(dst, input)
+			return Not(dst - base, input - base)
+		Copy(dst, input)
+			return Copy(dst - base, input - base)
+		StringCopy(dst, input)
+			return StringCopy(dst - base, input - base)
+		OptionalCopy(dst, input)
+			return OptionalCopy(dst - base, input - base)
+		OptionalUnwrap(dst, input)
+			return OptionalUnwrap(dst - base, input - base)
+		StringLength(dst, input)
+			return StringLength(dst - base, input - base)
+		Add(dst, left, right)
+			return Add(dst - base, left - base, right - base)
+		Subtract(dst, left, right)
+			return Subtract(dst - base, left - base, right - base)
+		Multiply(dst, left, right)
+			return Multiply(dst - base, left - base, right - base)
+		Divide(dst, left, right)
+			return Divide(dst - base, left - base, right - base)
+		Remainder(dst, left, right)
+			return Remainder(dst - base, left - base, right - base)
+		BitAnd(dst, left, right)
+			return BitAnd(dst - base, left - base, right - base)
+		BitOr(dst, left, right)
+			return BitOr(dst - base, left - base, right - base)
+		ShiftLeft(dst, left, right)
+			return ShiftLeft(dst - base, left - base, right - base)
+		ShiftRight(dst, left, right)
+			return ShiftRight(dst - base, left - base, right - base)
+		StringConcat(dst, left, right)
+			return StringConcat(dst - base, left - base, right - base)
+		StringStarts(dst, left, right)
+			return StringStarts(dst - base, left - base, right - base)
+		StringEnds(dst, left, right)
+			return StringEnds(dst - base, left - base, right - base)
+		StringByteAt(dst, left, right)
+			return StringByteAt(dst - base, left - base, right - base)
+		StringFind(dst, left, right)
+			return StringFind(dst - base, left - base, right - base)
+		Compare(dst, left, right, op)
+			return Compare(dst - base, left - base, right - base, op)
+		StringCompare(dst, left, right, op)
+			return StringCompare(dst - base, left - base, right - base, op)
+		StringSlice(dst, input, start, end)
+			return StringSlice(dst - base, input - base, start - base, end - base)
+		StringFormat(dst, input, type)
+			return StringFormat(dst - base, input - base, type)
+		Output(input, type, stderr)
+			return Output(input - base, type, stderr)
+		Return(input)
+			return Return(input - base)
+		Branch(input, target)
+			return Branch(input - base, target - base)
+		Jump(target)
+			return Jump(target - base)
+		ShortCircuit(dst, input, target, when_true)
+			return ShortCircuit(dst - base, input - base, target - base, when_true)
+		OptionalDefault(dst, input, target)
+			return OptionalDefault(dst - base, input - base, target - base)
+		Nop
+			return Nop()

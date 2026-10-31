@@ -11,19 +11,52 @@ byte offsets. Test with `python rewrite/test_rewrite_lexer.py`.
 For paired native lexer timings run `python tools/benchmark_rewrite_lexer.py`;
 this does not measure end-to-end compilation.
 
-The current compiler accepts one `def main() -> i64` containing integer
+The current compiler requires one entry `def main() -> i64`. Function bodies accept integer
 expressions (`+`, `-`, `*`, `/`, `%`, `&`, `|`, `<<`, `>>`, unary `-`, and parentheses), `let` and `var`
 bindings, assignments (`=`, `+=`, `-=`, `*=`, `/=`), integer `print`,
 `if`/`elif`/`else`, `while`, early `return`,
 `break`, `continue`, `condition else return value` (also `break`/`continue`),
 and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
+
+The compiler supports multiple functions with annotated parameters
+and results (`i64`, `bool`, `string`, `Optional[i64]`). It collects all signatures
+before checking bodies, so direct calls, forward calls and mutual recursion work
+natively and through `--run`. Parameters are immutable locals; functions have
+separate scopes and typed slot storage. Checked calls retain resolved function
+IDs and result types. The verifier checks call signatures, returns and definite
+initialization in every function, including unused helpers. Arguments evaluate
+once in source order. C declarations precede definitions; string arguments are
+borrowed, parameter slots retain their own references, and returned strings own
+a reference retained before local cleanup. Call results transfer that ownership
+to the caller. The interpreter saves explicit frames, rather than recursing on
+its host call stack. Duplicate declarations, invalid arguments and mismatched
+returns fail during checking.
+`main` must remain `main() -> i64`; definitions of the builtins `len`, `str`,
+`print` and `eprint` are reserved. Calls are currently expressions; standalone
+call statements are not yet supported. Checked IR carries a shared `IR.TypeTable`:
+type IDs index canonical descriptors, and an `Optional` descriptor contains its
+payload type ID. Interning reuses equivalent types, including nested optionals;
+there is no separate `OptionalI64` kind or optional bit in a type ID. Verification
+checks descriptor/cache consistency and rejects invalid or cyclic payload links.
+Both backends consult descriptors to select optional storage. The table can
+represent optional booleans, strings and nested optionals, but their source
+syntax, operations and runtime layouts remain unimplemented; executable optional
+values still require `i64` payloads. Aggregate descriptors will accompany their
+language support.
+Run `python rewrite/test_rewrite_frontend.py` and
+`python rewrite/test_rewrite_functions.py` from the repository root for checking,
+native/interpreted execution, string snapshots and ARC coverage.
+`python rewrite/test_rewrite_types.py` covers canonicalization, malformed tables,
+type-table snapshots and optional IDs that differ from the default table,
+including native/interpreted execution, C emission and ARC auditing.
+
 Ranges are ascending and
 half-open and bind an immutable local `i`. Bound expressions are evaluated
 before iteration; for compatibility with the existing compiler, a bare mutable
 upper-bound name remains live (use `end + 0` to snapshot its value).
 `continue` advances the range counter before retesting. Every reachable exit
-path must return an integer.
+path must return a value matching the function's declared result.
 String literals, `string` annotations, bindings, assignment, `+`/`+=`,
 comparisons, `len(string)` (UTF-8 byte length), and printing are supported.
 `str` formats integers (including minimum `i64`), booleans (`true`/`false`),

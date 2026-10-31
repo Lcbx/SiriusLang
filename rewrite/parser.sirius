@@ -1,5 +1,15 @@
 import lexer alias Lex
 
+let PREC_NONE = 0
+let PREC_OR = 1
+let PREC_AND = 2
+let PREC_BIT_OR = 3
+let PREC_COMPARE = 4
+let PREC_SHIFT = 5
+let PREC_ADD = 6
+let PREC_MULTIPLY = 7
+let PREC_UNARY = 8
+
 # Flat expression arena: logical starts precede their conditional right operand.
 export enum NodeKind
 	IntegerLiteral
@@ -51,9 +61,13 @@ export enum NodeKind
 	RangeCondition
 	RangeStep
 	One
+	Parameter
+	Argument
+	Call
 
 export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], index: i64, error: string, error_line: i64)
+export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64, end: i64)
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -105,20 +119,20 @@ def node(p: State, kind: NodeKind, left: i64, right: i64, token: i64) -> Parsed
 
 def precedence(op: string) -> i64
 	if op == "or"
-		return 1
+		return PREC_OR
 	if op == "and"
-		return 2
+		return PREC_AND
 	if op == "|"
-		return 3
+		return PREC_BIT_OR
 	if op == "&" or op == "==" or op == "!=" or op == "<" or op == "<=" or op == ">" or op == ">="
-		return 4
+		return PREC_COMPARE
 	if op == "+" or op == "-"
-		return 6
+		return PREC_ADD
 	if op == "*" or op == "/" or op == "%"
-		return 7
+		return PREC_MULTIPLY
 	if op == "<<" or op == ">>"
-		return 5
-	return 0
+		return PREC_SHIFT
+	return PREC_NONE
 
 def interpolated(p: State) -> Parsed
 	let token_id = p.index
@@ -130,10 +144,10 @@ def interpolated(p: State) -> Parsed
 	var result = -1
 	while pos < token.end - 1
 		let byte = p.source.byte_at(pos) or 0
-		if byte == 92 # escaped characters, including \${
+		if byte == Lex.ASCII_BACKSLASH # escaped characters, including \${
 			pos += 2
 			continue
-		if byte != 36 or (p.source.byte_at(pos + 1) or 0) != 123
+		if byte != Lex.ASCII_DOLLAR or (p.source.byte_at(pos + 1) or 0) != Lex.ASCII_OPEN_BRACE
 			pos += 1
 			continue
 		let literal = node(state, StringPart(), start, pos, token_id)
@@ -158,7 +172,7 @@ def interpolated(p: State) -> Parsed
 			let offset = pos + 1 + part.start
 			state.tokens = state.tokens.append(Lex.Token(part.kind, offset, pos + 1 + part.end, token.line, token.column + offset - token.start))
 		state.index = first
-		let value = expression(state, 1)
+		let value = expression(state, PREC_OR)
 		# The wrapper's final ')' maps to the source interpolation's '}'.
 		state = expect(value.state, "}")
 		let formatted = node(state, StringConvert(), value.node, -1, token_id)
@@ -187,14 +201,14 @@ def expression(p: State, minimum: i64) -> Parsed
 	if text(next) == "-" or text(next) == "not"
 		let logical = text(next) == "not"
 		next.index += 1
-		let operand = expression(next, 8)
+		let operand = expression(next, PREC_UNARY)
 		var kind: NodeKind = Negate()
 		if logical
 			kind = NodeKind.Not(Not())
 		result = node(operand.state, kind, operand.node, -1, token)
 	elif text(next) == "("
 		next.index += 1
-		let inside = expression(next, 1)
+		let inside = expression(next, PREC_OR)
 		result = Parsed(expect(inside.state, ")"), inside.node)
 	elif text(next) == "true" or text(next) == "false"
 		next.index += 1
@@ -210,14 +224,31 @@ def expression(p: State, minimum: i64) -> Parsed
 			kind = NodeKind.StringConvert(StringConvert())
 		next.index += 1
 		next = expect(next, "(")
-		let value = expression(next, 1)
+		let value = expression(next, PREC_OR)
 		result = node(expect(value.state, ")"), kind, value.node, -1, token)
 	elif current(next).kind == Lex.TokenKind.index(Lex.Integer)
 		next.index += 1
 		result = node(next, IntegerLiteral(), -1, -1, token)
 	elif current(next).kind == Lex.TokenKind.index(Lex.Name)
 		next.index += 1
-		result = node(next, Variable(), -1, -1, token)
+		if text(next) == "("
+			next.index += 1
+			var arguments = -1
+			var count = 0
+			while next.error == "" and text(next) != ")"
+				let value = expression(next, PREC_OR)
+				let argument = node(value.state, Argument(), value.node, arguments, token)
+				next = argument.state
+				arguments = argument.node
+				count += 1
+				if text(next) != ","
+					break
+				next.index += 1
+				if text(next) == ")"
+					next = fail(next, "expected argument after comma")
+			result = node(expect(next, ")"), Call(), arguments, count, token)
+		else
+			result = node(next, Variable(), -1, -1, token)
 	else
 		return Parsed(fail(next, "expected integer expression"), -1)
 	while result.state.error == ""
@@ -237,10 +268,10 @@ def expression(p: State, minimum: i64) -> Parsed
 				return Parsed(fail(after, "unsupported string method"), -1)
 			after.index += 1
 			after = expect(after, "(")
-			let first = expression(after, 1)
+			let first = expression(after, PREC_OR)
 			if method == "slice"
 				after = expect(first.state, ",")
-				let last = expression(after, 1)
+				let last = expression(after, PREC_OR)
 				let bounds = node(expect(last.state, ")"), SliceBounds(), first.node, last.node, method_token)
 				result = node(bounds.state, StringSlice(), result.node, bounds.node, method_token)
 			else
@@ -301,6 +332,18 @@ def is_assignment(p: State) -> bool
 	let op = next_text(p)
 	return op == "=" or op == "+=" or op == "-=" or op == "*=" or op == "/="
 
+def annotation(p: State) -> State
+	var result = p
+	if text(result) == "Optional"
+		result.index += 1
+		result = expect(result, "[")
+		result = expect(result, "i64")
+		return expect(result, "]")
+	if text(result) != "i64" and text(result) != "bool" and text(result) != "string"
+		return fail(result, "expected i64, bool, string or Optional[i64]")
+	result.index += 1
+	return result
+
 def block(initial: State, loop_start: i64) -> State
 	var p = initial
 	p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
@@ -315,9 +358,9 @@ def block(initial: State, loop_start: i64) -> State
 			let name = p.index
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "loop binding")
 			p = expect(p, "in")
-			let lower = expression(p, 1)
+			let lower = expression(p, PREC_OR)
 			p = expect(lower.state, "..")
-			let upper = expression(p, 1)
+			let upper = expression(p, PREC_OR)
 			let binding = node(upper.state, RangeBinding(), lower.node, upper.node, name)
 			let one = node(binding.state, One(), -1, -1, token)
 			let compare = node(one.state, RangeCompare(), binding.node, upper.node, token)
@@ -343,7 +386,7 @@ def block(initial: State, loop_start: i64) -> State
 			if loop
 				p = node(p, LoopStart(), -1, -1, token).state
 			p.index += 1
-			let condition = expression(p, 1)
+			let condition = expression(p, PREC_OR)
 			var kind: NodeKind = If()
 			if loop
 				kind = NodeKind.While(While())
@@ -369,7 +412,7 @@ def block(initial: State, loop_start: i64) -> State
 				exits = exits.append(alternate)
 				p.index += 1
 				if not has_else
-					let condition = expression(p, 1)
+					let condition = expression(p, PREC_OR)
 					let next_branch = node(condition.state, If(), condition.node, -1, alternate_token)
 					p = next_branch.state
 					current_branch = next_branch.node
@@ -399,26 +442,18 @@ def block(initial: State, loop_start: i64) -> State
 			p.index += 1
 			let name = p.index
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "binding name")
-			var annotation = -1
+			var type_token = -1
 			if text(p) == ":"
 				p = expect(p, ":")
-				annotation = p.index
-				if text(p) == "Optional"
-					p.index += 1
-					p = expect(p, "[")
-					p = expect(p, "i64")
-					p = expect(p, "]")
-				elif text(p) != "i64" and text(p) != "bool" and text(p) != "string"
-					return fail(p, "expected i64, bool, string or Optional[i64]")
-				else
-					p.index += 1
+				type_token = p.index
+				p = annotation(p)
 			p = expect(p, "=")
-			var value = expression(p, 1)
+			var value = expression(p, PREC_OR)
 			if value.state.error == "" and text(value.state) == "else"
 				p = expect(value.state, "else")
 				p = expect(p, "return")
 				let start = node(p, OptionalExit(), value.node, -1, token)
-				let fallback = expression(start.state, 1)
+				let fallback = expression(start.state, PREC_OR)
 				p = node(fallback.state, Return(), fallback.node, -1, token).state
 				if p.error != ""
 					return p
@@ -427,19 +462,19 @@ def block(initial: State, loop_start: i64) -> State
 			var kind: NodeKind = Binding()
 			if mutable
 				kind = NodeKind.MutableBinding(MutableBinding())
-			p = node(value.state, kind, value.node, annotation, name).state
+			p = node(value.state, kind, value.node, type_token, name).state
 		elif (text(p) == "print" or text(p) == "eprint") and next_text(p) == "("
 			var kind: NodeKind = Print()
 			if text(p) == "eprint"
 				kind = NodeKind.Eprint(Eprint())
 			p.index += 1
 			p = expect(p, "(")
-			let value = expression(p, 1)
+			let value = expression(p, PREC_OR)
 			p = expect(value.state, ")")
 			p = node(p, kind, value.node, -1, token).state
 		elif text(p) == "return"
 			p = expect(p, "return")
-			let value = expression(p, 1)
+			let value = expression(p, PREC_OR)
 			p = node(value.state, Return(), value.node, -1, token).state
 			returned = true
 		elif text(p) == "break" or text(p) == "continue"
@@ -468,13 +503,13 @@ def block(initial: State, loop_start: i64) -> State
 				p = read.state
 				left = read.node
 			p.index += 1
-			var value = expression(p, 1)
+			var value = expression(p, PREC_OR)
 			if left >= 0
 				value = node(value.state, kind, left, value.node, operator_token)
 			p = node(value.state, Assign(), value.node, -1, token).state
 		else
 			# A guard is an if on the negated condition with one exit statement.
-			let condition = expression(p, 1)
+			let condition = expression(p, PREC_OR)
 			p = expect(condition.state, "else")
 			let negated = node(p, Not(), condition.node, -1, token)
 			let branch = node(negated.state, If(), negated.node, -1, token)
@@ -482,7 +517,7 @@ def block(initial: State, loop_start: i64) -> State
 			if text(p) == "return"
 				let exit_token = p.index
 				p.index += 1
-				let value = expression(p, 1)
+				let value = expression(p, PREC_OR)
 				p = node(value.state, Return(), value.node, -1, exit_token).state
 			elif text(p) == "break" or text(p) == "continue"
 				if loop_start < 0
@@ -507,19 +542,40 @@ def block(initial: State, loop_start: i64) -> State
 
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)
 			p.error_line = token.line
 			return p
-	p = expect(p, "def")
-	p = expect(p, "main")
-	p = expect(p, "(")
-	p = expect(p, ")")
-	p = expect(p, "->")
-	p = expect(p, "i64")
-	p = block(p, -1)
+	while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+		p = expect(p, "def")
+		let name = p.index
+		p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "function name")
+		p = expect(p, "(")
+		let start = len(p.nodes)
+		var parameters = Array[i64]()
+		while p.error == "" and text(p) != ")"
+			let parameter_name = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "parameter name")
+			p = expect(p, ":")
+			let type_token = p.index
+			p = annotation(p)
+			let parameter = node(p, Parameter(), -1, type_token, parameter_name)
+			p = parameter.state
+			parameters = parameters.append(parameter.node)
+			if text(p) != ","
+				break
+			p.index += 1
+			if text(p) == ")"
+				p = fail(p, "expected parameter after comma")
+		p = expect(p, ")")
+		p = expect(p, "->")
+		let result = p.index
+		p = annotation(p)
+		p = block(p, -1)
+		if p.error == ""
+			p.functions = p.functions.append(Function(name, parameters, result, start, len(p.nodes)))
 	return expect_kind(p, Lex.TokenKind.index(Lex.Eof), "end of file")
 
 

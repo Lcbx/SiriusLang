@@ -1,34 +1,106 @@
 import parser alias Parser
+import ir alias IR
 
-export enum ScalarType
-	Integer
-	Boolean
-	Text
-	OptionalInteger
-
-export rec Checked(parsed: Parser.State, references: Array[i64], types: Array[i64], error: string, line: i64)
+export rec Signature(name: string, parameters: Array[i64], result: i64)
+export rec Checked(parsed: Parser.State, type_table: IR.TypeTable, signatures: Array[Signature], references: Array[i64], types: Array[i64], error: string, line: i64)
 rec Binding(node: i64, mutable: bool, depth: i64)
 
 def name(parsed: Parser.State, token_id: i64) -> string
 	let token = parsed.tokens[!token_id]
 	return parsed.source.slice(token.start, token.end)
 
+# The parser accepts only these annotations. IDs are shared across signatures,
+# bindings and expressions; consumers need no annotation syntax lookup.
+def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable) -> i64
+	let annotation = name(parsed, token)
+	if annotation == "bool"
+		return IR.TYPE_BOOL
+	if annotation == "string"
+		return IR.TYPE_STRING
+	if annotation == "Optional"
+		return IR.find_optional(table, IR.TYPE_I64)
+	return IR.TYPE_I64
+
 export def check(parsed: Parser.State) -> Checked
+	let type_table = IR.runtime_types()
 	var references = Array[i64]()
 	var types = Array[i64]()
+	var signatures = Array[Signature]()
+	var functions = Dict[string, i64]()
+	if parsed.error != ""
+		return Checked(parsed, type_table, signatures, references, types, parsed.error, parsed.error_line)
+	# Collect every signature before checking any body, including recursive calls.
+	for function in parsed.functions
+		let target = name(parsed, function.token)
+		var error = ""
+		if (functions.get(target) or -1) >= 0
+			error = "duplicate function: " + target
+		elif target == "len" or target == "str" or target == "print" or target == "eprint"
+			error = "reserved builtin function: " + target
+		var parameters = Array[i64]()
+		for parameter in function.parameters
+			parameters = parameters.append(annotation_type(parsed, parsed.nodes[!parameter].right, type_table))
+		let result = annotation_type(parsed, function.result, type_table)
+		if target == "main" and (len(parameters) != 0 or result != IR.TYPE_I64)
+			error = "main must have signature main() -> i64"
+		if error != ""
+			return Checked(parsed, type_table, signatures, references, types, error, parsed.tokens[!function.token].line)
+		functions = functions.insert(target, len(signatures))
+		signatures = signatures.append(Signature(target, parameters, result))
+	if (functions.get("main") or -1) < 0
+		return Checked(parsed, type_table, signatures, references, types, "missing main function", 1)
 	var bindings = Dict[string, Binding]()
 	var scopes = Array[Dict[string, Binding]]()
 	var depth = 0
-	let integer = ScalarType.index(Integer)
-	let boolean = ScalarType.index(Boolean)
-	let text = ScalarType.index(Text)
-	let optional = ScalarType.index(OptionalInteger)
+	let integer = IR.TYPE_I64
+	let boolean = IR.TYPE_BOOL
+	let text = IR.TYPE_STRING
+	let optional = IR.find_optional(type_table, IR.TYPE_I64)
+	var function_id = 0
 	for i in 0..len(parsed.nodes)
+		while i >= parsed.functions[!function_id].end
+			function_id += 1
+		if i == parsed.functions[!function_id].start
+			bindings = Dict[string, Binding]()
+			scopes = Array[Dict[string, Binding]]()
+			depth = 0
 		let node = parsed.nodes[!i]
 		var reference = -1
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.Parameter
+				let target = name(parsed, node.token)
+				type = annotation_type(parsed, node.right, type_table)
+				if (bindings.get(target) or Binding(-1, false, -1)).node >= 0
+					error = "duplicate parameter: " + target
+				bindings = bindings.insert(target, Binding(i, false, depth))
+			Parser.Argument
+				type = types[!node.left]
+			Parser.Call
+				let target = name(parsed, node.token)
+				reference = functions.get(target) or -1
+				if (bindings.get(target) or Binding(-1, false, -1)).node >= 0
+					error = "local value is not callable: " + target
+				elif reference < 0
+					error = "unknown function: " + target
+				else
+					let signature = signatures[!reference]
+					type = signature.result
+					if node.right != len(signature.parameters)
+						error = "argument count mismatch: " + target
+					else
+						var argument = node.left
+						var parameter = node.right
+						while argument >= 0
+							parameter -= 1
+							if types[!argument] != signature.parameters[!parameter]
+								error = "argument type mismatch: " + target
+							argument = parsed.nodes[!argument].right
+			Parser.Return
+				type = signatures[!function_id].result
+				if types[!node.left] != type
+					error = "return type mismatch"
 			Parser.OptionalUnwrap | Parser.OptionalExit
 				type = integer
 				if types[!node.left] != optional
@@ -88,13 +160,7 @@ export def check(parsed: Parser.State) -> Checked
 					error = "duplicate binding: " + target
 				type = types[!node.left]
 				if node.right >= 0
-					var expected = integer
-					if name(parsed, node.right) == "bool"
-						expected = boolean
-					elif name(parsed, node.right) == "string"
-						expected = text
-					elif name(parsed, node.right) == "Optional"
-						expected = optional
+					let expected = annotation_type(parsed, node.right, type_table)
 					if type != expected
 						error = "binding type mismatch"
 				bindings = bindings.insert(target, Binding(i, Parser.kind_is(node.kind, Parser.MutableBinding()), depth))
@@ -156,14 +222,14 @@ export def check(parsed: Parser.State) -> Checked
 				let op = name(parsed, node.token)
 				if types[!node.left] == optional or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
 					error = "invalid comparison operands"
-			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight | Parser.Return
+			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight
 				type = integer
 				if types[!node.left] != integer
 					error = "expected i64 operand"
 				if node.right >= 0 and types[!node.right] != integer
 					error = "expected i64 operand"
 		if error != ""
-			return Checked(parsed, references, types, error, parsed.tokens[!node.token].line)
+			return Checked(parsed, type_table, signatures, references, types, error, parsed.tokens[!node.token].line)
 		references = references.append(reference)
 		types = types.append(type)
-	return Checked(parsed, references, types, "", 0)
+	return Checked(parsed, type_table, signatures, references, types, "", 0)

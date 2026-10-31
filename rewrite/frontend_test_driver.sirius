@@ -1,0 +1,22 @@
+import parser alias Parser
+import semantic alias Semantic
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 2
+		return 2
+	let source = read_text(args[!1]) else return 2
+	let checked = Semantic.check(Parser.parse(source))
+	if checked.error != ""
+		eprint("ERROR " + str(checked.line) + ": " + checked.error)
+		return 1
+	for signature in checked.signatures
+		var parameters = ""
+		for type in signature.parameters
+			parameters += " " + str(type)
+		print(signature.name + "(" + parameters + ") -> " + str(signature.result))
+	for i in 0..len(checked.parsed.nodes)
+		if Parser.kind_is(checked.parsed.nodes[!i].kind, Parser.Call())
+			let target = checked.signatures[!checked.references[!i]]
+			print("call " + target.name + " -> " + str(checked.types[!i]))
+	return 0

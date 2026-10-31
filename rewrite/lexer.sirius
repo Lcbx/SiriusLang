@@ -1,3 +1,48 @@
+export let ASCII_TAB = 9
+export let ASCII_LF = 10
+export let ASCII_CR = 13
+export let ASCII_SPACE = 32
+export let ASCII_BANG = 33
+export let ASCII_DOUBLE_QUOTE = 34
+export let ASCII_HASH = 35
+export let ASCII_DOLLAR = 36
+export let ASCII_PERCENT = 37
+export let ASCII_AMPERSAND = 38
+export let ASCII_SINGLE_QUOTE = 39
+export let ASCII_OPEN_PAREN = 40
+export let ASCII_CLOSE_PAREN = 41
+export let ASCII_STAR = 42
+export let ASCII_PLUS = 43
+export let ASCII_MINUS = 45
+export let ASCII_DOT = 46
+export let ASCII_SLASH = 47
+export let ASCII_ZERO = 48
+export let ASCII_NINE = 57
+export let ASCII_COLON = 58
+export let ASCII_LESS = 60
+export let ASCII_EQUAL = 61
+export let ASCII_GREATER = 62
+export let ASCII_QUESTION = 63
+export let ASCII_UPPER_A = 65
+export let ASCII_UPPER_E = 69
+export let ASCII_UPPER_Z = 90
+export let ASCII_OPEN_BRACKET = 91
+export let ASCII_BACKSLASH = 92
+export let ASCII_CLOSE_BRACKET = 93
+export let ASCII_CARET = 94
+export let ASCII_UNDERSCORE = 95
+export let ASCII_LOWER_A = 97
+export let ASCII_LOWER_E = 101
+export let ASCII_LOWER_F = 102
+export let ASCII_LOWER_N = 110
+export let ASCII_LOWER_R = 114
+export let ASCII_LOWER_T = 116
+export let ASCII_LOWER_Z = 122
+export let ASCII_OPEN_BRACE = 123
+export let ASCII_PIPE = 124
+export let ASCII_CLOSE_BRACE = 125
+export let ASCII_TILDE = 126
+
 # Byte-oriented lexer. Kinds are declaration-order indices, not wire codes.
 export enum TokenKind
 	Name
@@ -55,15 +100,15 @@ def byte(source: string, offset: i64) -> i64
 	return source.byte_at(offset) or -1 # -1 marks an out-of-range byte
 
 def digit(c: i64) -> bool
-	return c >= 48 and c <= 57 # 0-9
+	return c >= ASCII_ZERO and c <= ASCII_NINE # 0-9
 
 def letter(c: i64) -> bool
-	return (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95 # A-Z, a-z, _
+	return (c >= ASCII_UPPER_A and c <= ASCII_UPPER_Z) or (c >= ASCII_LOWER_A and c <= ASCII_LOWER_Z) or c == ASCII_UNDERSCORE # A-Z, a-z, _
 
 # Scan quoted values recursively so quotes/braces inside expressions do not
 # terminate the enclosing interpolation. Raw newlines remain invalid in strings.
 export def string_end(source: string, start: i64) -> i64
-	let formatted = byte(source, start) == 102 # f
+	let formatted = byte(source, start) == ASCII_LOWER_F # f
 	var quote_at = start
 	if formatted
 		quote_at += 1
@@ -71,16 +116,16 @@ export def string_end(source: string, start: i64) -> i64
 	var pos = quote_at + 1
 	while pos < len(source)
 		let c = byte(source, pos)
-		if c == 10 or c == 13
+		if c == ASCII_LF or c == ASCII_CR
 			return -1
 		if c == quote
 			return pos + 1
-		if c == 92
+		if c == ASCII_BACKSLASH
 			let escaped = byte(source, pos + 1)
-			if escaped < 0 or escaped == 10 or escaped == 13
+			if escaped < 0 or escaped == ASCII_LF or escaped == ASCII_CR
 				return -1
 			pos += 2
-		elif formatted and c == 36 and byte(source, pos + 1) == 123 # ${
+		elif formatted and c == ASCII_DOLLAR and byte(source, pos + 1) == ASCII_OPEN_BRACE # ${
 			let end = interpolation_end(source, pos + 2)
 			if end < 0
 				return -1
@@ -94,37 +139,37 @@ export def interpolation_end(source: string, start: i64) -> i64
 	var braces = 0
 	while pos < len(source)
 		let c = byte(source, pos)
-		if c == 10 or c == 13
+		if c == ASCII_LF or c == ASCII_CR
 			return -1
-		if c == 34 or c == 39 or (c == 102 and (byte(source, pos + 1) == 34 or byte(source, pos + 1) == 39))
+		if c == ASCII_DOUBLE_QUOTE or c == ASCII_SINGLE_QUOTE or (c == ASCII_LOWER_F and (byte(source, pos + 1) == ASCII_DOUBLE_QUOTE or byte(source, pos + 1) == ASCII_SINGLE_QUOTE))
 			pos = string_end(source, pos)
 			if pos < 0
 				return -1
 			continue
-		if c == 125 # }
+		if c == ASCII_CLOSE_BRACE # }
 			if braces == 0
 				return pos
 			braces -= 1
-		elif c == 123 # {
+		elif c == ASCII_OPEN_BRACE # {
 			braces += 1
 		pos += 1
 	return -1
 
 def operator_length(c: i64, n: i64, third: i64) -> i64
 	# **=, //=, <<=, >>=
-	if third == 61 and c == n and (c == 42 or c == 47 or c == 60 or c == 62)
+	if third == ASCII_EQUAL and c == n and (c == ASCII_STAR or c == ASCII_SLASH or c == ASCII_LESS or c == ASCII_GREATER)
 		return 3
 	# .., ->
-	if (c == 46 and n == 46) or (c == 45 and n == 62)
+	if (c == ASCII_DOT and n == ASCII_DOT) or (c == ASCII_MINUS and n == ASCII_GREATER)
 		return 2
 	# ==, !=, <=, >=, +=, -=, *=, /=, %=, &=, |=, ^=
-	if n == 61 and (c == 61 or c == 33 or c == 60 or c == 62 or c == 43 or c == 45 or c == 42 or c == 47 or c == 37 or c == 38 or c == 124 or c == 94)
+	if n == ASCII_EQUAL and (c == ASCII_EQUAL or c == ASCII_BANG or c == ASCII_LESS or c == ASCII_GREATER or c == ASCII_PLUS or c == ASCII_MINUS or c == ASCII_STAR or c == ASCII_SLASH or c == ASCII_PERCENT or c == ASCII_AMPERSAND or c == ASCII_PIPE or c == ASCII_CARET)
 		return 2
 	# **, &&, ||, <<, >>, //
-	if c == n and (c == 42 or c == 38 or c == 124 or c == 60 or c == 62 or c == 47)
+	if c == n and (c == ASCII_STAR or c == ASCII_AMPERSAND or c == ASCII_PIPE or c == ASCII_LESS or c == ASCII_GREATER or c == ASCII_SLASH)
 		return 2
 	# ( through /, < through ?, and ! % & : [ ] ^ { | } ~
-	if (c >= 40 and c <= 47) or (c >= 60 and c <= 63) or c == 33 or c == 37 or c == 38 or c == 58 or c == 91 or c == 93 or c == 94 or c == 123 or c == 124 or c == 125 or c == 126
+	if (c >= ASCII_OPEN_PAREN and c <= ASCII_SLASH) or (c >= ASCII_LESS and c <= ASCII_QUESTION) or c == ASCII_BANG or c == ASCII_PERCENT or c == ASCII_AMPERSAND or c == ASCII_COLON or c == ASCII_OPEN_BRACKET or c == ASCII_CLOSE_BRACKET or c == ASCII_CARET or c == ASCII_OPEN_BRACE or c == ASCII_PIPE or c == ASCII_CLOSE_BRACE or c == ASCII_TILDE
 		return 1
 	return 0
 
@@ -143,15 +188,15 @@ export def tokenize(source: string) -> Array[Token]
 		if at_line_start
 			var tabs = 0
 			var spaces = false
-			while byte(source, pos) == 9 or byte(source, pos) == 32 # tab, space
-				if byte(source, pos) == 9 # tab
+			while byte(source, pos) == ASCII_TAB or byte(source, pos) == ASCII_SPACE # tab, space
+				if byte(source, pos) == ASCII_TAB # tab
 					tabs += 1
 				else
 					spaces = true
 				pos += 1
 				column += 1
 			let first = byte(source, pos)
-			if depth == 0 and first != 10 and first != 13 and first != 35 and first != -1 # LF, CR, #, EOF
+			if depth == 0 and first != ASCII_LF and first != ASCII_CR and first != ASCII_HASH and first != -1 # LF, CR, #, EOF
 				if spaces or tabs > indent + 1
 					return tokens.append(Token(TokenKind.index(InvalidIndent), pos, pos, line, column))
 				if tabs > indent
@@ -162,9 +207,9 @@ export def tokenize(source: string) -> Array[Token]
 					indent -= 1
 			at_line_start = false
 		let c = byte(source, pos)
-		if c == 10 or c == 13 # LF, CR
+		if c == ASCII_LF or c == ASCII_CR # LF, CR
 			let start = pos
-			if c == 13 and byte(source, pos + 1) == 10 # CRLF
+			if c == ASCII_CR and byte(source, pos + 1) == ASCII_LF # CRLF
 				pos += 2
 			else
 				pos += 1
@@ -175,18 +220,18 @@ export def tokenize(source: string) -> Array[Token]
 			at_line_start = true
 			has_code = false
 			continue
-		if c == 32 or c == 9 # space, tab
+		if c == ASCII_SPACE or c == ASCII_TAB # space, tab
 			pos += 1
 			column += 1
 			continue
-		if c == 35 # # comment
-			while pos < size and byte(source, pos) != 10 and byte(source, pos) != 13 # LF, CR
+		if c == ASCII_HASH # # comment
+			while pos < size and byte(source, pos) != ASCII_LF and byte(source, pos) != ASCII_CR # LF, CR
 				pos += 1
 				column += 1
 			continue
 		let start = pos
 		var kind = TokenKind.index(Operator)
-		if c == 102 and (byte(source, pos + 1) == 34 or byte(source, pos + 1) == 39)
+		if c == ASCII_LOWER_F and (byte(source, pos + 1) == ASCII_DOUBLE_QUOTE or byte(source, pos + 1) == ASCII_SINGLE_QUOTE)
 			kind = TokenKind.index(InterpolatedString)
 			pos = string_end(source, start)
 			if pos < 0
@@ -196,39 +241,39 @@ export def tokenize(source: string) -> Array[Token]
 			pos += 1
 			while letter(byte(source, pos)) or digit(byte(source, pos))
 				pos += 1
-		elif digit(c) or (c == 46 and digit(byte(source, pos + 1))) # .
+		elif digit(c) or (c == ASCII_DOT and digit(byte(source, pos + 1))) # .
 			kind = TokenKind.index(Integer)
 			while digit(byte(source, pos))
 				pos += 1
-			if byte(source, pos) == 46 and digit(byte(source, pos + 1)) # .
+			if byte(source, pos) == ASCII_DOT and digit(byte(source, pos + 1)) # .
 				kind = TokenKind.index(Float)
 				pos += 1
 				while digit(byte(source, pos))
 					pos += 1
-			if byte(source, pos) == 101 or byte(source, pos) == 69 # e, E
+			if byte(source, pos) == ASCII_LOWER_E or byte(source, pos) == ASCII_UPPER_E # e, E
 				var exponent = pos + 1
-				if byte(source, exponent) == 43 or byte(source, exponent) == 45 # +, -
+				if byte(source, exponent) == ASCII_PLUS or byte(source, exponent) == ASCII_MINUS # +, -
 					exponent += 1
 				if digit(byte(source, exponent))
 					kind = TokenKind.index(Float)
 					pos = exponent + 1
 					while digit(byte(source, pos))
 						pos += 1
-		elif c == 34 or c == 39 # double quote, single quote
+		elif c == ASCII_DOUBLE_QUOTE or c == ASCII_SINGLE_QUOTE # double quote, single quote
 			kind = TokenKind.index(String)
 			pos += 1
 			var closed = false
 			while pos < size
 				let next = byte(source, pos)
-				if next == 10 or next == 13 # LF, CR
+				if next == ASCII_LF or next == ASCII_CR # LF, CR
 					break
 				if next == c
 					pos += 1
 					closed = true
 					break
-				if next == 92 # backslash
+				if next == ASCII_BACKSLASH # backslash
 					let escaped = byte(source, pos + 1)
-					if escaped == -1 or escaped == 10 or escaped == 13 # EOF, LF, CR
+					if escaped == -1 or escaped == ASCII_LF or escaped == ASCII_CR # EOF, LF, CR
 						break
 					pos += 2
 				else
@@ -240,17 +285,17 @@ export def tokenize(source: string) -> Array[Token]
 			if width == 0
 				return tokens.append(Token(TokenKind.index(InvalidChar), pos, pos + 1, line, column))
 			pos += width
-			if c == 40 or c == 91 or c == 123 # (, [, {
+			if c == ASCII_OPEN_PAREN or c == ASCII_OPEN_BRACKET or c == ASCII_OPEN_BRACE # (, [, {
 				if depth == len(brackets)
 					brackets = brackets.append(c)
 				else
 					brackets[!depth] = c
 				depth += 1
-			elif c == 41 or c == 93 or c == 125 # ), ], }
+			elif c == ASCII_CLOSE_PAREN or c == ASCII_CLOSE_BRACKET or c == ASCII_CLOSE_BRACE # ), ], }
 				if depth == 0
 					return tokens.append(Token(TokenKind.index(InvalidBracket), start, pos, line, column))
 				let opening = brackets[!depth - 1]
-				if (c == 41 and opening != 40) or (c == 93 and opening != 91) or (c == 125 and opening != 123) # (), [], {}
+				if (c == ASCII_CLOSE_PAREN and opening != ASCII_OPEN_PAREN) or (c == ASCII_CLOSE_BRACKET and opening != ASCII_OPEN_BRACKET) or (c == ASCII_CLOSE_BRACE and opening != ASCII_OPEN_BRACE) # (), [], {}
 					return tokens.append(Token(TokenKind.index(InvalidBracket), start, pos, line, column))
 				depth -= 1
 		tokens = tokens.append(Token(kind, start, pos, line, column))

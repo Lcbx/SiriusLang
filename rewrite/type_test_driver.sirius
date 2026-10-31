@@ -1,0 +1,96 @@
+import ir alias IR
+import interpreter alias Interpreter
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable) -> IR.Module
+	let body = IR.Program([IR.Constant(0, 0), IR.Return(0)], 1, "", 0)
+	return IR.Module([IR.Function("main", body, [], IR.TYPE_I64, [IR.TYPE_I64])], 0, table, "", 0)
+
+def main() -> i64
+	let original = IR.initial_types()
+	if IR.verify_types(original) != "" or IR.verify_module(entry(original)) != ""
+		return 1
+	let boolean = IR.intern_optional(original, IR.TYPE_BOOL)
+	let integer = IR.intern_optional(boolean.table, IR.TYPE_I64)
+	let text = IR.intern_optional(integer.table, IR.TYPE_STRING)
+	let nested = IR.intern_optional(text.table, integer.id)
+	let repeated = IR.intern_optional(nested.table, IR.TYPE_I64)
+	if repeated.id != integer.id or len(repeated.table.entries) != len(nested.table.entries)
+		return 2
+	if IR.optional_payload(nested.table, nested.id) != integer.id
+		return 3
+	if IR.optional_payload(nested.table, integer.id) != IR.TYPE_I64
+		return 4
+	if IR.optional_payload(nested.table, text.id) != IR.TYPE_STRING or IR.optional_payload(nested.table, boolean.id) != IR.TYPE_BOOL
+		return 5
+	if IR.optional_payload(nested.table, IR.TYPE_I64) != IR.NO_TYPE or IR.is_optional(nested.table, IR.NO_TYPE)
+		return 6
+	if IR.verify_types(nested.table) != "" or IR.verify_module(entry(nested.table)) != ""
+		return 7
+	# Interning and later cache updates must preserve earlier table snapshots.
+	if len(original.entries) != len(IR.initial_types().entries) or len(original.optionals) != 0
+		return 8
+	if IR.find_optional(boolean.table, IR.TYPE_I64) != IR.NO_TYPE
+		return 9
+	if IR.intern_optional(original, IR.NO_TYPE).id != IR.NO_TYPE or IR.intern_optional(original, len(original.entries)).id != IR.NO_TYPE
+		return 10
+	let again = IR.intern_optional(nested.table, integer.id)
+	if again.id != nested.id or len(again.table.entries) != len(nested.table.entries)
+		return 11
+	var corrupt = integer.table
+	corrupt.entries[!integer.id].payload = integer.id
+	if IR.verify_module(entry(corrupt)) != "invalid optional payload type"
+		return 12
+	corrupt = integer.table
+	corrupt.entries[!integer.id].payload = len(corrupt.entries)
+	if IR.verify_module(entry(corrupt)) != "invalid optional payload type"
+		return 13
+	corrupt = integer.table
+	corrupt.entries[!integer.id].payload = IR.NO_TYPE
+	if IR.verify_module(entry(corrupt)) != "invalid optional payload type"
+		return 14
+	corrupt = integer.table
+	corrupt.optionals = corrupt.optionals.insert(IR.TYPE_I64, boolean.id)
+	if IR.verify_module(entry(corrupt)) != "noncanonical optional type"
+		return 15
+	corrupt = integer.table
+	corrupt.entries = corrupt.entries.append(corrupt.entries[!integer.id])
+	corrupt.optionals = corrupt.optionals.insert(IR.TYPE_STRING, len(corrupt.entries) - 1)
+	if IR.verify_module(entry(corrupt)) != "noncanonical optional type"
+		return 16
+	corrupt = integer.table
+	corrupt.entries[!IR.TYPE_I64].payload = IR.TYPE_I64
+	if IR.verify_module(entry(corrupt)) != "invalid primitive descriptor"
+		return 17
+	corrupt = integer.table
+	corrupt.optionals = corrupt.optionals.insert(IR.TYPE_STRING, integer.id)
+	if IR.verify_module(entry(corrupt)) != "invalid optional type cache"
+		return 18
+	# Representing a type does not enable its runtime layout prematurely.
+	var unsupported = entry(nested.table)
+	unsupported.functions = unsupported.functions.append(IR.Function("unused", IR.Program([IR.Return(0)], 1, "", 0), [boolean.id], boolean.id, [boolean.id]))
+	if IR.verify_module(unsupported) != "unsupported optional payload"
+		return 19
+	unsupported.functions[!1].parameters = [nested.id]
+	unsupported.functions[!1].result = nested.id
+	unsupported.functions[!1].types = [nested.id]
+	if IR.verify_module(unsupported) != "unsupported optional payload"
+		return 20
+	if IR.verify_module(entry(IR.TypeTable([], Dict[i64, i64]()))) != "missing primitive types"
+		return 24
+	# Optional[bool] was interned first: Optional[i64]'s ID differs from the
+	# default table. Both backends must use descriptors for slots and calls.
+	if integer.id == IR.find_optional(IR.runtime_types(), IR.TYPE_I64)
+		return 21
+	let main_body = IR.Program([IR.StringConstant(0, "a"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.Call(3, 1, [2]), IR.OptionalDefault(4, 3, 6), IR.Constant(4, 9), IR.Output(4, IR.Integer(), false), IR.Constant(5, 0), IR.Return(5)], 6, "", 0)
+	let main_function = IR.Function("main", main_body, [], IR.TYPE_I64, [IR.TYPE_STRING, IR.TYPE_I64, integer.id, integer.id, IR.TYPE_I64, IR.TYPE_I64])
+	let identity = IR.Function("identity", IR.Program([IR.Return(0)], 1, "", 0), [integer.id], integer.id, [integer.id])
+	let module = IR.Module([main_function, identity], 0, nested.table, "", 0)
+	let args = arguments()
+	if len(args) == 2
+		let code = Emit.emit(module)
+		if code.error != ""
+			return 22
+		if not write_text(args[!1], code.code)
+			return 23
+	return Interpreter.run_module(module)

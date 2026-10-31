@@ -1,0 +1,64 @@
+import ir alias IR
+import interpreter alias Interpreter
+
+def function(name: string, instructions: Array[IR.Instruction], types: Array[i64], parameters: Array[i64], result: i64) -> IR.Function
+	return IR.Function(name, IR.Program(instructions, len(types), "", 0), parameters, result, types)
+
+def check(main: IR.Function, helper: IR.Function, expected: string) -> bool
+	return IR.verify_module(IR.Module([main, helper], 0, IR.runtime_types(), "", 0)) == expected
+
+def main() -> i64
+	let integer = IR.TYPE_I64
+	let boolean = IR.TYPE_BOOL
+	let text = IR.TYPE_STRING
+	let helper = function("helper", [IR.Nop(), IR.Return(0)], [integer], [integer], integer)
+	let entry = function("main", [IR.Constant(0, 7), IR.Call(1, 1, [0]), IR.Return(1)], [integer, integer], [], integer)
+	if not check(entry, helper, "")
+		return 1
+	if not check(function("main", [IR.Call(0, -1, []), IR.Return(0)], [integer], [], integer), helper, "main: invalid call target")
+		return 2
+	if not check(function("main", [IR.Call(0, 2, []), IR.Return(0)], [integer], [], integer), helper, "main: invalid call target")
+		return 3
+	if not check(function("main", [IR.Call(0, 1, []), IR.Return(0)], [integer], [], integer), helper, "main: argument count mismatch")
+		return 4
+	if not check(function("main", [IR.Call(0, 1, [1]), IR.Return(0)], [integer], [], integer), helper, "main: undefined input slot")
+		return 5
+	if not check(function("main", [IR.Call(0, 1, [1]), IR.Return(0)], [integer, integer], [], integer), helper, "main: undefined input slot")
+		return 6
+	if not check(function("main", [IR.Constant(0, 1), IR.Call(1, 1, [0]), IR.Return(1)], [boolean, integer], [], integer), helper, "main: slot type mismatch")
+		return 7
+	if not check(entry, function("helper", [IR.Nop(), IR.Return(0)], [boolean], [boolean], boolean), "main: slot type mismatch")
+		return 8
+	if not check(entry, function("helper", [IR.Nop(), IR.Return(0)], [integer], [integer], text), "main: slot type mismatch")
+		return 9
+	if not check(entry, function("helper", [IR.Nop(), IR.Return(0)], [integer], [text], integer), "invalid parameter type")
+		return 10
+	if not check(entry, function("helper", [IR.Nop(), IR.Return(0)], [integer], [integer], 99), "invalid result type")
+		return 11
+	if not check(entry, function("helper", [IR.Nop(), IR.Return(0)], [integer], [integer, integer], integer), "invalid function slots")
+		return 12
+	let unused = function("main", [IR.Constant(0, 0), IR.Return(0)], [integer], [], integer)
+	if not check(unused, function("helper", [IR.Constant(0, 0), IR.Return(0)], [boolean], [], integer), "helper: slot type mismatch")
+		return 13
+	if not check(unused, function("helper", [IR.Constant(0, 2), IR.Return(0)], [boolean], [], boolean), "helper: invalid boolean constant")
+		return 14
+	if not check(unused, function("helper", [IR.Constant(0, 1), IR.Not(1, 0), IR.Return(1)], [integer, boolean], [], boolean), "helper: slot type mismatch")
+		return 15
+	if not check(unused, function("helper", [IR.Constant(0, 0), IR.Branch(0, 3), IR.Return(0), IR.Nop()], [boolean], [], boolean), "helper: path falls off program")
+		return 16
+	let five = function("helper", [IR.Nop(), IR.Return(0)], [integer, integer, integer, integer, integer], [integer, integer, integer, integer, integer], integer)
+	if not check(function("main", [IR.Constant(0, 1), IR.Call(1, 1, [0, 0, 0, 0, 2]), IR.Return(1)], [integer, integer, integer], [], integer), five, "main: undefined input slot")
+		return 17
+	if IR.verify_module(IR.Module([entry, helper], 2, IR.runtime_types(), "", 0)) != "invalid entry function"
+		return 18
+	if IR.verify_module(IR.Module([entry, helper], 1, IR.runtime_types(), "", 0)) != "invalid entry signature"
+		return 19
+	let identity = function("identity", [IR.Nop(), IR.Return(0)], [text], [text], text)
+	let snapshot = function("main", [IR.StringConstant(0, "saved"), IR.Call(1, 1, [0]), IR.StringConstant(0, "changed"), IR.StringLength(2, 1), IR.Return(2)], [text, text, integer], [], integer)
+	if Interpreter.run_module(IR.Module([snapshot, identity], 0, IR.runtime_types(), "", 0)) != 5
+		return 20
+	let recursive = function("repeat", [IR.Nop(), IR.Nop(), IR.Constant(2, 0), IR.Compare(3, 1, 2, "=="), IR.Branch(3, 6), IR.Return(0), IR.Constant(2, 1), IR.Subtract(5, 1, 2), IR.StringConstant(4, "x"), IR.StringConcat(6, 0, 4), IR.Call(7, 1, [6, 5]), IR.Return(7)], [text, integer, integer, boolean, text, integer, text, text], [text, integer], text)
+	let repeated = function("main", [IR.StringConstant(0, "a"), IR.Constant(1, 5), IR.Call(2, 1, [0, 1]), IR.StringLength(3, 2), IR.Return(3)], [text, integer, text, integer], [], integer)
+	if Interpreter.run_module(IR.Module([repeated, recursive], 0, IR.runtime_types(), "", 0)) != 6
+		return 21
+	return 0
