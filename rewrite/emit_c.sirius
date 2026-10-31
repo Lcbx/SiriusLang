@@ -37,6 +37,8 @@ def c_bytes(value: string) -> string
 	return "\"" + "".join(parts) + "\""
 
 def c_type(type: i64, table: IR.TypeTable) -> string
+	if IR.is_record(table, type)
+		return "R" + str(type) + " "
 	if type == IR.TYPE_STRING
 		return "S_String *"
 	if IR.is_optional(table, type)
@@ -46,11 +48,58 @@ def c_type(type: i64, table: IR.TypeTable) -> string
 	return "uint64_t "
 
 def value_slot(id: i64, type: i64, table: IR.TypeTable) -> string
+	if IR.is_record(table, type)
+		return "r" + str(type) + "[" + str(id) + "]"
 	if type == IR.TYPE_STRING
 		return string_slot(id)
 	if IR.is_optional(table, type)
 		return optional_slot(id)
 	return slot(id)
+
+def record_types(function: IR.Function, table: IR.TypeTable) -> Array[i64]
+	var result = Array[i64]()
+	for type in 0..len(table.entries)
+		if not IR.is_record(table, type)
+			continue
+		var used = false
+		for slot_type in function.types
+			if slot_type == type
+				used = true
+		if used
+			result = result.append(type)
+	return result
+
+def record_definitions(table: IR.TypeTable) -> string
+	var parts = Array[string]()
+	for type in 0..len(table.entries)
+		if not IR.is_record(table, type) or not IR.runtime_type(table, type)
+			continue
+		let name = "R" + str(type)
+		let fields = table.entries[!type].fields
+		parts = parts.append("typedef struct {\n")
+		if len(fields) == 0
+			parts = parts.append("unsigned char unused;\n")
+		for i in 0..len(fields)
+			parts = parts.append(c_type(fields[!i].type, table) + "f" + str(i) + ";\n")
+		parts = parts.append("} " + name + ";\n")
+		parts = parts.append("static inline " + name + " retain_" + name + "(" + name + " value) {\n")
+		for i in 0..len(fields)
+			if fields[!i].type == IR.TYPE_STRING
+				parts = parts.append("s_string_retain(value.f" + str(i) + ");\n")
+		parts = parts.append("return value; }\nstatic inline void release_" + name + "(" + name + " value) { (void)value;\n")
+		for i in 0..len(fields)
+			if fields[!i].type == IR.TYPE_STRING
+				parts = parts.append("s_string_release(value.f" + str(i) + ");\n")
+		parts = parts.append("}\nstatic inline void store_" + name + "(" + name + " *dst, " + name + " value) { release_" + name + "(*dst); *dst = value; }\n")
+	return "".join(parts)
+
+def record_literal(type: i64, values: Array[string]) -> string
+	if len(values) == 0
+		return "(R" + str(type) + "){0}"
+	var fields = Array[string]()
+	for i in 0..len(values)
+		fields = fields.append(".f" + str(i) + " = " + values[!i])
+	return "(R" + str(type) + "){" + ", ".join(fields) + "}"
 
 def declaration(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 	var parameters = Array[string]()
@@ -75,12 +124,17 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0}; (void)s;\n")
 	if IR.function_has_optionals(function, table)
 		lines = lines.append("S_Optional_i64 o[" + str(program.slots) + "]; (void)o;\n")
+	let records = record_types(function, table)
+	for type in records
+		lines = lines.append("R" + str(type) + " r" + str(type) + "[" + str(program.slots) + "] = {0}; (void)r" + str(type) + ";\n")
 	# Arguments are borrowed. Parameter slots retain their own references so all
 	# string slots follow the same overwrite/return cleanup rule.
 	for i in 0..len(function.parameters)
 		let type = function.parameters[!i]
 		if type == IR.TYPE_STRING
 			lines = lines.append("store_string(&" + string_slot(i) + ", s_string_retain(p" + str(i) + "));\n")
+		elif IR.is_record(table, type)
+			lines = lines.append("store_R" + str(type) + "(&" + value_slot(i, type, table) + ", retain_R" + str(type) + "(p" + str(i) + "));\n")
 		else
 			lines = lines.append(value_slot(i, type, table) + " = p" + str(i) + ";\n")
 	lines = lines.append("goto L0;\n")
@@ -89,6 +143,22 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.MakeRecord(dst, type, inputs)
+				var fields = Array[string]()
+				for input in inputs
+					fields = fields.append(value_slot(input, function.types[!input], table))
+				lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", retain_R" + str(type) + "(" + record_literal(type, fields) + "));\n")
+			IR.CopyRecord(dst, input)
+				let type = function.types[!dst]
+				let source = value_slot(input, function.types[!input], table)
+				lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", retain_R" + str(type) + "(" + source + "));\n")
+			IR.ReadField(dst, input, field)
+				let value = value_slot(input, function.types[!input], table) + ".f" + str(field)
+				let type = function.types[!dst]
+				if type == IR.TYPE_STRING
+					lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_retain(" + value + "));\n")
+				else
+					lines = lines.append(value_slot(dst, type, table) + " = " + value + ";\n")
 			IR.Call(dst, target, arguments)
 				var inputs = Array[string]()
 				for input in arguments
@@ -97,6 +167,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let type = function.types[!dst]
 				if type == IR.TYPE_STRING
 					lines = lines.append("store_string(&" + string_slot(dst) + ", " + call + ");\n")
+				elif IR.is_record(table, type)
+					lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", " + call + ");\n")
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + call + ";\n")
 			IR.OptionalUnwrap(dst, input)
@@ -196,9 +268,13 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				var value = value_slot(input, function.result, table)
 				if function.result == IR.TYPE_STRING
 					value = "s_string_retain(" + value + ")"
+				elif IR.is_record(table, function.result)
+					value = "retain_R" + str(function.result) + "(" + value + ")"
 				lines = lines.append("{ " + c_type(function.result, table) + "result = " + value + ";\n")
 				if has_strings
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")
+				for type in records
+					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) release_R" + str(type) + "(r" + str(type) + "[i]);\n")
 				lines = lines.append("return result; }\n")
 				fallthrough = false
 		if fallthrough
@@ -218,6 +294,7 @@ export def emit(module: IR.Module) -> Result
 	if has_strings
 		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")
+	lines = lines.append(record_definitions(module.type_table))
 	for id in 0..len(module.functions)
 		lines = lines.append(declaration(module.functions[!id], id, module.type_table) + ";\n")
 	for id in 0..len(module.functions)

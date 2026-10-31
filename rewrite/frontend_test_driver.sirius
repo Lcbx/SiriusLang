@@ -1,5 +1,6 @@
 import parser alias Parser
 import semantic alias Semantic
+import ir alias IR
 
 def main() -> i64
 	let args = arguments()
@@ -17,6 +18,10 @@ def main() -> i64
 		print(signature.name + "(" + parameters + ") -> " + str(signature.result))
 	for i in 0..len(checked.parsed.nodes)
 		if Parser.kind_is(checked.parsed.nodes[!i].kind, Parser.Call())
-			let target = checked.signatures[!checked.references[!i]]
-			print("call " + target.name + " -> " + str(checked.types[!i]))
+			let constructor = checked.constructor_calls.get(i) or Semantic.Constructor(IR.NO_TYPE, [])
+			if constructor.type >= 0
+				print("construct -> " + str(constructor.type))
+			else
+				let target = checked.signatures[!checked.references[!i]]
+				print("call " + target.name + " -> " + str(checked.types[!i]))
 	return 0

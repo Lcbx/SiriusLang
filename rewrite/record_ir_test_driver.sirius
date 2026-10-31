@@ -1,0 +1,77 @@
+import ir alias IR
+import interpreter alias Interpreter
+
+def program(instructions: Array[IR.Instruction], types: Array[i64], table: IR.TypeTable) -> IR.Module
+	return IR.Module([IR.Function("main", IR.Program(instructions, len(types), "", 0), [], IR.TYPE_I64, types)], 0, table, "", 0)
+
+def main() -> i64
+	let initial = IR.runtime_types()
+	let wide = IR.intern_record(initial, [IR.RecordField("z", IR.TYPE_I64), IR.RecordField("a", IR.TYPE_STRING)])
+	let same = IR.intern_record(wide.table, [IR.RecordField("a", IR.TYPE_STRING), IR.RecordField("z", IR.TYPE_I64)])
+	if same.id != wide.id or len(same.table.entries) != len(wide.table.entries)
+		return 1
+	let small = IR.intern_record(same.table, [IR.RecordField("a", IR.TYPE_STRING)])
+	let empty = IR.intern_record(small.table, [])
+	let other = IR.intern_record(empty.table, [IR.RecordField("b", IR.TYPE_STRING)])
+	let table = other.table
+	if IR.verify_types(table) != "" or IR.compatible(table, wide.id, small.id) or IR.compatible(table, small.id, wide.id)
+		return 2
+	if IR.compatible(table, wide.id, empty.id) or IR.compatible(table, wide.id, other.id)
+		return 3
+	if IR.field_index(table, wide.id, "a") != 0 or IR.field_index(table, wide.id, "z") != 1
+		return 4
+	if IR.find_optional(initial, IR.TYPE_I64) != IR.find_optional(table, IR.TYPE_I64) or len(initial.records) != 0
+		return 5
+	if IR.intern_record(table, [IR.RecordField("x", IR.TYPE_I64), IR.RecordField("x", IR.TYPE_STRING)]).id != IR.NO_TYPE
+		return 6
+	if IR.intern_record(table, [IR.RecordField("", IR.TYPE_I64)]).id != IR.NO_TYPE or IR.intern_record(table, [IR.RecordField("x", len(table.entries))]).id != IR.NO_TYPE
+		return 7
+	var corrupt = table
+	corrupt.entries[!wide.id].fields[!0].type = wide.id
+	if IR.verify_types(corrupt) != "noncanonical record fields"
+		return 8
+	corrupt = table
+	let field = corrupt.entries[!wide.id].fields[!0]
+	corrupt.entries[!wide.id].fields[!0] = corrupt.entries[!wide.id].fields[!1]
+	corrupt.entries[!wide.id].fields[!1] = field
+	if IR.verify_types(corrupt) != "noncanonical record fields"
+		return 9
+	corrupt = table
+	corrupt.entries = corrupt.entries.append(corrupt.entries[!wide.id])
+	if IR.verify_types(corrupt) != "noncanonical record type"
+		return 10
+	corrupt = table
+	corrupt.records = corrupt.records.insert("bad", wide.id)
+	if IR.verify_types(corrupt) != "invalid record type cache"
+		return 11
+	let string = IR.TYPE_STRING
+	let integer = IR.TYPE_I64
+	let boolean = IR.TYPE_BOOL
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, wide.id, [0]), IR.Constant(2, 0), IR.Return(2)], [string, wide.id, integer], table)) != "main: record field count mismatch"
+		return 12
+	if IR.verify_module(program([IR.Constant(0, 1), IR.MakeRecord(1, small.id, [0]), IR.Return(0)], [integer, small.id], table)) != "main: slot type mismatch"
+		return 13
+	if IR.verify_module(program([IR.ReadField(1, 0, 0), IR.Constant(2, 0), IR.Return(2)], [small.id, string, integer], table)) != "main: undefined input slot"
+		return 14
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.ReadField(2, 1, 1), IR.Return(2)], [string, small.id, integer], table)) != "main: invalid record field index"
+		return 15
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.ReadField(2, 1, 0), IR.Return(2)], [string, small.id, integer], table)) != "main: slot type mismatch"
+		return 16
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.CopyRecord(2, 1), IR.Constant(3, 0), IR.Return(3)], [string, small.id, other.id, integer], table)) != "main: slot type mismatch"
+		return 17
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.CopyRecord(2, 1), IR.Constant(3, 0), IR.Return(3)], [string, small.id, integer, integer], table)) != "main: record copy requires records"
+		return 18
+	if IR.verify_module(program([IR.Constant(0, 0), IR.Constant(4, 7), IR.Branch(0, 5), IR.StringConstant(1, "a"), IR.MakeRecord(2, wide.id, [1, 4]), IR.ReadField(3, 2, 0), IR.StringLength(4, 3), IR.Return(4)], [boolean, string, wide.id, string, integer], table)) != "main: undefined input slot"
+		return 19
+	let body = IR.Program([IR.StringConstant(0, "saved"), IR.Constant(1, 7), IR.MakeRecord(2, wide.id, [0, 1]), IR.CopyRecord(3, 2), IR.Call(4, 1, [3]), IR.StringConstant(0, "changed"), IR.ReadField(5, 4, 0), IR.StringLength(6, 5), IR.Return(6)], 7, "", 0)
+	let entry = IR.Function("main", body, [], integer, [string, integer, wide.id, wide.id, wide.id, string, integer])
+	let identity = IR.Function("identity", IR.Program([IR.Return(0)], 1, "", 0), [wide.id], wide.id, [wide.id])
+	if Interpreter.run_module(IR.Module([entry, identity], 0, table, "", 0)) != 5
+		return 20
+	let args = arguments()
+	if len(args) == 2 and args[!1] == "--trap"
+		let caller = IR.Function("main", IR.Program([IR.StringConstant(0, "owned"), IR.MakeRecord(1, small.id, [0]), IR.Call(2, 1, [1]), IR.Return(2)], 3, "", 0), [], integer, [string, small.id, integer])
+		let callee = IR.Function("fail", IR.Program([IR.Constant(1, 1), IR.Constant(2, 0), IR.Divide(3, 1, 2), IR.Return(3)], 4, "", 0), [small.id], integer, [small.id, integer, integer, integer])
+		if Interpreter.run_module(IR.Module([caller, callee], 0, table, "", 0)) != 1
+			return 21
+	return 0

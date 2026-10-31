@@ -64,10 +64,13 @@ export enum NodeKind
 	Parameter
 	Argument
 	Call
+	FieldRead
 
 export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
 export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64, end: i64)
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], index: i64, error: string, error_line: i64)
+export rec Field(token: i64, annotation: i64)
+export rec Record(token: i64, fields: Array[Field])
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -264,9 +267,12 @@ def expression(p: State, minimum: i64) -> Parsed
 			after.index += 1
 			let method_token = after.index
 			let method = text(after)
+			after = expect_kind(after, Lex.TokenKind.index(Lex.Name), "field name")
+			if text(after) != "("
+				result = node(after, FieldRead(), result.node, -1, method_token)
+				continue
 			if method != "slice" and method != "starts_with" and method != "ends_with" and method != "byte_at" and method != "find"
 				return Parsed(fail(after, "unsupported string method"), -1)
-			after.index += 1
 			after = expect(after, "(")
 			let first = expression(after, PREC_OR)
 			if method == "slice"
@@ -339,10 +345,7 @@ def annotation(p: State) -> State
 		result = expect(result, "[")
 		result = expect(result, "i64")
 		return expect(result, "]")
-	if text(result) != "i64" and text(result) != "bool" and text(result) != "string"
-		return fail(result, "expected i64, bool, string or Optional[i64]")
-	result.index += 1
-	return result
+	return expect_kind(result, Lex.TokenKind.index(Lex.Name), "type name")
 
 def block(initial: State, loop_start: i64) -> State
 	var p = initial
@@ -542,13 +545,36 @@ def block(initial: State, loop_start: i64) -> State
 
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), Array[Function](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)
 			p.error_line = token.line
 			return p
 	while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+		if text(p) == "rec"
+			p.index += 1
+			let record_name = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "record name")
+			p = expect(p, "(")
+			var fields = Array[Field]()
+			while p.error == "" and text(p) != ")"
+				let field_name = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
+				p = expect(p, ":")
+				let type_token = p.index
+				p = annotation(p)
+				fields = fields.append(Field(field_name, type_token))
+				if text(p) != ","
+					break
+				p.index += 1
+				if text(p) == ")"
+					p = fail(p, "expected field after comma")
+			p = expect(p, ")")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+			if p.error == ""
+				p.records = p.records.append(Record(record_name, fields))
+			continue
 		p = expect(p, "def")
 		let name = p.index
 		p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "function name")

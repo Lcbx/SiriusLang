@@ -19,6 +19,7 @@ def main() -> None:
 	native = cache.native_driver('rewrite-frontend', driver, extra_modules=modules)
 	runner = cache.mir_runner()
 	valid = [
+		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 4\nmain() -> 0\nconstruct -> 4\ncall make -> 4\n'),
 		('def main() -> i64\n\treturn 0\n', 'main() -> 0\n'),
 		('def main() -> i64\n\treturn twice(21)\n'
 		 'def twice(value: i64) -> i64\n\treturn value * 2\n',

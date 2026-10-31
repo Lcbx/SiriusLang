@@ -11,8 +11,10 @@ typed functions with one `main() -> i64`, scalar/string expressions,
 `Optional[i64]`, interpolation and local control flow. Forward and mutually
 recursive calls execute natively and through explicit interpreter frames.
 Per-function flat IR carries checked types and call targets; the verifier checks
-all bodies, including unused functions. Aggregate storage and a module loader
-remain unimplemented. See [README.md](README.md) for the subset;
+all bodies, including unused functions. Flat records with scalar/string fields
+now support constructors, field reads, copies and calls in both backends. Arrays,
+composed record fields and a module loader remain unimplemented.
+See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
 
@@ -69,8 +71,14 @@ justifies replacing it.
 
 ### 2. Records, arrays and value-preserving updates
 
-- [ ] Add annotated records, positional constructors, field reads and structural
-  compatibility, including managed fields and composed annotations.
+- [x] Add flat annotated records, positional constructors, field reads and
+  structural identity, including managed string fields and record parameters/
+  results. Canonical fields are sorted by name; constructor arguments retain
+  declaration order. Concrete annotations require matching field names/types.
+  Native C uses typed value structs and existing string ARC; interpreter record
+  fields use separate scalar/string arrays. Typed value copies retain snapshots.
+- [ ] Extend record field types and annotations to composed values as arrays,
+  nested records and broader optional payloads become available.
 - [ ] Add array literals, `Array[T]()`, `len`, `.append`, array iteration and
   checked `[!index]` reads, including negative indices and bounds traps.
 - [ ] Support local field/index updates such as `p.index += 1` and

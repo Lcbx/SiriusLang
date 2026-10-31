@@ -76,7 +76,7 @@ def main() -> i64
 	unsupported.functions[!1].types = [nested.id]
 	if IR.verify_module(unsupported) != "unsupported optional payload"
 		return 20
-	if IR.verify_module(entry(IR.TypeTable([], Dict[i64, i64]()))) != "missing primitive types"
+	if IR.verify_module(entry(IR.TypeTable([], Dict[i64, i64](), Dict[string, i64]()))) != "missing primitive types"
 		return 24
 	# Optional[bool] was interned first: Optional[i64]'s ID differs from the
 	# default table. Both backends must use descriptors for slots and calls.

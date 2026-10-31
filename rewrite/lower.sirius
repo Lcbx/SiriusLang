@@ -42,6 +42,8 @@ def decode(source: string, begin: i64, end: i64, interpolated: bool) -> Decoded
 	return Decoded("".join(parts), "")
 
 def copy(dst: i64, input: i64, type: i64, table: IR.TypeTable) -> IR.Instruction
+	if IR.is_record(table, type)
+		return IR.CopyRecord(dst, input)
 	if IR.is_optional(table, type)
 		return IR.OptionalCopy(dst, input)
 	if type == IR.TYPE_STRING
@@ -56,6 +58,8 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.FieldRead
+				instructions = instructions.append(IR.ReadField(i, node.left, checked.references[!i]))
 			Parser.Parameter | Parser.Argument
 				instructions = instructions.append(IR.Nop())
 			Parser.Call
@@ -68,7 +72,16 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				var arguments = Array[i64]()
 				for index in 0..len(reversed)
 					arguments = arguments.append(reversed[!len(reversed) - 1 - index])
-				instructions = instructions.append(IR.Call(i, checked.references[!i], arguments))
+				let constructor = checked.constructor_calls.get(i) or Semantic.Constructor(IR.NO_TYPE, [])
+				if constructor.type != IR.NO_TYPE
+					var fields = Array[i64]()
+					for field in checked.type_table.entries[!constructor.type].fields
+						for parameter in 0..len(constructor.parameters)
+							if constructor.parameters[!parameter].name == field.name
+								fields = fields.append(arguments[!parameter])
+					instructions = instructions.append(IR.MakeRecord(i, constructor.type, fields))
+				else
+					instructions = instructions.append(IR.Call(i, checked.references[!i], arguments))
 			Parser.OptionalUnwrap
 				instructions = instructions.append(IR.OptionalUnwrap(i, node.left))
 			Parser.OptionalExit

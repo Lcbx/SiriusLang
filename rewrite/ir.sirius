@@ -4,6 +4,7 @@ export enum TypeKind
 	Bool
 	String
 	Optional
+	Record
 
 export let NO_TYPE = -1
 export let TYPE_I64 = 0
@@ -11,12 +12,13 @@ export let TYPE_BOOL = 1
 export let TYPE_STRING = 2
 let PRIMITIVE_TYPE_COUNT = 3
 
-export rec TypeDescriptor(kind: TypeKind, payload: i64)
-export rec TypeTable(entries: Array[TypeDescriptor], optionals: Dict[i64, i64])
+export rec RecordField(name: string, type: i64)
+export rec TypeDescriptor(kind: TypeKind, payload: i64, fields: Array[RecordField])
+export rec TypeTable(entries: Array[TypeDescriptor], optionals: Dict[i64, i64], records: Dict[string, i64])
 export rec InternedType(table: TypeTable, id: i64)
 
 export def initial_types() -> TypeTable
-	return TypeTable([TypeDescriptor(TypeKind.I64(I64()), NO_TYPE), TypeDescriptor(TypeKind.Bool(Bool()), NO_TYPE), TypeDescriptor(TypeKind.String(String()), NO_TYPE)], Dict[i64, i64]())
+	return TypeTable([TypeDescriptor(TypeKind.I64(I64()), NO_TYPE, []), TypeDescriptor(TypeKind.Bool(Bool()), NO_TYPE, []), TypeDescriptor(TypeKind.String(String()), NO_TYPE, [])], Dict[i64, i64](), Dict[string, i64]())
 
 export def valid_type(table: TypeTable, id: i64) -> bool
 	return id >= 0 and id < len(table.entries)
@@ -43,9 +45,70 @@ export def intern_optional(table: TypeTable, payload: i64) -> InternedType
 		return InternedType(table, existing)
 	var result = table
 	let id = len(result.entries)
-	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload))
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload, []))
 	result.optionals = result.optionals.insert(payload, id)
 	return InternedType(result, id)
+
+export def is_record(table: TypeTable, id: i64) -> bool
+	return has_kind(table, id, TypeKind.Record(Record()))
+
+def record_key(fields: Array[RecordField]) -> string
+	var key = ""
+	for field in fields
+		key += str(len(field.name)) + ":" + field.name + ":" + str(field.type) + ";"
+	return key
+
+export def intern_record(table: TypeTable, fields: Array[RecordField]) -> InternedType
+	var ordered = Array[RecordField]()
+	for field in fields
+		if field.name == "" or not valid_type(table, field.type)
+			return InternedType(table, NO_TYPE)
+		ordered = ordered.append(field)
+		var position = len(ordered) - 1
+		while position > 0 and ordered[!position].name < ordered[!position - 1].name
+			let previous = ordered[!position - 1]
+			ordered[!position - 1] = ordered[!position]
+			ordered[!position] = previous
+			position -= 1
+	for i in 1..len(ordered)
+		if ordered[!i - 1].name == ordered[!i].name
+			return InternedType(table, NO_TYPE)
+	let key = record_key(ordered)
+	let existing = table.records.get(key) or NO_TYPE
+	if existing != NO_TYPE
+		return InternedType(table, existing)
+	var result = table
+	let id = len(result.entries)
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Record(Record()), NO_TYPE, ordered))
+	result.records = result.records.insert(key, id)
+	return InternedType(result, id)
+
+export def field_index(table: TypeTable, type: i64, name: string) -> i64
+	if not is_record(table, type)
+		return -1
+	let fields = table.entries[!type].fields
+	for i in 0..len(fields)
+		if fields[!i].name == name
+			return i
+	return -1
+
+export def compatible(table: TypeTable, source: i64, target: i64) -> bool
+	if source == target
+		return true
+	if not is_record(table, source) or not is_record(table, target)
+		return false
+	if len(table.entries[!source].fields) != len(table.entries[!target].fields)
+		return false
+	for field in table.entries[!target].fields
+		let index = field_index(table, source, field.name)
+		if index < 0 or table.entries[!source].fields[!index].type != field.type
+			return false
+	return true
+
+def unsupported_type(table: TypeTable, type: i64) -> string
+	if is_record(table, type)
+		return "unsupported record field type"
+	return "unsupported optional payload"
 
 # The current string lookup instructions require this type even without an
 # Optional annotation. Its ID is obtained by interning, never from TypeKind.
@@ -59,18 +122,34 @@ export def verify_types(table: TypeTable) -> string
 	for id in 0..PRIMITIVE_TYPE_COUNT
 		if table.entries[!id] != primitives.entries[!id]
 			return "invalid primitive descriptor"
-	if len(table.optionals) != len(table.entries) - PRIMITIVE_TYPE_COUNT
-		return "invalid optional type cache"
+	var optionals = 0
+	var records = 0
 	for id in PRIMITIVE_TYPE_COUNT..len(table.entries)
 		let descriptor = table.entries[!id]
-		if not is_optional(table, id)
-			return "duplicate primitive type"
-		# Interning children first makes the graph acyclic, including nested
-		# optionals. Requiring the unique cache entry also rejects duplicates.
-		if descriptor.payload < 0 or descriptor.payload >= id
-			return "invalid optional payload type"
-		if find_optional(table, descriptor.payload) != id
-			return "noncanonical optional type"
+		match descriptor.kind
+			Optional
+				optionals += 1
+				if len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
+					return "invalid optional payload type"
+				if find_optional(table, descriptor.payload) != id
+					return "noncanonical optional type"
+			Record
+				records += 1
+				if descriptor.payload != NO_TYPE
+					return "invalid record descriptor"
+				var previous = ""
+				for field in descriptor.fields
+					if field.name <= previous or field.type < 0 or field.type >= id
+						return "noncanonical record fields"
+					previous = field.name
+				if (table.records.get(record_key(descriptor.fields)) or NO_TYPE) != id
+					return "noncanonical record type"
+			I64 | Bool | String
+				return "duplicate primitive type"
+	if len(table.optionals) != optionals
+		return "invalid optional type cache"
+	if len(table.records) != records
+		return "invalid record type cache"
 	return ""
 
 export def runtime_type(table: TypeTable, id: i64) -> bool
@@ -81,6 +160,11 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 			return true
 		Optional
 			return optional_payload(table, id) == TYPE_I64
+		Record
+			for field in table.entries[!id].fields
+				if field.type != TYPE_I64 and field.type != TYPE_BOOL and field.type != TYPE_STRING
+					return false
+			return true
 
 export let INTEGER_BITS = 64
 export let I64_MAX = 9223372036854775807
@@ -112,6 +196,9 @@ export let FormatType = Integer | Boolean | OptionalInteger
 export rec Output(input: i64, type: OutputType, stderr: bool)
 export rec Return(input: i64)
 export rec Call(dst: i64, function: i64, arguments: Array[i64])
+export rec MakeRecord(dst: i64, type: i64, inputs: Array[i64])
+export rec CopyRecord(dst: i64, input: i64)
+export rec ReadField(dst: i64, input: i64, index: i64)
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
 # Copy the left value on both edges; skip the right operand when it decides.
@@ -133,7 +220,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Always initializes the scalar destination; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = MakeRecord | CopyRecord | ReadField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -168,6 +255,7 @@ enum StorageKind
 	Scalar
 	StringReference
 	OptionalValue
+	RecordValue
 
 rec Flow(dst: i64, inputs: Array[i64], types: Array[i64], next: i64, other: i64, type: i64)
 
@@ -176,6 +264,8 @@ def storage(table: TypeTable, type: i64) -> StorageKind
 		return StringReference()
 	if is_optional(table, type)
 		return OptionalValue()
+	if is_record(table, type)
+		return RecordValue()
 	return Scalar()
 
 def in_bounds(slot: i64, count: i64) -> bool
@@ -220,6 +310,46 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 		var output_type = integer
 		let instruction = program.instructions[!i]
 		match instruction
+			MakeRecord(target, type, fields)
+				if not typed or not is_record(table, type) or not runtime_type(table, type)
+					return "invalid record type"
+				let descriptor = table.entries[!type]
+				if len(fields) != len(descriptor.fields)
+					return "record field count mismatch"
+				dst = target
+				writes = true
+				output_type = type
+				inputs = fields
+				for field in descriptor.fields
+					input_types = input_types.append(field.type)
+				for input in inputs
+					if not in_bounds(input, program.slots)
+						return "undefined input slot"
+			CopyRecord(target, input)
+				if not in_bounds(target, program.slots)
+					return "invalid destination slot"
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not typed or not is_record(table, types[!target]) or not is_record(table, types[!input])
+					return "record copy requires records"
+				dst = target
+				writes = true
+				output_type = types[!target]
+				inputs = [input]
+				input_types = [types[!target]]
+			ReadField(target, input, index)
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not typed or not is_record(table, types[!input])
+					return "field read requires record"
+				let fields = table.entries[!types[!input]].fields
+				if not in_bounds(index, len(fields))
+					return "invalid record field index"
+				dst = target
+				writes = true
+				output_type = fields[!index].type
+				inputs = [input]
+				input_types = [types[!input]]
 			Call(target, function, arguments)
 				if not in_bounds(function, len(functions))
 					return "invalid call target"
@@ -418,7 +548,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -553,7 +683,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -582,7 +712,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -602,7 +732,7 @@ export def verify_module(module: Module) -> string
 		if not valid_type(module.type_table, function.result)
 			return "invalid result type"
 		if not runtime_type(module.type_table, function.result)
-			return "unsupported optional payload"
+			return unsupported_type(module.type_table, function.result)
 		if len(function.types) != function.body.slots or len(function.parameters) > function.body.slots
 			return "invalid function slots"
 		for i in 0..len(function.parameters)
@@ -610,12 +740,12 @@ export def verify_module(module: Module) -> string
 			if not valid_type(module.type_table, type) or function.types[!i] != type
 				return "invalid parameter type"
 			if not runtime_type(module.type_table, type)
-				return "unsupported optional payload"
+				return unsupported_type(module.type_table, type)
 		for type in function.types
 			if type != NO_TYPE and not valid_type(module.type_table, type)
 				return "invalid slot type"
 			if type != NO_TYPE and not runtime_type(module.type_table, type)
-				return "unsupported optional payload"
+				return unsupported_type(module.type_table, type)
 	for function in module.functions
 		let error = verify_body(function.body, function.types, function.parameters, function.result, module.functions, module.type_table)
 		if error != ""
@@ -626,6 +756,15 @@ export def verify_module(module: Module) -> string
 # Convert each function's interval to local IDs before pruning its control flow.
 export def rebase(instruction: Instruction, base: i64) -> Instruction
 	match instruction
+		MakeRecord(dst, type, inputs)
+			var fields = Array[i64]()
+			for input in inputs
+				fields = fields.append(input - base)
+			return MakeRecord(dst - base, type, fields)
+		CopyRecord(dst, input)
+			return CopyRecord(dst - base, input - base)
+		ReadField(dst, input, index)
+			return ReadField(dst - base, input - base, index)
 		Call(dst, function, arguments)
 			var inputs = Array[i64]()
 			for input in arguments

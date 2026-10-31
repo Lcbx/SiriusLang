@@ -30,12 +30,26 @@ def compare(left, right, op: string) -> bool
 		return left > right
 	return left >= right
 
-rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]])
+rec RecordValue(scalars: Array[i64], strings: Array[string])
+rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue])
+
+def empty_record(count: i64) -> RecordValue
+	var scalars = Array[i64]()
+	var strings = Array[string]()
+	for i in 0..count
+		scalars = scalars.append(0)
+		strings = strings.append("")
+	return RecordValue(scalars, strings)
 
 def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var slots = Array[i64]()
 	var strings = Array[string]()
 	var optionals = Array[Optional[i64]]()
+	var records = Array[RecordValue]()
+	var has_records = false
+	for type in function.types
+		if IR.is_record(table, type)
+			has_records = true
 	for i in 0..function.body.slots
 		slots = slots.append(0)
 	if IR.function_has_strings(function)
@@ -44,13 +58,17 @@ def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	if IR.function_has_optionals(function, table)
 		for i in 0..function.body.slots
 			optionals = optionals.append("".byte_at(0))
-	return Frame(id, 0, -1, slots, strings, optionals)
+	if has_records
+		for i in 0..function.body.slots
+			records = records.append(empty_record(0))
+	return Frame(id, 0, -1, slots, strings, optionals, records)
 
 def execute(module: IR.Module) -> i64
 	let initial = empty_frame(module.functions[!module.entry], module.entry, module.type_table)
 	var slots = initial.slots
 	var strings = initial.strings
 	var optionals = initial.optionals
+	var records = initial.records
 	var function_id = module.entry
 	var program = module.functions[!function_id].body
 	var stack = Array[Frame]()
@@ -60,6 +78,23 @@ def execute(module: IR.Module) -> i64
 		let instruction = program.instructions[!pc]
 		var next = pc + 1
 		match instruction
+			IR.MakeRecord(dst, type, inputs)
+				let fields = module.type_table.entries[!type].fields
+				var value = empty_record(len(fields))
+				for i in 0..len(fields)
+					if fields[!i].type == IR.TYPE_STRING
+						value.strings[!i] = strings[!inputs[!i]]
+					else
+						value.scalars[!i] = slots[!inputs[!i]]
+				records[!dst] = value
+			IR.CopyRecord(dst, input)
+				records[!dst] = records[!input]
+			IR.ReadField(dst, input, index)
+				let type = module.functions[!function_id].types[!dst]
+				if type == IR.TYPE_STRING
+					strings[!dst] = records[!input].strings[!index]
+				else
+					slots[!dst] = records[!input].scalars[!index]
 			IR.Call(dst, target, arguments)
 				let callee = module.functions[!target]
 				var frame = empty_frame(callee, target, module.type_table)
@@ -70,9 +105,11 @@ def execute(module: IR.Module) -> i64
 						frame.strings[!i] = strings[!input]
 					elif IR.is_optional(module.type_table, type)
 						frame.optionals[!i] = optionals[!input]
+					elif IR.is_record(module.type_table, type)
+						frame.records[!i] = records[!input]
 					else
 						frame.slots[!i] = slots[!input]
-				let saved = Frame(function_id, next, dst, slots, strings, optionals)
+				let saved = Frame(function_id, next, dst, slots, strings, optionals, records)
 				if depth == len(stack)
 					stack = stack.append(saved)
 				else
@@ -83,6 +120,7 @@ def execute(module: IR.Module) -> i64
 				slots = frame.slots
 				strings = frame.strings
 				optionals = frame.optionals
+				records = frame.records
 				next = 0
 			IR.OptionalUnwrap(dst, input)
 				if not present(optionals[!input])
@@ -214,24 +252,30 @@ def execute(module: IR.Module) -> i64
 				var scalar = 0
 				var text = ""
 				var optional = "".byte_at(0)
+				var record = empty_record(0)
 				if type == IR.TYPE_STRING
 					text = strings[!input]
 				elif IR.is_optional(module.type_table, type)
 					optional = optionals[!input]
+				elif IR.is_record(module.type_table, type)
+					record = records[!input]
 				else
 					scalar = slots[!input]
 				depth -= 1
 				let saved = stack[!depth]
-				stack[!depth] = Frame(-1, 0, -1, [], [], [])
+				stack[!depth] = Frame(-1, 0, -1, [], [], [], [])
 				function_id = saved.function
 				program = module.functions[!function_id].body
 				slots = saved.slots
 				strings = saved.strings
 				optionals = saved.optionals
+				records = saved.records
 				if type == IR.TYPE_STRING
 					strings[!saved.dst] = text
 				elif IR.is_optional(module.type_table, type)
 					optionals[!saved.dst] = optional
+				elif IR.is_record(module.type_table, type)
+					records[!saved.dst] = record
 				else
 					slots[!saved.dst] = scalar
 				next = saved.pc

@@ -42,14 +42,30 @@ checks descriptor/cache consistency and rejects invalid or cyclic payload links.
 Both backends consult descriptors to select optional storage. The table can
 represent optional booleans, strings and nested optionals, but their source
 syntax, operations and runtime layouts remain unimplemented; executable optional
-values still require `i64` payloads. Aggregate descriptors will accompany their
-language support.
+values still require `i64` payloads. Record descriptors contain canonical fields;
+array and dictionary descriptors will accompany their language support.
 Run `python rewrite/test_rewrite_frontend.py` and
 `python rewrite/test_rewrite_functions.py` from the repository root for checking,
 native/interpreted execution, string snapshots and ARC coverage.
 `python rewrite/test_rewrite_types.py` covers canonicalization, malformed tables,
 type-table snapshots and optional IDs that differ from the default table,
 including native/interpreted execution, C emission and ARC auditing.
+
+Flat `rec` declarations support `i64`, `bool` and `string` fields, positional
+construction, field reads, local bindings/assignment, and function parameters
+and results. Declarations may appear after their uses. Constructors evaluate
+arguments in declaration order; canonical layouts sort fields by name. Different
+record names and declaration orders share a type when their field names and types
+match. Concrete annotations require matching field sets, as in the original
+compiler. Fields are not yet assignable, while a `var` binding may replace its
+whole record value. String fields retain value snapshots across copies, calls,
+reassignment, loops and early returns. C emission uses typed structs and the
+existing string retain/release operations; the interpreter stores scalar and
+string fields separately. IR verification checks constructors, field indices,
+copy types and initialization. Nested/composed field types, record literals,
+constructor bodies, record equality and direct record formatting remain
+unimplemented. `python rewrite/test_rewrite_records.py` covers native/MIR parity,
+canonical aliases, constructor order, invalid records and managed-field ARC.
 
 Ranges are ascending and
 half-open and bind an immutable local `i`. Bound expressions are evaluated
