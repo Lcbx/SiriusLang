@@ -238,7 +238,7 @@ def expression(p: State, minimum: i64) -> Parsed
 		if text(next) == "Array"
 			next.index += 1
 			next = expect(next, "[")
-			next = expect(next, "i64")
+			next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "nested array element type")
 			next = expect(next, "]")
 		else
 			next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "array element type")

@@ -16,7 +16,7 @@ now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of records with managed
 fields; recursive field/index updates now work for supported aggregate types,
-including two-level `Array[Array[i64]]` storage; other nested array element types and a module loader remain unimplemented.
+including two-level `Array[Array[i64]]` and `Array[Array[string]]` storage; other nested array element types and a module loader remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
 including records stored in arrays.
@@ -93,7 +93,8 @@ justifies replacing it.
   `test_rewrite_nested_records.py`. Forward/cyclic record definitions remain unsupported.
 - [x] Support record fields of type `Array[Array[i64]]`, including recursive
   updates, owned inner-element snapshots, and native/interpreted ARC checks.
-- [ ] Extend record fields to further nested arrays and broader optional payloads.
+- [x] Support `Array[Array[string]]` record fields through the same managed element callbacks and interpreter value storage.
+- [ ] Extend record fields to nested record arrays, deeper arrays and broader optional payloads.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -112,7 +113,8 @@ justifies replacing it.
   annotations, calls, iteration, append/set, negative checked indexing and
   recursive CoW updates. Generic `S_Array` owns `S_Array_i64 *` elements via
   retain/release callbacks; see `test_rewrite_nested_arrays.py`.
-- [ ] Extend array elements to other nested layouts. Record elements now support
+- [x] Support `Array[Array[string]]` with generic outer `S_Array` storage and retain/release callbacks for inner managed arrays; `test_rewrite_nested_text_arrays.py` covers interpreted/native ARC, CoW, calls, record fields and errors.
+- [ ] Extend array elements to nested record arrays and deeper layouts. Record elements now support
   record-valued fields; their existing element copy/drop callbacks recurse
   through nested records. Records containing primitive-element arrays remain supported.
   Recursive field/index updates work for supported element types.

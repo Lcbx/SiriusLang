@@ -78,5 +78,16 @@ def main() -> i64
 	let bad_nested = entry(nested.table, [IR.Constant(0, 3), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, nested.id])
 	if IR.verify_module(bad_nested) != "main: slot type mismatch"
 		return 21
+	# Generic outer arrays may own managed inner string arrays as values.
+	let nested_text = IR.intern_array(text.table, text.id)
+	if nested_text.id == IR.NO_TYPE or IR.verify_types(nested_text.table) != "" or not IR.runtime_type(nested_text.table, nested_text.id)
+		return 22
+	let nested_text_code: Array[IR.Instruction] = [IR.StringConstant(0, "abc"), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ArrayRead(6, 5, 4), IR.StringLength(7, 6), IR.Return(7)]
+	let nested_text_module = entry(nested_text.table, nested_text_code, [IR.TYPE_STRING, text.id, nested_text.id, nested_text.id, IR.TYPE_I64, text.id, IR.TYPE_STRING, IR.TYPE_I64])
+	if IR.verify_module(nested_text_module) != "" or Interpreter.run_module(nested_text_module) != 3 or Emit.emit(nested_text_module).error != ""
+		return 23
+	let bad_nested_text = entry(nested_text.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, nested_text.id, IR.TYPE_I64])
+	if IR.verify_module(bad_nested_text) != "main: slot type mismatch"
+		return 24
 	print("PASS arrays IR")
 	return 0

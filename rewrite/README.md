@@ -20,7 +20,7 @@ and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
 
 The compiler supports multiple functions with annotated parameters
-and results (`i64`, `bool`, `string`, `Optional[i64]`, `Array[i64]`, `Array[string]`, `Array[Array[i64]]`,
+and results (`i64`, `bool`, `string`, `Optional[i64]`, `Array[i64]`, `Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`,
 and record types, including `Array[RecordName]`). It collects all signatures
 before checking bodies, so direct calls, forward calls and mutual recursion work
 natively and through `--run`. Parameters are immutable locals; functions have
@@ -53,7 +53,7 @@ type-table snapshots and optional IDs that differ from the default table,
 including native/interpreted execution, C emission and ARC auditing.
 
 `rec` declarations support `i64`, `bool`, `string`, `Array[i64]`,
-`Array[string]`, `Array[Array[i64]]`, `Array[PreviouslyDeclaredRecord]` and previously declared
+`Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`, `Array[PreviouslyDeclaredRecord]` and previously declared
 record types as fields, positional
 construction, field reads, local bindings/assignment, and function parameters
 and results. Declarations may appear after their uses. Constructors evaluate
@@ -76,12 +76,12 @@ string and array fields separately. IR verification checks constructors, field i
 copy and update types and initialization. Nested records must refer to earlier
 declarations (cycles and forward references are not supported); the interpreter
 uses an append-only pool of immutable nested values shared across call frames.
-Arrays nested beyond `Array[Array[i64]]`, record literals, constructor bodies, record equality
+Arrays nested beyond the supported two-level `i64`/`string` layouts, record literals, constructor bodies, record equality
 and direct record formatting remain unimplemented.
 `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.
 
-`Array[i64]`, `Array[string]`, `Array[Array[i64]]`, and arrays of records (`Array[Token]`)
+`Array[i64]`, `Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`, and arrays of records (`Array[Token]`)
 are supported by the rewrite. Nonempty
 literals (`[1, 2]`), `Array[i64]()` for empty arrays, annotations, function
 parameters and results, `len(array)`, `.append(value)`, checked `[!index]`
@@ -108,13 +108,13 @@ and release array values across copies, function calls and returns.
 
 The empty literal `[]` is not yet accepted; use `Array[i64]()` or
 `Array[string]()` or `Array[RecordName]()`. Arrays in records now support
-`Array[i64]`, `Array[string]` and `Array[Array[i64]]` fields, including records stored in arrays,
+`Array[i64]`, `Array[string]`, `Array[Array[i64]]` and `Array[Array[string]]` fields, including records stored in arrays,
 with value-preserving field replacement. Fields containing `Array[Record]`
 can also be constructed, read, replaced and recursively updated, including paths
 like `state.nodes[!i].right = target`. The interpreter uses an append-only
 pool for record-array field snapshots, while generated C reuses generic array
-copy/drop callbacks. Other nested array element types and deeper array nesting, optional index reads, direct array formatting and general
-array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
+copy/drop callbacks. Nested record arrays and deeper array nesting, optional index reads, direct array formatting and general
+array methods remain unsupported. Run `python rewrite/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element interpreter/native parity, ARC auditing, invalid program
 rejection and bounds traps. `python rewrite/test_rewrite_record_arrays.py`

@@ -109,8 +109,8 @@ def main() -> i64
     invalid = [
         'def main() -> i64\n\tlet a = [[1], ["x"]]\n\treturn 0\n',
         'def main() -> i64\n\tlet a: Array[Array[i64]] = [1]\n\treturn 0\n',
-        'def main() -> i64\n\tlet a = Array[Array[string]]()\n\treturn 0\n',
-        'def main() -> i64\n\tlet a: Array[Array[string]] = [["x"]]\n\treturn 0\n',
+        'def main() -> i64\n\tlet a: Array[Array[string]] = [[1]]\n\treturn 0\n',
+        'def main() -> i64\n\tlet a: Array[Array[i64]] = [["x"]]\n\treturn 0\n',
         'def main() -> i64\n\tlet a = Array[Array[bool]]()\n\treturn 0\n',
         'def main() -> i64\n\tlet a = [[1]].append(["x"])\n\treturn 0\n',
         'def main() -> i64\n\tvar a = [[1]]\n\ta[!0] = ["x"]\n\treturn 0\n',
