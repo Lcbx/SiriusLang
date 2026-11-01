@@ -383,25 +383,28 @@ def is_assignment(p: State) -> bool
 	if current(p).kind != Lex.TokenKind.index(Lex.Name)
 		return false
 	var index = p.index + 1
-	while p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "."
-		if p.tokens[!index + 1].kind != Lex.TokenKind.index(Lex.Name)
-			return false
-		index += 2
-	if p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "["
-		var depth = 0
-		while index < len(p.tokens)
-			let mark = p.source.slice(p.tokens[!index].start, p.tokens[!index].end)
-			if mark == "["
-				depth += 1
-			elif mark == "]"
-				depth -= 1
-				if depth == 0
-					index += 1
-					break
-			index += 1
-		# An indexed record field is also an assignment target.
-		if index + 1 < len(p.tokens) and p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "." and p.tokens[!index + 1].kind == Lex.TokenKind.index(Lex.Name)
+	while index < len(p.tokens)
+		let mark = p.source.slice(p.tokens[!index].start, p.tokens[!index].end)
+		if mark == "."
+			if index + 1 >= len(p.tokens) or p.tokens[!index + 1].kind != Lex.TokenKind.index(Lex.Name)
+				return false
 			index += 2
+		elif mark == "["
+			var depth = 0
+			while index < len(p.tokens)
+				let bracket = p.source.slice(p.tokens[!index].start, p.tokens[!index].end)
+				if bracket == "["
+					depth += 1
+				elif bracket == "]"
+					depth -= 1
+					if depth == 0
+						index += 1
+						break
+				index += 1
+			if depth != 0
+				return false
+		else
+			break
 	if index >= len(p.tokens)
 		return false
 	let token = p.tokens[!index]
@@ -578,33 +581,54 @@ def block(initial: State, loop_start: i64) -> State
 			returned = true
 		elif is_assignment(p)
 			p.index += 1
-			if text(p) == "["
-				p = expect(p, "[")
-				p = expect(p, "!")
-				let index = expression(p, PREC_OR)
-				p = expect(index.state, "]")
-				let target = node(p, ArrayTarget(), -1, index.node, token)
-				p = target.state
-				var field_token = -1
-				if text(p) == "."
-					p.index += 1
-					field_token = p.index
-					p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
-					if text(p) == "." or text(p) == "["
-						return fail(p, "nested update path not yet supported")
+			if text(p) == "." or text(p) == "["
+				# Keep the mutable root as a binding reference. Each intermediate
+				# read owns a value; write modified values back from leaf to root.
+				let root = node(p, FieldTarget(), -1, -1, token)
+				p = root.state
+				var base = root.node
+				var steps = Array[i64]()
+				var final_field = -1
+				var final_index = -1
+				var final_is_field = false
+				while p.error == "" and (text(p) == "." or text(p) == "[")
+					let field = text(p) == "."
+					var field_token = -1
+					var index_node = -1
+					if field
+						p.index += 1
+						field_token = p.index
+						p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
+					else
+						p = expect(p, "[")
+						p = expect(p, "!")
+						let index = expression(p, PREC_OR)
+						p = expect(index.state, "]")
+						index_node = index.node
+					if text(p) != "." and text(p) != "["
+						final_field = field_token
+						final_index = index_node
+						final_is_field = field
+						break
+					var read = Parsed(p, -1)
+					if field
+						read = node(p, FieldRead(), base, -1, field_token)
+					else
+						read = node(p, ArrayRead(), base, index_node, token)
+					p = read.state
+					base = read.node
+					steps = steps.append(read.node)
 				let op = text(p)
 				let operator_token = p.index
-				var left = -1
-				var record = -1
-				if field_token >= 0 or op != "="
-					let read = node(p, ArrayRead(), target.node, index.node, operator_token)
+				var old = -1
+				if op != "="
+					var read = Parsed(p, -1)
+					if final_is_field
+						read = node(p, FieldRead(), base, -1, final_field)
+					else
+						read = node(p, ArrayRead(), base, final_index, token)
 					p = read.state
-					left = read.node
-					record = read.node
-					if field_token >= 0 and op != "="
-						let field = node(p, FieldRead(), record, -1, field_token)
-						p = field.state
-						left = field.node
+					old = read.node
 				p.index += 1
 				var value = expression(p, PREC_OR)
 				if op != "="
@@ -615,52 +639,45 @@ def block(initial: State, loop_start: i64) -> State
 						kind = NodeKind.Multiply(Multiply())
 					elif op == "/="
 						kind = NodeKind.Divide(Divide())
-					value = node(value.state, kind, left, value.node, operator_token)
-				if field_token >= 0
-					p = node(value.state, ArrayFieldUpdate(), record, value.node, field_token).state
-					p = node(p, ArraySet(), target.node, record, token).state
+					value = node(value.state, kind, old, value.node, operator_token)
+				p = value.state
+				if final_is_field
+					p = node(p, ArrayFieldUpdate(), base, value.node, final_field).state
 				else
-					p = node(value.state, ArraySet(), target.node, value.node, token).state
+					let target = node(p, ArrayTarget(), base, final_index, token)
+					p = node(target.state, ArraySet(), target.node, value.node, token).state
+				# The intermediate read nodes are mutable local value slots.
+				# Only their immediate parent must be updated at each step.
+				var child = base
+				for n in 0..len(steps)
+					let step = p.nodes[!steps[!len(steps) - 1 - n]]
+					if kind_is(step.kind, FieldRead())
+						p = node(p, ArrayFieldUpdate(), step.left, child, step.token).state
+					else
+						let target = node(p, ArrayTarget(), step.left, step.right, token)
+						p = node(target.state, ArraySet(), target.node, child, token).state
+					child = step.left
 				p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
 				continue
-			var field_token = -1
-			if text(p) == "."
-				p.index += 1
-				field_token = p.index
-				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
-				if text(p) == "."
-					return fail(p, "nested field updates not yet supported")
 			let op = text(p)
 			let operator_token = p.index
-			var base = -1
-			if field_token >= 0 or op != "="
-				var target_kind: NodeKind = Variable()
-				if field_token >= 0
-					target_kind = NodeKind.FieldTarget(FieldTarget())
-				let read = node(p, target_kind, -1, -1, token)
-				p = read.state
-				base = read.node
-			var left = base
-			var kind: NodeKind = Add()
+			var left = -1
 			if op != "="
+				let read = node(p, Variable(), -1, -1, token)
+				p = read.state
+				left = read.node
+			p.index += 1
+			var value = expression(p, PREC_OR)
+			if op != "="
+				var kind: NodeKind = Add()
 				if op == "-="
 					kind = NodeKind.Subtract(Subtract())
 				elif op == "*="
 					kind = NodeKind.Multiply(Multiply())
 				elif op == "/="
 					kind = NodeKind.Divide(Divide())
-				if field_token >= 0
-					let read = node(p, FieldRead(), base, -1, field_token)
-					p = read.state
-					left = read.node
-			p.index += 1
-			var value = expression(p, PREC_OR)
-			if op != "="
 				value = node(value.state, kind, left, value.node, operator_token)
-			if field_token >= 0
-				p = node(value.state, FieldAssign(), base, value.node, field_token).state
-			else
-				p = node(value.state, Assign(), value.node, -1, token).state
+			p = node(value.state, Assign(), value.node, -1, token).state
 		else
 			# A guard is an if on the negated condition with one exit statement.
 			let condition = expression(p, PREC_OR)

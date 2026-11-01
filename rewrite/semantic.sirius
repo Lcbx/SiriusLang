@@ -169,17 +169,20 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Zero
 				type = integer
 			Parser.ArrayTarget
-				let target = name(parsed, node.token)
-				let binding = bindings.get(target) or Binding(-1, false, -1)
-				reference = binding.node
-				if reference < 0
-					error = "unknown name: " + target
-				elif not binding.mutable
-					error = "cannot assign to immutable binding: " + target
+				if node.left >= 0
+					type = types[!node.left]
 				else
-					type = types[!reference]
-					if not IR.is_array(type_table, type) or types[!node.right] != integer
-						error = "indexed assignment requires array and i64 index"
+					let target = name(parsed, node.token)
+					let binding = bindings.get(target) or Binding(-1, false, -1)
+					reference = binding.node
+					if reference < 0
+						error = "unknown name: " + target
+					elif not binding.mutable
+						error = "cannot assign to immutable binding: " + target
+					else
+						type = types[!reference]
+				if not IR.is_array(type_table, type) or types[!node.right] != integer
+					error = "indexed assignment requires array and i64 index"
 			Parser.ArraySet
 				if types[!node.right] != IR.array_element(type_table, types[!node.left])
 					error = "array assignment type mismatch"
@@ -297,6 +300,8 @@ export def check(parsed: Parser.State) -> Checked
 					error = "unknown name: " + target
 				else
 					type = types[!reference]
+					if Parser.kind_is(node.kind, Parser.FieldTarget()) and not binding.mutable
+						error = "cannot assign to immutable binding: " + target
 					if Parser.kind_is(node.kind, Parser.Assign())
 						if not binding.mutable
 							error = "cannot assign to immutable binding: " + target

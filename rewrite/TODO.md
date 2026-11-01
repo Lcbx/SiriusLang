@@ -15,8 +15,9 @@ all bodies, including unused functions. Records with scalar/string fields
 now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of records with managed
-fields; indexed-record field updates are supported, but deeper nested
-paths, nested array elements and a module loader remain unimplemented.
+fields; recursive field/index updates now work for supported aggregate types,
+but nested array elements, record-array-valued fields and a module loader
+remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`) are supported, including records
 stored in arrays.
@@ -109,7 +110,7 @@ justifies replacing it.
 - [ ] Extend array elements to nested arrays. Record elements now support
   record-valued fields; their existing element copy/drop callbacks recurse
   through nested records. Records containing primitive-element arrays remain supported.
-  Nested index/field update paths remain separate.
+  Recursive field/index updates work for supported element types.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
   the owned slot, retaining new strings and releasing overwritten ones. Source
@@ -119,10 +120,12 @@ justifies replacing it.
   `tokens[!i].kind += 1`). Read the record into a value slot, update the field,
   then write the record back via `ArraySet`. Evaluate the index once, enforce
   mutable array bindings, and preserve snapshots in interpreter and audited C.
-- [ ] Extend field/index updates to deeper paths such as
-  `p.nodes[!id].right = target`. Evaluate index/receiver expressions once and
-  apply CoW through containing records/arrays, preserving snapshots and
-  immutable bindings.
+- [x] Extend field/index updates to arbitrary paths through supported
+  record and array types (`outer.inner.name`, `outer.inner.data[!i]`,
+  `rows[!i].inner.name`). Intermediate reads own values and are written back in
+  reverse order through `SetField`/`ArraySet`; CoW preserves snapshots and
+  indices are evaluated once. Covered by `test_rewrite_recursive_updates.py`.
+  `p.nodes[!id].right` still needs record fields of type `Array[Record]`.
 - [ ] Extend IR, verification, interpretation and C ownership together. Reuse
   suitable existing runtime operations/layout descriptors instead of introducing
   a second runtime or packing managed values into untyped integer slots.

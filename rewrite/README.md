@@ -61,8 +61,11 @@ record names and declaration orders share a type when their field names and type
 match. Concrete annotations require matching field sets, as in the original
 compiler. A `var` record binding supports direct field assignment (`p.field = x`)
 and compound field updates (`+=`, `-=`, `*=`, `/=`) for the existing field
-types. The base must be a mutable local, not a function parameter or `let`;
-deeper field/index paths are not yet supported. Fields are updated in the
+types. The root must be a mutable local, not a function parameter or `let`.
+Field/index paths such as `outer.inner.text`, `outer.inner.values[!i]` and
+`records[!i].inner.text` update copied intermediate values and write them back
+to the root. Index expressions are evaluated once; compound assignments read
+the selected element before evaluating the right-hand side. Fields are updated in the
 binding's owned record slot, with retain/release for replaced strings, arrays, and
 nested record values. Other copies retain their previous values. Nested
 records, strings and arrays preserve snapshots across copies, calls,
@@ -106,8 +109,7 @@ The empty literal `[]` is not yet accepted; use `Array[i64]()` or
 `Array[string]()` or `Array[RecordName]()`. Arrays in records now support
 `Array[i64]` and `Array[string]` fields, including records stored in arrays,
 with value-preserving field replacement. Nested arrays, record-array-valued fields,
-deeper nested update paths (such as `p.nodes[!id].right = x`), optional index reads,
-direct array formatting and general
+optional index reads, direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element interpreter/native parity, ARC auditing, invalid program
@@ -116,6 +118,10 @@ exercises record elements, including managed fields, CoW, invalid operands,
 function calls, loops and bounds traps.
 `python rewrite/test_rewrite_nested_updates.py` covers indexed record-field
 updates, compound operators, snapshots, invalid targets, and bounds traps.
+`python rewrite/test_rewrite_recursive_updates.py` covers arbitrary paths through
+supported record and array fields, including ARC, invalid types and bounds.
+`p.nodes[!id].right = x` is syntactically supported but requires a currently
+unsupported record field of type `Array[Node]`.
 `python rewrite/test_rewrite_composed_records.py` covers array-valued record
 fields, records in arrays, calls, aliases, CoW, ARC, invalid types, and bounds traps.
 `python rewrite/test_rewrite_nested_records.py` checks nested record construction,
@@ -170,8 +176,8 @@ Shifts require counts from 0 through 63; left shifts wrap and right shifts
 zero-fill, including for negative integers. Generated C uses unsigned shifts.
 Compound assignments to local names reuse variable reads, arithmetic and
 ordinary assignment; mutability checks and arithmetic traps apply unchanged.
-`%=`, bitwise compound assignments and deeper nested update paths remain unsupported.
-Flat record fields, indexed assignments and record fields inside arrays support `=`, `+=`,
+`%=` and bitwise compound assignments remain unsupported.
+Field/index paths through supported types accept `=`, `+=`,
 `-=`, `*=`, and `/=`.
 Integer literals must fit in the positive `i64` range; in particular, a literal spelling of the
 minimum `i64` is not yet supported. The compiler checks names, duplicate

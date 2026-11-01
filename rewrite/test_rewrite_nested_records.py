@@ -117,8 +117,8 @@ def main() -> i64
         'rec Inner(x: i64)\nrec Outer(child: Inner)\ndef main() -> i64\n\tvar x = Outer(Inner(1))\n\tx.child = 3\n\treturn 0\n',
         'rec Inner(x: i64)\nrec Outer(child: Inner)\ndef main() -> i64\n\tlet x = Outer(Inner(1))\n\tx.child = Inner(2)\n\treturn 0\n',
         'rec Inner(x: i64)\nrec Outer(child: Inner)\ndef main() -> i64\n\tlet x = Outer(Inner(1))\n\tprint(x.child.missing)\n\treturn 0\n',
-        'rec Inner(x: i64)\nrec Outer(child: Inner)\ndef main() -> i64\n\tvar x = Outer(Inner(1))\n\tx.child.x = 5\n\treturn 0\n',
-        'rec Inner(x: string)\nrec Outer(child: Inner)\ndef main() -> i64\n\tvar xs = [Outer(Inner("a"))]\n\txs[!0].child.x = "bad"\n\treturn 0\n',
+        'rec Inner(x: i64)\nrec Outer(child: Inner)\ndef main() -> i64\n\tvar x = Outer(Inner(1))\n\tx.child.x = "bad"\n\treturn 0\n',
+        'rec Inner(x: string)\nrec Outer(child: Inner)\ndef main() -> i64\n\tvar xs = [Outer(Inner("a"))]\n\txs[!0].child.x = 17\n\treturn 0\n',
     ]
     bounds = [
         'rec Inner(a: Array[i64])\nrec Outer(inner: Inner)\ndef main() -> i64\n\tlet x = Outer(Inner([1]))\n\tprint(x.inner.a[!2])\n\treturn 0\n',

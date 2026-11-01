@@ -79,7 +79,7 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.MakeArray(i, inputs))
 			Parser.ArrayRead
 				var input = node.left
-				if Parser.kind_is(parsed.nodes[!input].kind, Parser.ArrayTarget())
+				if Parser.kind_is(parsed.nodes[!input].kind, Parser.ArrayTarget()) or Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
 					input = checked.references[!input]
 				instructions = instructions.append(IR.ArrayRead(i, input, node.right))
 			Parser.ArrayAppend
@@ -87,8 +87,14 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.ArrayTarget
 				instructions = instructions.append(IR.Nop())
 			Parser.ArraySet
-				let index = parsed.nodes[!node.left].right
-				instructions = instructions.append(IR.ArraySet(checked.references[!node.left], index, node.right))
+				let target = parsed.nodes[!node.left]
+				let index = target.right
+				var input = target.left
+				if input < 0
+					input = checked.references[!node.left]
+				elif Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
+					input = checked.references[!input]
+				instructions = instructions.append(IR.ArraySet(input, index, node.right))
 			Parser.FieldRead
 				var input = node.left
 				if Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
@@ -99,7 +105,10 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.FieldAssign
 				instructions = instructions.append(IR.SetField(checked.references[!node.left], checked.references[!i], node.right))
 			Parser.ArrayFieldUpdate
-				instructions = instructions.append(IR.SetField(node.left, checked.references[!i], node.right))
+				var input = node.left
+				if Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
+					input = checked.references[!input]
+				instructions = instructions.append(IR.SetField(input, checked.references[!i], node.right))
 			Parser.Parameter | Parser.Argument
 				instructions = instructions.append(IR.Nop())
 			Parser.Call
