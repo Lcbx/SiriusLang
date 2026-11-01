@@ -67,5 +67,16 @@ def main() -> i64
 	let wrong_record = entry(rec_array.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, rec_array.id, IR.TYPE_I64])
 	if IR.verify_module(wrong_record) != "main: slot type mismatch"
 		return 18
+	# A managed outer array of specialized i64 arrays keeps each inner value owned.
+	let nested = IR.intern_array(initial, id)
+	if nested.id == IR.NO_TYPE or IR.verify_types(nested.table) != "" or not IR.runtime_type(nested.table, nested.id)
+		return 19
+	let nested_code: Array[IR.Instruction] = [IR.Constant(0, 5), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ArrayRead(6, 5, 4), IR.Return(6)]
+	let nested_module = entry(nested.table, nested_code, [IR.TYPE_I64, id, nested.id, nested.id, IR.TYPE_I64, id, IR.TYPE_I64])
+	if IR.verify_module(nested_module) != "" or Interpreter.run_module(nested_module) != 5 or Emit.emit(nested_module).error != ""
+		return 20
+	let bad_nested = entry(nested.table, [IR.Constant(0, 3), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, nested.id])
+	if IR.verify_module(bad_nested) != "main: slot type mismatch"
+		return 21
 	print("PASS arrays IR")
 	return 0

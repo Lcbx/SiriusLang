@@ -20,6 +20,8 @@ def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable, recor
 		return IR.TYPE_STRING
 	if annotation == "Array"
 		let item = name(parsed, token + 2)
+		if item == "Array" and name(parsed, token + 4) == "i64"
+			return IR.find_array(table, IR.find_array(table, IR.TYPE_I64))
 		if item == "string"
 			return IR.find_array(table, IR.TYPE_STRING)
 		if item == "i64"
@@ -43,6 +45,13 @@ export def check(parsed: Parser.State) -> Checked
 	var functions = Dict[string, i64]()
 	if parsed.error != ""
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, parsed.error, parsed.error_line)
+	# Add the one supported nested element layout only when the source uses it.
+	# This keeps type IDs stable for existing programs.
+	for i in 0..len(parsed.tokens)
+		if i + 6 >= len(parsed.tokens)
+			continue
+		if name(parsed, i) == "Array" and name(parsed, i + 1) == "[" and name(parsed, i + 2) == "Array" and name(parsed, i + 3) == "[" and name(parsed, i + 4) == "i64" and name(parsed, i + 5) == "]" and name(parsed, i + 6) == "]"
+			type_table = IR.intern_array(type_table, IR.find_array(type_table, IR.TYPE_I64)).table
 	for record in parsed.records
 		let target = name(parsed, record.token)
 		var error = ""
@@ -135,6 +144,8 @@ export def check(parsed: Parser.State) -> Checked
 						element = integer
 					elif name(parsed, node.token + 2) == "string"
 						element = text
+					elif name(parsed, node.token + 2) == "Array" and name(parsed, node.token + 4) == "i64"
+						element = IR.find_array(type_table, integer)
 					else
 						element = record_types.get(name(parsed, node.token + 2)) or IR.NO_TYPE
 				else
@@ -142,6 +153,8 @@ export def check(parsed: Parser.State) -> Checked
 						error = "empty array literal requires Array[T]()"
 					else
 						element = types[!parsed.nodes[!node.left].left]
+				if IR.is_array(type_table, element) and IR.array_element(type_table, element) == integer
+					type_table = IR.intern_array(type_table, element).table
 				type = IR.find_array(type_table, element)
 				if type == IR.NO_TYPE
 					error = "unsupported array element type"

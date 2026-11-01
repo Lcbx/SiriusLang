@@ -25,8 +25,11 @@ def string_array(table: IR.TypeTable, type: i64) -> bool
 def record_array(table: IR.TypeTable, type: i64) -> bool
 	return IR.is_array(table, type) and IR.is_record(table, IR.array_element(table, type))
 
+def nested_i64_array(table: IR.TypeTable, type: i64) -> bool
+	return IR.is_array(table, type) and IR.is_array(table, IR.array_element(table, type)) and IR.array_element(table, IR.array_element(table, type)) == IR.TYPE_I64
+
 def managed_array(table: IR.TypeTable, type: i64) -> bool
-	return string_array(table, type) or record_array(table, type)
+	return string_array(table, type) or record_array(table, type) or nested_i64_array(table, type)
 
 def optional_slot(id: i64) -> string
 	return "o[" + str(id) + "]"
@@ -207,6 +210,14 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					if len(items) > 0
 						data = "(R" + str(element) + "[]){" + ", ".join(items) + "}"
 					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(R" + str(element) + "), copy_item_R" + str(element) + ", drop_item_R" + str(element) + "));\n")
+				elif nested_i64_array(table, function.types[!dst])
+					var items = Array[string]()
+					for input in inputs
+						items = items.append(array_slot(input))
+					var data = "NULL"
+					if len(items) > 0
+						data = "(S_Array_i64 *[]){" + ", ".join(items) + "}"
+					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(S_Array_i64 *), copy_i64_array_item, drop_i64_array_item));\n")
 				elif string_array(table, function.types[!dst])
 					var items = Array[string]()
 					for input in inputs
@@ -237,6 +248,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let element = IR.array_element(table, function.types[!input])
 				if IR.is_record(table, element)
 					lines = lines.append("store_R" + str(element) + "(&" + value_slot(dst, element, table) + ", record_array_get_R" + str(element) + "(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
+				elif nested_i64_array(table, function.types[!input])
+					lines = lines.append("store_array(&" + array_slot(dst) + ", nested_i64_array_get(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
 				elif string_array(table, function.types[!input])
 					lines = lines.append("store_string(&" + string_slot(dst) + ", string_array_get(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
 				else
@@ -245,6 +258,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let element = IR.array_element(table, function.types[!input])
 				if IR.is_record(table, element)
 					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &" + value_slot(item, element, table) + "));\n")
+				elif nested_i64_array(table, function.types[!input])
+					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &" + array_slot(item) + "));\n")
 				elif string_array(table, function.types[!input])
 					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &" + string_slot(item) + "));\n")
 				else
@@ -253,6 +268,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let element = IR.array_element(table, function.types[!input])
 				if IR.is_record(table, element)
 					lines = lines.append("s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &" + value_slot(item, element, table) + ");\n")
+				elif nested_i64_array(table, function.types[!input])
+					lines = lines.append("s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &" + array_slot(item) + ");\n")
 				elif string_array(table, function.types[!input])
 					lines = lines.append("s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &" + string_slot(item) + ");\n")
 				else
@@ -453,11 +470,21 @@ export def emit(module: IR.Module) -> Result
 			for type in function.types
 				if string_array(module.type_table, type)
 					has_text_array = true
+		var has_nested_i64 = false
+		for function in module.functions
+			for type in function.types
+				if nested_i64_array(module.type_table, type)
+					has_nested_i64 = true
+		if has_nested_i64
+			lines = lines.append("static inline void copy_i64_array_item(void *dst, const void *src) { *(S_Array_i64 **)dst = s_array_i64_retain(*(S_Array_i64 * const *)src); }\n")
+			lines = lines.append("static inline void drop_i64_array_item(void *item) { s_array_i64_release(*(S_Array_i64 **)item); }\n")
 		if has_text_array
 			lines = lines.append("static inline void copy_string_item(void *dst, const void *src) { *(S_String **)dst = s_string_retain(*(S_String * const *)src); }\n")
 			lines = lines.append("static inline void drop_string_item(void *item) { s_string_release(*(S_String **)item); }\n")
 		lines = lines.append("static inline void store_managed_array(S_Array **dst, S_Array *value) { s_array_release(*dst); *dst = value; }\n")
 		lines = lines.append("static inline int64_t managed_array_index(const S_Array *a, int64_t i) { size_t n = s_array_length(a); if (i < 0 && n <= INT64_MAX && i >= -(int64_t)n) return i + (int64_t)n; return i; }\n")
+		if has_nested_i64
+			lines = lines.append("static inline S_Array_i64 *nested_i64_array_get(const S_Array *a, int64_t i) { S_Array_i64 * const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return s_array_i64_retain(*ptr); }\n")
 		if has_text_array
 			lines = lines.append("static inline S_String *string_array_get(const S_Array *a, int64_t i) { const S_String * const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return s_string_retain((S_String *)*ptr); }\n")
 	if has_strings

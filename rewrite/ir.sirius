@@ -194,7 +194,8 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 		Optional
 			return optional_payload(table, id) == TYPE_I64
 		Array
-			return array_element(table, id) == TYPE_I64 or array_element(table, id) == TYPE_STRING or (is_record(table, array_element(table, id)) and runtime_type(table, array_element(table, id)))
+			let element = array_element(table, id)
+			return element == TYPE_I64 or element == TYPE_STRING or (is_array(table, element) and array_element(table, element) == TYPE_I64) or (is_record(table, element) and runtime_type(table, element))
 		Record
 			for field in table.entries[!id].fields
 				if field.type == TYPE_I64 or field.type == TYPE_BOOL or field.type == TYPE_STRING

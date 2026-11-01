@@ -30,8 +30,8 @@ def compare(left, right, op: string) -> bool
 		return left > right
 	return left >= right
 
-rec RecordValue(scalars: Array[i64], strings: Array[string], arrays: Array[Array[i64]], text_arrays: Array[Array[string]], nested: Array[i64])
-rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue], arrays: Array[Array[i64]], text_arrays: Array[Array[string]], record_arrays: Array[Array[RecordValue]])
+rec RecordValue(scalars: Array[i64], strings: Array[string], arrays: Array[Array[i64]], text_arrays: Array[Array[string]], nested_arrays: Array[Array[Array[i64]]], nested: Array[i64])
+rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue], arrays: Array[Array[i64]], text_arrays: Array[Array[string]], record_arrays: Array[Array[RecordValue]], nested_arrays: Array[Array[Array[i64]]])
 
 def empty_record(count: i64) -> RecordValue
 	var scalars = Array[i64]()
@@ -39,13 +39,15 @@ def empty_record(count: i64) -> RecordValue
 	var arrays = Array[Array[i64]]()
 	var text_arrays = Array[Array[string]]()
 	var nested = Array[i64]()
+	var nested_arrays = Array[Array[Array[i64]]]()
 	for i in 0..count
 		scalars = scalars.append(0)
 		strings = strings.append("")
 		arrays = arrays.append(Array[i64]())
 		text_arrays = text_arrays.append(Array[string]())
+		nested_arrays = nested_arrays.append(Array[Array[i64]]())
 		nested = nested.append(-1)
-	return RecordValue(scalars, strings, arrays, text_arrays, nested)
+	return RecordValue(scalars, strings, arrays, text_arrays, nested_arrays, nested)
 
 def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var slots = Array[i64]()
@@ -55,6 +57,7 @@ def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var arrays = Array[Array[i64]]()
 	var text_arrays = Array[Array[string]]()
 	var record_arrays = Array[Array[RecordValue]]()
+	var nested_arrays = Array[Array[Array[i64]]]()
 	var has_arrays = false
 	var has_records = false
 	for type in function.types
@@ -78,7 +81,8 @@ def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 			arrays = arrays.append(Array[i64]())
 			text_arrays = text_arrays.append(Array[string]())
 			record_arrays = record_arrays.append(Array[RecordValue]())
-	return Frame(id, 0, -1, slots, strings, optionals, records, arrays, text_arrays, record_arrays)
+			nested_arrays = nested_arrays.append(Array[Array[i64]]())
+	return Frame(id, 0, -1, slots, strings, optionals, records, arrays, text_arrays, record_arrays, nested_arrays)
 
 def execute(module: IR.Module) -> i64
 	let initial = empty_frame(module.functions[!module.entry], module.entry, module.type_table)
@@ -89,6 +93,7 @@ def execute(module: IR.Module) -> i64
 	var arrays = initial.arrays
 	var text_arrays = initial.text_arrays
 	var record_arrays = initial.record_arrays
+	var nested_arrays = initial.nested_arrays
 	# Shared append-only arena: nested record references survive frame changes.
 	var record_pool = Array[RecordValue]()
 	# Keep array-valued record fields in a separate pool to avoid a recursive
@@ -110,6 +115,11 @@ def execute(module: IR.Module) -> i64
 					for input in inputs
 						values = values.append(records[!input])
 					record_arrays[!dst] = values
+				elif IR.is_array(module.type_table, item_type)
+					var values = Array[Array[i64]]()
+					for input in inputs
+						values = values.append(arrays[!input])
+					nested_arrays[!dst] = values
 				elif item_type == IR.TYPE_STRING
 					var values = Array[string]()
 					for input in inputs
@@ -124,6 +134,8 @@ def execute(module: IR.Module) -> i64
 				let element = IR.array_element(module.type_table, module.functions[!function_id].types[!dst])
 				if IR.is_record(module.type_table, element)
 					record_arrays[!dst] = record_arrays[!input]
+				elif IR.is_array(module.type_table, element)
+					nested_arrays[!dst] = nested_arrays[!input]
 				elif element == IR.TYPE_STRING
 					text_arrays[!dst] = text_arrays[!input]
 				else
@@ -132,6 +144,8 @@ def execute(module: IR.Module) -> i64
 				let element = IR.array_element(module.type_table, module.functions[!function_id].types[!input])
 				if IR.is_record(module.type_table, element)
 					slots[!dst] = len(record_arrays[!input])
+				elif IR.is_array(module.type_table, element)
+					slots[!dst] = len(nested_arrays[!input])
 				elif element == IR.TYPE_STRING
 					slots[!dst] = len(text_arrays[!input])
 				else
@@ -141,11 +155,14 @@ def execute(module: IR.Module) -> i64
 				let element = IR.array_element(module.type_table, module.functions[!function_id].types[!input])
 				let record_items = IR.is_record(module.type_table, element)
 				let string_items = element == IR.TYPE_STRING
+				let nested_items = IR.is_array(module.type_table, element)
 				var count = len(arrays[!input])
 				if string_items
 					count = len(text_arrays[!input])
 				elif record_items
 					count = len(record_arrays[!input])
+				elif nested_items
+					count = len(nested_arrays[!input])
 				if at < 0
 					at += count
 				if at < 0 or at >= count
@@ -153,6 +170,8 @@ def execute(module: IR.Module) -> i64
 					return EXIT_RUNTIME_ERROR
 				if record_items
 					records[!dst] = record_arrays[!input][!at]
+				elif nested_items
+					arrays[!dst] = nested_arrays[!input][!at]
 				elif string_items
 					strings[!dst] = text_arrays[!input][!at]
 				else
@@ -161,6 +180,8 @@ def execute(module: IR.Module) -> i64
 				let element = IR.array_element(module.type_table, module.functions[!function_id].types[!input])
 				if IR.is_record(module.type_table, element)
 					record_arrays[!dst] = record_arrays[!input].append(records[!item])
+				elif IR.is_array(module.type_table, element)
+					nested_arrays[!dst] = nested_arrays[!input].append(arrays[!item])
 				elif element == IR.TYPE_STRING
 					text_arrays[!dst] = text_arrays[!input].append(strings[!item])
 				else
@@ -170,11 +191,14 @@ def execute(module: IR.Module) -> i64
 				let element = IR.array_element(module.type_table, module.functions[!function_id].types[!input])
 				let record_items = IR.is_record(module.type_table, element)
 				let string_items = element == IR.TYPE_STRING
+				let nested_items = IR.is_array(module.type_table, element)
 				var count = len(arrays[!input])
 				if string_items
 					count = len(text_arrays[!input])
 				elif record_items
 					count = len(record_arrays[!input])
+				elif nested_items
+					count = len(nested_arrays[!input])
 				if at < 0
 					at += count
 				if at < 0 or at >= count
@@ -184,6 +208,10 @@ def execute(module: IR.Module) -> i64
 					var values = record_arrays[!input]
 					values[!at] = records[!item]
 					record_arrays[!input] = values
+				elif nested_items
+					var values = nested_arrays[!input]
+					values[!at] = arrays[!item]
+					nested_arrays[!input] = values
 				elif string_items
 					var values = text_arrays[!input]
 					values[!at] = strings[!item]
@@ -207,6 +235,8 @@ def execute(module: IR.Module) -> i64
 						if IR.is_record(module.type_table, element)
 							value.nested[!i] = len(record_array_pool)
 							record_array_pool = record_array_pool.append(record_arrays[!inputs[!i]])
+						elif IR.is_array(module.type_table, element)
+							value.nested_arrays[!i] = nested_arrays[!inputs[!i]]
 						elif element == IR.TYPE_STRING
 							value.text_arrays[!i] = text_arrays[!inputs[!i]]
 						else
@@ -226,6 +256,8 @@ def execute(module: IR.Module) -> i64
 					let element = IR.array_element(module.type_table, type)
 					if IR.is_record(module.type_table, element)
 						record_arrays[!dst] = record_array_pool[!records[!input].nested[!index]]
+					elif IR.is_array(module.type_table, element)
+						nested_arrays[!dst] = records[!input].nested_arrays[!index]
 					elif element == IR.TYPE_STRING
 						text_arrays[!dst] = records[!input].text_arrays[!index]
 					else
@@ -245,6 +277,8 @@ def execute(module: IR.Module) -> i64
 					if IR.is_record(module.type_table, element)
 						value.nested[!index] = len(record_array_pool)
 						record_array_pool = record_array_pool.append(record_arrays[!input])
+					elif IR.is_array(module.type_table, element)
+						value.nested_arrays[!index] = nested_arrays[!input]
 					elif element == IR.TYPE_STRING
 						value.text_arrays[!index] = text_arrays[!input]
 					else
@@ -268,13 +302,15 @@ def execute(module: IR.Module) -> i64
 						let element = IR.array_element(module.type_table, type)
 						if IR.is_record(module.type_table, element)
 							frame.record_arrays[!i] = record_arrays[!input]
+						elif IR.is_array(module.type_table, element)
+							frame.nested_arrays[!i] = nested_arrays[!input]
 						elif element == IR.TYPE_STRING
 							frame.text_arrays[!i] = text_arrays[!input]
 						else
 							frame.arrays[!i] = arrays[!input]
 					else
 						frame.slots[!i] = slots[!input]
-				let saved = Frame(function_id, next, dst, slots, strings, optionals, records, arrays, text_arrays, record_arrays)
+				let saved = Frame(function_id, next, dst, slots, strings, optionals, records, arrays, text_arrays, record_arrays, nested_arrays)
 				if depth == len(stack)
 					stack = stack.append(saved)
 				else
@@ -289,6 +325,7 @@ def execute(module: IR.Module) -> i64
 				arrays = frame.arrays
 				text_arrays = frame.text_arrays
 				record_arrays = frame.record_arrays
+				nested_arrays = frame.nested_arrays
 				next = 0
 			IR.OptionalUnwrap(dst, input)
 				if not present(optionals[!input])
@@ -424,6 +461,7 @@ def execute(module: IR.Module) -> i64
 				var array = Array[i64]()
 				var text_array = Array[string]()
 				var record_array = Array[RecordValue]()
+				var nested_array = Array[Array[i64]]()
 				if type == IR.TYPE_STRING
 					text = strings[!input]
 				elif IR.is_optional(module.type_table, type)
@@ -434,6 +472,8 @@ def execute(module: IR.Module) -> i64
 					let element = IR.array_element(module.type_table, type)
 					if IR.is_record(module.type_table, element)
 						record_array = record_arrays[!input]
+					elif IR.is_array(module.type_table, element)
+						nested_array = nested_arrays[!input]
 					elif element == IR.TYPE_STRING
 						text_array = text_arrays[!input]
 					else
@@ -442,7 +482,7 @@ def execute(module: IR.Module) -> i64
 					scalar = slots[!input]
 				depth -= 1
 				let saved = stack[!depth]
-				stack[!depth] = Frame(-1, 0, -1, [], [], [], [], [], [], [])
+				stack[!depth] = Frame(-1, 0, -1, [], [], [], [], [], [], [], [])
 				function_id = saved.function
 				program = module.functions[!function_id].body
 				slots = saved.slots
@@ -452,6 +492,7 @@ def execute(module: IR.Module) -> i64
 				arrays = saved.arrays
 				text_arrays = saved.text_arrays
 				record_arrays = saved.record_arrays
+				nested_arrays = saved.nested_arrays
 				if type == IR.TYPE_STRING
 					strings[!saved.dst] = text
 				elif IR.is_optional(module.type_table, type)
@@ -462,6 +503,8 @@ def execute(module: IR.Module) -> i64
 					let element = IR.array_element(module.type_table, type)
 					if IR.is_record(module.type_table, element)
 						record_arrays[!saved.dst] = record_array
+					elif IR.is_array(module.type_table, element)
+						nested_arrays[!saved.dst] = nested_array
 					elif element == IR.TYPE_STRING
 						text_arrays[!saved.dst] = text_array
 					else

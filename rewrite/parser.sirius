@@ -235,7 +235,13 @@ def expression(p: State, minimum: i64) -> Parsed
 	elif text(next) == "Array" and next_text(next) == "["
 		next.index += 1
 		next = expect(next, "[")
-		next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "array element type")
+		if text(next) == "Array"
+			next.index += 1
+			next = expect(next, "[")
+			next = expect(next, "i64")
+			next = expect(next, "]")
+		else
+			next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "array element type")
 		next = expect(next, "]")
 		next = expect(next, "(")
 		result = node(expect(next, ")"), ArrayLiteral(), -1, 0, token)
@@ -416,7 +422,7 @@ def annotation(p: State) -> State
 	if text(result) == "Array"
 		result.index += 1
 		result = expect(result, "[")
-		result = expect_kind(result, Lex.TokenKind.index(Lex.Name), "array element type")
+		result = annotation(result)
 		return expect(result, "]")
 	if text(result) == "Optional"
 		result.index += 1
