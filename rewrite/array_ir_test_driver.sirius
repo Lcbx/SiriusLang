@@ -55,5 +55,17 @@ def main() -> i64
 	let mismatched = entry(initial, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.ArraySet(1, 0, 2), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_BOOL])
 	if IR.verify_module(mismatched) != "main: slot type mismatch"
 		return 12
+	# Array[record] verification uses the same typed instructions as other arrays.
+	let rec_type = IR.intern_record(initial, [IR.RecordField("text", IR.TYPE_STRING)])
+	let rec_array = IR.intern_array(rec_type.table, rec_type.id)
+	if rec_array.id == IR.NO_TYPE or IR.verify_types(rec_array.table) != ""
+		return 16
+	let record_code: Array[IR.Instruction] = [IR.StringConstant(0, "xyz"), IR.MakeRecord(1, rec_type.id, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ReadField(6, 5, 0), IR.StringLength(7, 6), IR.Return(7)]
+	let records = entry(rec_array.table, record_code, [IR.TYPE_STRING, rec_type.id, rec_array.id, rec_array.id, IR.TYPE_I64, rec_type.id, IR.TYPE_STRING, IR.TYPE_I64])
+	if IR.verify_module(records) != "" or Interpreter.run_module(records) != 3 or Emit.emit(records).error != ""
+		return 17
+	let wrong_record = entry(rec_array.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, rec_array.id, IR.TYPE_I64])
+	if IR.verify_module(wrong_record) != "main: slot type mismatch"
+		return 18
 	print("PASS arrays IR")
 	return 0

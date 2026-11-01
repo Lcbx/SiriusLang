@@ -21,7 +21,7 @@ exit only when it is false. They reuse ordinary branch and exit nodes.
 
 The compiler supports multiple functions with annotated parameters
 and results (`i64`, `bool`, `string`, `Optional[i64]`, `Array[i64]`, `Array[string]`,
-and flat record types). It collects all signatures
+and flat record types, including `Array[RecordName]`). It collects all signatures
 before checking bodies, so direct calls, forward calls and mutual recursion work
 natively and through `--run`. Parameters are immutable locals; functions have
 separate scopes and typed slot storage. Checked calls retain resolved function
@@ -72,7 +72,8 @@ constructor bodies, record equality and direct record formatting remain
 unimplemented. `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.
 
-`Array[i64]` and `Array[string]` are the first collection types supported by the rewrite. Nonempty
+`Array[i64]`, `Array[string]`, and arrays of flat records (`Array[Token]`)
+are supported by the rewrite. Nonempty
 literals (`[1, 2]`), `Array[i64]()` for empty arrays, annotations, function
 parameters and results, `len(array)`, `.append(value)`, checked `[!index]`
 reads, `for item in array`, and mutable local indexed updates (`a[!i] = value`,
@@ -84,17 +85,25 @@ function parameters preserve prior values through reference counting and CoW.
 `Array[string]()` empty construction, annotations, function calls, iteration,
 checked reads and value-preserving append/set operations. Generated C uses the
 existing generic `S_Array` storage with string retain/release element callbacks;
-`Array[i64]` keeps its specialized `S_Array_i64` representation. The interpreter
-stores string arrays separately from integer arrays. Both backends retain and
-release array values across copies, function calls and returns.
+`Array[i64]` keeps its specialized `S_Array_i64` representation. Arrays of flat
+records use `S_Array` with layout-specific copy/drop callbacks. They support
+records containing `i64`, `bool` and `string` fields, positional literals,
+`Array[RecordName]()` construction, snapshots, append, checked indexing,
+assignment of whole elements, iteration, parameters and results. Record-array
+reads return owned record values; CoW updates do not mutate other copies. The
+interpreter stores record arrays in a separate typed pool. Both backends retain
+and release array values across copies, function calls and returns.
 
 The empty literal `[]` is not yet accepted; use `Array[i64]()` or
-`Array[string]()`. Arrays of records and nested arrays, arrays in records,
-nested update paths, optional index reads, direct array formatting and general
+`Array[string]()` or `Array[RecordName]()`. Nested arrays, arrays in records,
+nested update paths (such as `tokens[!0].text = "x"`), optional index reads,
+direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
-for managed-element interpreter/native parity, ARC auditing, invalid program
-rejection and bounds traps. The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
+for string-element interpreter/native parity, ARC auditing, invalid program
+rejection and bounds traps. `python rewrite/test_rewrite_record_arrays.py`
+exercises flat record elements, including managed fields, CoW, invalid operands,
+function calls, loops and bounds traps. The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
 `array_ir_test_driver.sirius` verifies both integer and managed string-array IR.
 
 Ranges are ascending and

@@ -24,7 +24,8 @@ def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable, recor
 			return IR.find_array(table, IR.TYPE_STRING)
 		if item == "i64"
 			return IR.find_array(table, IR.TYPE_I64)
-		return IR.NO_TYPE
+		let element = records.get(item) or IR.NO_TYPE
+		return IR.find_array(table, element)
 	if annotation == "Optional"
 		return IR.find_optional(table, IR.TYPE_I64)
 	if annotation == "i64"
@@ -68,6 +69,10 @@ export def check(parsed: Parser.State) -> Checked
 		type_table = interned.table
 		record_types = record_types.insert(target, interned.id)
 		constructors = constructors.insert(target, Constructor(interned.id, fields))
+	# Array element layouts refer to already canonicalized record descriptors.
+	for record in parsed.records
+		let id = record_types.get(name(parsed, record.token)) or IR.NO_TYPE
+		type_table = IR.intern_array(type_table, id).table
 	# Collect every signature before checking any body, including recursive calls.
 	for function in parsed.functions
 		let target = name(parsed, function.token)
@@ -124,6 +129,8 @@ export def check(parsed: Parser.State) -> Checked
 						element = integer
 					elif name(parsed, node.token + 2) == "string"
 						element = text
+					else
+						element = record_types.get(name(parsed, node.token + 2)) or IR.NO_TYPE
 				else
 					if node.right == 0
 						error = "empty array literal requires Array[T]()"

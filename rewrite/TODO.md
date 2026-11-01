@@ -14,8 +14,9 @@ Per-function flat IR carries checked types and call targets; the verifier checks
 all bodies, including unused functions. Flat records with scalar/string fields
 now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
-checked reads and CoW updates; arrays of records, nested update paths, composed
-record fields and a module loader remain unimplemented.
+checked reads and CoW updates, including arrays of flat records with managed
+string fields; nested update paths, composed record fields and a module loader
+remain unimplemented.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -91,9 +92,13 @@ justifies replacing it.
 - [x] Extend arrays to `string` elements using generic `S_Array` storage and
   string copy/drop callbacks; test CoW overwrite, append, function calls,
   iteration, UTF-8, embedded NUL, invalid types and bounds in both backends.
-- [ ] Extend array element types to records and composed values using
-  element layout/copy/drop callbacks. Then cover nested index/field paths
-  and mixed managed-value element ownership.
+- [x] Extend array elements to flat records with `i64`, `bool` and `string`
+  fields. Reuse generic `S_Array` with per-record retain/release callbacks;
+  cover construction, calls, iteration, overwrite, self-assignment, snapshots,
+  invalid programs and bounds traps in `test_rewrite_record_arrays.py`.
+- [ ] Extend array element types to composed values (arrays and records with
+  nested managed fields) with recursively defined element copy/drop callbacks.
+  Nested index/field update paths remain separate.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
   the owned slot, retaining new strings and releasing overwritten ones. Source
