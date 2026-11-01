@@ -43,8 +43,13 @@ The compiler consults descriptors to select type-specific optional storage.
 Executable optionals can contain scalars, strings, records, arrays, dictionaries
 and nested optionals. Present optional values own their payload: copying, calls,
 returns, unwrapping and defaults retain managed contents, while overwrites and
-returns release them. Constructing arbitrary `Some`/`None` values remains future work;
-lookups currently provide optional values. `items[?index]` and `dict[?key]`
+returns release them. Explicit optional constructors use `T?(value)` for a present
+`Optional[T]` and `T?()` for an absent one, where `T` is a supported type
+expression: `i64?(5)`, `Binding?()`, `Array[string]?(names)` or
+`Optional[i64]?(i64?())` for `Some(None)`. They evaluate the payload exactly
+once, require its type to match `T`, and preserve ownership across calls and
+aggregate updates. `Optional[T]` remains the type annotation syntax; `T?`
+without a constructor call is not yet valid in annotations. `items[?index]` and `dict[?key]`
 return `Optional[T]` without trapping; `items[!index]` and `dict[!key]`
 remain checked and trap when missing. Optional values can also be stored
 inside records, arrays and dictionaries, including as nested optionals. Record

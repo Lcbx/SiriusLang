@@ -534,6 +534,17 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append(store_value(table, type, value_slot(dst, type, table), call))
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + call + ";\n")
+			IR.MakeOptional(dst, input)
+				let type = function.types[!dst]
+				let target = value_slot(dst, type, table)
+				if input < 0
+					lines = lines.append(store_value(table, type, target, "(O" + str(type) + "){0}"))
+				else
+					let payload = IR.optional_payload(table, type)
+					let value = retain_value(table, payload, value_slot(input, payload, table))
+					lines = lines.append("{ O" + str(type) + " constructed = {0}; constructed.has_value = true; constructed.value = " + value + ";\n")
+					lines = lines.append(store_value(table, type, target, "constructed"))
+					lines = lines.append("}\n")
 			IR.OptionalUnwrap(dst, input)
 				let value = value_slot(input, function.types[!input], table)
 				let type = function.types[!dst]

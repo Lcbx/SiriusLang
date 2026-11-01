@@ -156,7 +156,9 @@ overwrites, loop exits and early returns.
   values, including nested optionals and CoW/ARC snapshots.
 - [x] Add optional `[?index]` reads for arrays and dictionaries, including
   negative array indices and ARC-owned aggregate payloads.
-- [ ] Add explicit optional payload construction (`Some`/`None` semantics and syntax).
+- [x] Add explicit `T?(value)` and `T?()` optional construction, including nested
+  optionals, managed payload ownership, type verification and native ARC tests.
+  Retain `Optional[T]` for annotations; `T?` annotation sugar is not in scope.
 - [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
   and checked `[!key]` reads for `i64` and `string` keys with supported
   acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW

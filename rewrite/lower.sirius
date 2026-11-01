@@ -150,6 +150,8 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 					instructions = instructions.append(IR.MakeRecord(i, constructor.type, fields))
 				else
 					instructions = instructions.append(IR.Call(i, checked.references[!i], arguments))
+			Parser.OptionalConstruct
+				instructions = instructions.append(IR.MakeOptional(i, node.left))
 			Parser.OptionalUnwrap
 				instructions = instructions.append(IR.OptionalUnwrap(i, node.left))
 			Parser.OptionalExit

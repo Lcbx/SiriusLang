@@ -25,6 +25,7 @@ export enum NodeKind
 	StringFind
 	OptionalUnwrap
 	OptionalExit
+	OptionalConstruct
 	BooleanLiteral
 	Compare
 	AndStart
@@ -213,6 +214,17 @@ def interpolated(p: State) -> Parsed
 	state.index = resume
 	return Parsed(state, result)
 
+# Constructor syntax is a type expression followed by ?(...), not a
+# general postfix operator. Annotations consume the nested brackets first,
+# so Array[Optional[T]]?(value) and a[?index] cannot be confused.
+def optional_constructor_start(p: State) -> bool
+	if current(p).kind != Lex.TokenKind.index(Lex.Name)
+		return false
+	if next_text(p) != "?" and next_text(p) != "["
+		return false
+	let after = annotation(p)
+	return after.error == "" and text(after) == "?" and next_text(after) == "("
+
 def expression(p: State, minimum: i64) -> Parsed
 	var next = p
 	let token = next.index
@@ -237,6 +249,16 @@ def expression(p: State, minimum: i64) -> Parsed
 	elif current(next).kind == Lex.TokenKind.index(Lex.String)
 		next.index += 1
 		result = node(next, StringLiteral(), -1, -1, token)
+	elif optional_constructor_start(next)
+		next = annotation(next)
+		next = expect(next, "?")
+		next = expect(next, "(")
+		var payload = -1
+		if next.error == "" and text(next) != ")"
+			let argument = expression(next, PREC_OR)
+			next = argument.state
+			payload = argument.node
+		result = node(expect(next, ")"), OptionalConstruct(), payload, -1, token)
 	elif (text(next) == "Array" or text(next) == "Dict") and next_text(next) == "["
 		next = annotation(next)
 		next = expect(next, "(")

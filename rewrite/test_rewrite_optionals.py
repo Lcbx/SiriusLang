@@ -17,6 +17,101 @@ def run(*args):
     return subprocess.run([str(arg) for arg in args], capture_output=True, timeout=60)
 
 VALID = [
+    ('explicit scalar optional construction', '''
+def main() -> i64
+    let a = i64?(0)
+    let b = i64?()
+    let present = bool?(false)
+    let absent = bool?()
+    print(a or 20)
+    print(b or 21)
+    print(present or true)
+    print(absent or true)
+    print(i64?(-12)!)
+    return 0
+''', b'0\n21\nfalse\ntrue\n-12\n'),
+    ('explicit string snapshots and calls', '''
+def wrap(value: string) -> Optional[string]
+    return string?(value)
+def missing() -> Optional[string]
+    return string?()
+def main() -> i64
+    var value = string?("original")
+    let saved = value
+    let result = wrap(value!)
+    value = missing()
+    print(saved or "wrong")
+    print(result!)
+    print(value or "missing")
+    return 0
+''', b'original\noriginal\nmissing\n'),
+    ('explicit record, array, dict constructors with ownership', '''
+rec Binding(id: i64, text: string)
+def choose(value: Optional[Binding]) -> string
+    let binding = value or Binding(9, "absent")
+    return binding.text
+def main() -> i64
+    let record = Binding?(Binding(3, "found"))
+    let none = Binding?()
+    let saved = record
+    let arr = Array[string]?( ["a", "b"] )
+    let noarr = Array[string]?()
+    let dict = Dict[string, Binding]?(Dict[string, Binding]().insert("x", Binding(2, "item")))
+    print(choose(record))
+    print(choose(none))
+    print(saved!.id)
+    print((arr or ["wrong"])[!1])
+    print(len(noarr or Array[string]()))
+    print((dict or Dict[string, Binding]())[!"x"].text)
+    return 0
+''', b'found\nabsent\n3\nb\n0\nitem\n'),
+    ('explicit nested optionals preserve some none', '''
+def main() -> i64
+    let empty = Optional[i64]?()
+    let some_none = Optional[i64]?(i64?())
+    let some_some = Optional[i64]?(i64?(5))
+    print((empty or i64?(99)) or 12)
+    print((some_none or i64?(99)) or 12)
+    print((some_some or i64?(99)) or 12)
+    let copied = some_none
+    print((copied or i64?(99)) or 12)
+    return 0
+''', b'99\n12\n5\n12\n'),
+    ('explicit optional array elements and CoW', '''
+def main() -> i64
+    var items = [string?("first"), string?()]
+    let snapshot = items
+    items[!0] = string?("changed")
+    items = items.append(string?("last"))
+    print(snapshot[!0] or "wrong")
+    print(snapshot[!1] or "missing")
+    print(items[!0] or "wrong")
+    print(items[!2]!)
+    print((items[?8] or string?("outer missing")) or "inner missing")
+    return 0
+''', b'first\nmissing\nchanged\nlast\nouter missing\n'),
+    ('explicit optional record field and dictionary values', '''
+rec Entry(name: string)
+rec Scope(binding: Optional[Entry])
+def main() -> i64
+    var scopes = Dict[i64, Scope]().insert(1, Scope(Entry?(Entry("original"))))
+    let copy = scopes
+    scopes = scopes.insert(1, Scope(Entry?()))
+    print((scopes[!1].binding or Entry("none")).name)
+    print(copy[!1].binding!.name)
+    return 0
+''', b'none\noriginal\n'),
+    ('optional constructors and indexed access do not conflict', '''
+def main() -> i64
+    let values = [i64?(4), i64?()]
+    let source = values[?0]
+    print((source or i64?()) or 6)
+    print((values[?1] or i64?(7)) or 6)
+    print((values[?9] or i64?(7)) or 6)
+    let outer = Array[Optional[i64]]?(values)
+    print(((outer or Array[Optional[i64]]())[?0] or i64?(9)) or 10)
+    return 0
+''', b'4\n6\n7\n4\n'),
     ('optional array indexing integers and boundaries', '''
 def main() -> i64
     let a = [0, 14, -3]
@@ -281,6 +376,16 @@ def main() -> i64
 ''', b'stored\nnone\nchanged\n'),
 ]
 INVALID = [
+    'def main() -> i64\n    let a = i64?("wrong")\n    return 0\n',
+    'def main() -> i64\n    let a = bool?(3)\n    return 0\n',
+    'def main() -> i64\n    let a = i64?(1, 2)\n    return 0\n',
+    'def main() -> i64\n    let a = i64?(1,)\n    return 0\n',
+    'def main() -> i64\n    let a = Unknown?()\n    return 0\n',
+    'def main() -> i64\n    let a = Optional[i64]?(10)\n    return 0\n',
+    'def main() -> i64\n    let a = Optional[i64]()\n    return 0\n',
+    'def main() -> i64\n    let a: Optional[i64] = bool?()\n    return 0\n',
+    'def main() -> i64\n    let a = Array[i64]?("invalid")\n    return 0\n',
+    'def main() -> i64\n    let a = Dict[string, i64]?(Array[i64]())\n    return 0\n',
     'def main() -> i64\n    let a = [1]\n    let o: Optional[string] = a[?0]\n    return 0\n',
     'def main() -> i64\n    let a = [1]\n    print(a[?"wrong"] or 0)\n    return 0\n',
     'def main() -> i64\n    let a = [1]\n    print(a[?0] + 1)\n    return 0\n',
@@ -296,6 +401,8 @@ INVALID = [
     'def main() -> i64\n    let d = Dict[string, i64]()\n    let values: Array[Optional[bool]] = [d.get("x")]\n    return 0\n',
 ]
 TRAPS = [
+    ('explicit absent i64 unwrap', 'def main() -> i64\n    return i64?()!\n'),
+    ('explicit absent nested unwrap', 'def main() -> i64\n    let x = Optional[i64]?()\n    let value = x!\n    return value or 0\n'),
     ('missing string', 'def main() -> i64\n    let d = Dict[string, string]()\n    print(d.get("none")!)\n    return 0\n'),
     ('missing record', 'rec Item(name: string)\ndef main() -> i64\n    let d = Dict[string, Item]()\n    let v = d.get("none")!\n    print(v.name)\n    return 0\n'),
 ]

@@ -162,6 +162,17 @@ export def check(parsed: Parser.State) -> Checked
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.OptionalConstruct
+				let resolved = resolve_type(parsed, node.token, type_table, record_types)
+				type_table = resolved.table
+				if not IR.runtime_type(type_table, resolved.type)
+					error = "invalid optional payload type"
+				else
+					let optional = IR.intern_optional(type_table, resolved.type)
+					type_table = optional.table
+					type = optional.id
+					if node.left >= 0 and not IR.compatible(type_table, types[!node.left], resolved.type)
+						error = "optional payload type mismatch"
 			Parser.DictLiteral
 				let resolved = resolve_type(parsed, node.token, type_table, record_types)
 				type_table = resolved.table
