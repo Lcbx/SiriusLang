@@ -185,6 +185,9 @@ export def verify_types(table: TypeTable) -> string
 		return "invalid record type cache"
 	return ""
 
+# Descriptors form an acyclic graph: every payload and record field points to
+# an earlier ID. Runtime admissibility therefore follows the element/field
+# descriptor recursively, independent of array nesting depth.
 export def runtime_type(table: TypeTable, id: i64) -> bool
 	if not valid_type(table, id)
 		return false
@@ -195,15 +198,10 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 			return optional_payload(table, id) == TYPE_I64
 		Array
 			let element = array_element(table, id)
-			return element == TYPE_I64 or element == TYPE_STRING or (is_array(table, element) and (array_element(table, element) == TYPE_I64 or array_element(table, element) == TYPE_STRING)) or (is_record(table, element) and runtime_type(table, element))
+			return not is_optional(table, element) and runtime_type(table, element)
 		Record
 			for field in table.entries[!id].fields
-				if field.type == TYPE_I64 or field.type == TYPE_BOOL or field.type == TYPE_STRING
-					continue
-				if is_record(table, field.type)
-					if not runtime_type(table, field.type)
-						return false
-				elif not is_array(table, field.type) or not runtime_type(table, field.type)
+				if not runtime_type(table, field.type) or is_optional(table, field.type)
 					return false
 			return true
 

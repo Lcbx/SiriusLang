@@ -20,8 +20,8 @@ and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
 
 The compiler supports multiple functions with annotated parameters
-and results (`i64`, `bool`, `string`, `Optional[i64]`, `Array[i64]`, `Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`,
-and record types, including `Array[RecordName]`). It collects all signatures
+and results (`i64`, `bool`, `string`, `Optional[i64]`, record types, and
+recursively composed `Array[T]` annotations over supported element types). It collects all signatures
 before checking bodies, so direct calls, forward calls and mutual recursion work
 natively. Parameters are immutable locals; functions have
 separate scopes and typed slot storage. Checked calls retain resolved function
@@ -51,9 +51,8 @@ native execution, string snapshots and ARC coverage.
 type-table snapshots and optional IDs that differ from the default table,
 including native execution, C emission and ARC auditing.
 
-`rec` declarations support `i64`, `bool`, `string`, `Array[i64]`,
-`Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`, `Array[PreviouslyDeclaredRecord]` and previously declared
-record types as fields, positional
+`rec` declarations support `i64`, `bool`, `string`, previously declared
+record types, and recursively composed arrays of these types as fields, positional
 construction, field reads, local bindings/assignment, and function parameters
 and results. Declarations may appear after their uses. Constructors evaluate
 arguments in declaration order; canonical layouts sort fields by name. Different
@@ -73,13 +72,14 @@ reassignment, loops and early returns. C emission uses typed structs and the
 existing string/array retain/release operations. IR verification checks constructors, field indices,
 copy and update types and initialization. Nested records must refer to earlier
 declarations (cycles and forward references are not supported).
-Arrays nested beyond the supported two-level `i64`/`string` layouts, record literals, constructor bodies, record equality
-and direct record formatting remain unimplemented.
-`python rewrite/test_rewrite_records.py` covers native/MIR parity,
+Recursive or forward record references, record literals, constructor bodies,
+record equality and direct record formatting remain unimplemented.
+`python rewrite/test_rewrite_records.py` covers native behavior,
 canonical aliases, constructor order, invalid records and managed-field ARC.
 
-`Array[i64]`, `Array[string]`, `Array[Array[i64]]`, `Array[Array[string]]`, and arrays of records (`Array[Token]`)
-are supported by the rewrite. Nonempty
+`Array[T]` supports arbitrary acyclic nesting where `T` is `i64`,
+`bool`, `string`, a previously declared record, or another supported array
+type (for example, `Array[Array[Token]]`). Nonempty
 literals (`[1, 2]`), `Array[i64]()` for empty arrays, annotations, function
 parameters and results, `len(array)`, `.append(value)`, checked `[!index]`
 reads, `for item in array`, and mutable local indexed updates (`a[!i] = value`,
@@ -92,11 +92,9 @@ function parameters preserve prior values through reference counting and CoW.
 checked reads and value-preserving append/set operations. Generated C uses the
 existing generic `S_Array` storage with copy/drop callbacks derived from the
 canonical element descriptor; `Array[i64]` keeps its specialized `S_Array_i64`
-representation. C emission no longer branches separately for string, record,
-integer-array and string-array elements. This does **not** yet make arbitrary
-nesting executable: the source type checker still restricts
-supported array layouts. Arrays of
-records use `S_Array` with layout-specific copy/drop callbacks. They support
+representation. C emission derives managed element copy/drop and reads
+from the canonical element descriptor instead of enumerating nesting depths.
+Arrays of records use `S_Array` with layout-specific copy/drop callbacks. They support
 records containing `i64`, `bool`, `string`, primitive-element array fields, and
 record-valued fields, positional literals, `Array[RecordName]()` construction, snapshots, append, checked indexing,
 assignment of whole elements, iteration, parameters and results. Record-array
@@ -107,12 +105,12 @@ is read as a value, updated, and written back through the array CoW path.
 Generated C retains and releases array values across copies,
 function calls and returns.
 
-The empty literal `[]` is not yet accepted; use `Array[i64]()` or
-`Array[string]()` or `Array[RecordName]()`. Arrays in records now support
-`Array[i64]`, `Array[string]`, `Array[Array[i64]]` and `Array[Array[string]]` fields, including records stored in arrays,
-with value-preserving field replacement. Fields containing `Array[Record]`
-can also be constructed, read, replaced and recursively updated, including paths
-like `state.nodes[!i].right = target`. Generated C reuses generic array copy/drop callbacks. Nested record arrays and deeper array nesting, optional index reads, direct array formatting and general
+The empty literal `[]` is not yet accepted; use `Array[T]()` at any
+supported depth. Array-valued fields in records can be constructed, read,
+replaced and recursively updated, including paths such as
+`state.nodes[!i].right = target` and `forest.trees[!i][!j].text = value`.
+Generated C reuses generic array copy/drop callbacks. Array elements of
+`Optional[T]`, optional index reads, direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element native execution, ARC auditing, invalid program
@@ -124,6 +122,9 @@ updates, compound operators, snapshots, invalid targets, and bounds traps.
 `python rewrite/test_rewrite_recursive_updates.py` covers arbitrary paths through
 supported record and array fields, including ARC, invalid types and bounds.
 `python rewrite/test_rewrite_nested_arrays.py` covers two-level integer arrays, nested CoW updates, record fields, functions, invalid programs, bounds and ARC.
+`python rewrite/test_rewrite_arbitrary_nesting.py` covers deeper arrays,
+boolean elements, arrays of records, recursive assignment, invalid types,
+checked bounds and audited native ownership.
 `python rewrite/test_rewrite_record_array_fields.py` covers array-of-record
 fields in nested records and arrays, CoW updates, invalid programs, and ARC.
 `python rewrite/test_rewrite_composed_records.py` covers array-valued record

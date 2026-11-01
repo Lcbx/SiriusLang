@@ -146,11 +146,11 @@ def main():
 \treturn 0
 ''',
         '''def main() -> i64
-\tlet a = Array[bool]()
+\tlet a = Array[Optional[i64]]()
 \treturn 0
 ''',
         '''def main() -> i64
-\tlet a: Array[bool] = [true]
+\tlet a: Array[Optional[i64]] = [true]
 \treturn 0
 ''',
     ]

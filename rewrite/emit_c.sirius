@@ -270,6 +270,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_string(&" + string_slot(dst) + ", " + read + ");\n")
 					elif managed_array(table, element)
 						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", " + read + ");\n")
+					elif element == IR.TYPE_BOOL
+						lines = lines.append(slot(dst) + " = " + read + ";\n")
 					else
 						lines = lines.append("store_array(&" + array_slot(dst) + ", " + read + ");\n")
 				else
@@ -277,13 +279,19 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 			IR.ArrayAppend(dst, input, item)
 				let element = IR.array_element(table, function.types[!input])
 				if managed_array(table, function.types[!input])
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &" + value_slot(item, element, table) + "));\n")
+					if element == IR.TYPE_BOOL
+						lines = lines.append("{ bool array_item = " + slot(item) + " != 0; store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &array_item)); }\n")
+					else
+						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_append(s_array_retain(" + managed_array_slot(input) + "), &" + value_slot(item, element, table) + "));\n")
 				else
 					lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_append_take(s_array_i64_retain(" + array_slot(input) + "), signed_value(" + slot(item) + ")));\n")
 			IR.ArraySet(input, index, item)
 				let element = IR.array_element(table, function.types[!input])
 				if managed_array(table, function.types[!input])
-					lines = lines.append("s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &" + value_slot(item, element, table) + ");\n")
+					if element == IR.TYPE_BOOL
+						lines = lines.append("{ bool array_item = " + slot(item) + " != 0; s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &array_item); }\n")
+					else
+						lines = lines.append("s_array_set(&" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")), &" + value_slot(item, element, table) + ");\n")
 				else
 					lines = lines.append("s_array_i64_set(&" + array_slot(input) + ", array_index(" + array_slot(input) + ", signed_value(" + slot(index) + ")), signed_value(" + slot(item) + "));\n")
 			IR.MakeRecord(dst, type, inputs)

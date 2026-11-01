@@ -233,16 +233,7 @@ def expression(p: State, minimum: i64) -> Parsed
 		next.index += 1
 		result = node(next, StringLiteral(), -1, -1, token)
 	elif text(next) == "Array" and next_text(next) == "["
-		next.index += 1
-		next = expect(next, "[")
-		if text(next) == "Array"
-			next.index += 1
-			next = expect(next, "[")
-			next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "nested array element type")
-			next = expect(next, "]")
-		else
-			next = expect_kind(next, Lex.TokenKind.index(Lex.Name), "array element type")
-		next = expect(next, "]")
+		next = annotation(next)
 		next = expect(next, "(")
 		result = node(expect(next, ")"), ArrayLiteral(), -1, 0, token)
 	elif text(next) == "["

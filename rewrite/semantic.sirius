@@ -10,32 +10,37 @@ def name(parsed: Parser.State, token_id: i64) -> string
 	let token = parsed.tokens[!token_id]
 	return parsed.source.slice(token.start, token.end)
 
-# The parser accepts only these annotations. IDs are shared across signatures,
-# bindings and expressions; consumers need no annotation syntax lookup.
-def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records: Dict[string, i64]) -> i64
-	let annotation = name(parsed, token)
-	if annotation == "bool"
-		return IR.TYPE_BOOL
-	if annotation == "string"
-		return IR.TYPE_STRING
-	if annotation == "Array"
-		let item = name(parsed, token + 2)
-		if item == "Array" and (name(parsed, token + 4) == "i64" or name(parsed, token + 4) == "string")
-			var nested_element = IR.TYPE_I64
-			if name(parsed, token + 4) == "string"
-				nested_element = IR.TYPE_STRING
-			return IR.find_array(table, IR.find_array(table, nested_element))
-		if item == "string"
-			return IR.find_array(table, IR.TYPE_STRING)
-		if item == "i64"
-			return IR.find_array(table, IR.TYPE_I64)
-		let element = records.get(item) or IR.NO_TYPE
-		return IR.find_array(table, element)
-	if annotation == "Optional"
-		return IR.find_optional(table, IR.TYPE_I64)
-	if annotation == "i64"
-		return IR.TYPE_I64
-	return records.get(annotation) or IR.NO_TYPE
+# Resolve a source type expression while interning each array level. The
+# descriptor graph is acyclic by construction; records can refer only to
+# previously declared records. The token after the type is returned to verify
+# closing brackets without guessing the nesting depth.
+rec ResolvedType(table: IR.TypeTable, type: i64, next: i64)
+
+def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records: Dict[string, i64]) -> ResolvedType
+	if token < 0 or token >= len(parsed.tokens)
+		return ResolvedType(table, IR.NO_TYPE, token)
+	let type_name = name(parsed, token)
+	if type_name == "Array"
+		if token + 1 >= len(parsed.tokens) or name(parsed, token + 1) != "["
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let inner = resolve_type(parsed, token + 2, table, records)
+		if inner.type == IR.NO_TYPE or inner.next >= len(parsed.tokens) or name(parsed, inner.next) != "]"
+			return ResolvedType(table, IR.NO_TYPE, token)
+		if not IR.runtime_type(inner.table, inner.type) or IR.is_optional(inner.table, inner.type)
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let array = IR.intern_array(inner.table, inner.type)
+		return ResolvedType(array.table, array.id, inner.next + 1)
+	if type_name == "Optional"
+		if token + 3 < len(parsed.tokens) and name(parsed, token + 1) == "[" and name(parsed, token + 2) == "i64" and name(parsed, token + 3) == "]"
+			return ResolvedType(table, IR.find_optional(table, IR.TYPE_I64), token + 4)
+		return ResolvedType(table, IR.NO_TYPE, token)
+	if type_name == "i64"
+		return ResolvedType(table, IR.TYPE_I64, token + 1)
+	if type_name == "bool"
+		return ResolvedType(table, IR.TYPE_BOOL, token + 1)
+	if type_name == "string"
+		return ResolvedType(table, IR.TYPE_STRING, token + 1)
+	return ResolvedType(table, records.get(type_name) or IR.NO_TYPE, token + 1)
 
 export def check(parsed: Parser.State) -> Checked
 	var type_table = IR.runtime_types()
@@ -48,19 +53,14 @@ export def check(parsed: Parser.State) -> Checked
 	var functions = Dict[string, i64]()
 	if parsed.error != ""
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, parsed.error, parsed.error_line)
-	# Add supported nested element layouts only when the source uses them.
-	# This keeps type IDs stable for existing programs.
+	# Pre-intern complete builtin array annotations before record declarations,
+	# preserving stable IDs for existing programs. Record-dependent arrays are
+	# resolved after the referenced record has been declared.
 	for i in 0..len(parsed.tokens)
-		if i + 6 >= len(parsed.tokens)
-			continue
-		if name(parsed, i) == "Array" and name(parsed, i + 1) == "[" and name(parsed, i + 2) == "Array" and name(parsed, i + 3) == "[" and name(parsed, i + 5) == "]" and name(parsed, i + 6) == "]"
-			var element = IR.NO_TYPE
-			if name(parsed, i + 4) == "i64"
-				element = IR.TYPE_I64
-			elif name(parsed, i + 4) == "string"
-				element = IR.TYPE_STRING
-			if element != IR.NO_TYPE
-				type_table = IR.intern_array(type_table, IR.find_array(type_table, element)).table
+		if name(parsed, i) == "Array" and i + 1 < len(parsed.tokens) and name(parsed, i + 1) == "["
+			let resolved = resolve_type(parsed, i, type_table, record_types)
+			if resolved.type != IR.NO_TYPE
+				type_table = resolved.table
 	for record in parsed.records
 		let target = name(parsed, record.token)
 		var error = ""
@@ -74,13 +74,9 @@ export def check(parsed: Parser.State) -> Checked
 		var names = Dict[string, bool]()
 		for field in record.fields
 			let field_name = name(parsed, field.token)
-			# Intern arrays of earlier records before resolving this field. Doing
-			# so on demand preserves existing type IDs for unrelated programs.
-			if name(parsed, field.annotation) == "Array"
-				let element = record_types.get(name(parsed, field.annotation + 2)) or IR.NO_TYPE
-				if element != IR.NO_TYPE
-					type_table = IR.intern_array(type_table, element).table
-			let type = annotation_type(parsed, field.annotation, type_table, record_types)
+			let resolved = resolve_type(parsed, field.annotation, type_table, record_types)
+			type_table = resolved.table
+			let type = resolved.type
 			if names.get(field_name) or false
 				error = "duplicate record field: " + field_name
 			elif not IR.runtime_type(type_table, type) or IR.is_optional(type_table, type)
@@ -110,11 +106,15 @@ export def check(parsed: Parser.State) -> Checked
 		var parameters = Array[i64]()
 		for parameter in function.parameters
 			let token = parsed.nodes[!parameter].right
-			let type = annotation_type(parsed, token, type_table, record_types)
+			let resolved = resolve_type(parsed, token, type_table, record_types)
+			type_table = resolved.table
+			let type = resolved.type
 			if type == IR.NO_TYPE
 				error = "unknown type: " + name(parsed, token)
 			parameters = parameters.append(type)
-		let result = annotation_type(parsed, function.result, type_table, record_types)
+		let resolved_result = resolve_type(parsed, function.result, type_table, record_types)
+		type_table = resolved_result.table
+		let result = resolved_result.type
 		if result == IR.NO_TYPE
 			error = "unknown type: " + name(parsed, function.result)
 		if target == "main" and (len(parameters) != 0 or result != IR.TYPE_I64)
@@ -148,25 +148,19 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.ArrayLiteral
 				var element = integer
 				if name(parsed, node.token) == "Array"
-					element = IR.NO_TYPE
-					if name(parsed, node.token + 2) == "i64"
-						element = integer
-					elif name(parsed, node.token + 2) == "string"
-						element = text
-					elif name(parsed, node.token + 2) == "Array" and name(parsed, node.token + 4) == "i64"
-						element = IR.find_array(type_table, integer)
-					elif name(parsed, node.token + 2) == "Array" and name(parsed, node.token + 4) == "string"
-						element = IR.find_array(type_table, text)
-					else
-						element = record_types.get(name(parsed, node.token + 2)) or IR.NO_TYPE
+					let resolved = resolve_type(parsed, node.token, type_table, record_types)
+					type_table = resolved.table
+					type = resolved.type
+					element = IR.array_element(type_table, type)
 				else
 					if node.right == 0
 						error = "empty array literal requires Array[T]()"
 					else
 						element = types[!parsed.nodes[!node.left].left]
-				if IR.is_array(type_table, element) and (IR.array_element(type_table, element) == integer or IR.array_element(type_table, element) == text)
-					type_table = IR.intern_array(type_table, element).table
-				type = IR.find_array(type_table, element)
+					if IR.runtime_type(type_table, element) and not IR.is_optional(type_table, element)
+						let interned = IR.intern_array(type_table, element)
+						type_table = interned.table
+						type = interned.id
 				if type == IR.NO_TYPE
 					error = "unsupported array element type"
 				var arg = node.left
@@ -244,7 +238,9 @@ export def check(parsed: Parser.State) -> Checked
 					error = "assignment type mismatch"
 			Parser.Parameter
 				let target = name(parsed, node.token)
-				type = annotation_type(parsed, node.right, type_table, record_types)
+				let resolved = resolve_type(parsed, node.right, type_table, record_types)
+				type_table = resolved.table
+				type = resolved.type
 				if (bindings.get(target) or Binding(-1, false, -1)).node >= 0
 					error = "duplicate parameter: " + target
 				bindings = bindings.insert(target, Binding(i, false, depth))
@@ -344,7 +340,9 @@ export def check(parsed: Parser.State) -> Checked
 					error = "duplicate binding: " + target
 				type = types[!node.left]
 				if node.right >= 0
-					let expected = annotation_type(parsed, node.right, type_table, record_types)
+					let resolved = resolve_type(parsed, node.right, type_table, record_types)
+					type_table = resolved.table
+					let expected = resolved.type
 					if expected == IR.NO_TYPE
 						error = "unknown type: " + name(parsed, node.right)
 					elif not IR.compatible(type_table, type, expected)

@@ -16,7 +16,8 @@ now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in native C. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of records with managed
 fields; recursive field/index updates now work for supported aggregate types,
-including two-level `Array[Array[i64]]` and `Array[Array[string]]` storage; other nested array element types and a module loader remain unimplemented.
+including recursive `Array[T]` layouts for supported scalars and records.
+A module loader remains unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
 including records stored in arrays.
@@ -41,7 +42,7 @@ Self-compilation is complete when:
 - [x] Parse multiple declarations and function bodies; collect signatures before
   checking bodies so forward calls and mutual recursion type-check. Checked calls
   carry resolved function IDs, and signatures carry the existing scalar type IDs.
-  Covered natively and through MIR by `test_rewrite_frontend.py`.
+  Covered natively by `test_rewrite_frontend.py`.
 - [x] Introduce canonical type IDs for scalars and composed types. Carry checked
   types, resolved names and call targets into per-function IR; do not recover
   types from syntax during C emission. `IR.TypeTable` interns `Optional` descriptors
@@ -49,7 +50,7 @@ Self-compilation is complete when:
   The checker and both IR consumers share the table. Noncanonical caches,
   duplicate descriptors and invalid/cyclic payload links fail verification.
   `test_rewrite_types.py` covers interning, table snapshots and different optional
-  IDs across native/MIR execution and C emission, with ARC checks. Runtime values
+  IDs across native execution and C emission, with ARC checks. Runtime values
   still require `i64` optional payloads; aggregate descriptors will accompany
   milestone 2, and broader optional payload execution remains in milestone 3.
 - [x] Add typed parameters, results, direct calls and per-call local frames.
@@ -91,7 +92,9 @@ justifies replacing it.
 - [x] Support record fields of type `Array[Array[i64]]`, including recursive
   updates, owned inner-element snapshots, and audited native C checks.
 - [x] Support `Array[Array[string]]` record fields through managed element callbacks.
-- [ ] Extend record fields to nested record arrays, deeper arrays and broader optional payloads.
+- [x] Extend record fields to nested arrays of records and deeper array layouts.
+  Resolve `Array[T]` recursively from canonical type descriptors, including
+  arrays of booleans. Optional payloads beyond `Optional[i64]` remain future work.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -113,12 +116,12 @@ justifies replacing it.
 - [x] Support `Array[Array[string]]` with generic outer `S_Array` storage and retain/release callbacks for inner managed arrays; `test_rewrite_nested_text_arrays.py` covers native ARC, CoW, calls, record fields and errors.
 - [x] Derive generic native array element copy/drop/get operations from type
   descriptors instead of separate nested-string, nested-integer and record
-  array emitters. Keep `Array[i64]` specialized. The source checker still
-  needs generic recursive type support.
-- [ ] Extend array elements to nested record arrays and deeper layouts. Record elements now support
-  record-valued fields; their existing element copy/drop callbacks recurse
-  through nested records. Records containing primitive-element arrays remain supported.
-  Recursive field/index updates work for supported element types.
+  array emitters. Keep `Array[i64]` specialized.
+- [x] Extend array elements to nested record arrays and arbitrary acyclic
+  array depth. Descriptor-driven element copy/drop callbacks recursively own
+  managed record and array elements. Tests cover snapshots and update paths
+  through multiple arrays, record fields and function boundaries;
+  see `test_rewrite_arbitrary_nesting.py`.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
   the owned slot, retaining new strings and releasing overwritten ones. Source
@@ -136,9 +139,9 @@ justifies replacing it.
   `p.nodes[!id].right` is now covered with record-array-valued fields.
   See `test_rewrite_record_array_fields.py` for owned record elements,
   function boundaries and audited CoW updates.
-- [ ] Extend IR, verification, interpretation and C ownership together. Reuse
-  suitable existing runtime operations/layout descriptors instead of introducing
-  a second runtime or packing managed values into untyped integer slots.
+- [x] Extend native IR verification and C ownership through supported nested
+  array/record layouts, reusing `S_Array`, typed callbacks and the specialized
+  `S_Array_i64` storage. No second runtime is needed.
 
 Exit check: arrays of token-like records, nested arrays of initialization facts,
 and parser-state-style updates preserve aliases and pass ARC auditing, including

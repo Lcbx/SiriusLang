@@ -25,10 +25,14 @@ def main() -> i64
 	let strings = entry(text.table, [IR.StringConstant(0, "ab"), IR.StringConstant(1, "xyz"), IR.MakeArray(2, [0, 1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.StringLength(6, 5), IR.Return(6)], [IR.TYPE_STRING, IR.TYPE_STRING, text.id, text.id, IR.TYPE_I64, IR.TYPE_STRING, IR.TYPE_I64])
 	if IR.verify_module(strings) != "" or Emit.emit(strings).error != ""
 		return 6
-	let unsupported = IR.intern_array(text.table, IR.TYPE_BOOL)
+	let flags = IR.intern_array(text.table, IR.TYPE_BOOL)
+	let booleans = entry(flags.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [flags.id, IR.TYPE_I64])
+	if IR.verify_module(booleans) != "" or Emit.emit(booleans).error != ""
+		return 13
+	let unsupported = IR.intern_array(flags.table, IR.find_optional(flags.table, IR.TYPE_I64))
 	let bad = entry(unsupported.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [unsupported.id, IR.TYPE_I64])
 	if IR.verify_module(bad) != "unsupported array element type"
-		return 13
+		return 25
 	let bad_element = entry(text.table, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, text.id])
 	if IR.verify_module(bad_element) != "main: slot type mismatch"
 		return 14
@@ -88,5 +92,14 @@ def main() -> i64
 	let bad_nested_text = entry(nested_text.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, nested_text.id, IR.TYPE_I64])
 	if IR.verify_module(bad_nested_text) != "main: slot type mismatch"
 		return 24
+	# The verifier and emitter accept arbitrary acyclic array depth and record
+	# elements through the same descriptor-driven instructions.
+	let array_record = IR.intern_array(rec_array.table, rec_array.id)
+	let deep_record = IR.intern_array(array_record.table, array_record.id)
+	if deep_record.id == IR.NO_TYPE or not IR.runtime_type(deep_record.table, deep_record.id) or IR.verify_types(deep_record.table) != ""
+		return 26
+	let deeply_nested = entry(deep_record.table, [IR.MakeArray(0, []), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.ArrayLength(3, 2), IR.Return(3)], [rec_array.id, array_record.id, deep_record.id, IR.TYPE_I64])
+	if IR.verify_module(deeply_nested) != "" or Emit.emit(deeply_nested).error != ""
+		return 27
 	print("PASS arrays IR")
 	return 0

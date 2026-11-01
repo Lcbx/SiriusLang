@@ -129,7 +129,7 @@ def main() -> i64
         'var x = [1]\n\tx[!0] += "bad"\n\treturn 0',
         'let x = [1]\n\tprint(x.append("bad")[!0])\n\treturn 0',
         'for x in 3\n\t\tprint(x)\n\treturn 0',
-        'for x in [true]\n\t\tprint(x)\n\treturn 0',
+        'for x in [[1]]\n\t\tprint(x)\n\treturn 0',
         'let x = [1,]\n\treturn 0',
         'let x: Array[string] = Array[i64]()\n\treturn 0',
     ]
