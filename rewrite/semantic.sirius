@@ -116,6 +116,18 @@ export def check(parsed: Parser.State) -> Checked
 					error = "unknown record field: " + name(parsed, node.token)
 				else
 					type = type_table.entries[!source].fields[!reference].type
+			Parser.FieldAssign
+				let base = parsed.nodes[!node.left]
+				let target = name(parsed, base.token)
+				let binding = bindings.get(target) or Binding(-1, false, -1)
+				type = types[!node.left]
+				reference = IR.field_index(type_table, type, name(parsed, node.token))
+				if not binding.mutable
+					error = "cannot assign to immutable binding: " + target
+				elif reference < 0
+					error = "unknown record field: " + name(parsed, node.token)
+				elif not IR.compatible(type_table, types[!node.right], type_table.entries[!type].fields[!reference].type)
+					error = "assignment type mismatch"
 			Parser.Parameter
 				let target = name(parsed, node.token)
 				type = annotation_type(parsed, node.right, type_table, record_types)
@@ -196,7 +208,7 @@ export def check(parsed: Parser.State) -> Checked
 				type = integer
 			Parser.RangeCondition | Parser.RangeStep
 				type = -1
-			Parser.Variable | Parser.Assign
+			Parser.Variable | Parser.FieldTarget | Parser.Assign
 				let target = name(parsed, node.token)
 				let binding = bindings.get(target) or Binding(-1, false, -1)
 				reference = binding.node

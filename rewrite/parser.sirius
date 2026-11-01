@@ -51,6 +51,7 @@ export enum NodeKind
 	Binding
 	MutableBinding
 	Assign
+	FieldAssign
 	Print
 	Eprint
 	Return
@@ -65,6 +66,7 @@ export enum NodeKind
 	Argument
 	Call
 	FieldRead
+	FieldTarget
 
 export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
 export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64, end: i64)
@@ -335,7 +337,13 @@ def expression(p: State, minimum: i64) -> Parsed
 def is_assignment(p: State) -> bool
 	if current(p).kind != Lex.TokenKind.index(Lex.Name)
 		return false
-	let op = next_text(p)
+	var index = p.index + 1
+	while p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "."
+		if p.tokens[!index + 1].kind != Lex.TokenKind.index(Lex.Name)
+			return false
+		index += 2
+	let token = p.tokens[!index]
+	let op = p.source.slice(token.start, token.end)
 	return op == "=" or op == "+=" or op == "-=" or op == "*=" or op == "/="
 
 def annotation(p: State) -> State
@@ -491,9 +499,24 @@ def block(initial: State, loop_start: i64) -> State
 			returned = true
 		elif is_assignment(p)
 			p.index += 1
+			var field_token = -1
+			if text(p) == "."
+				p.index += 1
+				field_token = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
+				if text(p) == "."
+					return fail(p, "nested field updates not yet supported")
 			let op = text(p)
 			let operator_token = p.index
-			var left = -1
+			var base = -1
+			if field_token >= 0 or op != "="
+				var target_kind: NodeKind = Variable()
+				if field_token >= 0
+					target_kind = NodeKind.FieldTarget(FieldTarget())
+				let read = node(p, target_kind, -1, -1, token)
+				p = read.state
+				base = read.node
+			var left = base
 			var kind: NodeKind = Add()
 			if op != "="
 				if op == "-="
@@ -502,14 +525,18 @@ def block(initial: State, loop_start: i64) -> State
 					kind = NodeKind.Multiply(Multiply())
 				elif op == "/="
 					kind = NodeKind.Divide(Divide())
-				let read = node(p, Variable(), -1, -1, token)
-				p = read.state
-				left = read.node
+				if field_token >= 0
+					let read = node(p, FieldRead(), base, -1, field_token)
+					p = read.state
+					left = read.node
 			p.index += 1
 			var value = expression(p, PREC_OR)
-			if left >= 0
+			if op != "="
 				value = node(value.state, kind, left, value.node, operator_token)
-			p = node(value.state, Assign(), value.node, -1, token).state
+			if field_token >= 0
+				p = node(value.state, FieldAssign(), base, value.node, field_token).state
+			else
+				p = node(value.state, Assign(), value.node, -1, token).state
 		else
 			# A guard is an if on the negated condition with one exit statement.
 			let condition = expression(p, PREC_OR)

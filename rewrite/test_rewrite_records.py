@@ -43,6 +43,10 @@ def main() -> None:
 		('rec Label(text: string)\ndef pass(p: Label, yes: bool) -> Label\n\tyes else return Label("no")\n\treturn p\ndef main() -> i64\n\tprint(pass(Label("yes"), true).text)\n\tprint(pass(Label("yes"), false).text)\n\treturn 0\n', b'yes\nno\n'),
 		('rec Unused(text: string)\ndef unused(p: Unused) -> Unused\n\treturn p\ndef main() -> i64\n\treturn 0\n', b''),
 		('rec Limits(n: i64, flag: bool)\ndef main() -> i64\n\tprint(Limits(-9223372036854775807 - 1, false).n)\n\tprint(Limits(9223372036854775807, true).n)\n\treturn 0\n', b'-9223372036854775808\n9223372036854775807\n'),
+		('rec R(z: string, a: i64, flag: bool)\ndef main() -> i64\n\tvar r = R("old", 7, false)\n\tlet snapshot = r\n\tr.a += 2\n\tr.z = "new"\n\tr.flag = true\n\tprint(snapshot.z)\n\tprint(snapshot.a)\n\tprint(snapshot.flag)\n\tprint(r.z)\n\tprint(r.a)\n\tprint(r.flag)\n\treturn 0\n', b'old\n7\nfalse\nnew\n9\ntrue\n'),
+		('rec R(text: string, n: i64)\ndef bump(value: R) -> R\n\tvar result = value\n\tresult.n *= 2\n\tresult.text += "!"\n\treturn result\ndef main() -> i64\n\tvar r = R("start", 1)\n\tlet saved = r\n\tfor i in 0..5\n\t\tr.n += 1\n\t\tr.text += str(i)\n\t\tif i == 2\n\t\t\tcontinue\n\tprint(saved.text)\n\tprint(saved.n)\n\tprint(r.n)\n\tprint(r.text)\n\tlet next = bump(r)\n\tprint(next.text)\n\tprint(next.n)\n\tprint(r.text)\n\treturn 0\n', b'start\n1\n6\nstart01234\nstart01234!\n12\nstart01234\n'),
+		('rec R(text: string)\ndef change(r: R) -> R\n\tvar next = r\n\tnext.text = next.text + "x"\n\tnext.text = next.text\n\treturn next\ndef main() -> i64\n\tlet r = R("a\\0b")\n\tlet changed = change(r)\n\tprint(r.text)\n\tprint(changed.text)\n\treturn 0\n', b'a\x00b\na\x00bx\n'),
+		('rec A(x: i64, y: string)\nrec B(y: string, x: i64)\ndef main() -> i64\n\tvar a: A = B("same", 2)\n\tvar b = a\n\tb.x /= 2\n\tb.y = "different"\n\tprint(a.x)\n\tprint(a.y)\n\tprint(b.x)\n\tprint(b.y)\n\treturn 0\n', b'2\nsame\n1\ndifferent\n'),
 	]
 	invalid = [
 		'rec R(x: string)\ndef missing() -> R\n\tprint("no return")\ndef main() -> i64\n\treturn 0\n',
@@ -65,10 +69,16 @@ def main() -> None:
 		'rec A(x: i64)\nrec B(y: i64)\ndef main() -> i64\n\tlet b: B = A(1)\n\treturn 0\n',
 		'rec A(x: i64)\nrec B(x: string)\ndef main() -> i64\n\tlet b: B = A(1)\n\treturn 0\n',
 		'rec R(x: i64)\ndef main() -> i64\n\tlet r = R(1)\n\tr = R(2)\n\treturn 0\n',
-		'rec R(x: i64)\ndef main() -> i64\n\tvar r = R(1)\n\tr.x = 2\n\treturn 0\n',
 		'rec R(x: i64)\ndef main() -> i64\n\tprint(R(1))\n\treturn 0\n',
 		'rec R(x: i64)\ndef main() -> i64\n\tprint(str(R(1)))\n\treturn 0\n',
 		'rec R(x: i64)\ndef main() -> i64\n\tprint(R(1) == R(1))\n\treturn 0\n',
+		'rec R(x: i64)\ndef main() -> i64\n\tlet r = R(1)\n\tr.x = 2\n\treturn 0\n',
+		'rec R(x: string)\ndef replace(r: R) -> R\n\tr.x = "new"\n\treturn r\ndef main() -> i64\n\treturn 0\n',
+		'rec R(x: i64)\ndef main() -> i64\n\tvar r = R(1)\n\tr.missing = 2\n\treturn 0\n',
+		'rec R(x: bool)\ndef main() -> i64\n\tvar r = R(true)\n\tr.x = 1\n\treturn 0\n',
+		'rec R(x: i64)\ndef main() -> i64\n\tvar r = R(1)\n\tr.x += "x"\n\treturn 0\n',
+		'rec R(x: i64)\ndef main() -> i64\n\tvar r = R(1)\n\tr.x.y = 2\n\treturn 0\n',
+		'def main() -> i64\n\tvar n = 2\n\tn.x = 3\n\treturn 0\n',
 	]
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)

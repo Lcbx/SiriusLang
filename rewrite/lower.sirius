@@ -59,7 +59,14 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 		let node = parsed.nodes[!i]
 		match node.kind
 			Parser.FieldRead
-				instructions = instructions.append(IR.ReadField(i, node.left, checked.references[!i]))
+				var input = node.left
+				if Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
+					input = checked.references[!input]
+				instructions = instructions.append(IR.ReadField(i, input, checked.references[!i]))
+			Parser.FieldTarget
+				instructions = instructions.append(IR.Nop())
+			Parser.FieldAssign
+				instructions = instructions.append(IR.SetField(checked.references[!node.left], checked.references[!i], node.right))
 			Parser.Parameter | Parser.Argument
 				instructions = instructions.append(IR.Nop())
 			Parser.Call

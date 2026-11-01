@@ -63,6 +63,16 @@ def main() -> i64
 		return 18
 	if IR.verify_module(program([IR.Constant(0, 0), IR.Constant(4, 7), IR.Branch(0, 5), IR.StringConstant(1, "a"), IR.MakeRecord(2, wide.id, [1, 4]), IR.ReadField(3, 2, 0), IR.StringLength(4, 3), IR.Return(4)], [boolean, string, wide.id, string, integer], table)) != "main: undefined input slot"
 		return 19
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.SetField(1, 1, 0), IR.Constant(2, 0), IR.Return(2)], [string, small.id, integer], table)) != "main: invalid record field index"
+		return 22
+	if IR.verify_module(program([IR.Constant(0, 1), IR.SetField(1, 0, 0), IR.Constant(2, 0), IR.Return(2)], [integer, small.id, integer], table)) != "main: slot type mismatch"
+		return 23
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.Constant(2, 3), IR.SetField(1, 0, 2), IR.Return(2)], [string, small.id, integer], table)) != "main: slot type mismatch"
+		return 24
+	if IR.verify_module(program([IR.Constant(0, 1), IR.SetField(0, 0, 0), IR.Return(0)], [integer], table)) != "main: field update requires record"
+		return 25
+	if IR.verify_module(program([IR.StringConstant(0, "a"), IR.MakeRecord(1, small.id, [0]), IR.SetField(1, 0, 0), IR.Constant(2, 0), IR.Return(2)], [string, small.id, integer], table)) != ""
+		return 26
 	let body = IR.Program([IR.StringConstant(0, "saved"), IR.Constant(1, 7), IR.MakeRecord(2, wide.id, [0, 1]), IR.CopyRecord(3, 2), IR.Call(4, 1, [3]), IR.StringConstant(0, "changed"), IR.ReadField(5, 4, 0), IR.StringLength(6, 5), IR.Return(6)], 7, "", 0)
 	let entry = IR.Function("main", body, [], integer, [string, integer, wide.id, wide.id, wide.id, string, integer])
 	let identity = IR.Function("identity", IR.Program([IR.Return(0)], 1, "", 0), [wide.id], wide.id, [wide.id])

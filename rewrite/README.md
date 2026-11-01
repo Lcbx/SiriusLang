@@ -57,12 +57,16 @@ and results. Declarations may appear after their uses. Constructors evaluate
 arguments in declaration order; canonical layouts sort fields by name. Different
 record names and declaration orders share a type when their field names and types
 match. Concrete annotations require matching field sets, as in the original
-compiler. Fields are not yet assignable, while a `var` binding may replace its
-whole record value. String fields retain value snapshots across copies, calls,
-reassignment, loops and early returns. C emission uses typed structs and the
+compiler. A `var` record binding supports direct field assignment (`p.field = x`)
+and compound field updates (`+=`, `-=`, `*=`, `/=`) for the existing field
+types. The base must be a mutable local, not a function parameter or `let`;
+nested field/index paths are not yet supported. Fields are updated in the
+binding's owned record slot, with retain/release for replaced strings. Other
+copies retain their previous values. String fields retain value snapshots
+across copies, calls, reassignment, loops and early returns. C emission uses typed structs and the
 existing string retain/release operations; the interpreter stores scalar and
 string fields separately. IR verification checks constructors, field indices,
-copy types and initialization. Nested/composed field types, record literals,
+copy and update types and initialization. Nested/composed field types, record literals,
 constructor bodies, record equality and direct record formatting remain
 unimplemented. `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.

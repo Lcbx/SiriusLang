@@ -199,6 +199,8 @@ export rec Call(dst: i64, function: i64, arguments: Array[i64])
 export rec MakeRecord(dst: i64, type: i64, inputs: Array[i64])
 export rec CopyRecord(dst: i64, input: i64)
 export rec ReadField(dst: i64, input: i64, index: i64)
+# Mutate an owned record slot; earlier copies own independent struct values.
+export rec SetField(record: i64, index: i64, input: i64)
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
 # Copy the left value on both edges; skip the right operand when it decides.
@@ -220,7 +222,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Always initializes the scalar destination; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = MakeRecord | CopyRecord | ReadField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -350,6 +352,16 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				output_type = fields[!index].type
 				inputs = [input]
 				input_types = [types[!input]]
+			SetField(record, index, input)
+				if not in_bounds(record, program.slots) or not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not typed or not is_record(table, types[!record])
+					return "field update requires record"
+				let fields = table.entries[!types[!record]].fields
+				if not in_bounds(index, len(fields))
+					return "invalid record field index"
+				inputs = [record, input]
+				input_types = [types[!record], fields[!index].type]
 			Call(target, function, arguments)
 				if not in_bounds(function, len(functions))
 					return "invalid call target"
@@ -548,7 +560,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			MakeRecord | CopyRecord | ReadField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -683,7 +695,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			MakeRecord | CopyRecord | ReadField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -712,7 +724,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			MakeRecord | CopyRecord | ReadField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -765,6 +777,8 @@ export def rebase(instruction: Instruction, base: i64) -> Instruction
 			return CopyRecord(dst - base, input - base)
 		ReadField(dst, input, index)
 			return ReadField(dst - base, input - base, index)
+		SetField(record, index, input)
+			return SetField(record - base, index, input - base)
 		Call(dst, function, arguments)
 			var inputs = Array[i64]()
 			for input in arguments

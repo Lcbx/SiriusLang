@@ -159,6 +159,15 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_retain(" + value + "));\n")
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + value + ";\n")
+			IR.SetField(record, field, input)
+				let record_type = function.types[!record]
+				let field_type = table.entries[!record_type].fields[!field].type
+				let target = value_slot(record, record_type, table) + ".f" + str(field)
+				let value = value_slot(input, field_type, table)
+				if field_type == IR.TYPE_STRING
+					lines = lines.append("store_string(&" + target + ", s_string_retain(" + value + "));\n")
+				else
+					lines = lines.append(target + " = " + value + ";\n")
 			IR.Call(dst, target, arguments)
 				var inputs = Array[string]()
 				for input in arguments

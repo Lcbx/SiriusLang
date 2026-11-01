@@ -12,8 +12,9 @@ typed functions with one `main() -> i64`, scalar/string expressions,
 recursive calls execute natively and through explicit interpreter frames.
 Per-function flat IR carries checked types and call targets; the verifier checks
 all bodies, including unused functions. Flat records with scalar/string fields
-now support constructors, field reads, copies and calls in both backends. Arrays,
-composed record fields and a module loader remain unimplemented.
+now support constructors, field reads, direct updates on mutable bindings,
+copies and calls in both backends. Arrays, nested update paths, composed record
+fields and a module loader remain unimplemented.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -81,9 +82,15 @@ justifies replacing it.
   nested records and broader optional payloads become available.
 - [ ] Add array literals, `Array[T]()`, `len`, `.append`, array iteration and
   checked `[!index]` reads, including negative indices and bounds traps.
-- [ ] Support local field/index updates such as `p.index += 1` and
-  `p.nodes[!id].right = target`. Evaluate update paths once and apply CoW through
-  the containing records/arrays, preserving snapshots and immutable bindings.
+- [x] Support direct field updates on mutable record bindings (`p.index += 1`,
+  `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
+  the owned slot, retaining new strings and releasing overwritten ones. Source
+  `FieldTarget` references the actual binding, avoiding a redundant full-record
+  copy. Tested in the interpreter and ARC-audited generated C.
+- [ ] Extend field/index updates to nested paths such as
+  `p.nodes[!id].right = target`. Evaluate index/receiver expressions once and
+  apply CoW through containing records/arrays, preserving snapshots and
+  immutable bindings.
 - [ ] Extend IR, verification, interpretation and C ownership together. Reuse
   suitable existing runtime operations/layout descriptors instead of introducing
   a second runtime or packing managed values into untyped integer slots.

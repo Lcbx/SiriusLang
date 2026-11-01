@@ -95,6 +95,14 @@ def execute(module: IR.Module) -> i64
 					strings[!dst] = records[!input].strings[!index]
 				else
 					slots[!dst] = records[!input].scalars[!index]
+			IR.SetField(record, index, input)
+				var value = records[!record]
+				let type = module.type_table.entries[!module.functions[!function_id].types[!record]].fields[!index].type
+				if type == IR.TYPE_STRING
+					value.strings[!index] = strings[!input]
+				else
+					value.scalars[!index] = slots[!input]
+				records[!record] = value
 			IR.Call(dst, target, arguments)
 				let callee = module.functions[!target]
 				var frame = empty_frame(callee, target, module.type_table)
