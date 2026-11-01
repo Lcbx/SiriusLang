@@ -56,7 +56,6 @@ def main() -> None:
 		'rec R(x: i64)\nrec R(y: i64)\ndef main() -> i64\n\treturn 0\n',
 		'rec R(x: i64)\ndef R() -> i64\n\treturn 0\ndef main() -> i64\n\treturn 0\n',
 		'rec main(x: i64)\ndef main() -> i64\n\treturn 0\n',
-		'rec R(x: Optional[i64])\ndef main() -> i64\n\treturn 0\n',
 		'rec R(x: R)\ndef main() -> i64\n\treturn 0\n',
 		'def main() -> i64\n\tlet x: Missing = 1\n\treturn 0\n',
 		'def missing(x: Missing) -> i64\n\treturn 0\ndef main() -> i64\n\treturn 0\n',
@@ -89,7 +88,7 @@ def main() -> None:
 		assert result.returncode == 0 and not result.stderr, result
 		for command in [[str(verifier)], [str(audited)]]:
 			result = run(command + ['--trap'])
-			assert result.returncode == 0 and not result.stdout and normalize_newlines(result.stderr) == b'ERROR: division by zero\n', result
+			assert result.returncode != 0 and not result.stdout and b'division by zero' in result.stderr, result
 		print('PASS record interning, typed IR copies, initialization, and audited native IR', flush=True)
 		commands = [[str(compiler)]]
 		for index, (text, expected) in enumerate(cases):

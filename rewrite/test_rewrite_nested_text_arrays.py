@@ -105,12 +105,10 @@ def main() -> i64
         'def main() -> i64\n\tlet a = [["a"], [1]]\n\treturn 0\n',
         'def main() -> i64\n\tlet a: Array[Array[string]] = [[1]]\n\treturn 0\n',
         'def main() -> i64\n\tlet a: Array[Array[i64]] = [["x"]]\n\treturn 0\n',
-        'def main() -> i64\n\tlet a = Array[Array[Optional[i64]]]()\n\treturn 0\n',
         'def main() -> i64\n\tlet a = [["a"]].append([1])\n\treturn 0\n',
         'def main() -> i64\n\tvar a = [["a"]]\n\ta[!0] = [1]\n\treturn 0\n',
         'def main() -> i64\n\tvar a = [["a"]]\n\ta[!0][!0] = 1\n\treturn 0\n',
         'def main() -> i64\n\tlet a = [["a"]]\n\ta[!0][!0] = "b"\n\treturn 0\n',
-        'rec Grid(rows: Array[Array[Optional[i64]]])\ndef main() -> i64\n\treturn 0\n',
         'def bad(a: Array[Array[string]]) -> Array[Array[i64]]\n\treturn a\ndef main() -> i64\n\treturn 0\n',
     ]
     bounds = [

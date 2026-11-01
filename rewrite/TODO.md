@@ -93,8 +93,8 @@ justifies replacing it.
 - [x] Support `Array[Array[string]]` record fields through managed element callbacks.
 - [x] Extend record fields to nested arrays of records and deeper array layouts.
   Resolve `Array[T]` recursively from canonical type descriptors, including
-  arrays of booleans. Optional payloads now support managed values in standalone
-  bindings and function signatures; optional aggregate fields/elements remain future work.
+  arrays of booleans. Optional payloads now support managed values in bindings,
+  signatures and aggregate fields/elements, including nested optionals.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -152,8 +152,9 @@ overwrites, loop exits and early returns.
 - [x] Generalize `Optional[T]`, unwrapping, lazy defaults and `else return` to
   records, strings, arrays, dictionaries and other executable payloads, with
   type-specific ARC ownership (`test_rewrite_optionals.py`).
-- [ ] Add optional `[?index]` access, optional payload construction, and optional
-  values stored in aggregate elements/fields.
+- [x] Support `Optional[T]` in record fields, array elements and dictionary
+  values, including nested optionals and CoW/ARC snapshots.
+- [ ] Add optional `[?index]` access and explicit optional payload construction.
 - [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
   and checked `[!key]` reads for `i64` and `string` keys with supported
   acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW

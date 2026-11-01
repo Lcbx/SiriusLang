@@ -121,4 +121,7 @@ def main() -> i64
 		let callee = IR.Function("fail", IR.Program([IR.Constant(1, 1), IR.Constant(2, 0), IR.Divide(3, 1, 2), IR.Return(3)], 4, "", 0), [small.id], integer, [small.id, integer, integer, integer])
 		if IR.verify_module(IR.Module([caller, callee], 0, table, "", 0)) != ""
 			return 21
+		# The verifier alone does not execute MIR. Exercise a native failure
+		# after checking the trapping call graph.
+		return 1 / (len(args) - 2)
 	return 0

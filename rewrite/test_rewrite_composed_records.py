@@ -123,8 +123,6 @@ def main() -> i64
     ]
     invalid = [
         'rec R(a: Array[Missing])\ndef main() -> i64\n\treturn 0\n',
-        'rec R(a: Array[Optional[i64]])\ndef main() -> i64\n\treturn 0\n',
-        'rec R(a: Optional[i64])\ndef main() -> i64\n\treturn 0\n',
         'rec R(a: Array[i64])\ndef main() -> i64\n\tlet r = R(["bad"])\n\treturn 0\n',
         'rec R(a: Array[string])\ndef main() -> i64\n\tvar r = R(["a"])\n\tr.a = [1]\n\treturn 0\n',
         'rec R(a: Array[i64])\ndef main() -> i64\n\tlet r = R([1])\n\tr.a = [2]\n\treturn 0\n',

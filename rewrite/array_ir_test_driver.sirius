@@ -29,9 +29,9 @@ def main() -> i64
 	let booleans = entry(flags.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [flags.id, IR.TYPE_I64])
 	if IR.verify_module(booleans) != "" or Emit.emit(booleans).error != ""
 		return 13
-	let unsupported = IR.intern_array(flags.table, IR.find_optional(flags.table, IR.TYPE_I64))
-	let bad = entry(unsupported.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [unsupported.id, IR.TYPE_I64])
-	if IR.verify_module(bad) != "unsupported array element type"
+	let optional_array = IR.intern_array(flags.table, IR.find_optional(flags.table, IR.TYPE_I64))
+	let empty_optional = entry(optional_array.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [optional_array.id, IR.TYPE_I64])
+	if IR.verify_module(empty_optional) != "" or Emit.emit(empty_optional).error != ""
 		return 25
 	let bad_element = entry(text.table, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, text.id])
 	if IR.verify_module(bad_element) != "main: slot type mismatch"

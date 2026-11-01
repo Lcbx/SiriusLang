@@ -235,13 +235,13 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 		Optional
 			return runtime_type(table, optional_payload(table, id))
 		Dictionary
-			return runtime_type(table, dict_value(table, id)) and not is_optional(table, dict_value(table, id))
+			return runtime_type(table, dict_value(table, id))
 		Array
 			let element = array_element(table, id)
-			return not is_optional(table, element) and runtime_type(table, element)
+			return runtime_type(table, element)
 		Record
 			for field in table.entries[!id].fields
-				if not runtime_type(table, field.type) or is_optional(table, field.type)
+				if not runtime_type(table, field.type)
 					return false
 			return true
 

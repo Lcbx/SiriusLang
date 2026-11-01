@@ -111,12 +111,10 @@ def main() -> i64
         'def main() -> i64\n\tlet a: Array[Array[i64]] = [1]\n\treturn 0\n',
         'def main() -> i64\n\tlet a: Array[Array[string]] = [[1]]\n\treturn 0\n',
         'def main() -> i64\n\tlet a: Array[Array[i64]] = [["x"]]\n\treturn 0\n',
-        'def main() -> i64\n\tlet a = Array[Array[Optional[i64]]]()\n\treturn 0\n',
         'def main() -> i64\n\tlet a = [[1]].append(["x"])\n\treturn 0\n',
         'def main() -> i64\n\tvar a = [[1]]\n\ta[!0] = ["x"]\n\treturn 0\n',
         'def main() -> i64\n\tvar a = [[1]]\n\ta[!0][!0] = "x"\n\treturn 0\n',
         'def main() -> i64\n\tlet a = [[1]]\n\ta[!0][!0] = 3\n\treturn 0\n',
-        'rec Matrix(rows: Array[Array[Optional[i64]]])\ndef main() -> i64\n\treturn 0\n',
     ]
     bounds = [
         'def main() -> i64\n\tlet a = [[1]]\n\tprint(a[!1][!0])\n\treturn 0\n',

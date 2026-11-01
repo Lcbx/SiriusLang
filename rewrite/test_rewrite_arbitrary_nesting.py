@@ -98,7 +98,6 @@ def main():
       'hello\n')]
     invalid = ['def main() -> i64\n    let a: Array[Array[Array[i64]]] = [["x"]]\n    return 0\n',
      'def main() -> i64\n    let a = Array[Array[Unknown]]()\n    return 0\n',
-     'def main() -> i64\n    let a = Array[Optional[i64]]()\n    return 0\n',
      'def main() -> i64\n    let a: Array[Array[bool]] = [[1]]\n    return 0\n',
      'def main() -> i64\n    var a = [[[1]]]\n    a[!0][!0] = ["x"]\n    return 0\n']
     bounds = [('def main() -> i64\n    let items = [[[1]]]\n    print(items[!2][!0][!0])\n    return 0\n',

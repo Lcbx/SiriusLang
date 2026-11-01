@@ -44,7 +44,9 @@ Executable optionals can contain scalars, strings, records, arrays, dictionaries
 and nested optionals. Present optional values own their payload: copying, calls,
 returns, unwrapping and defaults retain managed contents, while overwrites and
 returns release them. Constructing arbitrary `Some`/`None` values remains future work;
-lookups currently provide optional values. Record descriptors contain canonical fields; `Array[i64]` and `Array[string]`
+lookups currently provide optional values. Optional values can also be stored
+inside records, arrays and dictionaries, including as nested optionals. Record
+descriptors contain canonical fields; `Array[i64]` and `Array[string]`
 have canonical element descriptors. Dictionary descriptors are canonical for `i64` or `string` keys and any supported acyclic value type.
 Run `python rewrite/test_rewrite_frontend.py` and
 `python rewrite/test_rewrite_functions.py` from the repository root for checking,
@@ -123,8 +125,7 @@ The empty literal `[]` is not yet accepted; use `Array[T]()` at any
 supported depth. Array-valued fields in records can be constructed, read,
 replaced and recursively updated, including paths such as
 `state.nodes[!i].right = target` and `forest.trees[!i][!j].text = value`.
-Generated C reuses generic array copy/drop callbacks. Array elements of
-`Optional[T]`, optional index reads, direct array formatting and general
+Generated C reuses generic array copy/drop callbacks. Optional index reads, direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element native execution, ARC auditing, invalid program
@@ -186,8 +187,7 @@ Expressions retain the surrounding scope and original source positions. Strings
 remain single-line, without inline format specifiers. Interpolation lowers to
 formatting and ordinary string concatenation, with the same ownership rules.
 Optional comparison and direct optional printing remain unsupported.
-`str(Optional[T])` is currently available only for `T = i64`; optional values
-cannot yet be stored as record fields, array elements or dictionary values.
+`str(Optional[T])` is currently available only for `T = i64`.
 Scalar-only C
 programs need no string slots.
 Boolean literals, bindings, `not`, printing, and scalar comparisons can

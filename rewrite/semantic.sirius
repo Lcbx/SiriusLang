@@ -29,7 +29,7 @@ def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records:
 		if key.next >= len(parsed.tokens) or name(parsed, key.next) != ","
 			return ResolvedType(table, IR.NO_TYPE, token)
 		let value = resolve_type(parsed, key.next + 1, key.table, records)
-		if value.type == IR.NO_TYPE or value.next >= len(parsed.tokens) or name(parsed, value.next) != "]" or not IR.runtime_type(value.table, value.type) or IR.is_optional(value.table, value.type)
+		if value.type == IR.NO_TYPE or value.next >= len(parsed.tokens) or name(parsed, value.next) != "]" or not IR.runtime_type(value.table, value.type)
 			return ResolvedType(table, IR.NO_TYPE, token)
 		let dict = IR.intern_dict(value.table, key.type, value.type)
 		return ResolvedType(dict.table, dict.id, value.next + 1)
@@ -39,7 +39,7 @@ def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records:
 		let inner = resolve_type(parsed, token + 2, table, records)
 		if inner.type == IR.NO_TYPE or inner.next >= len(parsed.tokens) or name(parsed, inner.next) != "]"
 			return ResolvedType(table, IR.NO_TYPE, token)
-		if not IR.runtime_type(inner.table, inner.type) or IR.is_optional(inner.table, inner.type)
+		if not IR.runtime_type(inner.table, inner.type)
 			return ResolvedType(table, IR.NO_TYPE, token)
 		let array = IR.intern_array(inner.table, inner.type)
 		return ResolvedType(array.table, array.id, inner.next + 1)
@@ -96,7 +96,7 @@ export def check(parsed: Parser.State) -> Checked
 			let type = resolved.type
 			if names.get(field_name) or false
 				error = "duplicate record field: " + field_name
-			elif not IR.runtime_type(type_table, type) or IR.is_optional(type_table, type)
+			elif not IR.runtime_type(type_table, type)
 				error = "unsupported record field type"
 			if error != ""
 				return Checked(parsed, type_table, signatures, references, types, constructor_calls, error, parsed.tokens[!field.token].line)
@@ -197,7 +197,7 @@ export def check(parsed: Parser.State) -> Checked
 						error = "empty array literal requires Array[T]()"
 					else
 						element = types[!parsed.nodes[!node.left].left]
-					if IR.runtime_type(type_table, element) and not IR.is_optional(type_table, element)
+					if IR.runtime_type(type_table, element)
 						let interned = IR.intern_array(type_table, element)
 						type_table = interned.table
 						type = interned.id

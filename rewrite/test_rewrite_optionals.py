@@ -108,6 +108,99 @@ def main() -> i64
     print(check(d, "missing"))
     return 0
 ''', b'15\n-1\n'),
+    ('optional integer elements preserve zero and absence', '''
+def main() -> i64
+    var found = ["a".find("a"), "a".find("z")]
+    let saved = found
+    found[!1] = "b".find("b")
+    print(saved[!0] or 99)
+    print(saved[!1] or 42)
+    print(found[!1]!)
+    return 0
+''', b'0\n42\n0\n'),
+    ('optional array stored in record', '''
+rec Config(values: Optional[Array[string]])
+def main() -> i64
+    let lookup = Dict[string, Array[string]]().insert("yes", ["original"])
+    var config = Config(lookup.get("yes"))
+    let snapshot = config
+    config.values = lookup.get("no")
+    print((snapshot.values or ["wrong"])[!0])
+    print((config.values or ["default"])[!0])
+    return 0
+''', b'original\ndefault\n'),
+    ('optional string record field and updates', '''
+rec Box(value: Optional[string], id: i64)
+def main() -> i64
+    let names = Dict[string, string]().insert("present", "a\\0é")
+    var box = Box(names.get("present"), 1)
+    let saved = box
+    box.value = names.get("missing")
+    box.id += 1
+    print(saved.value or "wrong")
+    print(box.value or "fallback")
+    print(box.id)
+    box.value = names.get("present")
+    print(box.value!)
+    return 0
+''', b'a\x00\xc3\xa9\nfallback\n2\na\x00\xc3\xa9\n'),
+    ('optional record inside record and dictionary', '''
+rec Binding(node: i64, label: string)
+rec Scope(binding: Optional[Binding])
+def choose(scope: Scope) -> string
+    let entry = scope.binding else return "absent"
+    return entry.label
+def main() -> i64
+    let names = Dict[string, Binding]().insert("a", Binding(3, "saved"))
+    let a = Scope(names.get("a"))
+    let b = Scope(names.get("missing"))
+    let scopes = Dict[i64, Scope]().insert(1, a)
+    let before = scopes
+    print(choose(scopes[!1]))
+    print(choose(b))
+    print(before.get(1)!.binding!.node)
+    return 0
+''', b'saved\nabsent\n3\n'),
+    ('optional array elements and CoW writes', '''
+def main() -> i64
+    let lookup = Dict[string, string]().insert("a", "old")
+    var values = [lookup.get("a"), lookup.get("b")]
+    let saved = values
+    values[!0] = lookup.get("b")
+    values = values.append(lookup.get("a"))
+    print(saved[!0] or "wrong")
+    print(saved[!1] or "empty")
+    print(values[!0] or "missing")
+    print(values[!-1]!)
+    return 0
+''', b'old\nempty\nmissing\nold\n'),
+    ('nested optional dictionary values', '''
+def main() -> i64
+    let names = Dict[string, string]().insert("ok", "here")
+    var d = Dict[i64, Optional[string]]().insert(1, names.get("ok"))
+    d = d.insert(2, names.get("absent"))
+    let snapshot = d
+    d = d.insert(1, names.get("absent"))
+    print(snapshot[!1] or "wrong")
+    print(snapshot[!2] or "none")
+    print((snapshot.get(1) or names.get("absent")) or "wrong")
+    print((snapshot.get(3) or names.get("absent")) or "none")
+    print(d[!1] or "new")
+    return 0
+''', b'here\nnone\nhere\nnone\nnew\n'),
+    ('optional elements nested in record arrays', '''
+rec Entry(text: string)
+rec Bucket(items: Array[Optional[Entry]])
+def main() -> i64
+    let symbols = Dict[string, Entry]().insert("x", Entry("stored"))
+    var buckets = [Bucket([symbols.get("x"), symbols.get("missing")])]
+    let saved = buckets
+    buckets[!0].items[!0] = symbols.get("missing")
+    print(saved[!0].items[!0]!.text)
+    print((saved[!0].items[!1] or Entry("none")).text)
+    print((buckets[!0].items[!0] or Entry("changed")).text)
+    return 0
+''', b'stored\nnone\nchanged\n'),
 ]
 INVALID = [
     'def main() -> i64\n    let d = Dict[string, i64]()\n    print(d.get(2) or 0)\n    return 0\n',
@@ -117,6 +210,7 @@ INVALID = [
     'def main() -> i64\n    let d = Dict[string, string]()\n    let result = d.get("x")!\n    return result\n',
     'def main() -> i64\n    let d = Dict[string, string]()\n    let v: Optional[string] = d.get("x")\n    print(v)\n    return 0\n',
     'def main() -> i64\n    let d = Dict[string, string]()\n    print(str(d.get("x")))\n    return 0\n',
+    'def main() -> i64\n    let d = Dict[string, i64]()\n    let values: Array[Optional[bool]] = [d.get("x")]\n    return 0\n',
 ]
 TRAPS = [
     ('missing string', 'def main() -> i64\n    let d = Dict[string, string]()\n    print(d.get("none")!)\n    return 0\n'),
