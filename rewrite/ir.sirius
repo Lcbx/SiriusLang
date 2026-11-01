@@ -202,7 +202,7 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 				if is_record(table, field.type)
 					if not runtime_type(table, field.type)
 						return false
-				elif not is_array(table, field.type) or (array_element(table, field.type) != TYPE_I64 and array_element(table, field.type) != TYPE_STRING)
+				elif not is_array(table, field.type) or not runtime_type(table, field.type)
 					return false
 			return true
 

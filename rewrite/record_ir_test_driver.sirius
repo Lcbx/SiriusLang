@@ -102,6 +102,20 @@ def main() -> i64
 	let bad_nested = program([IR.StringConstant(0, "wrong"), IR.MakeRecord(1, nested.id, [0]), IR.Constant(2, 0), IR.Return(2)], [string, nested.id, integer], nested_table)
 	if IR.verify_module(bad_nested) != "main: slot type mismatch"
 		return 32
+	# Array[Record] fields must be executable descriptors, not just valid IDs.
+	let node = IR.intern_record(nested_table, [IR.RecordField("value", integer)])
+	let nodes = IR.intern_array(node.table, node.id)
+	let state = IR.intern_record(nodes.table, [IR.RecordField("nodes", nodes.id)])
+	let state_table = state.table
+	if IR.verify_types(state_table) != "" or not IR.runtime_type(state_table, state.id)
+		return 33
+	let state_slots = [integer, node.id, nodes.id, state.id, nodes.id, integer, node.id, integer]
+	let state_module = program([IR.Constant(0, 7), IR.MakeRecord(1, node.id, [0]), IR.MakeArray(2, [1]), IR.MakeRecord(3, state.id, [2]), IR.ReadField(4, 3, 0), IR.Constant(5, 0), IR.ArrayRead(6, 4, 5), IR.ReadField(7, 6, 0), IR.Return(7)], state_slots, state_table)
+	if IR.verify_module(state_module) != "" or Interpreter.run_module(state_module) != 7
+		return 34
+	let invalid_state = program([IR.Constant(0, 7), IR.MakeRecord(1, state.id, [0]), IR.Return(0)], [integer, state.id], state_table)
+	if IR.verify_module(invalid_state) != "main: slot type mismatch"
+		return 35
 	let args = arguments()
 	if len(args) == 2 and args[!1] == "--trap"
 		let caller = IR.Function("main", IR.Program([IR.StringConstant(0, "owned"), IR.MakeRecord(1, small.id, [0]), IR.Call(2, 1, [1]), IR.Return(2)], 3, "", 0), [], integer, [string, small.id, integer])

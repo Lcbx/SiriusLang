@@ -16,11 +16,10 @@ now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of records with managed
 fields; recursive field/index updates now work for supported aggregate types,
-but nested array elements, record-array-valued fields and a module loader
-remain unimplemented.
+but nested array elements and a module loader remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
-record fields (`Array[i64]`, `Array[string]`) are supported, including records
-stored in arrays.
+record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
+including records stored in arrays.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -125,7 +124,9 @@ justifies replacing it.
   `rows[!i].inner.name`). Intermediate reads own values and are written back in
   reverse order through `SetField`/`ArraySet`; CoW preserves snapshots and
   indices are evaluated once. Covered by `test_rewrite_recursive_updates.py`.
-  `p.nodes[!id].right` still needs record fields of type `Array[Record]`.
+  `p.nodes[!id].right` is now covered with record-array-valued fields.
+  See `test_rewrite_record_array_fields.py` for owned record elements,
+  function boundaries and audited CoW updates.
 - [ ] Extend IR, verification, interpretation and C ownership together. Reuse
   suitable existing runtime operations/layout descriptors instead of introducing
   a second runtime or packing managed values into untyped integer slots.

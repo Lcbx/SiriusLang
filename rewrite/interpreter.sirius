@@ -91,6 +91,9 @@ def execute(module: IR.Module) -> i64
 	var record_arrays = initial.record_arrays
 	# Shared append-only arena: nested record references survive frame changes.
 	var record_pool = Array[RecordValue]()
+	# Keep array-valued record fields in a separate pool to avoid a recursive
+	# RecordValue layout in the self-hosted compiler.
+	var record_array_pool = Array[Array[RecordValue]]()
 	var function_id = module.entry
 	var program = module.functions[!function_id].body
 	var stack = Array[Frame]()
@@ -200,7 +203,11 @@ def execute(module: IR.Module) -> i64
 					elif type == IR.TYPE_STRING
 						value.strings[!i] = strings[!inputs[!i]]
 					elif IR.is_array(module.type_table, type)
-						if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+						let element = IR.array_element(module.type_table, type)
+						if IR.is_record(module.type_table, element)
+							value.nested[!i] = len(record_array_pool)
+							record_array_pool = record_array_pool.append(record_arrays[!inputs[!i]])
+						elif element == IR.TYPE_STRING
 							value.text_arrays[!i] = text_arrays[!inputs[!i]]
 						else
 							value.arrays[!i] = arrays[!inputs[!i]]
@@ -216,7 +223,10 @@ def execute(module: IR.Module) -> i64
 				elif type == IR.TYPE_STRING
 					strings[!dst] = records[!input].strings[!index]
 				elif IR.is_array(module.type_table, type)
-					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+					let element = IR.array_element(module.type_table, type)
+					if IR.is_record(module.type_table, element)
+						record_arrays[!dst] = record_array_pool[!records[!input].nested[!index]]
+					elif element == IR.TYPE_STRING
 						text_arrays[!dst] = records[!input].text_arrays[!index]
 					else
 						arrays[!dst] = records[!input].arrays[!index]
@@ -231,7 +241,11 @@ def execute(module: IR.Module) -> i64
 				elif type == IR.TYPE_STRING
 					value.strings[!index] = strings[!input]
 				elif IR.is_array(module.type_table, type)
-					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+					let element = IR.array_element(module.type_table, type)
+					if IR.is_record(module.type_table, element)
+						value.nested[!index] = len(record_array_pool)
+						record_array_pool = record_array_pool.append(record_arrays[!input])
+					elif element == IR.TYPE_STRING
 						value.text_arrays[!index] = text_arrays[!input]
 					else
 						value.arrays[!index] = arrays[!input]

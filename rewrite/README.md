@@ -53,7 +53,8 @@ type-table snapshots and optional IDs that differ from the default table,
 including native/interpreted execution, C emission and ARC auditing.
 
 `rec` declarations support `i64`, `bool`, `string`, `Array[i64]`,
-`Array[string]` and previously declared record types as fields, positional
+`Array[string]`, `Array[PreviouslyDeclaredRecord]` and previously declared
+record types as fields, positional
 construction, field reads, local bindings/assignment, and function parameters
 and results. Declarations may appear after their uses. Constructors evaluate
 arguments in declaration order; canonical layouts sort fields by name. Different
@@ -75,7 +76,7 @@ string and array fields separately. IR verification checks constructors, field i
 copy and update types and initialization. Nested records must refer to earlier
 declarations (cycles and forward references are not supported); the interpreter
 uses an append-only pool of immutable nested values shared across call frames.
-Nested array fields, record literals, constructor bodies, record equality
+Nested arrays, record literals, constructor bodies, record equality
 and direct record formatting remain unimplemented.
 `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.
@@ -108,8 +109,11 @@ and release array values across copies, function calls and returns.
 The empty literal `[]` is not yet accepted; use `Array[i64]()` or
 `Array[string]()` or `Array[RecordName]()`. Arrays in records now support
 `Array[i64]` and `Array[string]` fields, including records stored in arrays,
-with value-preserving field replacement. Nested arrays, record-array-valued fields,
-optional index reads, direct array formatting and general
+with value-preserving field replacement. Fields containing `Array[Record]`
+can also be constructed, read, replaced and recursively updated, including paths
+like `state.nodes[!i].right = target`. The interpreter uses an append-only
+pool for record-array field snapshots, while generated C reuses generic array
+copy/drop callbacks. Nested arrays, optional index reads, direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element interpreter/native parity, ARC auditing, invalid program
@@ -120,8 +124,8 @@ function calls, loops and bounds traps.
 updates, compound operators, snapshots, invalid targets, and bounds traps.
 `python rewrite/test_rewrite_recursive_updates.py` covers arbitrary paths through
 supported record and array fields, including ARC, invalid types and bounds.
-`p.nodes[!id].right = x` is syntactically supported but requires a currently
-unsupported record field of type `Array[Node]`.
+`python rewrite/test_rewrite_record_array_fields.py` covers array-of-record
+fields in nested records and arrays, CoW updates, invalid programs, and ARC.
 `python rewrite/test_rewrite_composed_records.py` covers array-valued record
 fields, records in arrays, calls, aliases, CoW, ARC, invalid types, and bounds traps.
 `python rewrite/test_rewrite_nested_records.py` checks nested record construction,
