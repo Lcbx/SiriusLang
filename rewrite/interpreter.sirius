@@ -30,16 +30,20 @@ def compare(left, right, op: string) -> bool
 		return left > right
 	return left >= right
 
-rec RecordValue(scalars: Array[i64], strings: Array[string])
+rec RecordValue(scalars: Array[i64], strings: Array[string], arrays: Array[Array[i64]], text_arrays: Array[Array[string]])
 rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue], arrays: Array[Array[i64]], text_arrays: Array[Array[string]], record_arrays: Array[Array[RecordValue]])
 
 def empty_record(count: i64) -> RecordValue
 	var scalars = Array[i64]()
 	var strings = Array[string]()
+	var arrays = Array[Array[i64]]()
+	var text_arrays = Array[Array[string]]()
 	for i in 0..count
 		scalars = scalars.append(0)
 		strings = strings.append("")
-	return RecordValue(scalars, strings)
+		arrays = arrays.append(Array[i64]())
+		text_arrays = text_arrays.append(Array[string]())
+	return RecordValue(scalars, strings, arrays, text_arrays)
 
 def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var slots = Array[i64]()
@@ -185,8 +189,14 @@ def execute(module: IR.Module) -> i64
 				let fields = module.type_table.entries[!type].fields
 				var value = empty_record(len(fields))
 				for i in 0..len(fields)
-					if fields[!i].type == IR.TYPE_STRING
+					let type = fields[!i].type
+					if type == IR.TYPE_STRING
 						value.strings[!i] = strings[!inputs[!i]]
+					elif IR.is_array(module.type_table, type)
+						if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+							value.text_arrays[!i] = text_arrays[!inputs[!i]]
+						else
+							value.arrays[!i] = arrays[!inputs[!i]]
 					else
 						value.scalars[!i] = slots[!inputs[!i]]
 				records[!dst] = value
@@ -196,6 +206,11 @@ def execute(module: IR.Module) -> i64
 				let type = module.functions[!function_id].types[!dst]
 				if type == IR.TYPE_STRING
 					strings[!dst] = records[!input].strings[!index]
+				elif IR.is_array(module.type_table, type)
+					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+						text_arrays[!dst] = records[!input].text_arrays[!index]
+					else
+						arrays[!dst] = records[!input].arrays[!index]
 				else
 					slots[!dst] = records[!input].scalars[!index]
 			IR.SetField(record, index, input)
@@ -203,6 +218,11 @@ def execute(module: IR.Module) -> i64
 				let type = module.type_table.entries[!module.functions[!function_id].types[!record]].fields[!index].type
 				if type == IR.TYPE_STRING
 					value.strings[!index] = strings[!input]
+				elif IR.is_array(module.type_table, type)
+					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+						value.text_arrays[!index] = text_arrays[!input]
+					else
+						value.arrays[!index] = arrays[!input]
 				else
 					value.scalars[!index] = slots[!input]
 				records[!record] = value

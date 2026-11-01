@@ -78,6 +78,19 @@ def main() -> i64
 	let identity = IR.Function("identity", IR.Program([IR.Return(0)], 1, "", 0), [wide.id], wide.id, [wide.id])
 	if Interpreter.run_module(IR.Module([entry, identity], 0, table, "", 0)) != 5
 		return 20
+	# An array-valued field is a managed value in both the IR and interpreter.
+	let integer_array = IR.find_array(table, IR.TYPE_I64)
+	let composite = IR.intern_record(table, [IR.RecordField("numbers", integer_array)])
+	let composed_table = composite.table
+	if IR.verify_types(composed_table) != "" or not IR.runtime_type(composed_table, composite.id)
+		return 27
+	let composed_slots = [integer, integer_array, composite.id, integer_array, integer]
+	let composed_module = program([IR.Constant(0, 13), IR.MakeArray(1, [0]), IR.MakeRecord(2, composite.id, [1]), IR.ReadField(3, 2, 0), IR.ArrayLength(4, 3), IR.Return(4)], composed_slots, composed_table)
+	if IR.verify_module(composed_module) != "" or Interpreter.run_module(composed_module) != 1
+		return 28
+	let invalid_composed = program([IR.Constant(0, 13), IR.MakeArray(1, [0]), IR.MakeRecord(2, composite.id, [1]), IR.SetField(2, 0, 0), IR.Return(0)], [integer, integer_array, composite.id], composed_table)
+	if IR.verify_module(invalid_composed) != "main: slot type mismatch"
+		return 29
 	let args = arguments()
 	if len(args) == 2 and args[!1] == "--trap"
 		let caller = IR.Function("main", IR.Program([IR.StringConstant(0, "owned"), IR.MakeRecord(1, small.id, [0]), IR.Call(2, 1, [1]), IR.Return(2)], 3, "", 0), [], integer, [string, small.id, integer])

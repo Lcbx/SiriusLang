@@ -16,8 +16,9 @@ now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of flat records with managed
 string fields; indexed-record field updates are supported, but deeper nested
-paths, composed record fields and a module loader
-remain unimplemented.
+paths, nested record fields, nested array elements and a module loader
+remain unimplemented. Array-valued record fields (`Array[i64]`, `Array[string]`)
+are supported, including records stored in arrays.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -81,8 +82,12 @@ justifies replacing it.
   declaration order. Concrete annotations require matching field names/types.
   Native C uses typed value structs and existing string ARC; interpreter record
   fields use separate scalar/string arrays. Typed value copies retain snapshots.
-- [ ] Extend record field types and annotations to composed values as arrays,
-  nested records and broader optional payloads become available.
+- [x] Support `Array[i64]` and `Array[string]` record fields in both backends,
+  with owned snapshots and recursive field-level array retain/release in native
+  C, including arrays of records containing arrays. Covered by
+  `test_rewrite_composed_records.py` and direct record IR tests.
+- [ ] Extend record fields to nested records, nested arrays and broader optional
+  payloads, preserving structural equivalence and ownership.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -97,8 +102,9 @@ justifies replacing it.
   fields. Reuse generic `S_Array` with per-record retain/release callbacks;
   cover construction, calls, iteration, overwrite, self-assignment, snapshots,
   invalid programs and bounds traps in `test_rewrite_record_arrays.py`.
-- [ ] Extend array element types to composed values (arrays and records with
-  nested managed fields) with recursively defined element copy/drop callbacks.
+- [ ] Extend array elements to nested arrays and records with record-valued
+  fields. Records containing `Array[i64]` and `Array[string]` fields already
+  use their existing element copy/drop callbacks; other composed layouts remain.
   Nested index/field update paths remain separate.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates

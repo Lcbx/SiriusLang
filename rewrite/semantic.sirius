@@ -59,8 +59,8 @@ export def check(parsed: Parser.State) -> Checked
 			let type = annotation_type(parsed, field.annotation, type_table, record_types)
 			if names.get(field_name) or false
 				error = "duplicate record field: " + field_name
-			elif type != IR.TYPE_I64 and type != IR.TYPE_BOOL and type != IR.TYPE_STRING
-				error = "record fields require i64, bool or string"
+			elif type != IR.TYPE_I64 and type != IR.TYPE_BOOL and type != IR.TYPE_STRING and not (IR.is_array(type_table, type) and (IR.array_element(type_table, type) == IR.TYPE_I64 or IR.array_element(type_table, type) == IR.TYPE_STRING))
+				error = "record fields require i64, bool, string, Array[i64] or Array[string]"
 			if error != ""
 				return Checked(parsed, type_table, signatures, references, types, constructor_calls, error, parsed.tokens[!field.token].line)
 			names = names.insert(field_name, true)

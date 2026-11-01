@@ -107,12 +107,24 @@ def record_definitions(table: IR.TypeTable) -> string
 		parts = parts.append("} " + name + ";\n")
 		parts = parts.append("static inline " + name + " retain_" + name + "(" + name + " value) {\n")
 		for i in 0..len(fields)
-			if fields[!i].type == IR.TYPE_STRING
+			let field_type = fields[!i].type
+			if field_type == IR.TYPE_STRING
 				parts = parts.append("s_string_retain(value.f" + str(i) + ");\n")
+			elif IR.is_array(table, field_type)
+				if managed_array(table, field_type)
+					parts = parts.append("s_array_retain(value.f" + str(i) + ");\n")
+				else
+					parts = parts.append("s_array_i64_retain(value.f" + str(i) + ");\n")
 		parts = parts.append("return value; }\nstatic inline void release_" + name + "(" + name + " value) { (void)value;\n")
 		for i in 0..len(fields)
-			if fields[!i].type == IR.TYPE_STRING
+			let field_type = fields[!i].type
+			if field_type == IR.TYPE_STRING
 				parts = parts.append("s_string_release(value.f" + str(i) + ");\n")
+			elif IR.is_array(table, field_type)
+				if managed_array(table, field_type)
+					parts = parts.append("s_array_release(value.f" + str(i) + ");\n")
+				else
+					parts = parts.append("s_array_i64_release(value.f" + str(i) + ");\n")
 		parts = parts.append("}\nstatic inline void store_" + name + "(" + name + " *dst, " + name + " value) { release_" + name + "(*dst); *dst = value; }\n")
 	return "".join(parts)
 
@@ -255,6 +267,11 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let type = function.types[!dst]
 				if type == IR.TYPE_STRING
 					lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_retain(" + value + "));\n")
+				elif IR.is_array(table, type)
+					if managed_array(table, type)
+						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_retain(" + value + "));\n")
+					else
+						lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_retain(" + value + "));\n")
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + value + ";\n")
 			IR.SetField(record, field, input)
@@ -264,6 +281,11 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let value = value_slot(input, field_type, table)
 				if field_type == IR.TYPE_STRING
 					lines = lines.append("store_string(&" + target + ", s_string_retain(" + value + "));\n")
+				elif IR.is_array(table, field_type)
+					if managed_array(table, field_type)
+						lines = lines.append("store_managed_array(&" + target + ", s_array_retain(" + value + "));\n")
+					else
+						lines = lines.append("store_array(&" + target + ", s_array_i64_retain(" + value + "));\n")
 				else
 					lines = lines.append(target + " = " + value + ";\n")
 			IR.Call(dst, target, arguments)

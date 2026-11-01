@@ -52,7 +52,8 @@ native/interpreted execution, string snapshots and ARC coverage.
 type-table snapshots and optional IDs that differ from the default table,
 including native/interpreted execution, C emission and ARC auditing.
 
-Flat `rec` declarations support `i64`, `bool` and `string` fields, positional
+`rec` declarations support `i64`, `bool`, `string`, `Array[i64]` and
+`Array[string]` fields, positional
 construction, field reads, local bindings/assignment, and function parameters
 and results. Declarations may appear after their uses. Constructors evaluate
 arguments in declaration order; canonical layouts sort fields by name. Different
@@ -62,12 +63,12 @@ compiler. A `var` record binding supports direct field assignment (`p.field = x`
 and compound field updates (`+=`, `-=`, `*=`, `/=`) for the existing field
 types. The base must be a mutable local, not a function parameter or `let`;
 deeper field/index paths are not yet supported. Fields are updated in the
-binding's owned record slot, with retain/release for replaced strings. Other
-copies retain their previous values. String fields retain value snapshots
+binding's owned record slot, with retain/release for replaced strings and arrays. Other
+copies retain their previous values. String and array fields retain value snapshots
 across copies, calls, reassignment, loops and early returns. C emission uses typed structs and the
-existing string retain/release operations; the interpreter stores scalar and
-string fields separately. IR verification checks constructors, field indices,
-copy and update types and initialization. Nested/composed field types, record literals,
+existing string/array retain/release operations; the interpreter stores scalar,
+string and array fields separately. IR verification checks constructors, field indices,
+copy and update types and initialization. Nested record fields, nested array fields, record literals,
 constructor bodies, record equality and direct record formatting remain
 unimplemented. `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.
@@ -87,7 +88,7 @@ checked reads and value-preserving append/set operations. Generated C uses the
 existing generic `S_Array` storage with string retain/release element callbacks;
 `Array[i64]` keeps its specialized `S_Array_i64` representation. Arrays of flat
 records use `S_Array` with layout-specific copy/drop callbacks. They support
-records containing `i64`, `bool` and `string` fields, positional literals,
+records containing `i64`, `bool`, `string` and primitive-element array fields, positional literals,
 `Array[RecordName]()` construction, snapshots, append, checked indexing,
 assignment of whole elements, iteration, parameters and results. Record-array
 reads return owned record values; CoW updates do not mutate other copies.
@@ -98,7 +99,9 @@ The interpreter stores record arrays in a separate typed pool. Both backends ret
 and release array values across copies, function calls and returns.
 
 The empty literal `[]` is not yet accepted; use `Array[i64]()` or
-`Array[string]()` or `Array[RecordName]()`. Nested arrays, arrays in records,
+`Array[string]()` or `Array[RecordName]()`. Arrays in records now support
+`Array[i64]` and `Array[string]` fields, including records stored in arrays,
+with value-preserving field replacement. Nested arrays, record-valued fields,
 deeper nested update paths (such as `p.nodes[!id].right = x`), optional index reads,
 direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
@@ -109,6 +112,8 @@ exercises flat record elements, including managed fields, CoW, invalid operands,
 function calls, loops and bounds traps.
 `python rewrite/test_rewrite_nested_updates.py` covers indexed record-field
 updates, compound operators, snapshots, invalid targets, and bounds traps.
+`python rewrite/test_rewrite_composed_records.py` covers array-valued record
+fields, records in arrays, calls, aliases, CoW, ARC, invalid types, and bounds traps.
 The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
 `array_ir_test_driver.sirius` verifies both integer and managed string-array IR.
 
