@@ -179,7 +179,7 @@ export def check(parsed: Parser.State) -> Checked
 				else
 					type = types[!reference]
 					if not IR.is_array(type_table, type) or types[!node.right] != integer
-						error = "indexed assignment requires Array[i64] and i64 index"
+						error = "indexed assignment requires array and i64 index"
 			Parser.ArraySet
 				if types[!node.right] != IR.array_element(type_table, types[!node.left])
 					error = "array assignment type mismatch"
@@ -190,6 +190,13 @@ export def check(parsed: Parser.State) -> Checked
 					error = "unknown record field: " + name(parsed, node.token)
 				else
 					type = type_table.entries[!source].fields[!reference].type
+			Parser.ArrayFieldUpdate
+				type = types[!node.left]
+				reference = IR.field_index(type_table, type, name(parsed, node.token))
+				if reference < 0
+					error = "unknown record field: " + name(parsed, node.token)
+				elif not IR.compatible(type_table, types[!node.right], type_table.entries[!type].fields[!reference].type)
+					error = "assignment type mismatch"
 			Parser.FieldAssign
 				let base = parsed.nodes[!node.left]
 				let target = name(parsed, base.token)

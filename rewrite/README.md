@@ -61,7 +61,7 @@ match. Concrete annotations require matching field sets, as in the original
 compiler. A `var` record binding supports direct field assignment (`p.field = x`)
 and compound field updates (`+=`, `-=`, `*=`, `/=`) for the existing field
 types. The base must be a mutable local, not a function parameter or `let`;
-nested field/index paths are not yet supported. Fields are updated in the
+deeper field/index paths are not yet supported. Fields are updated in the
 binding's owned record slot, with retain/release for replaced strings. Other
 copies retain their previous values. String fields retain value snapshots
 across copies, calls, reassignment, loops and early returns. C emission uses typed structs and the
@@ -90,20 +90,26 @@ records use `S_Array` with layout-specific copy/drop callbacks. They support
 records containing `i64`, `bool` and `string` fields, positional literals,
 `Array[RecordName]()` construction, snapshots, append, checked indexing,
 assignment of whole elements, iteration, parameters and results. Record-array
-reads return owned record values; CoW updates do not mutate other copies. The
-interpreter stores record arrays in a separate typed pool. Both backends retain
+reads return owned record values; CoW updates do not mutate other copies.
+Mutable arrays also support `tokens[!index].field = value` and compound
+field updates on record elements. The index is evaluated once; the element
+is read as a value, updated, and written back through the array CoW path.
+The interpreter stores record arrays in a separate typed pool. Both backends retain
 and release array values across copies, function calls and returns.
 
 The empty literal `[]` is not yet accepted; use `Array[i64]()` or
 `Array[string]()` or `Array[RecordName]()`. Nested arrays, arrays in records,
-nested update paths (such as `tokens[!0].text = "x"`), optional index reads,
+deeper nested update paths (such as `p.nodes[!id].right = x`), optional index reads,
 direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element interpreter/native parity, ARC auditing, invalid program
 rejection and bounds traps. `python rewrite/test_rewrite_record_arrays.py`
 exercises flat record elements, including managed fields, CoW, invalid operands,
-function calls, loops and bounds traps. The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
+function calls, loops and bounds traps.
+`python rewrite/test_rewrite_nested_updates.py` covers indexed record-field
+updates, compound operators, snapshots, invalid targets, and bounds traps.
+The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
 `array_ir_test_driver.sirius` verifies both integer and managed string-array IR.
 
 Ranges are ascending and
@@ -153,8 +159,8 @@ Shifts require counts from 0 through 63; left shifts wrap and right shifts
 zero-fill, including for negative integers. Generated C uses unsigned shifts.
 Compound assignments to local names reuse variable reads, arithmetic and
 ordinary assignment; mutability checks and arithmetic traps apply unchanged.
-`%=`, bitwise compound assignments and nested update paths remain unsupported.
-Flat record fields and `Array[i64]` indexed assignments support `=`, `+=`,
+`%=`, bitwise compound assignments and deeper nested update paths remain unsupported.
+Flat record fields, indexed assignments and record fields inside arrays support `=`, `+=`,
 `-=`, `*=`, and `/=`.
 Integer literals must fit in the positive `i64` range; in particular, a literal spelling of the
 minimum `i64` is not yet supported. The compiler checks names, duplicate

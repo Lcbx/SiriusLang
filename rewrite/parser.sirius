@@ -72,6 +72,7 @@ export enum NodeKind
 	ArrayAppend
 	ArrayTarget
 	ArraySet
+	ArrayFieldUpdate
 	Zero
 	ArrayIndex
 	ArrayElement
@@ -398,6 +399,9 @@ def is_assignment(p: State) -> bool
 					index += 1
 					break
 			index += 1
+		# An indexed record field is also an assignment target.
+		if index + 1 < len(p.tokens) and p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "." and p.tokens[!index + 1].kind == Lex.TokenKind.index(Lex.Name)
+			index += 2
 	if index >= len(p.tokens)
 		return false
 	let token = p.tokens[!index]
@@ -581,13 +585,26 @@ def block(initial: State, loop_start: i64) -> State
 				p = expect(index.state, "]")
 				let target = node(p, ArrayTarget(), -1, index.node, token)
 				p = target.state
+				var field_token = -1
+				if text(p) == "."
+					p.index += 1
+					field_token = p.index
+					p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "field name")
+					if text(p) == "." or text(p) == "["
+						return fail(p, "nested update path not yet supported")
 				let op = text(p)
 				let operator_token = p.index
 				var left = -1
-				if op != "="
+				var record = -1
+				if field_token >= 0 or op != "="
 					let read = node(p, ArrayRead(), target.node, index.node, operator_token)
 					p = read.state
 					left = read.node
+					record = read.node
+					if field_token >= 0 and op != "="
+						let field = node(p, FieldRead(), record, -1, field_token)
+						p = field.state
+						left = field.node
 				p.index += 1
 				var value = expression(p, PREC_OR)
 				if op != "="
@@ -599,7 +616,11 @@ def block(initial: State, loop_start: i64) -> State
 					elif op == "/="
 						kind = NodeKind.Divide(Divide())
 					value = node(value.state, kind, left, value.node, operator_token)
-				p = node(value.state, ArraySet(), target.node, value.node, token).state
+				if field_token >= 0
+					p = node(value.state, ArrayFieldUpdate(), record, value.node, field_token).state
+					p = node(p, ArraySet(), target.node, record, token).state
+				else
+					p = node(value.state, ArraySet(), target.node, value.node, token).state
 				p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
 				continue
 			var field_token = -1

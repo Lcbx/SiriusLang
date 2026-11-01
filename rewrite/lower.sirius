@@ -98,6 +98,8 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.Nop())
 			Parser.FieldAssign
 				instructions = instructions.append(IR.SetField(checked.references[!node.left], checked.references[!i], node.right))
+			Parser.ArrayFieldUpdate
+				instructions = instructions.append(IR.SetField(node.left, checked.references[!i], node.right))
 			Parser.Parameter | Parser.Argument
 				instructions = instructions.append(IR.Nop())
 			Parser.Call

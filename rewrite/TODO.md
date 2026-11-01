@@ -15,7 +15,8 @@ all bodies, including unused functions. Flat records with scalar/string fields
 now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
 checked reads and CoW updates, including arrays of flat records with managed
-string fields; nested update paths, composed record fields and a module loader
+string fields; indexed-record field updates are supported, but deeper nested
+paths, composed record fields and a module loader
 remain unimplemented.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
@@ -104,7 +105,11 @@ justifies replacing it.
   the owned slot, retaining new strings and releasing overwritten ones. Source
   `FieldTarget` references the actual binding, avoiding a redundant full-record
   copy. Tested in the interpreter and ARC-audited generated C.
-- [ ] Extend field/index updates to nested paths such as
+- [x] Support one-level indexed record-field updates (`tokens[!i].text = value`,
+  `tokens[!i].kind += 1`). Read the record into a value slot, update the field,
+  then write the record back via `ArraySet`. Evaluate the index once, enforce
+  mutable array bindings, and preserve snapshots in interpreter and audited C.
+- [ ] Extend field/index updates to deeper paths such as
   `p.nodes[!id].right = target`. Evaluate index/receiver expressions once and
   apply CoW through containing records/arrays, preserving snapshots and
   immutable bindings.
