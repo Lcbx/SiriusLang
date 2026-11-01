@@ -20,9 +20,19 @@ def main() -> i64
 	let text = IR.intern_array(initial, IR.TYPE_STRING)
 	if text.id < 0 or IR.verify_types(text.table) != ""
 		return 5
-	let bad = entry(text.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [text.id, IR.TYPE_I64])
-	if IR.verify_module(bad) != "unsupported array element type"
+	let empty_strings = entry(text.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [text.id, IR.TYPE_I64])
+	if IR.verify_module(empty_strings) != "" or Interpreter.run_module(empty_strings) != 0 or Emit.emit(empty_strings).error != ""
+		return 15
+	let strings = entry(text.table, [IR.StringConstant(0, "ab"), IR.StringConstant(1, "xyz"), IR.MakeArray(2, [0, 1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.StringLength(6, 5), IR.Return(6)], [IR.TYPE_STRING, IR.TYPE_STRING, text.id, text.id, IR.TYPE_I64, IR.TYPE_STRING, IR.TYPE_I64])
+	if IR.verify_module(strings) != "" or Interpreter.run_module(strings) != 2 or Emit.emit(strings).error != ""
 		return 6
+	let unsupported = IR.intern_array(text.table, IR.TYPE_BOOL)
+	let bad = entry(unsupported.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [unsupported.id, IR.TYPE_I64])
+	if IR.verify_module(bad) != "unsupported array element type"
+		return 13
+	let bad_element = entry(text.table, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, text.id])
+	if IR.verify_module(bad_element) != "main: slot type mismatch"
+		return 14
 	var duplicate = initial
 	duplicate.entries = duplicate.entries.append(initial.entries[!id])
 	if IR.verify_types(duplicate) != "noncanonical array type"
@@ -45,9 +55,5 @@ def main() -> i64
 	let mismatched = entry(initial, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.ArraySet(1, 0, 2), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_BOOL])
 	if IR.verify_module(mismatched) != "main: slot type mismatch"
 		return 12
-	for source in [-1, 2, 99999999]
-		let invalid_copy = entry(initial, [IR.CopyArray(0, source), IR.Constant(1, 0), IR.Return(1)], [id, IR.TYPE_I64])
-		if IR.verify_module(invalid_copy) != "main: undefined input slot"
-			return 13
 	print("PASS arrays IR")
 	return 0

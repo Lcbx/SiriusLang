@@ -31,7 +31,7 @@ def compare(left, right, op: string) -> bool
 	return left >= right
 
 rec RecordValue(scalars: Array[i64], strings: Array[string])
-rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue], arrays: Array[Array[i64]])
+rec Frame(function: i64, pc: i64, dst: i64, slots: Array[i64], strings: Array[string], optionals: Array[Optional[i64]], records: Array[RecordValue], arrays: Array[Array[i64]], text_arrays: Array[Array[string]])
 
 def empty_record(count: i64) -> RecordValue
 	var scalars = Array[i64]()
@@ -47,6 +47,7 @@ def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	var optionals = Array[Optional[i64]]()
 	var records = Array[RecordValue]()
 	var arrays = Array[Array[i64]]()
+	var text_arrays = Array[Array[string]]()
 	var has_arrays = false
 	var has_records = false
 	for type in function.types
@@ -68,7 +69,8 @@ def empty_frame(function: IR.Function, id: i64, table: IR.TypeTable) -> Frame
 	if has_arrays
 		for i in 0..function.body.slots
 			arrays = arrays.append(Array[i64]())
-	return Frame(id, 0, -1, slots, strings, optionals, records, arrays)
+			text_arrays = text_arrays.append(Array[string]())
+	return Frame(id, 0, -1, slots, strings, optionals, records, arrays, text_arrays)
 
 def execute(module: IR.Module) -> i64
 	let initial = empty_frame(module.functions[!module.entry], module.entry, module.type_table)
@@ -77,6 +79,7 @@ def execute(module: IR.Module) -> i64
 	var optionals = initial.optionals
 	var records = initial.records
 	var arrays = initial.arrays
+	var text_arrays = initial.text_arrays
 	var function_id = module.entry
 	var program = module.functions[!function_id].body
 	var stack = Array[Frame]()
@@ -87,35 +90,66 @@ def execute(module: IR.Module) -> i64
 		var next = pc + 1
 		match instruction
 			IR.MakeArray(dst, inputs)
-				var values = Array[i64]()
-				for input in inputs
-					values = values.append(slots[!input])
-				arrays[!dst] = values
+				let item_type = IR.array_element(module.type_table, module.functions[!function_id].types[!dst])
+				if item_type == IR.TYPE_STRING
+					var values = Array[string]()
+					for input in inputs
+						values = values.append(strings[!input])
+					text_arrays[!dst] = values
+				else
+					var values = Array[i64]()
+					for input in inputs
+						values = values.append(slots[!input])
+					arrays[!dst] = values
 			IR.CopyArray(dst, input)
-				arrays[!dst] = arrays[!input]
+				if IR.array_element(module.type_table, module.functions[!function_id].types[!dst]) == IR.TYPE_STRING
+					text_arrays[!dst] = text_arrays[!input]
+				else
+					arrays[!dst] = arrays[!input]
 			IR.ArrayLength(dst, input)
-				slots[!dst] = len(arrays[!input])
+				if IR.array_element(module.type_table, module.functions[!function_id].types[!input]) == IR.TYPE_STRING
+					slots[!dst] = len(text_arrays[!input])
+				else
+					slots[!dst] = len(arrays[!input])
 			IR.ArrayRead(dst, input, index)
 				var at = slots[!index]
-				let values = arrays[!input]
+				let string_items = IR.array_element(module.type_table, module.functions[!function_id].types[!input]) == IR.TYPE_STRING
+				var count = len(arrays[!input])
+				if string_items
+					count = len(text_arrays[!input])
 				if at < 0
-					at += len(values)
-				if at < 0 or at >= len(values)
+					at += count
+				if at < 0 or at >= count
 					eprint("ERROR: index out of bounds")
 					return EXIT_RUNTIME_ERROR
-				slots[!dst] = values[!at]
+				if string_items
+					strings[!dst] = text_arrays[!input][!at]
+				else
+					slots[!dst] = arrays[!input][!at]
 			IR.ArrayAppend(dst, input, item)
-				arrays[!dst] = arrays[!input].append(slots[!item])
+				if IR.array_element(module.type_table, module.functions[!function_id].types[!input]) == IR.TYPE_STRING
+					text_arrays[!dst] = text_arrays[!input].append(strings[!item])
+				else
+					arrays[!dst] = arrays[!input].append(slots[!item])
 			IR.ArraySet(input, index, item)
 				var at = slots[!index]
-				var values = arrays[!input]
+				let string_items = IR.array_element(module.type_table, module.functions[!function_id].types[!input]) == IR.TYPE_STRING
+				var count = len(arrays[!input])
+				if string_items
+					count = len(text_arrays[!input])
 				if at < 0
-					at += len(values)
-				if at < 0 or at >= len(values)
+					at += count
+				if at < 0 or at >= count
 					eprint("ERROR: index out of bounds")
 					return EXIT_RUNTIME_ERROR
-				values[!at] = slots[!item]
-				arrays[!input] = values
+				if string_items
+					var values = text_arrays[!input]
+					values[!at] = strings[!item]
+					text_arrays[!input] = values
+				else
+					var values = arrays[!input]
+					values[!at] = slots[!item]
+					arrays[!input] = values
 			IR.MakeRecord(dst, type, inputs)
 				let fields = module.type_table.entries[!type].fields
 				var value = empty_record(len(fields))
@@ -154,10 +188,13 @@ def execute(module: IR.Module) -> i64
 					elif IR.is_record(module.type_table, type)
 						frame.records[!i] = records[!input]
 					elif IR.is_array(module.type_table, type)
-						frame.arrays[!i] = arrays[!input]
+						if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+							frame.text_arrays[!i] = text_arrays[!input]
+						else
+							frame.arrays[!i] = arrays[!input]
 					else
 						frame.slots[!i] = slots[!input]
-				let saved = Frame(function_id, next, dst, slots, strings, optionals, records, arrays)
+				let saved = Frame(function_id, next, dst, slots, strings, optionals, records, arrays, text_arrays)
 				if depth == len(stack)
 					stack = stack.append(saved)
 				else
@@ -170,6 +207,7 @@ def execute(module: IR.Module) -> i64
 				optionals = frame.optionals
 				records = frame.records
 				arrays = frame.arrays
+				text_arrays = frame.text_arrays
 				next = 0
 			IR.OptionalUnwrap(dst, input)
 				if not present(optionals[!input])
@@ -303,6 +341,7 @@ def execute(module: IR.Module) -> i64
 				var optional = "".byte_at(0)
 				var record = empty_record(0)
 				var array = Array[i64]()
+				var text_array = Array[string]()
 				if type == IR.TYPE_STRING
 					text = strings[!input]
 				elif IR.is_optional(module.type_table, type)
@@ -310,12 +349,15 @@ def execute(module: IR.Module) -> i64
 				elif IR.is_record(module.type_table, type)
 					record = records[!input]
 				elif IR.is_array(module.type_table, type)
-					array = arrays[!input]
+					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+						text_array = text_arrays[!input]
+					else
+						array = arrays[!input]
 				else
 					scalar = slots[!input]
 				depth -= 1
 				let saved = stack[!depth]
-				stack[!depth] = Frame(-1, 0, -1, [], [], [], [], [])
+				stack[!depth] = Frame(-1, 0, -1, [], [], [], [], [], [])
 				function_id = saved.function
 				program = module.functions[!function_id].body
 				slots = saved.slots
@@ -323,6 +365,7 @@ def execute(module: IR.Module) -> i64
 				optionals = saved.optionals
 				records = saved.records
 				arrays = saved.arrays
+				text_arrays = saved.text_arrays
 				if type == IR.TYPE_STRING
 					strings[!saved.dst] = text
 				elif IR.is_optional(module.type_table, type)
@@ -330,7 +373,10 @@ def execute(module: IR.Module) -> i64
 				elif IR.is_record(module.type_table, type)
 					records[!saved.dst] = record
 				elif IR.is_array(module.type_table, type)
-					arrays[!saved.dst] = array
+					if IR.array_element(module.type_table, type) == IR.TYPE_STRING
+						text_arrays[!saved.dst] = text_array
+					else
+						arrays[!saved.dst] = array
 				else
 					slots[!saved.dst] = scalar
 				next = saved.pc

@@ -19,7 +19,7 @@ def main() -> None:
 	native = cache.native_driver('rewrite-frontend', driver, extra_modules=modules)
 	runner = cache.mir_runner()
 	valid = [
-		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 4\nmain() -> 0\nconstruct -> 4\ncall make -> 4\n'),
+		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 6\nmain() -> 0\nconstruct -> 6\ncall make -> 6\n'),
 		('def main() -> i64\n\treturn 0\n', 'main() -> 0\n'),
 		('def main() -> i64\n\treturn twice(21)\n'
 		 'def twice(value: i64) -> i64\n\treturn value * 2\n',
@@ -47,6 +47,9 @@ def main() -> None:
 		('def main() -> i64\n\tprint(f"${later()}")\n\treturn 0\n'
 		 'def later() -> string\n\treturn "ok"\n',
 		 'main() -> 0\nlater() -> 2\ncall later -> 2\n'),
+		('def main() -> i64\n\treturn 0\n'
+		 'def strings() -> Array[string]\n\treturn ["hello"]\n',
+		 'main() -> 0\nstrings() -> 5\n'),
 	]
 	entry = 'def main() -> i64\n\treturn 0\n'
 	invalid = [
@@ -76,8 +79,9 @@ def main() -> None:
 		('def main() -> i64\n\treturn unknown()\ndef f() -> i64\n\treturn 0\ndef f() -> i64\n\treturn 1\n', 'duplicate function: f', 5),
 	]
 	for declaration in ['def f(x) -> i64', 'def f(x: string,) -> i64',
-		'def f(x: Optional[string]) -> i64', 'def f() -> Array[string]', 'def f()']:
+		'def f(x: Optional[string]) -> i64', 'def f()']:
 		invalid.append((entry + declaration + '\n\treturn 0\n', 'expected', 3))
+	invalid.append((entry + 'def strings() -> Array[string]\n\treturn 0\n', 'return type mismatch', 4))
 	for expression in ['f(,)', 'f(1,)', 'f(1 2)']:
 		invalid.append(('def main() -> i64\n\treturn ' + expression + '\n', 'expected', 2))
 	# Each incomplete header must diagnose EOF, without indexing past tokens.

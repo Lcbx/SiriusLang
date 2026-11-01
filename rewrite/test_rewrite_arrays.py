@@ -20,9 +20,9 @@ def main() -> None:
         'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
         'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
     compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
-    driver = ROOT / 'rewrite/array_ir_test_driver.sirius'
-    verifier = cache.native_driver('rewrite-array-ir', driver, extra_modules=modules)
-    runner = cache.mir_runner()
+    verifier = cache.native_driver('rewrite-array-ir', ROOT / 'rewrite/array_ir_test_driver.sirius', extra_modules=modules)
+    checked = invoke(verifier)
+    assert (checked.returncode, normalize_newlines(checked.stdout), checked.stderr) == (0, b'PASS arrays IR\n', b''), checked
     cases = [
         ('''def main() -> i64
 \tlet values = [3, 0, -6]
@@ -113,10 +113,11 @@ def main() -> i64
 \treturn 0
 ''', b'10\n20\n20\n'),
     ]
+    # String arrays are valid now; managed ownership is also checked in
+    # test_rewrite_managed_arrays.py. Keep this suite for integer regressions.
     invalid = [
         'let x = []\n\treturn 0',
         'let x = [1, true]\n\treturn 0',
-        'let x = ["one"]\n\treturn 0',
         'let x: Array[i64] = 3\n\treturn 0',
         'let x = [1]\n\tprint(str(x))\n\treturn 0',
         'let x = [1]\n\tprint(x)\n\treturn 0',
@@ -131,7 +132,6 @@ def main() -> i64
         'for x in [true]\n\t\tprint(x)\n\treturn 0',
         'let x = [1,]\n\treturn 0',
         'let x: Array[string] = Array[i64]()\n\treturn 0',
-        'let x = Array[string]()\n\treturn 0',
     ]
     traps = [
         'print([1, 2][!2])',
@@ -142,15 +142,6 @@ def main() -> i64
     ]
     with tempfile.TemporaryDirectory() as directory:
         base = Path(directory)
-        for module in modules:
-            (base / module.name).write_bytes(module.read_bytes())
-        (base / 'Check.sirius').write_bytes(driver.read_bytes())
-        library = base / 'check.smirl'
-        execute([str(runner), '--build-modules', str(base), 'Check', str(library)])
-        for command in ((verifier,), (runner, '--entry', 'M_5_Check_4_main', '--load-lib', library)):
-            result = invoke(*command)
-            assert (result.returncode, normalize_newlines(result.stdout), result.stderr) == (0, b'PASS arrays IR\n', b''), result
-        print('PASS arrays IR: native/interpreted verification and snapshots', flush=True)
         audit = base / 'audit-runtime.o'
         execute([cache.cc, *C_FLAGS, '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'),
                  '-c', str(ROOT / 'runtime/sirius_runtime.c'), '-o', str(audit)])

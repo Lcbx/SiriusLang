@@ -19,7 +19,12 @@ def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable, recor
 	if annotation == "string"
 		return IR.TYPE_STRING
 	if annotation == "Array"
-		return IR.find_array(table, IR.TYPE_I64)
+		let item = name(parsed, token + 2)
+		if item == "string"
+			return IR.find_array(table, IR.TYPE_STRING)
+		if item == "i64"
+			return IR.find_array(table, IR.TYPE_I64)
+		return IR.NO_TYPE
 	if annotation == "Optional"
 		return IR.find_optional(table, IR.TYPE_I64)
 	if annotation == "i64"
@@ -112,22 +117,34 @@ export def check(parsed: Parser.State) -> Checked
 		var error = ""
 		match node.kind
 			Parser.ArrayLiteral
-				type = IR.find_array(type_table, integer)
-				if node.right == 0 and name(parsed, node.token) != "Array"
-					error = "empty array literal requires Array[i64]()"
+				var element = integer
+				if name(parsed, node.token) == "Array"
+					element = IR.NO_TYPE
+					if name(parsed, node.token + 2) == "i64"
+						element = integer
+					elif name(parsed, node.token + 2) == "string"
+						element = text
+				else
+					if node.right == 0
+						error = "empty array literal requires Array[T]()"
+					else
+						element = types[!parsed.nodes[!node.left].left]
+				type = IR.find_array(type_table, element)
+				if type == IR.NO_TYPE
+					error = "unsupported array element type"
 				var arg = node.left
 				while arg >= 0
-					if types[!arg] != integer
-						error = "array elements require i64"
+					if types[!parsed.nodes[!arg].left] != element
+						error = "array element type mismatch"
 					arg = parsed.nodes[!arg].right
 			Parser.ArrayRead
-				type = integer
-				if not IR.is_array(type_table, types[!node.left]) or types[!node.right] != integer
-					error = "checked array read requires Array[i64] and i64 index"
+				type = IR.array_element(type_table, types[!node.left])
+				if type == IR.NO_TYPE or types[!node.right] != integer
+					error = "checked array read requires array and i64 index"
 			Parser.ArrayAppend
 				type = types[!node.left]
-				if not IR.is_array(type_table, type) or types[!node.right] != integer
-					error = "append requires Array[i64] and i64 element"
+				if not IR.is_array(type_table, type) or types[!node.right] != IR.array_element(type_table, type)
+					error = "append element type mismatch"
 			Parser.ArrayIndex
 				type = integer
 				if types[!node.left] != integer or types[!node.right] != integer
@@ -138,9 +155,9 @@ export def check(parsed: Parser.State) -> Checked
 					scopes[!depth] = bindings
 				depth += 1
 			Parser.ArrayElement
-				type = integer
-				if not IR.is_array(type_table, types[!node.left]) or types[!node.right] != integer
-					error = "array iteration requires Array[i64]"
+				type = IR.array_element(type_table, types[!node.left])
+				if type == IR.NO_TYPE or types[!node.right] != integer
+					error = "array iteration requires array and i64 index"
 				bindings = bindings.insert(name(parsed, node.token), Binding(i, false, depth - 1))
 			Parser.Zero
 				type = integer
@@ -157,7 +174,7 @@ export def check(parsed: Parser.State) -> Checked
 					if not IR.is_array(type_table, type) or types[!node.right] != integer
 						error = "indexed assignment requires Array[i64] and i64 index"
 			Parser.ArraySet
-				if types[!node.right] != integer
+				if types[!node.right] != IR.array_element(type_table, types[!node.left])
 					error = "array assignment type mismatch"
 			Parser.FieldRead
 				let source = types[!node.left]

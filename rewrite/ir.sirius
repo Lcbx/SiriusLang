@@ -141,7 +141,7 @@ def unsupported_type(table: TypeTable, type: i64) -> string
 # The current string lookup instructions require this type even without an
 # Optional annotation. Its ID is obtained by interning, never from TypeKind.
 export def runtime_types() -> TypeTable
-	return intern_array(intern_optional(initial_types(), TYPE_I64).table, TYPE_I64).table
+	return intern_array(intern_array(intern_optional(initial_types(), TYPE_I64).table, TYPE_I64).table, TYPE_STRING).table
 
 export def verify_types(table: TypeTable) -> string
 	if len(table.entries) < PRIMITIVE_TYPE_COUNT
@@ -194,7 +194,7 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 		Optional
 			return optional_payload(table, id) == TYPE_I64
 		Array
-			return array_element(table, id) == TYPE_I64
+			return array_element(table, id) == TYPE_I64 or array_element(table, id) == TYPE_STRING
 		Record
 			for field in table.entries[!id].fields
 				if field.type != TYPE_I64 and field.type != TYPE_BOOL and field.type != TYPE_STRING
@@ -368,7 +368,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				for input in fields
 					if not in_bounds(input, program.slots)
 						return "undefined input slot"
-					input_types = input_types.append(TYPE_I64)
+					input_types = input_types.append(array_element(table, output_type))
 			CopyArray(target, input)
 				if not in_bounds(input, program.slots)
 					return "undefined input slot"
@@ -395,6 +395,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				writes = true
 				inputs = [input, index]
 				input_types = [types[!input], TYPE_I64]
+				output_type = array_element(table, types[!input])
 			ArrayAppend(target, input, item)
 				if not in_bounds(item, program.slots)
 					return "undefined input slot"
@@ -404,14 +405,14 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				writes = true
 				output_type = types[!input]
 				inputs = [input, item]
-				input_types = [types[!input], TYPE_I64]
+				input_types = [types[!input], array_element(table, types[!input])]
 			ArraySet(input, index, item)
 				if not in_bounds(index, program.slots) or not in_bounds(item, program.slots)
 					return "undefined input slot"
 				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input])
 					return "array set requires array"
 				inputs = [input, index, item]
-				input_types = [types[!input], TYPE_I64, TYPE_I64]
+				input_types = [types[!input], TYPE_I64, array_element(table, types[!input])]
 			MakeRecord(target, type, fields)
 				if not typed or not is_record(table, type) or not runtime_type(table, type)
 					return "invalid record type"
