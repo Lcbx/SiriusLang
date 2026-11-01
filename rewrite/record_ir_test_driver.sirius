@@ -91,6 +91,17 @@ def main() -> i64
 	let invalid_composed = program([IR.Constant(0, 13), IR.MakeArray(1, [0]), IR.MakeRecord(2, composite.id, [1]), IR.SetField(2, 0, 0), IR.Return(0)], [integer, integer_array, composite.id], composed_table)
 	if IR.verify_module(invalid_composed) != "main: slot type mismatch"
 		return 29
+	# Nested record fields are owned values; verifier must preserve their types.
+	let nested = IR.intern_record(composed_table, [IR.RecordField("child", small.id)])
+	let nested_table = nested.table
+	if IR.verify_types(nested_table) != "" or not IR.runtime_type(nested_table, nested.id)
+		return 30
+	let nested_module = program([IR.StringConstant(0, "nested"), IR.MakeRecord(1, small.id, [0]), IR.MakeRecord(2, nested.id, [1]), IR.ReadField(3, 2, 0), IR.ReadField(4, 3, 0), IR.StringLength(5, 4), IR.Return(5)], [string, small.id, nested.id, small.id, string, integer], nested_table)
+	if IR.verify_module(nested_module) != "" or Interpreter.run_module(nested_module) != 6
+		return 31
+	let bad_nested = program([IR.StringConstant(0, "wrong"), IR.MakeRecord(1, nested.id, [0]), IR.Constant(2, 0), IR.Return(2)], [string, nested.id, integer], nested_table)
+	if IR.verify_module(bad_nested) != "main: slot type mismatch"
+		return 32
 	let args = arguments()
 	if len(args) == 2 and args[!1] == "--trap"
 		let caller = IR.Function("main", IR.Program([IR.StringConstant(0, "owned"), IR.MakeRecord(1, small.id, [0]), IR.Call(2, 1, [1]), IR.Return(2)], 3, "", 0), [], integer, [string, small.id, integer])

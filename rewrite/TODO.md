@@ -11,14 +11,15 @@ typed functions with one `main() -> i64`, scalar/string expressions,
 `Optional[i64]`, interpolation and local control flow. Forward and mutually
 recursive calls execute natively and through explicit interpreter frames.
 Per-function flat IR carries checked types and call targets; the verifier checks
-all bodies, including unused functions. Flat records with scalar/string fields
+all bodies, including unused functions. Records with scalar/string fields
 now support constructors, field reads, direct updates on mutable bindings,
 copies and calls in both backends. `Array[i64]` and `Array[string]` now support literals, iteration,
-checked reads and CoW updates, including arrays of flat records with managed
-string fields; indexed-record field updates are supported, but deeper nested
-paths, nested record fields, nested array elements and a module loader
-remain unimplemented. Array-valued record fields (`Array[i64]`, `Array[string]`)
-are supported, including records stored in arrays.
+checked reads and CoW updates, including arrays of records with managed
+fields; indexed-record field updates are supported, but deeper nested
+paths, nested array elements and a module loader remain unimplemented.
+Previously declared record types are accepted as record fields. Array-valued
+record fields (`Array[i64]`, `Array[string]`) are supported, including records
+stored in arrays.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -86,8 +87,11 @@ justifies replacing it.
   with owned snapshots and recursive field-level array retain/release in native
   C, including arrays of records containing arrays. Covered by
   `test_rewrite_composed_records.py` and direct record IR tests.
-- [ ] Extend record fields to nested records, nested arrays and broader optional
-  payloads, preserving structural equivalence and ownership.
+- [x] Allow fields containing previously declared record types, retaining/releasing
+  their contents recursively. Interpreter nested values use an immutable pool;
+  tests cover multi-level reads, replacement, calls and snapshots in
+  `test_rewrite_nested_records.py`. Forward/cyclic record definitions remain unsupported.
+- [ ] Extend record fields to nested arrays and broader optional payloads.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -102,9 +106,9 @@ justifies replacing it.
   fields. Reuse generic `S_Array` with per-record retain/release callbacks;
   cover construction, calls, iteration, overwrite, self-assignment, snapshots,
   invalid programs and bounds traps in `test_rewrite_record_arrays.py`.
-- [ ] Extend array elements to nested arrays and records with record-valued
-  fields. Records containing `Array[i64]` and `Array[string]` fields already
-  use their existing element copy/drop callbacks; other composed layouts remain.
+- [ ] Extend array elements to nested arrays. Record elements now support
+  record-valued fields; their existing element copy/drop callbacks recurse
+  through nested records. Records containing primitive-element arrays remain supported.
   Nested index/field update paths remain separate.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates

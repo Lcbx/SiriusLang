@@ -110,6 +110,8 @@ def record_definitions(table: IR.TypeTable) -> string
 			let field_type = fields[!i].type
 			if field_type == IR.TYPE_STRING
 				parts = parts.append("s_string_retain(value.f" + str(i) + ");\n")
+			elif IR.is_record(table, field_type)
+				parts = parts.append("retain_R" + str(field_type) + "(value.f" + str(i) + ");\n")
 			elif IR.is_array(table, field_type)
 				if managed_array(table, field_type)
 					parts = parts.append("s_array_retain(value.f" + str(i) + ");\n")
@@ -120,6 +122,8 @@ def record_definitions(table: IR.TypeTable) -> string
 			let field_type = fields[!i].type
 			if field_type == IR.TYPE_STRING
 				parts = parts.append("s_string_release(value.f" + str(i) + ");\n")
+			elif IR.is_record(table, field_type)
+				parts = parts.append("release_R" + str(field_type) + "(value.f" + str(i) + ");\n")
 			elif IR.is_array(table, field_type)
 				if managed_array(table, field_type)
 					parts = parts.append("s_array_release(value.f" + str(i) + ");\n")
@@ -272,6 +276,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_retain(" + value + "));\n")
 					else
 						lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_retain(" + value + "));\n")
+				elif IR.is_record(table, type)
+					lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", retain_R" + str(type) + "(" + value + "));\n")
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + value + ";\n")
 			IR.SetField(record, field, input)
@@ -286,6 +292,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_managed_array(&" + target + ", s_array_retain(" + value + "));\n")
 					else
 						lines = lines.append("store_array(&" + target + ", s_array_i64_retain(" + value + "));\n")
+				elif IR.is_record(table, field_type)
+					lines = lines.append("store_R" + str(field_type) + "(&" + target + ", retain_R" + str(field_type) + "(" + value + "));\n")
 				else
 					lines = lines.append(target + " = " + value + ";\n")
 			IR.Call(dst, target, arguments)

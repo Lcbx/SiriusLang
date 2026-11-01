@@ -199,7 +199,10 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 			for field in table.entries[!id].fields
 				if field.type == TYPE_I64 or field.type == TYPE_BOOL or field.type == TYPE_STRING
 					continue
-				if not is_array(table, field.type) or (array_element(table, field.type) != TYPE_I64 and array_element(table, field.type) != TYPE_STRING)
+				if is_record(table, field.type)
+					if not runtime_type(table, field.type)
+						return false
+				elif not is_array(table, field.type) or (array_element(table, field.type) != TYPE_I64 and array_element(table, field.type) != TYPE_STRING)
 					return false
 			return true
 
