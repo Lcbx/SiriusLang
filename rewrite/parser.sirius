@@ -69,6 +69,7 @@ export enum NodeKind
 	FieldTarget
 	ArrayLiteral
 	ArrayRead
+	ArrayGet
 	ArrayAppend
 	DictLiteral
 	DictPair
@@ -298,9 +299,14 @@ def expression(p: State, minimum: i64) -> Parsed
 			var after = result.state
 			let token = after.index
 			after = expect(after, "[")
-			after = expect(after, "!")
+			var kind: NodeKind = ArrayRead()
+			if text(after) == "?"
+				kind = NodeKind.ArrayGet(ArrayGet())
+				after = expect(after, "?")
+			else
+				after = expect(after, "!")
 			let index = expression(after, PREC_OR)
-			result = node(expect(index.state, "]"), ArrayRead(), result.node, index.node, token)
+			result = node(expect(index.state, "]"), kind, result.node, index.node, token)
 			continue
 		if op == "!"
 			var after = result.state

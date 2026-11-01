@@ -17,6 +17,84 @@ def run(*args):
     return subprocess.run([str(arg) for arg in args], capture_output=True, timeout=60)
 
 VALID = [
+    ('optional array indexing integers and boundaries', '''
+def main() -> i64
+    let a = [0, 14, -3]
+    print(a[?0] or 99)
+    print(a[?-1] or 99)
+    print(a[?-3]!)
+    print(a[?3] or 20)
+    print(a[?-4] or 21)
+    print(Array[i64]()[?0] or 22)
+    return 0
+''', b'0\n-3\n0\n20\n21\n22\n'),
+    ('optional array indexing managed string and snapshots', '''
+def take(values: Array[string], i: i64) -> Optional[string]
+    return values[?i]
+def main() -> i64
+    var items = ["first", "second"]
+    let saved = items
+    let first = take(items, 0)
+    let last = items[?-1]
+    items[!0] = "changed"
+    print(first or "wrong")
+    print(last!)
+    print(saved[?0] or "wrong")
+    print(items[?0] or "wrong")
+    print(items[?99] or "fallback")
+    return 0
+''', b'first\nsecond\nfirst\nchanged\nfallback\n'),
+    ('optional array indexing records and recursive values', '''
+rec Binding(node: i64, text: string)
+rec Bucket(values: Array[Binding])
+def lookup(b: Bucket, i: i64) -> Optional[Binding]
+    return b.values[?i]
+def main() -> i64
+    let values = [Binding(3, "left"), Binding(4, "right")]
+    let bucket = Bucket(values)
+    let present = lookup(bucket, -1)
+    let copy = present
+    print((copy or Binding(9, "wrong")).text)
+    print((lookup(bucket, 9) or Binding(-1, "missing")).node)
+    print(present!.node)
+    return 0
+''', b'right\n-1\n4\n'),
+    ('optional array indexing booleans and dictionary keys', '''
+def main() -> i64
+    let flags = [true, false]
+    print(flags[?0] or false)
+    print(flags[?1] or true)
+    print(flags[?2] or true)
+    let index = Dict[i64, bool]().insert(2, false)
+    print(index[?2] or true)
+    print(index[?-1] or true)
+    return 0
+''', b'true\nfalse\ntrue\nfalse\ntrue\n'),
+    ('optional array indexing nested optionals and dictionaries', '''
+def main() -> i64
+    let names = Dict[string, string]().insert("yes", "present")
+    let a = [names.get("yes"), names.get("missing")]
+    let found = a[?0]
+    print((found or names.get("missing")) or "wrong")
+    print((a[?1] or names.get("yes")) or "wrong")
+    print((a[?8] or names.get("missing")) or "absent")
+    let dict = Dict[string, Array[string]]().insert("a", ["one"])
+    print((dict[?"a"] or ["wrong"])[?0] or "wrong")
+    print(len(dict[?"missing"] or Array[string]()))
+    return 0
+''', b'present\nwrong\nabsent\none\n0\n'),
+    ('optional array indexing managed arrays', '''
+def main() -> i64
+    var values = [["a", "b"], ["c"]]
+    let snapshot = values
+    let first = values[?0] or ["wrong"]
+    values[!0][!1] = "changed"
+    print(first[?1] or "wrong")
+    print((values[?0] or ["wrong"])[?1] or "wrong")
+    print((snapshot[?0] or ["wrong"])[?1] or "wrong")
+    print(len(values[?2] or Array[string]()))
+    return 0
+''', b'b\nchanged\nb\n0\n'),
     ('scalar and lazy missing default', '''
 def main() -> i64
     let d = Dict[string, i64]().insert("zero", 0)
@@ -203,6 +281,11 @@ def main() -> i64
 ''', b'stored\nnone\nchanged\n'),
 ]
 INVALID = [
+    'def main() -> i64\n    let a = [1]\n    let o: Optional[string] = a[?0]\n    return 0\n',
+    'def main() -> i64\n    let a = [1]\n    print(a[?"wrong"] or 0)\n    return 0\n',
+    'def main() -> i64\n    let a = [1]\n    print(a[?0] + 1)\n    return 0\n',
+    'def main() -> i64\n    let d = Dict[string, i64]()\n    print(d[?1] or 0)\n    return 0\n',
+    'def main() -> i64\n    let a = [1]\n    print(a[?0 or 0)\n    return 0\n',
     'def main() -> i64\n    let d = Dict[string, i64]()\n    print(d.get(2) or 0)\n    return 0\n',
     'def main() -> i64\n    let a = [1, 2]\n    print(a.get(0) or 0)\n    return 0\n',
     'def main() -> i64\n    let d = Dict[string, string]()\n    let v: Optional[i64] = d.get("x")\n    return 0\n',

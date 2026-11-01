@@ -88,12 +88,17 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				for index in 0..len(reversed)
 					inputs = inputs.append(reversed[!len(reversed) - 1 - index])
 				instructions = instructions.append(IR.MakeArray(i, inputs))
-			Parser.ArrayRead
+			Parser.ArrayRead | Parser.ArrayGet
 				var input = node.left
 				if Parser.kind_is(parsed.nodes[!input].kind, Parser.ArrayTarget()) or Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
 					input = checked.references[!input]
 				if IR.is_dict(checked.type_table, checked.types[!input])
-					instructions = instructions.append(IR.DictRead(i, input, node.right))
+					if Parser.kind_is(node.kind, Parser.ArrayGet())
+						instructions = instructions.append(IR.DictGet(i, input, node.right))
+					else
+						instructions = instructions.append(IR.DictRead(i, input, node.right))
+				elif Parser.kind_is(node.kind, Parser.ArrayGet())
+					instructions = instructions.append(IR.ArrayGet(i, input, node.right))
 				else
 					instructions = instructions.append(IR.ArrayRead(i, input, node.right))
 			Parser.ArrayAppend

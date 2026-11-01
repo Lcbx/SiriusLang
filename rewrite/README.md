@@ -44,7 +44,9 @@ Executable optionals can contain scalars, strings, records, arrays, dictionaries
 and nested optionals. Present optional values own their payload: copying, calls,
 returns, unwrapping and defaults retain managed contents, while overwrites and
 returns release them. Constructing arbitrary `Some`/`None` values remains future work;
-lookups currently provide optional values. Optional values can also be stored
+lookups currently provide optional values. `items[?index]` and `dict[?key]`
+return `Optional[T]` without trapping; `items[!index]` and `dict[!key]`
+remain checked and trap when missing. Optional values can also be stored
 inside records, arrays and dictionaries, including as nested optionals. Record
 descriptors contain canonical fields; `Array[i64]` and `Array[string]`
 have canonical element descriptors. Dictionary descriptors are canonical for `i64` or `string` keys and any supported acyclic value type.
@@ -88,7 +90,8 @@ literals (`[1, 2]`), `Array[i64]()` for empty arrays, annotations, function
 parameters and results, `len(array)`, `.append(value)`, checked `[!index]`
 reads, `for item in array`, and mutable local indexed updates (`a[!i] = value`,
 `a[!i] += value`, etc.) work through the native backend. Negative indices count
-from the end, and out-of-range reads or writes trap. Array iteration snapshots
+from the end for both checked `[!index]` and optional `[?index]` reads.
+Out-of-range optional reads return `None` while checked reads and writes trap. Array iteration snapshots
 its receiver once and binds an immutable element on each iteration. Copies and
 function parameters preserve prior values through reference counting and CoW.
 `Array[string]` supports inferred nonempty literals (`["a", "b"]`),
@@ -112,7 +115,7 @@ function calls and returns.
 `Dict[K,V]` supports `i64` and `string` keys, recursively composed record,
 array and dictionary values, empty `Dict[K,V]()` construction, `.insert(key,
 value)` returning a new dictionary, `len(dict)` and checked `dict[!key]` reads.
-Checked reads trap on missing keys; `.get(key)` instead returns `Optional[V]`
+Checked reads trap on missing keys; `.get(key)` and `[?key]` instead return `Optional[V]`
 for any supported dictionary value type, including managed records and nested
 aggregates. Generic native dictionary storage retains/drops managed keys and
 values and uses CoW when an earlier snapshot exists. Dictionaries can be passed
@@ -125,7 +128,7 @@ The empty literal `[]` is not yet accepted; use `Array[T]()` at any
 supported depth. Array-valued fields in records can be constructed, read,
 replaced and recursively updated, including paths such as
 `state.nodes[!i].right = target` and `forest.trees[!i][!j].text = value`.
-Generated C reuses generic array copy/drop callbacks. Optional index reads, direct array formatting and general
+Generated C reuses generic array copy/drop callbacks. Direct array formatting and general
 array methods remain unsupported. Run `python rewrite/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
 and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
 for string-element native execution, ARC auditing, invalid program

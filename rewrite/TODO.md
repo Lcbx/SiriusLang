@@ -154,7 +154,9 @@ overwrites, loop exits and early returns.
   type-specific ARC ownership (`test_rewrite_optionals.py`).
 - [x] Support `Optional[T]` in record fields, array elements and dictionary
   values, including nested optionals and CoW/ARC snapshots.
-- [ ] Add optional `[?index]` access and explicit optional payload construction.
+- [x] Add optional `[?index]` reads for arrays and dictionaries, including
+  negative array indices and ARC-owned aggregate payloads.
+- [ ] Add explicit optional payload construction (`Some`/`None` semantics and syntax).
 - [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
   and checked `[!key]` reads for `i64` and `string` keys with supported
   acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW

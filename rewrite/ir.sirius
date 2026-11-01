@@ -285,6 +285,7 @@ export rec DictGet(dst: i64, input: i64, key: i64)
 export rec CopyArray(dst: i64, input: i64)
 export rec ArrayLength(dst: i64, input: i64)
 export rec ArrayRead(dst: i64, input: i64, index: i64)
+export rec ArrayGet(dst: i64, input: i64, index: i64)
 export rec ArrayAppend(dst: i64, input: i64, item: i64)
 export rec ArraySet(input: i64, index: i64, item: i64)
 export rec MakeRecord(dst: i64, type: i64, inputs: Array[i64])
@@ -313,7 +314,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Initializes the payload destination on both edges; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -339,7 +340,7 @@ export def has_strings(program: Program) -> bool
 
 export def has_optionals(program: Program) -> bool
 	for instruction in program.instructions
-		if Instruction.index(instruction) == Instruction.index(StringByteAt) or Instruction.index(instruction) == Instruction.index(StringFind) or Instruction.index(instruction) == Instruction.index(DictGet)
+		if Instruction.index(instruction) == Instruction.index(StringByteAt) or Instruction.index(instruction) == Instruction.index(StringFind) or Instruction.index(instruction) == Instruction.index(DictGet) or Instruction.index(instruction) == Instruction.index(ArrayGet)
 			return true
 	return false
 
@@ -486,6 +487,16 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				writes = true
 				inputs = [input]
 				input_types = [types[!input]]
+			ArrayGet(target, input, index)
+				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input]) or not in_bounds(index, program.slots)
+					return "optional array read requires array"
+				dst = target
+				writes = true
+				output_type = find_optional(table, array_element(table, types[!input]))
+				if output_type == NO_TYPE
+					return "missing optional array element type"
+				inputs = [input, index]
+				input_types = [types[!input], TYPE_I64]
 			ArrayRead(target, input, index)
 				if not in_bounds(index, program.slots)
 					return "undefined input slot"
@@ -781,7 +792,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -916,7 +927,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -945,7 +956,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -1012,6 +1023,8 @@ export def rebase(instruction: Instruction, base: i64) -> Instruction
 			return ArrayLength(dst - base, input - base)
 		ArrayRead(dst, input, index)
 			return ArrayRead(dst - base, input - base, index - base)
+		ArrayGet(dst, input, index)
+			return ArrayGet(dst - base, input - base, index - base)
 		ArrayAppend(dst, input, item)
 			return ArrayAppend(dst - base, input - base, item - base)
 		ArraySet(input, index, item)

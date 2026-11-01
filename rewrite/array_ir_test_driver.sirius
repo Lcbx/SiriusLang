@@ -101,5 +101,19 @@ def main() -> i64
 	let deeply_nested = entry(deep_record.table, [IR.MakeArray(0, []), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.ArrayLength(3, 2), IR.Return(3)], [rec_array.id, array_record.id, deep_record.id, IR.TYPE_I64])
 	if IR.verify_module(deeply_nested) != "" or Emit.emit(deeply_nested).error != ""
 		return 27
+	# Optional array reads must have canonical Optional[T] output and i64 indices.
+	let optional_i64 = IR.find_optional(initial, IR.TYPE_I64)
+	let optional_read = entry(initial, [IR.Constant(0, 12), IR.MakeArray(1, [0]), IR.Constant(2, -1), IR.ArrayGet(3, 1, 2), IR.OptionalUnwrap(4, 3), IR.Return(4)], [IR.TYPE_I64, id, IR.TYPE_I64, optional_i64, IR.TYPE_I64])
+	if IR.verify_module(optional_read) != "" or Emit.emit(optional_read).error != ""
+		return 28
+	let wrong_output = entry(initial, [IR.Constant(0, 12), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.ArrayGet(3, 1, 2), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_I64, IR.TYPE_I64])
+	if IR.verify_module(wrong_output) != "main: slot type mismatch"
+		return 29
+	let wrong_index = entry(initial, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.Constant(2, 1), IR.ArrayGet(3, 1, 2), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_BOOL, optional_i64])
+	if IR.verify_module(wrong_index) != "main: slot type mismatch"
+		return 30
+	let wrong_source = entry(initial, [IR.StringConstant(0, "hi"), IR.Constant(1, 0), IR.ArrayGet(2, 0, 1), IR.Return(1)], [IR.TYPE_STRING, IR.TYPE_I64, optional_i64])
+	if IR.verify_module(wrong_source) != "main: optional array read requires array"
+		return 31
 	print("PASS arrays IR")
 	return 0

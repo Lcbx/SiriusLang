@@ -424,6 +424,17 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append(slot(dst) + " = (uint64_t)s_array_length(" + managed_array_slot(input) + ");\n")
 				else
 					lines = lines.append(slot(dst) + " = (uint64_t)" + array_slot(input) + "->length;\n")
+			IR.ArrayGet(dst, input, index)
+				let type = function.types[!dst]
+				let element = IR.optional_payload(table, type)
+				let target = value_slot(dst, type, table)
+				if managed_array(table, function.types[!input])
+					let ptr = "s_array_at(" + managed_array_slot(input) + ", managed_array_index(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")))"
+					lines = lines.append("{ " + c_type(element, table) + "const *item = " + ptr + "; O" + str(type) + " value = {0}; if (item) { value.has_value = true; value.value = " + retain_value(table, element, "*item") + "; }\n")
+					lines = lines.append(store_value(table, type, target, "value"))
+					lines = lines.append("}\n")
+				else
+					lines = lines.append(store_value(table, type, target, "s_array_i64_get(" + array_slot(input) + ", array_index(" + array_slot(input) + ", signed_value(" + slot(index) + ")))"))
 			IR.ArrayRead(dst, input, index)
 				let element = IR.array_element(table, function.types[!input])
 				if managed_array(table, function.types[!input])

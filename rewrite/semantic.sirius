@@ -208,7 +208,7 @@ export def check(parsed: Parser.State) -> Checked
 					if types[!parsed.nodes[!arg].left] != element
 						error = "array element type mismatch"
 					arg = parsed.nodes[!arg].right
-			Parser.ArrayRead
+			Parser.ArrayRead | Parser.ArrayGet
 				let source = types[!node.left]
 				if IR.is_dict(type_table, source)
 					type = IR.dict_value(type_table, source)
@@ -218,6 +218,10 @@ export def check(parsed: Parser.State) -> Checked
 					type = IR.array_element(type_table, source)
 					if type == IR.NO_TYPE or types[!node.right] != integer
 						error = "checked array read requires array and i64 index"
+				if error == "" and Parser.kind_is(node.kind, Parser.ArrayGet())
+					let interned = IR.intern_optional(type_table, type)
+					type_table = interned.table
+					type = interned.id
 			Parser.ArrayAppend
 				type = types[!node.left]
 				if not IR.is_array(type_table, type) or types[!node.right] != IR.array_element(type_table, type)
