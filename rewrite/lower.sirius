@@ -72,6 +72,8 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.MakeDict(i))
 			Parser.DictPair
 				instructions = instructions.append(IR.Nop())
+			Parser.DictGet
+				instructions = instructions.append(IR.DictGet(i, node.left, node.right))
 			Parser.DictInsert
 				let pair = parsed.nodes[!node.right]
 				instructions = instructions.append(IR.DictInsert(i, node.left, pair.left, pair.right))
@@ -211,7 +213,7 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				else
 					instructions = instructions.append(IR.ShortCircuit(i, node.left, node.right, Parser.kind_is(node.kind, Parser.OrStart())))
 			Parser.LogicalEnd
-				instructions = instructions.append(IR.Copy(node.left, node.right))
+				instructions = instructions.append(copy(node.left, node.right, checked.types[!node.left], checked.type_table))
 			Parser.BooleanLiteral
 				let token = parsed.tokens[!node.token]
 				var value = 0

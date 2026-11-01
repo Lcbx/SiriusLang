@@ -8,7 +8,7 @@ dependencies. Python handles test/build orchestration only.
 
 Today the original compiler builds the rewrite. The executable subset accepts
 typed functions with one `main() -> i64`, scalar/string expressions,
-`Optional[i64]`, interpolation and local control flow. Forward and mutually
+`Optional[T]` for executable payloads, interpolation and local control flow. Forward and mutually
 recursive calls execute natively.
 Per-function flat IR carries checked types and call targets; the verifier checks
 all bodies, including unused functions. Records with scalar/string fields
@@ -50,9 +50,8 @@ Self-compilation is complete when:
   The checker and both IR consumers share the table. Noncanonical caches,
   duplicate descriptors and invalid/cyclic payload links fail verification.
   `test_rewrite_types.py` covers interning, table snapshots and different optional
-  IDs across native execution and C emission, with ARC checks. Runtime values
-  still require `i64` optional payloads; aggregate descriptors will accompany
-  milestone 2, and broader optional payload execution remains in milestone 3.
+  IDs across native execution and C emission, with ARC checks. Managed optional
+  payloads were subsequently implemented in milestone 3.
 - [x] Add typed parameters, results, direct calls and per-call local frames.
   Preserve source-order argument evaluation and verify each function's inputs,
   returns, control flow and slot types.
@@ -94,7 +93,8 @@ justifies replacing it.
 - [x] Support `Array[Array[string]]` record fields through managed element callbacks.
 - [x] Extend record fields to nested arrays of records and deeper array layouts.
   Resolve `Array[T]` recursively from canonical type descriptors, including
-  arrays of booleans. Optional payloads beyond `Optional[i64]` remain future work.
+  arrays of booleans. Optional payloads now support managed values in standalone
+  bindings and function signatures; optional aggregate fields/elements remain future work.
 - [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
@@ -149,15 +149,19 @@ overwrites, loop exits and early returns.
 
 ### 3. Optionals, dictionaries and string assembly
 
-- [ ] Generalize `Optional[T]`, unwrapping, lazy defaults and `else return` to
-  records, strings and other managed payloads. Add optional `[?index]` access.
+- [x] Generalize `Optional[T]`, unwrapping, lazy defaults and `else return` to
+  records, strings, arrays, dictionaries and other executable payloads, with
+  type-specific ARC ownership (`test_rewrite_optionals.py`).
+- [ ] Add optional `[?index]` access, optional payload construction, and optional
+  values stored in aggregate elements/fields.
 - [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
   and checked `[!key]` reads for `i64` and `string` keys with supported
   acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW
   and ARC snapshots are covered by `test_rewrite_dictionaries.py`.
-- [ ] Add optional `.get(key)` for all value types (including managed records),
-  then dictionary iteration and the actual `Dict[string, Binding]` symbol-table
-  usage. Checked lookup currently traps on absence.
+- [x] Add `.get(key) -> Optional[V]` to dictionaries, including managed record,
+  array and dictionary payloads; checked reads continue to trap on absence.
+- [ ] Add dictionary iteration and migrate the rewrite's symbol-table operations
+  to the rewrite-built compiler as self-compilation advances.
 - [ ] Add separator `.join(Array[string])`, used by literal decoding and C
   emission, with UTF-8 byte and embedded-NUL behavior matching current strings.
 

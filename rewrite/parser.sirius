@@ -73,6 +73,7 @@ export enum NodeKind
 	DictLiteral
 	DictPair
 	DictInsert
+	DictGet
 	ArrayTarget
 	ArraySet
 	ArrayFieldUpdate
@@ -316,6 +317,11 @@ def expression(p: State, minimum: i64) -> Parsed
 			if text(after) != "("
 				result = node(after, FieldRead(), result.node, -1, method_token)
 				continue
+			if method == "get"
+				after = expect(after, "(")
+				let key = expression(after, PREC_OR)
+				result = node(expect(key.state, ")"), DictGet(), result.node, key.node, method_token)
+				continue
 			if method == "insert"
 				after = expect(after, "(")
 				let key = expression(after, PREC_OR)
@@ -439,7 +445,7 @@ def annotation(p: State) -> State
 	if text(result) == "Optional"
 		result.index += 1
 		result = expect(result, "[")
-		result = expect(result, "i64")
+		result = annotation(result)
 		return expect(result, "]")
 	return expect_kind(result, Lex.TokenKind.index(Lex.Name), "type name")
 

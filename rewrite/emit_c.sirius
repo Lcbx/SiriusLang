@@ -32,6 +32,8 @@ def managed_array(table: IR.TypeTable, type: i64) -> bool
 def retain_value(table: IR.TypeTable, type: i64, value: string) -> string
 	if type == IR.TYPE_STRING
 		return "s_string_retain(" + value + ")"
+	if IR.is_optional(table, type)
+		return "retain_O" + str(type) + "(" + value + ")"
 	if IR.is_dict(table, type)
 		return "s_dict_retain(" + value + ")"
 	if IR.is_record(table, type)
@@ -45,6 +47,8 @@ def retain_value(table: IR.TypeTable, type: i64, value: string) -> string
 def release_value(table: IR.TypeTable, type: i64, value: string) -> string
 	if type == IR.TYPE_STRING
 		return "s_string_release(" + value + ")"
+	if IR.is_optional(table, type)
+		return "release_O" + str(type) + "(" + value + ")"
 	if IR.is_dict(table, type)
 		return "s_dict_release(" + value + ")"
 	if IR.is_record(table, type)
@@ -55,8 +59,8 @@ def release_value(table: IR.TypeTable, type: i64, value: string) -> string
 		return "s_array_i64_release(" + value + ")"
 	return "(void)" + value
 
-def optional_slot(id: i64) -> string
-	return "o[" + str(id) + "]"
+def optional_slot(id: i64, type: i64) -> string
+	return "o" + str(type) + "[" + str(id) + "]"
 
 def output(input: i64, type: IR.OutputType, stderr: bool) -> string
 	var function = "s_print_"
@@ -90,7 +94,7 @@ def c_type(type: i64, table: IR.TypeTable) -> string
 	if type == IR.TYPE_STRING
 		return "S_String *"
 	if IR.is_optional(table, type)
-		return "S_Optional_i64 "
+		return "O" + str(type) + " "
 	if type == IR.TYPE_BOOL
 		return "bool "
 	return "uint64_t "
@@ -107,8 +111,41 @@ def value_slot(id: i64, type: i64, table: IR.TypeTable) -> string
 	if type == IR.TYPE_STRING
 		return string_slot(id)
 	if IR.is_optional(table, type)
-		return optional_slot(id)
+		return optional_slot(id, type)
 	return slot(id)
+
+# Optional payloads are owned values. A present optional retains its payload
+# across copies, calls and default/unwrap reads. Absent values own nothing.
+def optional_definitions(table: IR.TypeTable) -> string
+	var lines = Array[string]()
+	for type in 0..len(table.entries)
+		if not IR.is_optional(table, type) or not IR.runtime_type(table, type)
+			continue
+		let payload = IR.optional_payload(table, type)
+		let name = "O" + str(type)
+		if payload == IR.TYPE_I64
+			lines = lines.append("typedef S_Optional_i64 " + name + ";\n")
+		else
+			lines = lines.append("typedef struct { bool has_value; " + c_type(payload, table) + "value; } " + name + ";\n")
+		lines = lines.append("static inline " + name + " retain_" + name + "(" + name + " value) { if (value.has_value) value.value = " + retain_value(table, payload, "value.value") + "; return value; }\n")
+		lines = lines.append("static inline void release_" + name + "(" + name + " value) { if (value.has_value) { " + release_value(table, payload, "value.value") + "; } }\n")
+		lines = lines.append("static inline void store_" + name + "(" + name + " *dst, " + name + " value) { release_" + name + "(*dst); *dst = value; }\n")
+	return "".join(lines)
+
+def store_value(table: IR.TypeTable, type: i64, target: string, value: string) -> string
+	if IR.is_optional(table, type)
+		return "store_O" + str(type) + "(&" + target + ", " + value + ");\n"
+	if IR.is_record(table, type)
+		return "store_R" + str(type) + "(&" + target + ", " + value + ");\n"
+	if IR.is_dict(table, type)
+		return "store_dict(&" + target + ", " + value + ");\n"
+	if IR.is_array(table, type)
+		if managed_array(table, type)
+			return "store_managed_array(&" + target + ", " + value + ");\n"
+		return "store_array(&" + target + ", " + value + ");\n"
+	if type == IR.TYPE_STRING
+		return "store_string(&" + target + ", " + value + ");\n"
+	return target + " = " + value + ";\n"
 
 def record_types(function: IR.Function, table: IR.TypeTable) -> Array[i64]
 	var result = Array[i64]()
@@ -243,8 +280,17 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("S_Array_i64 *a[" + str(program.slots) + "] = {0}; (void)a;\n")
 	if has_strings
 		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0}; (void)s;\n")
-	if IR.function_has_optionals(function, table)
-		lines = lines.append("S_Optional_i64 o[" + str(program.slots) + "]; (void)o;\n")
+	var optionals = Array[i64]()
+	for type in 0..len(table.entries)
+		if not IR.is_optional(table, type)
+			continue
+		var used = false
+		for slot_type in function.types
+			if slot_type == type
+				used = true
+		if used
+			optionals = optionals.append(type)
+			lines = lines.append("O" + str(type) + " o" + str(type) + "[" + str(program.slots) + "] = {0}; (void)o" + str(type) + ";\n")
 	let records = record_types(function, table)
 	for type in records
 		lines = lines.append("R" + str(type) + " r" + str(type) + "[" + str(program.slots) + "] = {0}; (void)r" + str(type) + ";\n")
@@ -262,6 +308,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 			lines = lines.append("store_string(&" + string_slot(i) + ", s_string_retain(p" + str(i) + "));\n")
 		elif IR.is_record(table, type)
 			lines = lines.append("store_R" + str(type) + "(&" + value_slot(i, type, table) + ", retain_R" + str(type) + "(p" + str(i) + "));\n")
+		elif IR.is_optional(table, type)
+			lines = lines.append(store_value(table, type, value_slot(i, type, table), retain_value(table, type, "p" + str(i))))
 		else
 			lines = lines.append(value_slot(i, type, table) + " = p" + str(i) + ";\n")
 	lines = lines.append("goto L0;\n")
@@ -297,6 +345,15 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					audit_value = "true"
 				if audit_key == "true" or audit_value == "true"
 					lines = lines.append("s_dict_arc_audit_fields(" + dict_slot(dst) + ", " + audit_key + ", " + audit_value + ");\n")
+			IR.DictGet(dst, input, key)
+				let type = function.types[!dst]
+				let payload = IR.optional_payload(table, type)
+				let c = c_type(payload, table)
+				let result = value_slot(dst, type, table)
+				let lookup = "s_dict_get(" + dict_slot(input) + ", &" + value_slot(key, function.types[!key], table) + ")"
+				lines = lines.append("{ const void *item = " + lookup + "; O" + str(type) + " value = {0}; if (item) { value.has_value = true; value.value = " + retain_value(table, payload, "*(" + c + "const *)item") + "; }\n")
+				lines = lines.append(store_value(table, type, result, "value"))
+				lines = lines.append("}\n")
 			IR.CopyDict(dst, input)
 				lines = lines.append("store_dict(&" + dict_slot(dst) + ", s_dict_retain(" + dict_slot(input) + "));\n")
 			IR.DictLength(dst, input)
@@ -451,22 +508,32 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append("store_string(&" + string_slot(dst) + ", " + call + ");\n")
 				elif IR.is_record(table, type)
 					lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", " + call + ");\n")
+				elif IR.is_optional(table, type)
+					lines = lines.append(store_value(table, type, value_slot(dst, type, table), call))
 				else
 					lines = lines.append(value_slot(dst, type, table) + " = " + call + ";\n")
 			IR.OptionalUnwrap(dst, input)
-				let value = optional_slot(input)
+				let value = value_slot(input, function.types[!input], table)
+				let type = function.types[!dst]
 				lines = lines.append("if (!" + value + ".has_value) s_panic(\"missing optional value\");\n")
-				lines = lines.append(slot(dst) + " = (uint64_t)" + value + ".value;\n")
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), retain_value(table, type, value + ".value")))
 			IR.StringByteAt(dst, left, right)
-				lines = lines.append(optional_slot(dst) + " = s_string_byte_at(" + string_slot(left) + ", signed_value(" + slot(right) + "));\n")
+				let type = function.types[!dst]
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "s_string_byte_at(" + string_slot(left) + ", signed_value(" + slot(right) + "))"))
 			IR.StringFind(dst, left, right)
-				lines = lines.append(optional_slot(dst) + " = s_string_find(" + string_slot(left) + ", " + string_slot(right) + ");\n")
+				let type = function.types[!dst]
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "s_string_find(" + string_slot(left) + ", " + string_slot(right) + ")"))
 			IR.OptionalCopy(dst, input)
-				lines = lines.append(optional_slot(dst) + " = " + optional_slot(input) + ";\n")
+				let type = function.types[!dst]
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), retain_value(table, type, value_slot(input, type, table))))
 			IR.OptionalDefault(dst, input, target)
-				let value = optional_slot(input)
-				lines = lines.append(slot(dst) + " = " + value + ".has_value ? (uint64_t)" + value + ".value : UINT64_C(0);\n")
-				lines = lines.append("if (" + value + ".has_value) goto L" + str(target) + ";\n")
+				let value = value_slot(input, function.types[!input], table)
+				let type = function.types[!dst]
+				lines = lines.append("if (" + value + ".has_value) {\n")
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), retain_value(table, type, value + ".value")))
+				lines = lines.append("goto L" + str(target) + "; } else {\n")
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "(" + c_type(type, table) + "){0}"))
+				lines = lines.append("}\n")
 			IR.StringFormat(dst, input, type)
 				let target = "store_string(&" + string_slot(dst) + ", "
 				match type
@@ -475,7 +542,7 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					IR.Boolean
 						lines = lines.append(target + "s_string_from_utf8(" + slot(input) + " ? \"true\" : \"false\"));\n")
 					IR.OptionalInteger
-						let value = optional_slot(input)
+						let value = value_slot(input, function.types[!input], table)
 						# Some( plus a signed i64 and closing parenthesis fits 27 bytes.
 						lines = lines.append("if (" + value + ".has_value) { char text[" + str(OPTIONAL_FORMAT_BUFFER_SIZE) + "]; snprintf(text, sizeof text, \"Some(%\" PRId64 \")\", " + value + ".value); " + target + "s_string_from_utf8(text)); } else { " + target + "s_string_from_utf8(\"None\")); }\n")
 			IR.Output(input, type, stderr)
@@ -547,17 +614,7 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 			IR.Copy(dst, input)
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Return(input)
-				var value = value_slot(input, function.result, table)
-				if IR.is_dict(table, function.result)
-					value = "s_dict_retain(" + value + ")"
-				elif managed_array(table, function.result)
-					value = "s_array_retain(" + value + ")"
-				elif IR.is_array(table, function.result)
-					value = "s_array_i64_retain(" + value + ")"
-				elif function.result == IR.TYPE_STRING
-					value = "s_string_retain(" + value + ")"
-				elif IR.is_record(table, function.result)
-					value = "retain_R" + str(function.result) + "(" + value + ")"
+				let value = retain_value(table, function.result, value_slot(input, function.result, table))
 				lines = lines.append("{ " + c_type(function.result, table) + "result = " + value + ";\n")
 				if has_dicts
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_dict_release(d[i]);\n")
@@ -569,6 +626,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")
 				for type in records
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) release_R" + str(type) + "(r" + str(type) + "[i]);\n")
+				for type in optionals
+					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) release_O" + str(type) + "(o" + str(type) + "[i]);\n")
 				lines = lines.append("return result; }\n")
 				fallthrough = false
 		if fallthrough
@@ -600,6 +659,7 @@ export def emit(module: IR.Module) -> Result
 		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")
 	lines = lines.append(record_definitions(module.type_table))
+	lines = lines.append(optional_definitions(module.type_table))
 	lines = lines.append(dict_item_helpers(module.type_table))
 	if has_managed_arrays
 		lines = lines.append(array_item_helpers(module.type_table))

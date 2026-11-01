@@ -20,7 +20,7 @@ and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
 
 The compiler supports multiple functions with annotated parameters
-and results (`i64`, `bool`, `string`, `Optional[i64]`, record types, and
+and results (`i64`, `bool`, `string`, `Optional[T]` for executable payload types, record types, and
 recursively composed `Array[T]` annotations over supported element types). It collects all signatures
 before checking bodies, so direct calls, forward calls and mutual recursion work
 natively. Parameters are immutable locals; functions have
@@ -39,10 +39,12 @@ type IDs index canonical descriptors, and an `Optional` descriptor contains its
 payload type ID. Interning reuses equivalent types, including nested optionals;
 there is no separate `OptionalI64` kind or optional bit in a type ID. Verification
 checks descriptor/cache consistency and rejects invalid or cyclic payload links.
-The compiler consults descriptors to select optional storage. The table can
-represent optional booleans, strings and nested optionals, but their source
-syntax, operations and runtime layouts remain unimplemented; executable optional
-values still require `i64` payloads. Record descriptors contain canonical fields; `Array[i64]` and `Array[string]`
+The compiler consults descriptors to select type-specific optional storage.
+Executable optionals can contain scalars, strings, records, arrays, dictionaries
+and nested optionals. Present optional values own their payload: copying, calls,
+returns, unwrapping and defaults retain managed contents, while overwrites and
+returns release them. Constructing arbitrary `Some`/`None` values remains future work;
+lookups currently provide optional values. Record descriptors contain canonical fields; `Array[i64]` and `Array[string]`
 have canonical element descriptors. Dictionary descriptors are canonical for `i64` or `string` keys and any supported acyclic value type.
 Run `python rewrite/test_rewrite_frontend.py` and
 `python rewrite/test_rewrite_functions.py` from the repository root for checking,
@@ -108,13 +110,14 @@ function calls and returns.
 `Dict[K,V]` supports `i64` and `string` keys, recursively composed record,
 array and dictionary values, empty `Dict[K,V]()` construction, `.insert(key,
 value)` returning a new dictionary, `len(dict)` and checked `dict[!key]` reads.
-Missing keys trap, rather than returning an optional. Generic native dictionary
-storage retains/drops managed keys and values and uses CoW when an earlier
-snapshot exists. Dictionaries can be passed to functions and embedded in
-records or arrays. `.get(key)` returning `Optional[V]`, dictionary iteration,
-and dictionary literals are not yet implemented. Run
-`python rewrite/test_rewrite_dictionaries.py` for native ownership, snapshots,
-invalid types and missing-key traps.
+Checked reads trap on missing keys; `.get(key)` instead returns `Optional[V]`
+for any supported dictionary value type, including managed records and nested
+aggregates. Generic native dictionary storage retains/drops managed keys and
+values and uses CoW when an earlier snapshot exists. Dictionaries can be passed
+to functions and embedded in records or arrays. Dictionary iteration and
+literals are not yet implemented. Run `python rewrite/test_rewrite_dictionaries.py`
+and `python rewrite/test_rewrite_optionals.py` for ARC, snapshots, missing-key
+behavior, invalid types and managed defaults.
 
 The empty literal `[]` is not yet accepted; use `Array[T]()` at any
 supported depth. Array-valued fields in records can be constructed, read,
@@ -167,13 +170,14 @@ end)`, `.starts_with(prefix)` and `.ends_with(suffix)` support chaining on any
 string expression. Slice offsets are bytes and must satisfy
 `0 <= start <= end <= len(text)`; empty slices and empty prefixes/suffixes work.
 String `.byte_at(index)` and `.find(needle)` return `Optional[i64]`; inferred
-or annotated optional bindings support copying and assignment. `optional or i64`
-evaluates its fallback only on absence, including when the present payload is zero.
+or annotated optional bindings support copying and assignment. `optional or fallback`
+evaluates its fallback only on absence, including when a present payload is zero
+or false; fallback must have the optional payload's type.
 Byte indices outside the string return absence; search returns the first byte
 offset, with zero for an empty needle. Postfix `optional!` unwraps or traps on
 absence. `let value = optional else return expression` (also `var`) unwraps
 on success and evaluates the return expression only on absence. The new binding
-is visible after the statement; its annotation describes the unwrapped `i64`.
+is visible after the statement; its annotation describes the unwrapped payload type.
 `f"...${expression}..."` and `f'...${expression}...'` evaluate embedded
 expressions once from left to right and insert their `str` representation.
 Nested interpolation, quoted strings and ordinary expressions work inside `${}`;
@@ -181,8 +185,10 @@ Nested interpolation, quoted strings and ordinary expressions work inside `${}`;
 Expressions retain the surrounding scope and original source positions. Strings
 remain single-line, without inline format specifiers. Interpolation lowers to
 formatting and ordinary string concatenation, with the same ownership rules.
-Optional comparison, direct optional printing and other optional payload types
-remain unsupported. Scalar-only C
+Optional comparison and direct optional printing remain unsupported.
+`str(Optional[T])` is currently available only for `T = i64`; optional values
+cannot yet be stored as record fields, array elements or dictionary values.
+Scalar-only C
 programs need no string slots.
 Boolean literals, bindings, `not`, printing, and scalar comparisons can
 supply conditions. Nested blocks have local scopes.

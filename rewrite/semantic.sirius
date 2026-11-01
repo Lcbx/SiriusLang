@@ -44,9 +44,13 @@ def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records:
 		let array = IR.intern_array(inner.table, inner.type)
 		return ResolvedType(array.table, array.id, inner.next + 1)
 	if type_name == "Optional"
-		if token + 3 < len(parsed.tokens) and name(parsed, token + 1) == "[" and name(parsed, token + 2) == "i64" and name(parsed, token + 3) == "]"
-			return ResolvedType(table, IR.find_optional(table, IR.TYPE_I64), token + 4)
-		return ResolvedType(table, IR.NO_TYPE, token)
+		if token + 1 >= len(parsed.tokens) or name(parsed, token + 1) != "["
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let inner = resolve_type(parsed, token + 2, table, records)
+		if inner.type == IR.NO_TYPE or inner.next >= len(parsed.tokens) or name(parsed, inner.next) != "]" or not IR.runtime_type(inner.table, inner.type)
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let optional = IR.intern_optional(inner.table, inner.type)
+		return ResolvedType(optional.table, optional.id, inner.next + 1)
 	if type_name == "i64"
 		return ResolvedType(table, IR.TYPE_I64, token + 1)
 	if type_name == "bool"
@@ -166,6 +170,16 @@ export def check(parsed: Parser.State) -> Checked
 					error = "invalid dictionary constructor"
 			Parser.DictPair
 				type = -1
+			Parser.DictGet
+				let source = types[!node.left]
+				if not IR.is_dict(type_table, source)
+					error = "get requires dictionary"
+				elif types[!node.right] != IR.dict_key(type_table, source)
+					error = "dictionary key type mismatch"
+				else
+					let interned = IR.intern_optional(type_table, IR.dict_value(type_table, source))
+					type_table = interned.table
+					type = interned.id
 			Parser.DictInsert
 				type = types[!node.left]
 				let pair = parsed.nodes[!node.right]
@@ -312,9 +326,10 @@ export def check(parsed: Parser.State) -> Checked
 				if not IR.compatible(type_table, types[!node.left], type)
 					error = "return type mismatch"
 			Parser.OptionalUnwrap | Parser.OptionalExit
-				type = integer
-				if types[!node.left] != optional
-					error = "unwrapping requires Optional[i64]"
+				let input = types[!node.left]
+				type = IR.optional_payload(type_table, input)
+				if type == IR.NO_TYPE
+					error = "unwrapping requires Optional[T]"
 			Parser.StringByteAt | Parser.StringFind
 				type = optional
 				var argument = text
@@ -393,8 +408,11 @@ export def check(parsed: Parser.State) -> Checked
 					error = "len requires string, array or dictionary"
 			Parser.StringConvert
 				type = text
-				if IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or IR.is_dict(type_table, types[!node.left])
-					error = "str(record) is not yet supported"
+				let source = types[!node.left]
+				if IR.is_record(type_table, source) or IR.is_array(type_table, source) or IR.is_dict(type_table, source)
+					error = "str(aggregate) is not yet supported"
+				elif IR.is_optional(type_table, source) and source != optional
+					error = "str(Optional[T]) is currently supported only for i64"
 			Parser.Add
 				type = types[!node.left]
 				if (type != integer and type != text) or types[!node.right] != type
@@ -405,10 +423,10 @@ export def check(parsed: Parser.State) -> Checked
 					error = "not requires bool"
 			Parser.OrStart
 				type = boolean
-				if types[!node.left] == optional
-					type = integer
+				if IR.is_optional(type_table, types[!node.left])
+					type = IR.optional_payload(type_table, types[!node.left])
 				elif types[!node.left] != boolean
-					error = "or requires bool or Optional[i64]"
+					error = "or requires bool or Optional[T]"
 			Parser.AndStart
 				type = boolean
 				if types[!node.left] != boolean
@@ -419,8 +437,8 @@ export def check(parsed: Parser.State) -> Checked
 					error = "logical/default operand type mismatch"
 			Parser.Print | Parser.Eprint
 				type = types[!node.left]
-				if type == optional
-					error = "printing Optional requires an i64 default"
+				if IR.is_optional(type_table, type)
+					error = "printing Optional requires unwrapping or a default"
 				elif IR.is_record(type_table, type) or IR.is_array(type_table, type)
 					error = "printing aggregates is not yet supported"
 			Parser.If | Parser.While
@@ -441,7 +459,7 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Compare
 				type = boolean
 				let op = name(parsed, node.token)
-				if types[!node.left] == optional or IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
+				if IR.is_optional(type_table, types[!node.left]) or IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
 					error = "invalid comparison operands"
 			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight
 				type = integer

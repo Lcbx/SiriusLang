@@ -65,15 +65,15 @@ def main() -> i64
 	corrupt.optionals = corrupt.optionals.insert(IR.TYPE_STRING, integer.id)
 	if IR.verify_module(entry(corrupt)) != "invalid optional type cache"
 		return 18
-	# Representing a type does not enable its runtime layout prematurely.
+	# Executable optionals now include scalar, managed and nested payload types.
 	var unsupported = entry(nested.table)
 	unsupported.functions = unsupported.functions.append(IR.Function("unused", IR.Program([IR.Return(0)], 1, "", 0), [boolean.id], boolean.id, [boolean.id]))
-	if IR.verify_module(unsupported) != "unsupported optional payload"
+	if IR.verify_module(unsupported) != ""
 		return 19
 	unsupported.functions[!1].parameters = [nested.id]
 	unsupported.functions[!1].result = nested.id
 	unsupported.functions[!1].types = [nested.id]
-	if IR.verify_module(unsupported) != "unsupported optional payload"
+	if IR.verify_module(unsupported) != ""
 		return 20
 	if IR.verify_module(entry(IR.TypeTable([], Dict[i64, i64](), Dict[string, i64]()))) != "missing primitive types"
 		return 24

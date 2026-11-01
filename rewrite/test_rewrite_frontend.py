@@ -78,7 +78,7 @@ def main() -> None:
 		('def main() -> i64\n\treturn unknown()\ndef f() -> i64\n\treturn 0\ndef f() -> i64\n\treturn 1\n', 'duplicate function: f', 5),
 	]
 	for declaration in ['def f(x) -> i64', 'def f(x: string,) -> i64',
-		'def f(x: Optional[string]) -> i64', 'def f()']:
+		'def f(x: Optional[]) -> i64', 'def f()']:
 		invalid.append((entry + declaration + '\n\treturn 0\n', 'expected', 3))
 	invalid.append((entry + 'def strings() -> Array[string]\n\treturn 0\n', 'return type mismatch', 4))
 	for expression in ['f(,)', 'f(1,)', 'f(1 2)']:
