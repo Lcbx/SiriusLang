@@ -1,0 +1,53 @@
+import ir alias IR
+import interpreter alias Interpreter
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable, code: Array[IR.Instruction], types: Array[i64]) -> IR.Module
+	let body = IR.Program(code, len(types), "", 0)
+	return IR.Module([IR.Function("main", body, [], IR.TYPE_I64, types)], 0, table, "", 0)
+
+def main() -> i64
+	let initial = IR.runtime_types()
+	let id = IR.find_array(initial, IR.TYPE_I64)
+	if id == IR.NO_TYPE or IR.array_element(initial, id) != IR.TYPE_I64
+		return 1
+	if IR.intern_array(initial, IR.TYPE_I64).id != id
+		return 2
+	if IR.intern_array(initial, -1).id != IR.NO_TYPE
+		return 3
+	if IR.verify_types(initial) != ""
+		return 4
+	let text = IR.intern_array(initial, IR.TYPE_STRING)
+	if text.id < 0 or IR.verify_types(text.table) != ""
+		return 5
+	let bad = entry(text.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [text.id, IR.TYPE_I64])
+	if IR.verify_module(bad) != "unsupported array element type"
+		return 6
+	var duplicate = initial
+	duplicate.entries = duplicate.entries.append(initial.entries[!id])
+	if IR.verify_types(duplicate) != "noncanonical array type"
+		return 7
+	var invalid = initial
+	invalid.entries[!id].payload = id
+	if IR.verify_types(invalid) != "invalid array element type"
+		return 8
+	let code: Array[IR.Instruction] = [IR.Constant(0, 3), IR.Constant(1, 7), IR.MakeArray(2, [0, 1]), IR.CopyArray(3, 2), IR.Constant(7, 0), IR.ArraySet(2, 7, 1), IR.ArrayRead(4, 3, 7), IR.ArrayLength(5, 2), IR.Add(6, 4, 5), IR.Return(6)]
+	let types = [IR.TYPE_I64, IR.TYPE_I64, id, id, IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_I64]
+	let module = entry(initial, code, types)
+	if IR.verify_module(module) != "" or Interpreter.run_module(module) != 5
+		return 9
+	let emitted = Emit.emit(module)
+	if emitted.error != ""
+		return 10
+	let wrong = entry(initial, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.ArrayRead(2, 1, 3), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_I64, IR.TYPE_I64])
+	if IR.verify_module(wrong) != "main: undefined input slot"
+		return 11
+	let mismatched = entry(initial, [IR.Constant(0, 1), IR.MakeArray(1, [0]), IR.ArraySet(1, 0, 2), IR.Return(0)], [IR.TYPE_I64, id, IR.TYPE_BOOL])
+	if IR.verify_module(mismatched) != "main: slot type mismatch"
+		return 12
+	for source in [-1, 2, 99999999]
+		let invalid_copy = entry(initial, [IR.CopyArray(0, source), IR.Constant(1, 0), IR.Return(1)], [id, IR.TYPE_I64])
+		if IR.verify_module(invalid_copy) != "main: undefined input slot"
+			return 13
+	print("PASS arrays IR")
+	return 0

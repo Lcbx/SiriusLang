@@ -20,7 +20,8 @@ and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
 
 The compiler supports multiple functions with annotated parameters
-and results (`i64`, `bool`, `string`, `Optional[i64]`). It collects all signatures
+and results (`i64`, `bool`, `string`, `Optional[i64]`, `Array[i64]`,
+and flat record types). It collects all signatures
 before checking bodies, so direct calls, forward calls and mutual recursion work
 natively and through `--run`. Parameters are immutable locals; functions have
 separate scopes and typed slot storage. Checked calls retain resolved function
@@ -42,8 +43,8 @@ checks descriptor/cache consistency and rejects invalid or cyclic payload links.
 Both backends consult descriptors to select optional storage. The table can
 represent optional booleans, strings and nested optionals, but their source
 syntax, operations and runtime layouts remain unimplemented; executable optional
-values still require `i64` payloads. Record descriptors contain canonical fields;
-array and dictionary descriptors will accompany their language support.
+values still require `i64` payloads. Record descriptors contain canonical fields; `Array[i64]` has a canonical
+element descriptor. Dictionary descriptors remain future work.
 Run `python rewrite/test_rewrite_frontend.py` and
 `python rewrite/test_rewrite_functions.py` from the repository root for checking,
 native/interpreted execution, string snapshots and ARC coverage.
@@ -70,6 +71,22 @@ copy and update types and initialization. Nested/composed field types, record li
 constructor bodies, record equality and direct record formatting remain
 unimplemented. `python rewrite/test_rewrite_records.py` covers native/MIR parity,
 canonical aliases, constructor order, invalid records and managed-field ARC.
+
+`Array[i64]` is the first collection type supported by the rewrite. Nonempty
+literals (`[1, 2]`), `Array[i64]()` for empty arrays, annotations, function
+parameters and results, `len(array)`, `.append(value)`, checked `[!index]`
+reads, `for item in array`, and mutable local indexed updates (`a[!i] = value`,
+`a[!i] += value`, etc.) work through both backends. Negative indices count
+from the end, and out-of-range reads or writes trap. Array iteration snapshots
+its receiver once and binds an immutable element on each iteration. Copies and
+function parameters preserve prior values through reference counting and CoW.
+Generated C uses `S_Array_i64` and releases array slots on return; interpreter
+slots contain Sirius `Array[i64]` values. The empty literal `[]` needs element
+inference and is not yet accepted; use `Array[i64]()`. Other element types,
+arrays in records, nested update paths, optional index reads, direct array
+formatting and general array methods remain unsupported. Run
+`python rewrite/test_rewrite_arrays.py` for typed checks, interpreter/native
+parity, ARC auditing and bounds traps.
 
 Ranges are ascending and
 half-open and bind an immutable local `i`. Bound expressions are evaluated
@@ -118,7 +135,9 @@ Shifts require counts from 0 through 63; left shifts wrap and right shifts
 zero-fill, including for negative integers. Generated C uses unsigned shifts.
 Compound assignments to local names reuse variable reads, arithmetic and
 ordinary assignment; mutability checks and arithmetic traps apply unchanged.
-`%=`, bitwise compound assignments and updates to fields/indices remain unsupported.
+`%=`, bitwise compound assignments and nested update paths remain unsupported.
+Flat record fields and `Array[i64]` indexed assignments support `=`, `+=`,
+`-=`, `*=`, and `/=`.
 Integer literals must fit in the positive `i64` range; in particular, a literal spelling of the
 minimum `i64` is not yet supported. The compiler checks names, duplicate
 bindings and mutability. It lowers the flat syntax arena to a scalar IR

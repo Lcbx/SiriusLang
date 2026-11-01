@@ -18,6 +18,8 @@ def annotation_type(parsed: Parser.State, token: i64, table: IR.TypeTable, recor
 		return IR.TYPE_BOOL
 	if annotation == "string"
 		return IR.TYPE_STRING
+	if annotation == "Array"
+		return IR.find_array(table, IR.TYPE_I64)
 	if annotation == "Optional"
 		return IR.find_optional(table, IR.TYPE_I64)
 	if annotation == "i64"
@@ -40,7 +42,7 @@ export def check(parsed: Parser.State) -> Checked
 		var error = ""
 		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
 			error = "duplicate record: " + target
-		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "len" or target == "str" or target == "print" or target == "eprint"
+		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "len" or target == "str" or target == "print" or target == "eprint"
 			error = "reserved record name: " + target
 		if error != ""
 			return Checked(parsed, type_table, signatures, references, types, constructor_calls, error, parsed.tokens[!record.token].line)
@@ -109,6 +111,54 @@ export def check(parsed: Parser.State) -> Checked
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.ArrayLiteral
+				type = IR.find_array(type_table, integer)
+				if node.right == 0 and name(parsed, node.token) != "Array"
+					error = "empty array literal requires Array[i64]()"
+				var arg = node.left
+				while arg >= 0
+					if types[!arg] != integer
+						error = "array elements require i64"
+					arg = parsed.nodes[!arg].right
+			Parser.ArrayRead
+				type = integer
+				if not IR.is_array(type_table, types[!node.left]) or types[!node.right] != integer
+					error = "checked array read requires Array[i64] and i64 index"
+			Parser.ArrayAppend
+				type = types[!node.left]
+				if not IR.is_array(type_table, type) or types[!node.right] != integer
+					error = "append requires Array[i64] and i64 element"
+			Parser.ArrayIndex
+				type = integer
+				if types[!node.left] != integer or types[!node.right] != integer
+					error = "array iteration requires i64 bounds"
+				if depth == len(scopes)
+					scopes = scopes.append(bindings)
+				else
+					scopes[!depth] = bindings
+				depth += 1
+			Parser.ArrayElement
+				type = integer
+				if not IR.is_array(type_table, types[!node.left]) or types[!node.right] != integer
+					error = "array iteration requires Array[i64]"
+				bindings = bindings.insert(name(parsed, node.token), Binding(i, false, depth - 1))
+			Parser.Zero
+				type = integer
+			Parser.ArrayTarget
+				let target = name(parsed, node.token)
+				let binding = bindings.get(target) or Binding(-1, false, -1)
+				reference = binding.node
+				if reference < 0
+					error = "unknown name: " + target
+				elif not binding.mutable
+					error = "cannot assign to immutable binding: " + target
+				else
+					type = types[!reference]
+					if not IR.is_array(type_table, type) or types[!node.right] != integer
+						error = "indexed assignment requires Array[i64] and i64 index"
+			Parser.ArraySet
+				if types[!node.right] != integer
+					error = "array assignment type mismatch"
 			Parser.FieldRead
 				let source = types[!node.left]
 				reference = IR.field_index(type_table, source, name(parsed, node.token))
@@ -243,11 +293,11 @@ export def check(parsed: Parser.State) -> Checked
 				type = text
 			Parser.Length
 				type = integer
-				if types[!node.left] != text
-					error = "len requires string"
+				if types[!node.left] != text and not IR.is_array(type_table, types[!node.left])
+					error = "len requires string or array"
 			Parser.StringConvert
 				type = text
-				if IR.is_record(type_table, types[!node.left])
+				if IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left])
 					error = "str(record) is not yet supported"
 			Parser.Add
 				type = types[!node.left]
@@ -275,8 +325,8 @@ export def check(parsed: Parser.State) -> Checked
 				type = types[!node.left]
 				if type == optional
 					error = "printing Optional requires an i64 default"
-				elif IR.is_record(type_table, type)
-					error = "printing records is not yet supported"
+				elif IR.is_record(type_table, type) or IR.is_array(type_table, type)
+					error = "printing aggregates is not yet supported"
 			Parser.If | Parser.While
 				if types[!node.left] != boolean
 					error = "condition must be bool"
@@ -295,7 +345,7 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Compare
 				type = boolean
 				let op = name(parsed, node.token)
-				if types[!node.left] == optional or IR.is_record(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
+				if types[!node.left] == optional or IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
 					error = "invalid comparison operands"
 			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight
 				type = integer

@@ -13,6 +13,9 @@ def slot(id: i64) -> string
 def string_slot(id: i64) -> string
 	return "s[" + str(id) + "]"
 
+def array_slot(id: i64) -> string
+	return "a[" + str(id) + "]"
+
 def optional_slot(id: i64) -> string
 	return "o[" + str(id) + "]"
 
@@ -37,6 +40,8 @@ def c_bytes(value: string) -> string
 	return "\"" + "".join(parts) + "\""
 
 def c_type(type: i64, table: IR.TypeTable) -> string
+	if IR.is_array(table, type)
+		return "S_Array_i64 *"
 	if IR.is_record(table, type)
 		return "R" + str(type) + " "
 	if type == IR.TYPE_STRING
@@ -48,6 +53,8 @@ def c_type(type: i64, table: IR.TypeTable) -> string
 	return "uint64_t "
 
 def value_slot(id: i64, type: i64, table: IR.TypeTable) -> string
+	if IR.is_array(table, type)
+		return array_slot(id)
 	if IR.is_record(table, type)
 		return "r" + str(type) + "[" + str(id) + "]"
 	if type == IR.TYPE_STRING
@@ -120,6 +127,12 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 			has_scalars = true
 	if has_scalars
 		lines = lines.append("uint64_t v[" + str(program.slots) + "]; (void)v;\n")
+	var has_arrays = false
+	for type in function.types
+		if IR.is_array(table, type)
+			has_arrays = true
+	if has_arrays
+		lines = lines.append("S_Array_i64 *a[" + str(program.slots) + "] = {0}; (void)a;\n")
 	if has_strings
 		lines = lines.append("S_String *s[" + str(program.slots) + "] = {0}; (void)s;\n")
 	if IR.function_has_optionals(function, table)
@@ -131,7 +144,9 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 	# string slots follow the same overwrite/return cleanup rule.
 	for i in 0..len(function.parameters)
 		let type = function.parameters[!i]
-		if type == IR.TYPE_STRING
+		if IR.is_array(table, type)
+			lines = lines.append("store_array(&" + array_slot(i) + ", s_array_i64_retain(p" + str(i) + "));\n")
+		elif type == IR.TYPE_STRING
 			lines = lines.append("store_string(&" + string_slot(i) + ", s_string_retain(p" + str(i) + "));\n")
 		elif IR.is_record(table, type)
 			lines = lines.append("store_R" + str(type) + "(&" + value_slot(i, type, table) + ", retain_R" + str(type) + "(p" + str(i) + "));\n")
@@ -143,6 +158,24 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.MakeArray(dst, inputs)
+				var items = Array[string]()
+				for input in inputs
+					items = items.append("signed_value(" + slot(input) + ")")
+				var data = "NULL"
+				if len(items) > 0
+					data = "(int64_t[]){" + ", ".join(items) + "}"
+				lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_make(" + str(len(items)) + ", " + data + "));\n")
+			IR.CopyArray(dst, input)
+				lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_retain(" + array_slot(input) + "));\n")
+			IR.ArrayLength(dst, input)
+				lines = lines.append(slot(dst) + " = (uint64_t)" + array_slot(input) + "->length;\n")
+			IR.ArrayRead(dst, input, index)
+				lines = lines.append(slot(dst) + " = (uint64_t)s_array_i64_get_checked(" + array_slot(input) + ", array_index(" + array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
+			IR.ArrayAppend(dst, input, item)
+				lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_append_take(s_array_i64_retain(" + array_slot(input) + "), signed_value(" + slot(item) + ")));\n")
+			IR.ArraySet(input, index, item)
+				lines = lines.append("s_array_i64_set(&" + array_slot(input) + ", array_index(" + array_slot(input) + ", signed_value(" + slot(index) + ")), signed_value(" + slot(item) + "));\n")
 			IR.MakeRecord(dst, type, inputs)
 				var fields = Array[string]()
 				for input in inputs
@@ -174,7 +207,9 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					inputs = inputs.append(value_slot(input, function.types[!input], table))
 				let call = "f" + str(target) + "(" + ", ".join(inputs) + ")"
 				let type = function.types[!dst]
-				if type == IR.TYPE_STRING
+				if IR.is_array(table, type)
+					lines = lines.append("store_array(&" + array_slot(dst) + ", " + call + ");\n")
+				elif type == IR.TYPE_STRING
 					lines = lines.append("store_string(&" + string_slot(dst) + ", " + call + ");\n")
 				elif IR.is_record(table, type)
 					lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", " + call + ");\n")
@@ -275,11 +310,15 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Return(input)
 				var value = value_slot(input, function.result, table)
-				if function.result == IR.TYPE_STRING
+				if IR.is_array(table, function.result)
+					value = "s_array_i64_retain(" + value + ")"
+				elif function.result == IR.TYPE_STRING
 					value = "s_string_retain(" + value + ")"
 				elif IR.is_record(table, function.result)
 					value = "retain_R" + str(function.result) + "(" + value + ")"
 				lines = lines.append("{ " + c_type(function.result, table) + "result = " + value + ";\n")
+				if has_arrays
+					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_array_i64_release(a[i]);\n")
 				if has_strings
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_string_release(s[i]);\n")
 				for type in records
@@ -300,6 +339,8 @@ export def emit(module: IR.Module) -> Result
 	for function in module.functions
 		if IR.function_has_strings(function)
 			has_strings = true
+	lines = lines.append("static inline void store_array(S_Array_i64 **dst, S_Array_i64 *value) { s_array_i64_release(*dst); *dst = value; }\n")
+	lines = lines.append("static inline int64_t array_index(const S_Array_i64 *a, int64_t i) { if (!a) s_panic(\"null array\"); if (i < 0 && a->length <= INT64_MAX && i >= -(int64_t)a->length) return i + (int64_t)a->length; return i; }\n")
 	if has_strings
 		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")

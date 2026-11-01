@@ -42,6 +42,8 @@ def decode(source: string, begin: i64, end: i64, interpolated: bool) -> Decoded
 	return Decoded("".join(parts), "")
 
 def copy(dst: i64, input: i64, type: i64, table: IR.TypeTable) -> IR.Instruction
+	if IR.is_array(table, type)
+		return IR.CopyArray(dst, input)
 	if IR.is_record(table, type)
 		return IR.CopyRecord(dst, input)
 	if IR.is_optional(table, type)
@@ -58,6 +60,35 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.Zero
+				instructions = instructions.append(IR.Constant(i, 0))
+			Parser.ArrayIndex
+				instructions = instructions.append(IR.Copy(i, node.left))
+			Parser.ArrayElement
+				instructions = instructions.append(IR.ArrayRead(i, node.left, node.right))
+			Parser.ArrayLiteral
+				var reversed = Array[i64]()
+				var argument = node.left
+				while argument >= 0
+					let input = parsed.nodes[!argument]
+					reversed = reversed.append(input.left)
+					argument = input.right
+				var inputs = Array[i64]()
+				for index in 0..len(reversed)
+					inputs = inputs.append(reversed[!len(reversed) - 1 - index])
+				instructions = instructions.append(IR.MakeArray(i, inputs))
+			Parser.ArrayRead
+				var input = node.left
+				if Parser.kind_is(parsed.nodes[!input].kind, Parser.ArrayTarget())
+					input = checked.references[!input]
+				instructions = instructions.append(IR.ArrayRead(i, input, node.right))
+			Parser.ArrayAppend
+				instructions = instructions.append(IR.ArrayAppend(i, node.left, node.right))
+			Parser.ArrayTarget
+				instructions = instructions.append(IR.Nop())
+			Parser.ArraySet
+				let index = parsed.nodes[!node.left].right
+				instructions = instructions.append(IR.ArraySet(checked.references[!node.left], index, node.right))
 			Parser.FieldRead
 				var input = node.left
 				if Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
@@ -119,7 +150,10 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 					return IR.Program(instructions, 0, literal.error, token.line)
 				instructions = instructions.append(IR.StringConstant(i, literal.value))
 			Parser.Length
-				instructions = instructions.append(IR.StringLength(i, node.left))
+				if IR.is_array(checked.type_table, checked.types[!node.left])
+					instructions = instructions.append(IR.ArrayLength(i, node.left))
+				else
+					instructions = instructions.append(IR.StringLength(i, node.left))
 			Parser.StringConvert
 				let type = checked.types[!node.left]
 				if type == IR.TYPE_STRING

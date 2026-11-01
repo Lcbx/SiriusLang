@@ -5,6 +5,7 @@ export enum TypeKind
 	String
 	Optional
 	Record
+	Array
 
 export let NO_TYPE = -1
 export let TYPE_I64 = 0
@@ -47,6 +48,31 @@ export def intern_optional(table: TypeTable, payload: i64) -> InternedType
 	let id = len(result.entries)
 	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload, []))
 	result.optionals = result.optionals.insert(payload, id)
+	return InternedType(result, id)
+
+export def is_array(table: TypeTable, id: i64) -> bool
+	return has_kind(table, id, TypeKind.Array(Array()))
+
+export def array_element(table: TypeTable, id: i64) -> i64
+	if not is_array(table, id)
+		return NO_TYPE
+	return table.entries[!id].payload
+
+export def find_array(table: TypeTable, element: i64) -> i64
+	for id in PRIMITIVE_TYPE_COUNT..len(table.entries)
+		if is_array(table, id) and array_element(table, id) == element
+			return id
+	return NO_TYPE
+
+export def intern_array(table: TypeTable, element: i64) -> InternedType
+	if not valid_type(table, element)
+		return InternedType(table, NO_TYPE)
+	let existing = find_array(table, element)
+	if existing != NO_TYPE
+		return InternedType(table, existing)
+	var result = table
+	let id = len(result.entries)
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Array(Array()), element, []))
 	return InternedType(result, id)
 
 export def is_record(table: TypeTable, id: i64) -> bool
@@ -106,6 +132,8 @@ export def compatible(table: TypeTable, source: i64, target: i64) -> bool
 	return true
 
 def unsupported_type(table: TypeTable, type: i64) -> string
+	if is_array(table, type)
+		return "unsupported array element type"
 	if is_record(table, type)
 		return "unsupported record field type"
 	return "unsupported optional payload"
@@ -113,7 +141,7 @@ def unsupported_type(table: TypeTable, type: i64) -> string
 # The current string lookup instructions require this type even without an
 # Optional annotation. Its ID is obtained by interning, never from TypeKind.
 export def runtime_types() -> TypeTable
-	return intern_optional(initial_types(), TYPE_I64).table
+	return intern_array(intern_optional(initial_types(), TYPE_I64).table, TYPE_I64).table
 
 export def verify_types(table: TypeTable) -> string
 	if len(table.entries) < PRIMITIVE_TYPE_COUNT
@@ -144,6 +172,11 @@ export def verify_types(table: TypeTable) -> string
 					previous = field.name
 				if (table.records.get(record_key(descriptor.fields)) or NO_TYPE) != id
 					return "noncanonical record type"
+			Array
+				if len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
+					return "invalid array element type"
+				if find_array(table, descriptor.payload) != id
+					return "noncanonical array type"
 			I64 | Bool | String
 				return "duplicate primitive type"
 	if len(table.optionals) != optionals
@@ -160,6 +193,8 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 			return true
 		Optional
 			return optional_payload(table, id) == TYPE_I64
+		Array
+			return array_element(table, id) == TYPE_I64
 		Record
 			for field in table.entries[!id].fields
 				if field.type != TYPE_I64 and field.type != TYPE_BOOL and field.type != TYPE_STRING
@@ -196,6 +231,12 @@ export let FormatType = Integer | Boolean | OptionalInteger
 export rec Output(input: i64, type: OutputType, stderr: bool)
 export rec Return(input: i64)
 export rec Call(dst: i64, function: i64, arguments: Array[i64])
+export rec MakeArray(dst: i64, inputs: Array[i64])
+export rec CopyArray(dst: i64, input: i64)
+export rec ArrayLength(dst: i64, input: i64)
+export rec ArrayRead(dst: i64, input: i64, index: i64)
+export rec ArrayAppend(dst: i64, input: i64, item: i64)
+export rec ArraySet(input: i64, index: i64, item: i64)
 export rec MakeRecord(dst: i64, type: i64, inputs: Array[i64])
 export rec CopyRecord(dst: i64, input: i64)
 export rec ReadField(dst: i64, input: i64, index: i64)
@@ -222,7 +263,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Always initializes the scalar destination; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -258,6 +299,7 @@ enum StorageKind
 	StringReference
 	OptionalValue
 	RecordValue
+	ArrayReference
 
 rec Flow(dst: i64, inputs: Array[i64], types: Array[i64], next: i64, other: i64, type: i64)
 
@@ -268,6 +310,8 @@ def storage(table: TypeTable, type: i64) -> StorageKind
 		return OptionalValue()
 	if is_record(table, type)
 		return RecordValue()
+	if is_array(table, type)
+		return ArrayReference()
 	return Scalar()
 
 def in_bounds(slot: i64, count: i64) -> bool
@@ -312,6 +356,62 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 		var output_type = integer
 		let instruction = program.instructions[!i]
 		match instruction
+			MakeArray(target, fields)
+				if not in_bounds(target, program.slots)
+					return "invalid destination slot"
+				if not typed or not is_array(table, types[!target]) or not runtime_type(table, types[!target])
+					return "invalid array type"
+				dst = target
+				writes = true
+				output_type = types[!target]
+				inputs = fields
+				for input in fields
+					if not in_bounds(input, program.slots)
+						return "undefined input slot"
+					input_types = input_types.append(TYPE_I64)
+			CopyArray(target, input)
+				if not in_bounds(input, program.slots)
+					return "undefined input slot"
+				if not typed or not in_bounds(target, program.slots) or not is_array(table, types[!target])
+					return "array copy requires array"
+				dst = target
+				writes = true
+				output_type = types[!target]
+				inputs = [input]
+				input_types = [types[!target]]
+			ArrayLength(target, input)
+				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input])
+					return "array length requires array"
+				dst = target
+				writes = true
+				inputs = [input]
+				input_types = [types[!input]]
+			ArrayRead(target, input, index)
+				if not in_bounds(index, program.slots)
+					return "undefined input slot"
+				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input])
+					return "array read requires array"
+				dst = target
+				writes = true
+				inputs = [input, index]
+				input_types = [types[!input], TYPE_I64]
+			ArrayAppend(target, input, item)
+				if not in_bounds(item, program.slots)
+					return "undefined input slot"
+				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input])
+					return "array append requires array"
+				dst = target
+				writes = true
+				output_type = types[!input]
+				inputs = [input, item]
+				input_types = [types[!input], TYPE_I64]
+			ArraySet(input, index, item)
+				if not in_bounds(index, program.slots) or not in_bounds(item, program.slots)
+					return "undefined input slot"
+				if not typed or not in_bounds(input, program.slots) or not is_array(table, types[!input])
+					return "array set requires array"
+				inputs = [input, index, item]
+				input_types = [types[!input], TYPE_I64, TYPE_I64]
 			MakeRecord(target, type, fields)
 				if not typed or not is_record(table, type) or not runtime_type(table, type)
 					return "invalid record type"
@@ -560,7 +660,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -695,7 +795,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -724,7 +824,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -768,6 +868,21 @@ export def verify_module(module: Module) -> string
 # Convert each function's interval to local IDs before pruning its control flow.
 export def rebase(instruction: Instruction, base: i64) -> Instruction
 	match instruction
+		MakeArray(dst, inputs)
+			var fields = Array[i64]()
+			for input in inputs
+				fields = fields.append(input - base)
+			return MakeArray(dst - base, fields)
+		CopyArray(dst, input)
+			return CopyArray(dst - base, input - base)
+		ArrayLength(dst, input)
+			return ArrayLength(dst - base, input - base)
+		ArrayRead(dst, input, index)
+			return ArrayRead(dst - base, input - base, index - base)
+		ArrayAppend(dst, input, item)
+			return ArrayAppend(dst - base, input - base, item - base)
+		ArraySet(input, index, item)
+			return ArraySet(input - base, index - base, item - base)
 		MakeRecord(dst, type, inputs)
 			var fields = Array[i64]()
 			for input in inputs

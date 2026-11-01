@@ -67,6 +67,14 @@ export enum NodeKind
 	Call
 	FieldRead
 	FieldTarget
+	ArrayLiteral
+	ArrayRead
+	ArrayAppend
+	ArrayTarget
+	ArraySet
+	Zero
+	ArrayIndex
+	ArrayElement
 
 export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
 export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64, end: i64)
@@ -223,6 +231,29 @@ def expression(p: State, minimum: i64) -> Parsed
 	elif current(next).kind == Lex.TokenKind.index(Lex.String)
 		next.index += 1
 		result = node(next, StringLiteral(), -1, -1, token)
+	elif text(next) == "Array" and next_text(next) == "["
+		next.index += 1
+		next = expect(next, "[")
+		next = expect(next, "i64")
+		next = expect(next, "]")
+		next = expect(next, "(")
+		result = node(expect(next, ")"), ArrayLiteral(), -1, 0, token)
+	elif text(next) == "["
+		next.index += 1
+		var arguments = -1
+		var count = 0
+		while next.error == "" and text(next) != "]"
+			let value = expression(next, PREC_OR)
+			let argument = node(value.state, Argument(), value.node, arguments, token)
+			next = argument.state
+			arguments = argument.node
+			count += 1
+			if text(next) != ","
+				break
+			next.index += 1
+			if text(next) == "]"
+				next = fail(next, "expected array element after comma")
+		result = node(expect(next, "]"), ArrayLiteral(), arguments, count, token)
 	elif (text(next) == "len" or text(next) == "str") and next_text(next) == "("
 		var kind: NodeKind = Length()
 		if text(next) == "str"
@@ -258,6 +289,14 @@ def expression(p: State, minimum: i64) -> Parsed
 		return Parsed(fail(next, "expected integer expression"), -1)
 	while result.state.error == ""
 		let op = text(result.state)
+		if op == "["
+			var after = result.state
+			let token = after.index
+			after = expect(after, "[")
+			after = expect(after, "!")
+			let index = expression(after, PREC_OR)
+			result = node(expect(index.state, "]"), ArrayRead(), result.node, index.node, token)
+			continue
 		if op == "!"
 			var after = result.state
 			let unwrap_token = after.index
@@ -272,6 +311,11 @@ def expression(p: State, minimum: i64) -> Parsed
 			after = expect_kind(after, Lex.TokenKind.index(Lex.Name), "field name")
 			if text(after) != "("
 				result = node(after, FieldRead(), result.node, -1, method_token)
+				continue
+			if method == "append"
+				after = expect(after, "(")
+				let value = expression(after, PREC_OR)
+				result = node(expect(value.state, ")"), ArrayAppend(), result.node, value.node, method_token)
 				continue
 			if method != "slice" and method != "starts_with" and method != "ends_with" and method != "byte_at" and method != "find"
 				return Parsed(fail(after, "unsupported string method"), -1)
@@ -342,12 +386,31 @@ def is_assignment(p: State) -> bool
 		if p.tokens[!index + 1].kind != Lex.TokenKind.index(Lex.Name)
 			return false
 		index += 2
+	if p.source.slice(p.tokens[!index].start, p.tokens[!index].end) == "["
+		var depth = 0
+		while index < len(p.tokens)
+			let mark = p.source.slice(p.tokens[!index].start, p.tokens[!index].end)
+			if mark == "["
+				depth += 1
+			elif mark == "]"
+				depth -= 1
+				if depth == 0
+					index += 1
+					break
+			index += 1
+	if index >= len(p.tokens)
+		return false
 	let token = p.tokens[!index]
 	let op = p.source.slice(token.start, token.end)
 	return op == "=" or op == "+=" or op == "-=" or op == "*=" or op == "/="
 
 def annotation(p: State) -> State
 	var result = p
+	if text(result) == "Array"
+		result.index += 1
+		result = expect(result, "[")
+		result = expect(result, "i64")
+		return expect(result, "]")
 	if text(result) == "Optional"
 		result.index += 1
 		result = expect(result, "[")
@@ -370,13 +433,25 @@ def block(initial: State, loop_start: i64) -> State
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "loop binding")
 			p = expect(p, "in")
 			let lower = expression(p, PREC_OR)
-			p = expect(lower.state, "..")
-			let upper = expression(p, PREC_OR)
-			let binding = node(upper.state, RangeBinding(), lower.node, upper.node, name)
+			var binding = Parsed(lower.state, -1)
+			var upper = Parsed(lower.state, -1)
+			var element_source = -1
+			if text(lower.state) == ".."
+				p = expect(lower.state, "..")
+				upper = expression(p, PREC_OR)
+				binding = node(upper.state, RangeBinding(), lower.node, upper.node, name)
+			else
+				element_source = lower.node
+				let zero = node(lower.state, Zero(), -1, -1, token)
+				upper = node(zero.state, Length(), lower.node, -1, token)
+				binding = node(upper.state, ArrayIndex(), zero.node, upper.node, name)
 			let one = node(binding.state, One(), -1, -1, token)
 			let compare = node(one.state, RangeCompare(), binding.node, upper.node, token)
 			let branch = node(compare.state, RangeCondition(), compare.node, -1, token)
-			p = block(branch.state, compare.node)
+			var body = branch.state
+			if element_source >= 0
+				body = node(body, ArrayElement(), element_source, binding.node, name).state
+			p = block(body, compare.node)
 			if p.error != ""
 				return p
 			let step = len(p.nodes)
@@ -499,6 +574,34 @@ def block(initial: State, loop_start: i64) -> State
 			returned = true
 		elif is_assignment(p)
 			p.index += 1
+			if text(p) == "["
+				p = expect(p, "[")
+				p = expect(p, "!")
+				let index = expression(p, PREC_OR)
+				p = expect(index.state, "]")
+				let target = node(p, ArrayTarget(), -1, index.node, token)
+				p = target.state
+				let op = text(p)
+				let operator_token = p.index
+				var left = -1
+				if op != "="
+					let read = node(p, ArrayRead(), target.node, index.node, operator_token)
+					p = read.state
+					left = read.node
+				p.index += 1
+				var value = expression(p, PREC_OR)
+				if op != "="
+					var kind: NodeKind = Add()
+					if op == "-="
+						kind = NodeKind.Subtract(Subtract())
+					elif op == "*="
+						kind = NodeKind.Multiply(Multiply())
+					elif op == "/="
+						kind = NodeKind.Divide(Divide())
+					value = node(value.state, kind, left, value.node, operator_token)
+				p = node(value.state, ArraySet(), target.node, value.node, token).state
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+				continue
 			var field_token = -1
 			if text(p) == "."
 				p.index += 1

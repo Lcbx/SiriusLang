@@ -13,8 +13,9 @@ recursive calls execute natively and through explicit interpreter frames.
 Per-function flat IR carries checked types and call targets; the verifier checks
 all bodies, including unused functions. Flat records with scalar/string fields
 now support constructors, field reads, direct updates on mutable bindings,
-copies and calls in both backends. Arrays, nested update paths, composed record
-fields and a module loader remain unimplemented.
+copies and calls in both backends. `Array[i64]` now supports literals, iteration,
+checked reads and CoW updates; arrays of records, nested update paths, composed
+record fields and a module loader remain unimplemented.
 See [README.md](README.md) for the subset;
 [FEATURES.md](FEATURES.md) inventories the original compiler, not prerequisites
 that must all be implemented before self-compilation.
@@ -80,8 +81,14 @@ justifies replacing it.
   fields use separate scalar/string arrays. Typed value copies retain snapshots.
 - [ ] Extend record field types and annotations to composed values as arrays,
   nested records and broader optional payloads become available.
-- [ ] Add array literals, `Array[T]()`, `len`, `.append`, array iteration and
-  checked `[!index]` reads, including negative indices and bounds traps.
+- [x] Add the `Array[i64]` subset: nonempty literals, `Array[i64]()`, `len`,
+  `.append`, `for item in array`, checked `[!index]` reads (including Python-style
+  negative indices), bounds traps and indexed mutable updates. Use the existing
+  reference-counted `S_Array_i64` runtime with CoW; native/interpreted results,
+  invalid programs and ARC-audited C are covered by `test_rewrite_arrays.py`.
+- [ ] Extend array element types to records, strings and composed values using
+  element layout/copy/drop callbacks and shared `S_Array` storage. Then cover
+  nested index/field paths and mixed managed-value element ownership.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
   the owned slot, retaining new strings and releasing overwritten ones. Source
