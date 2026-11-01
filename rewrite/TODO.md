@@ -114,6 +114,10 @@ justifies replacing it.
   recursive CoW updates. Generic `S_Array` owns `S_Array_i64 *` elements via
   retain/release callbacks; see `test_rewrite_nested_arrays.py`.
 - [x] Support `Array[Array[string]]` with generic outer `S_Array` storage and retain/release callbacks for inner managed arrays; `test_rewrite_nested_text_arrays.py` covers interpreted/native ARC, CoW, calls, record fields and errors.
+- [x] Derive generic native array element copy/drop/get operations from type
+  descriptors instead of separate nested-string, nested-integer and record
+  array emitters. Keep `Array[i64]` specialized. The interpreter and source
+  checker still need generic recursive storage/type support.
 - [ ] Extend array elements to nested record arrays and deeper layouts. Record elements now support
   record-valued fields; their existing element copy/drop callbacks recurse
   through nested records. Records containing primitive-element arrays remain supported.

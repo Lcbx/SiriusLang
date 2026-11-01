@@ -93,8 +93,12 @@ function parameters preserve prior values through reference counting and CoW.
 `Array[string]` supports inferred nonempty literals (`["a", "b"]`),
 `Array[string]()` empty construction, annotations, function calls, iteration,
 checked reads and value-preserving append/set operations. Generated C uses the
-existing generic `S_Array` storage with string retain/release element callbacks;
-`Array[i64]` keeps its specialized `S_Array_i64` representation. Arrays of
+existing generic `S_Array` storage with copy/drop callbacks derived from the
+canonical element descriptor; `Array[i64]` keeps its specialized `S_Array_i64`
+representation. C emission no longer branches separately for string, record,
+integer-array and string-array elements. This does **not** yet make arbitrary
+nesting executable: the source type checker and interpreter still restrict
+supported array layouts. Arrays of
 records use `S_Array` with layout-specific copy/drop callbacks. They support
 records containing `i64`, `bool`, `string`, primitive-element array fields, and
 record-valued fields, positional literals, `Array[RecordName]()` construction, snapshots, append, checked indexing,

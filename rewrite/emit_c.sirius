@@ -19,20 +19,34 @@ def array_slot(id: i64) -> string
 def managed_array_slot(id: i64) -> string
 	return "b[" + str(id) + "]"
 
-def string_array(table: IR.TypeTable, type: i64) -> bool
-	return IR.is_array(table, type) and IR.array_element(table, type) == IR.TYPE_STRING
-
-def record_array(table: IR.TypeTable, type: i64) -> bool
-	return IR.is_array(table, type) and IR.is_record(table, IR.array_element(table, type))
-
-def nested_i64_array(table: IR.TypeTable, type: i64) -> bool
-	return IR.is_array(table, type) and IR.is_array(table, IR.array_element(table, type)) and IR.array_element(table, IR.array_element(table, type)) == IR.TYPE_I64
-
-def nested_string_array(table: IR.TypeTable, type: i64) -> bool
-	return IR.is_array(table, type) and string_array(table, IR.array_element(table, type))
-
+# `Array[i64]` retains the specialized runtime layout. Every other
+# executable array uses generic storage parameterized by its element type.
 def managed_array(table: IR.TypeTable, type: i64) -> bool
-	return string_array(table, type) or record_array(table, type) or nested_i64_array(table, type) or nested_string_array(table, type)
+	return IR.is_array(table, type) and IR.array_element(table, type) != IR.TYPE_I64
+
+# Construct ownership operations from the element descriptor, rather than
+# enumerating combinations of array nesting depth and record layouts.
+def retain_value(table: IR.TypeTable, type: i64, value: string) -> string
+	if type == IR.TYPE_STRING
+		return "s_string_retain(" + value + ")"
+	if IR.is_record(table, type)
+		return "retain_R" + str(type) + "(" + value + ")"
+	if IR.is_array(table, type)
+		if managed_array(table, type)
+			return "s_array_retain(" + value + ")"
+		return "s_array_i64_retain(" + value + ")"
+	return value
+
+def release_value(table: IR.TypeTable, type: i64, value: string) -> string
+	if type == IR.TYPE_STRING
+		return "s_string_release(" + value + ")"
+	if IR.is_record(table, type)
+		return "release_R" + str(type) + "(" + value + ")"
+	if IR.is_array(table, type)
+		if managed_array(table, type)
+			return "s_array_release(" + value + ")"
+		return "s_array_i64_release(" + value + ")"
+	return "(void)" + value
 
 def optional_slot(id: i64) -> string
 	return "o[" + str(id) + "]"
@@ -138,6 +152,21 @@ def record_definitions(table: IR.TypeTable) -> string
 		parts = parts.append("}\nstatic inline void store_" + name + "(" + name + " *dst, " + name + " value) { release_" + name + "(*dst); *dst = value; }\n")
 	return "".join(parts)
 
+# Generic arrays need one copy/drop/get group per distinct element descriptor.
+# Specializations use the *element's* ownership rules, not the outer depth.
+def array_item_helpers(table: IR.TypeTable) -> string
+	var parts = Array[string]()
+	for type in 0..len(table.entries)
+		if not managed_array(table, type) or not IR.runtime_type(table, type)
+			continue
+		let element = IR.array_element(table, type)
+		let c = c_type(element, table)
+		let name = str(element)
+		parts = parts.append("static inline void copy_item_" + name + "(void *dst, const void *src) { *(" + c + "*)dst = " + retain_value(table, element, "*(" + c + "const *)src") + "; }\n")
+		parts = parts.append("static inline void drop_item_" + name + "(void *item) { " + release_value(table, element, "*(" + c + "const *)item") + "; }\n")
+		parts = parts.append("static inline " + c + " array_get_" + name + "(const S_Array *a, int64_t i) { " + c + "const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return " + retain_value(table, element, "*ptr") + "; }\n")
+	return "".join(parts)
+
 def record_literal(type: i64, values: Array[string]) -> string
 	if len(values) == 0
 		return "(R" + str(type) + "){0}"
@@ -205,45 +234,21 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		match instruction
 			IR.MakeArray(dst, inputs)
 				let element = IR.array_element(table, function.types[!dst])
-				if IR.is_record(table, element)
-					var items = Array[string]()
-					for input in inputs
-						items = items.append(value_slot(input, element, table))
-					var data = "NULL"
-					if len(items) > 0
-						data = "(R" + str(element) + "[]){" + ", ".join(items) + "}"
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(R" + str(element) + "), copy_item_R" + str(element) + ", drop_item_R" + str(element) + "));\n")
-				elif nested_i64_array(table, function.types[!dst])
-					var items = Array[string]()
-					for input in inputs
-						items = items.append(array_slot(input))
-					var data = "NULL"
-					if len(items) > 0
-						data = "(S_Array_i64 *[]){" + ", ".join(items) + "}"
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(S_Array_i64 *), copy_i64_array_item, drop_i64_array_item));\n")
-				elif nested_string_array(table, function.types[!dst])
-					var items = Array[string]()
-					for input in inputs
-						items = items.append(managed_array_slot(input))
-					var data = "NULL"
-					if len(items) > 0
-						data = "(S_Array *[]){" + ", ".join(items) + "}"
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(S_Array *), copy_managed_array_item, drop_managed_array_item));\n")
-				elif string_array(table, function.types[!dst])
-					var items = Array[string]()
-					for input in inputs
-						items = items.append(string_slot(input))
-					var data = "NULL"
-					if len(items) > 0
-						data = "(S_String *[]){" + ", ".join(items) + "}"
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(S_String *), copy_string_item, drop_string_item));\n")
-				else
-					var items = Array[string]()
-					for input in inputs
-						items = items.append("signed_value(" + slot(input) + ")")
-					var data = "NULL"
-					if len(items) > 0
+				var items = Array[string]()
+				for input in inputs
+					var value = value_slot(input, element, table)
+					if not managed_array(table, function.types[!dst])
+						value = "signed_value(" + slot(input) + ")"
+					items = items.append(value)
+				var data = "NULL"
+				if len(items) > 0
+					if managed_array(table, function.types[!dst])
+						data = "(" + c_type(element, table) + "[]){" + ", ".join(items) + "}"
+					else
 						data = "(int64_t[]){" + ", ".join(items) + "}"
+				if managed_array(table, function.types[!dst])
+					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_make(" + str(len(items)) + ", " + data + ", sizeof(" + c_type(element, table) + "), copy_item_" + str(element) + ", drop_item_" + str(element) + "));\n")
+				else
 					lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_make(" + str(len(items)) + ", " + data + "));\n")
 			IR.CopyArray(dst, input)
 				if managed_array(table, function.types[!dst])
@@ -257,14 +262,16 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					lines = lines.append(slot(dst) + " = (uint64_t)" + array_slot(input) + "->length;\n")
 			IR.ArrayRead(dst, input, index)
 				let element = IR.array_element(table, function.types[!input])
-				if IR.is_record(table, element)
-					lines = lines.append("store_R" + str(element) + "(&" + value_slot(dst, element, table) + ", record_array_get_R" + str(element) + "(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
-				elif nested_i64_array(table, function.types[!input])
-					lines = lines.append("store_array(&" + array_slot(dst) + ", nested_i64_array_get(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
-				elif nested_string_array(table, function.types[!input])
-					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", nested_string_array_get(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
-				elif string_array(table, function.types[!input])
-					lines = lines.append("store_string(&" + string_slot(dst) + ", string_array_get(" + managed_array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
+				if managed_array(table, function.types[!input])
+					let read = "array_get_" + str(element) + "(" + managed_array_slot(input) + ", signed_value(" + slot(index) + "))"
+					if IR.is_record(table, element)
+						lines = lines.append("store_R" + str(element) + "(&" + value_slot(dst, element, table) + ", " + read + ");\n")
+					elif element == IR.TYPE_STRING
+						lines = lines.append("store_string(&" + string_slot(dst) + ", " + read + ");\n")
+					elif managed_array(table, element)
+						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", " + read + ");\n")
+					else
+						lines = lines.append("store_array(&" + array_slot(dst) + ", " + read + ");\n")
 				else
 					lines = lines.append(slot(dst) + " = (uint64_t)s_array_i64_get_checked(" + array_slot(input) + ", array_index(" + array_slot(input) + ", signed_value(" + slot(index) + ")));\n")
 			IR.ArrayAppend(dst, input, item)
@@ -470,56 +477,14 @@ export def emit(module: IR.Module) -> Result
 			if managed_array(module.type_table, type)
 				has_managed_arrays = true
 	if has_managed_arrays
-		var has_text_array = false
-		for function in module.functions
-			for type in function.types
-				if string_array(module.type_table, type)
-					has_text_array = true
-		var has_nested_string = false
-		for function in module.functions
-			for type in function.types
-				if nested_string_array(module.type_table, type)
-					has_nested_string = true
-		var has_nested_i64 = false
-		for function in module.functions
-			for type in function.types
-				if nested_i64_array(module.type_table, type)
-					has_nested_i64 = true
-		if has_nested_i64
-			lines = lines.append("static inline void copy_i64_array_item(void *dst, const void *src) { *(S_Array_i64 **)dst = s_array_i64_retain(*(S_Array_i64 * const *)src); }\n")
-			lines = lines.append("static inline void drop_i64_array_item(void *item) { s_array_i64_release(*(S_Array_i64 **)item); }\n")
-		if has_nested_string
-			lines = lines.append("static inline void copy_managed_array_item(void *dst, const void *src) { *(S_Array **)dst = s_array_retain(*(S_Array * const *)src); }\n")
-			lines = lines.append("static inline void drop_managed_array_item(void *item) { s_array_release(*(S_Array **)item); }\n")
-		if has_text_array
-			lines = lines.append("static inline void copy_string_item(void *dst, const void *src) { *(S_String **)dst = s_string_retain(*(S_String * const *)src); }\n")
-			lines = lines.append("static inline void drop_string_item(void *item) { s_string_release(*(S_String **)item); }\n")
 		lines = lines.append("static inline void store_managed_array(S_Array **dst, S_Array *value) { s_array_release(*dst); *dst = value; }\n")
 		lines = lines.append("static inline int64_t managed_array_index(const S_Array *a, int64_t i) { size_t n = s_array_length(a); if (i < 0 && n <= INT64_MAX && i >= -(int64_t)n) return i + (int64_t)n; return i; }\n")
-		if has_nested_i64
-			lines = lines.append("static inline S_Array_i64 *nested_i64_array_get(const S_Array *a, int64_t i) { S_Array_i64 * const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return s_array_i64_retain(*ptr); }\n")
-		if has_nested_string
-			lines = lines.append("static inline S_Array *nested_string_array_get(const S_Array *a, int64_t i) { S_Array * const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return s_array_retain(*ptr); }\n")
-		if has_text_array
-			lines = lines.append("static inline S_String *string_array_get(const S_Array *a, int64_t i) { const S_String * const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return s_string_retain((S_String *)*ptr); }\n")
 	if has_strings
 		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")
 	lines = lines.append(record_definitions(module.type_table))
-	for type in 0..len(module.type_table.entries)
-		let array_type = IR.find_array(module.type_table, type)
-		if not IR.is_record(module.type_table, type) or array_type == IR.NO_TYPE
-			continue
-		var used = false
-		for function in module.functions
-			for slot_type in function.types
-				if slot_type == array_type
-					used = true
-		if used
-			let name = "R" + str(type)
-			lines = lines.append("static inline void copy_item_" + name + "(void *dst, const void *src) { *(" + name + " *)dst = retain_" + name + "(*(const " + name + " *)src); }\n")
-			lines = lines.append("static inline void drop_item_" + name + "(void *item) { release_" + name + "(*(const " + name + " *)item); }\n")
-			lines = lines.append("static inline " + name + " record_array_get_" + name + "(const S_Array *a, int64_t i) { const " + name + " *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return retain_" + name + "(*ptr); }\n")
+	if has_managed_arrays
+		lines = lines.append(array_item_helpers(module.type_table))
 	for id in 0..len(module.functions)
 		lines = lines.append(declaration(module.functions[!id], id, module.type_table) + ";\n")
 	for id in 0..len(module.functions)
