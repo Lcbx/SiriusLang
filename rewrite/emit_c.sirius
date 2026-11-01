@@ -13,6 +13,9 @@ def slot(id: i64) -> string
 def string_slot(id: i64) -> string
 	return "s[" + str(id) + "]"
 
+def dict_slot(id: i64) -> string
+	return "d[" + str(id) + "]"
+
 def array_slot(id: i64) -> string
 	return "a[" + str(id) + "]"
 
@@ -29,6 +32,8 @@ def managed_array(table: IR.TypeTable, type: i64) -> bool
 def retain_value(table: IR.TypeTable, type: i64, value: string) -> string
 	if type == IR.TYPE_STRING
 		return "s_string_retain(" + value + ")"
+	if IR.is_dict(table, type)
+		return "s_dict_retain(" + value + ")"
 	if IR.is_record(table, type)
 		return "retain_R" + str(type) + "(" + value + ")"
 	if IR.is_array(table, type)
@@ -40,6 +45,8 @@ def retain_value(table: IR.TypeTable, type: i64, value: string) -> string
 def release_value(table: IR.TypeTable, type: i64, value: string) -> string
 	if type == IR.TYPE_STRING
 		return "s_string_release(" + value + ")"
+	if IR.is_dict(table, type)
+		return "s_dict_release(" + value + ")"
 	if IR.is_record(table, type)
 		return "release_R" + str(type) + "(" + value + ")"
 	if IR.is_array(table, type)
@@ -72,6 +79,8 @@ def c_bytes(value: string) -> string
 	return "\"" + "".join(parts) + "\""
 
 def c_type(type: i64, table: IR.TypeTable) -> string
+	if IR.is_dict(table, type)
+		return "S_Dict *"
 	if managed_array(table, type)
 		return "S_Array *"
 	if IR.is_array(table, type)
@@ -87,6 +96,8 @@ def c_type(type: i64, table: IR.TypeTable) -> string
 	return "uint64_t "
 
 def value_slot(id: i64, type: i64, table: IR.TypeTable) -> string
+	if IR.is_dict(table, type)
+		return dict_slot(id)
 	if managed_array(table, type)
 		return managed_array_slot(id)
 	if IR.is_array(table, type)
@@ -132,6 +143,8 @@ def record_definitions(table: IR.TypeTable) -> string
 				parts = parts.append("s_string_retain(value.f" + str(i) + ");\n")
 			elif IR.is_record(table, field_type)
 				parts = parts.append("retain_R" + str(field_type) + "(value.f" + str(i) + ");\n")
+			elif IR.is_dict(table, field_type)
+				parts = parts.append("s_dict_retain(value.f" + str(i) + ");\n")
 			elif IR.is_array(table, field_type)
 				if managed_array(table, field_type)
 					parts = parts.append("s_array_retain(value.f" + str(i) + ");\n")
@@ -144,6 +157,8 @@ def record_definitions(table: IR.TypeTable) -> string
 				parts = parts.append("s_string_release(value.f" + str(i) + ");\n")
 			elif IR.is_record(table, field_type)
 				parts = parts.append("release_R" + str(field_type) + "(value.f" + str(i) + ");\n")
+			elif IR.is_dict(table, field_type)
+				parts = parts.append("s_dict_release(value.f" + str(i) + ");\n")
 			elif IR.is_array(table, field_type)
 				if managed_array(table, field_type)
 					parts = parts.append("s_array_release(value.f" + str(i) + ");\n")
@@ -165,6 +180,22 @@ def array_item_helpers(table: IR.TypeTable) -> string
 		parts = parts.append("static inline void copy_item_" + name + "(void *dst, const void *src) { *(" + c + "*)dst = " + retain_value(table, element, "*(" + c + "const *)src") + "; }\n")
 		parts = parts.append("static inline void drop_item_" + name + "(void *item) { " + release_value(table, element, "*(" + c + "const *)item") + "; }\n")
 		parts = parts.append("static inline " + c + " array_get_" + name + "(const S_Array *a, int64_t i) { " + c + "const *ptr = s_array_at(a, managed_array_index(a, i)); if (!ptr) s_panic(\"index out of bounds\"); return " + retain_value(table, element, "*ptr") + "; }\n")
+	return "".join(parts)
+
+def dict_item_helpers(table: IR.TypeTable) -> string
+	var parts = Array[string]()
+	for type in 0..len(table.entries)
+		if not IR.is_dict(table, type) or not IR.runtime_type(table, type)
+			continue
+		let key = IR.dict_key(table, type)
+		let value = IR.dict_value(table, type)
+		if key == IR.TYPE_STRING
+			parts = parts.append("static inline void dict_copy_key_" + str(type) + "(void *dst, const void *src) { *(S_String **)dst = s_string_retain(*(S_String *const *)src); }\n")
+			parts = parts.append("static inline void dict_drop_key_" + str(type) + "(void *src) { s_string_release(*(S_String **)src); }\n")
+		if value != IR.TYPE_I64 and value != IR.TYPE_BOOL
+			let c = c_type(value, table)
+			parts = parts.append("static inline void dict_copy_value_" + str(type) + "(void *dst, const void *src) { *(" + c + "*)dst = " + retain_value(table, value, "*(" + c + "const *)src") + "; }\n")
+			parts = parts.append("static inline void dict_drop_value_" + str(type) + "(void *src) { " + release_value(table, value, "*(" + c + "const *)src") + "; }\n")
 	return "".join(parts)
 
 def record_literal(type: i64, values: Array[string]) -> string
@@ -196,11 +227,16 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("uint64_t v[" + str(program.slots) + "]; (void)v;\n")
 	var has_arrays = false
 	var has_managed_arrays = false
+	var has_dicts = false
 	for type in function.types
-		if managed_array(table, type)
+		if IR.is_dict(table, type)
+			has_dicts = true
+		elif managed_array(table, type)
 			has_managed_arrays = true
 		elif IR.is_array(table, type)
 			has_arrays = true
+	if has_dicts
+		lines = lines.append("S_Dict *d[" + str(program.slots) + "] = {0}; (void)d;\n")
 	if has_managed_arrays
 		lines = lines.append("S_Array *b[" + str(program.slots) + "] = {0}; (void)b;\n")
 	if has_arrays
@@ -216,7 +252,9 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 	# string slots follow the same overwrite/return cleanup rule.
 	for i in 0..len(function.parameters)
 		let type = function.parameters[!i]
-		if managed_array(table, type)
+		if IR.is_dict(table, type)
+			lines = lines.append("store_dict(&" + dict_slot(i) + ", s_dict_retain(p" + str(i) + "));\n")
+		elif managed_array(table, type)
 			lines = lines.append("store_managed_array(&" + managed_array_slot(i) + ", s_array_retain(p" + str(i) + "));\n")
 		elif IR.is_array(table, type)
 			lines = lines.append("store_array(&" + array_slot(i) + ", s_array_i64_retain(p" + str(i) + "));\n")
@@ -232,6 +270,64 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 		lines = lines.append("L" + str(index) + ":;\n")
 		var fallthrough = true
 		match instruction
+			IR.MakeDict(dst)
+				let type = function.types[!dst]
+				let key = IR.dict_key(table, type)
+				let value = IR.dict_value(table, type)
+				var key_copy = "NULL"
+				var key_drop = "NULL"
+				var hash = "s_hash_i64_key"
+				var equal = "s_eq_i64_key"
+				if key == IR.TYPE_STRING
+					key_copy = "dict_copy_key_" + str(type)
+					key_drop = "dict_drop_key_" + str(type)
+					hash = "s_hash_string_key"
+					equal = "s_eq_string_key"
+				var value_copy = "NULL"
+				var value_drop = "NULL"
+				if value != IR.TYPE_I64 and value != IR.TYPE_BOOL
+					value_copy = "dict_copy_value_" + str(type)
+					value_drop = "dict_drop_value_" + str(type)
+				lines = lines.append("store_dict(&" + dict_slot(dst) + ", s_dict_new(sizeof(" + c_type(key, table) + "), sizeof(" + c_type(value, table) + "), " + key_copy + ", " + key_drop + ", " + value_copy + ", " + value_drop + ", " + hash + ", " + equal + "));\n")
+				var audit_key = "false"
+				var audit_value = "false"
+				if key == IR.TYPE_STRING
+					audit_key = "true"
+				if value == IR.TYPE_STRING or IR.is_array(table, value) or IR.is_dict(table, value)
+					audit_value = "true"
+				if audit_key == "true" or audit_value == "true"
+					lines = lines.append("s_dict_arc_audit_fields(" + dict_slot(dst) + ", " + audit_key + ", " + audit_value + ");\n")
+			IR.CopyDict(dst, input)
+				lines = lines.append("store_dict(&" + dict_slot(dst) + ", s_dict_retain(" + dict_slot(input) + "));\n")
+			IR.DictLength(dst, input)
+				lines = lines.append(slot(dst) + " = (uint64_t)s_dict_length(" + dict_slot(input) + ");\n")
+			IR.DictInsert(dst, input, key, value)
+				let key_type = function.types[!key]
+				let value_type = function.types[!value]
+				var value_expr = "&" + value_slot(value, value_type, table)
+				if value_type == IR.TYPE_BOOL
+					value_expr = "&(bool){" + slot(value) + " != 0}"
+				lines = lines.append("store_dict(&" + dict_slot(dst) + ", s_dict_insert(s_dict_retain(" + dict_slot(input) + "), &" + value_slot(key, key_type, table) + ", " + value_expr + "));\n")
+			IR.DictRead(dst, input, key)
+				let value_type = function.types[!dst]
+				let c = c_type(value_type, table)
+				let expr = "* (" + c + "const *)dict_value"
+				let target = value_slot(dst, value_type, table)
+				lines = lines.append("{ const void *dict_value = s_dict_get(" + dict_slot(input) + ", &" + value_slot(key, function.types[!key], table) + "); if (!dict_value) s_panic(\"missing dictionary key\");\n")
+				if value_type == IR.TYPE_STRING
+					lines = lines.append("store_string(&" + target + ", s_string_retain(" + expr + "));\n")
+				elif IR.is_dict(table, value_type)
+					lines = lines.append("store_dict(&" + target + ", s_dict_retain(" + expr + "));\n")
+				elif IR.is_array(table, value_type)
+					var store = "store_array"
+					if managed_array(table, value_type)
+						store = "store_managed_array"
+					lines = lines.append(store + "(&" + target + ", " + retain_value(table, value_type, expr) + ");\n")
+				elif IR.is_record(table, value_type)
+					lines = lines.append("store_R" + str(value_type) + "(&" + target + ", retain_R" + str(value_type) + "(" + expr + "));\n")
+				else
+					lines = lines.append(target + " = " + expr + ";\n")
+				lines = lines.append("}\n")
 			IR.MakeArray(dst, inputs)
 				let element = IR.array_element(table, function.types[!dst])
 				var items = Array[string]()
@@ -268,6 +364,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_R" + str(element) + "(&" + value_slot(dst, element, table) + ", " + read + ");\n")
 					elif element == IR.TYPE_STRING
 						lines = lines.append("store_string(&" + string_slot(dst) + ", " + read + ");\n")
+					elif IR.is_dict(table, element)
+						lines = lines.append("store_dict(&" + dict_slot(dst) + ", " + read + ");\n")
 					elif managed_array(table, element)
 						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", " + read + ");\n")
 					elif element == IR.TYPE_BOOL
@@ -313,6 +411,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", s_array_retain(" + value + "));\n")
 					else
 						lines = lines.append("store_array(&" + array_slot(dst) + ", s_array_i64_retain(" + value + "));\n")
+				elif IR.is_dict(table, type)
+					lines = lines.append("store_dict(&" + dict_slot(dst) + ", s_dict_retain(" + value + "));\n")
 				elif IR.is_record(table, type)
 					lines = lines.append("store_R" + str(type) + "(&" + value_slot(dst, type, table) + ", retain_R" + str(type) + "(" + value + "));\n")
 				else
@@ -324,6 +424,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let value = value_slot(input, field_type, table)
 				if field_type == IR.TYPE_STRING
 					lines = lines.append("store_string(&" + target + ", s_string_retain(" + value + "));\n")
+				elif IR.is_dict(table, field_type)
+					lines = lines.append("store_dict(&" + target + ", s_dict_retain(" + value + "));\n")
 				elif IR.is_array(table, field_type)
 					if managed_array(table, field_type)
 						lines = lines.append("store_managed_array(&" + target + ", s_array_retain(" + value + "));\n")
@@ -339,7 +441,9 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					inputs = inputs.append(value_slot(input, function.types[!input], table))
 				let call = "f" + str(target) + "(" + ", ".join(inputs) + ")"
 				let type = function.types[!dst]
-				if managed_array(table, type)
+				if IR.is_dict(table, type)
+					lines = lines.append("store_dict(&" + dict_slot(dst) + ", " + call + ");\n")
+				elif managed_array(table, type)
 					lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", " + call + ");\n")
 				elif IR.is_array(table, type)
 					lines = lines.append("store_array(&" + array_slot(dst) + ", " + call + ");\n")
@@ -444,7 +548,9 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Return(input)
 				var value = value_slot(input, function.result, table)
-				if managed_array(table, function.result)
+				if IR.is_dict(table, function.result)
+					value = "s_dict_retain(" + value + ")"
+				elif managed_array(table, function.result)
 					value = "s_array_retain(" + value + ")"
 				elif IR.is_array(table, function.result)
 					value = "s_array_i64_retain(" + value + ")"
@@ -453,6 +559,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				elif IR.is_record(table, function.result)
 					value = "retain_R" + str(function.result) + "(" + value + ")"
 				lines = lines.append("{ " + c_type(function.result, table) + "result = " + value + ";\n")
+				if has_dicts
+					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_dict_release(d[i]);\n")
 				if has_managed_arrays
 					lines = lines.append("for (size_t i = 0; i < " + str(program.slots) + "; ++i) s_array_release(b[i]);\n")
 				if has_arrays
@@ -477,6 +585,7 @@ export def emit(module: IR.Module) -> Result
 	for function in module.functions
 		if IR.function_has_strings(function)
 			has_strings = true
+	lines = lines.append("static inline void store_dict(S_Dict **dst, S_Dict *value) { s_dict_release(*dst); *dst = value; }\n")
 	lines = lines.append("static inline void store_array(S_Array_i64 **dst, S_Array_i64 *value) { s_array_i64_release(*dst); *dst = value; }\n")
 	lines = lines.append("static inline int64_t array_index(const S_Array_i64 *a, int64_t i) { if (!a) s_panic(\"null array\"); if (i < 0 && a->length <= INT64_MAX && i >= -(int64_t)a->length) return i + (int64_t)a->length; return i; }\n")
 	var has_managed_arrays = false
@@ -491,6 +600,7 @@ export def emit(module: IR.Module) -> Result
 		lines = lines.append("static inline void store_string(S_String **dst, S_String *value) { s_string_release(*dst); *dst = value; }\n")
 	lines = lines.append("static int64_t signed_value(uint64_t n) { int64_t r; memcpy(&r, &n, sizeof r); return r; }\n")
 	lines = lines.append(record_definitions(module.type_table))
+	lines = lines.append(dict_item_helpers(module.type_table))
 	if has_managed_arrays
 		lines = lines.append(array_item_helpers(module.type_table))
 	for id in 0..len(module.functions)

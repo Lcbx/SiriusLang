@@ -43,7 +43,7 @@ The compiler consults descriptors to select optional storage. The table can
 represent optional booleans, strings and nested optionals, but their source
 syntax, operations and runtime layouts remain unimplemented; executable optional
 values still require `i64` payloads. Record descriptors contain canonical fields; `Array[i64]` and `Array[string]`
-have canonical element descriptors. Dictionary descriptors remain future work.
+have canonical element descriptors. Dictionary descriptors are canonical for `i64` or `string` keys and any supported acyclic value type.
 Run `python rewrite/test_rewrite_frontend.py` and
 `python rewrite/test_rewrite_functions.py` from the repository root for checking,
 native execution, string snapshots and ARC coverage.
@@ -104,6 +104,17 @@ field updates on record elements. The index is evaluated once; the element
 is read as a value, updated, and written back through the array CoW path.
 Generated C retains and releases array values across copies,
 function calls and returns.
+
+`Dict[K,V]` supports `i64` and `string` keys, recursively composed record,
+array and dictionary values, empty `Dict[K,V]()` construction, `.insert(key,
+value)` returning a new dictionary, `len(dict)` and checked `dict[!key]` reads.
+Missing keys trap, rather than returning an optional. Generic native dictionary
+storage retains/drops managed keys and values and uses CoW when an earlier
+snapshot exists. Dictionaries can be passed to functions and embedded in
+records or arrays. `.get(key)` returning `Optional[V]`, dictionary iteration,
+and dictionary literals are not yet implemented. Run
+`python rewrite/test_rewrite_dictionaries.py` for native ownership, snapshots,
+invalid types and missing-key traps.
 
 The empty literal `[]` is not yet accepted; use `Array[T]()` at any
 supported depth. Array-valued fields in records can be constructed, read,

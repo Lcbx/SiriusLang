@@ -6,6 +6,7 @@ export enum TypeKind
 	Optional
 	Record
 	Array
+	Dictionary
 
 export let NO_TYPE = -1
 export let TYPE_I64 = 0
@@ -14,12 +15,12 @@ export let TYPE_STRING = 2
 let PRIMITIVE_TYPE_COUNT = 3
 
 export rec RecordField(name: string, type: i64)
-export rec TypeDescriptor(kind: TypeKind, payload: i64, fields: Array[RecordField])
+export rec TypeDescriptor(kind: TypeKind, payload: i64, fields: Array[RecordField], key: i64)
 export rec TypeTable(entries: Array[TypeDescriptor], optionals: Dict[i64, i64], records: Dict[string, i64])
 export rec InternedType(table: TypeTable, id: i64)
 
 export def initial_types() -> TypeTable
-	return TypeTable([TypeDescriptor(TypeKind.I64(I64()), NO_TYPE, []), TypeDescriptor(TypeKind.Bool(Bool()), NO_TYPE, []), TypeDescriptor(TypeKind.String(String()), NO_TYPE, [])], Dict[i64, i64](), Dict[string, i64]())
+	return TypeTable([TypeDescriptor(TypeKind.I64(I64()), NO_TYPE, [], NO_TYPE), TypeDescriptor(TypeKind.Bool(Bool()), NO_TYPE, [], NO_TYPE), TypeDescriptor(TypeKind.String(String()), NO_TYPE, [], NO_TYPE)], Dict[i64, i64](), Dict[string, i64]())
 
 export def valid_type(table: TypeTable, id: i64) -> bool
 	return id >= 0 and id < len(table.entries)
@@ -46,7 +47,7 @@ export def intern_optional(table: TypeTable, payload: i64) -> InternedType
 		return InternedType(table, existing)
 	var result = table
 	let id = len(result.entries)
-	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload, []))
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Optional(Optional()), payload, [], NO_TYPE))
 	result.optionals = result.optionals.insert(payload, id)
 	return InternedType(result, id)
 
@@ -72,7 +73,37 @@ export def intern_array(table: TypeTable, element: i64) -> InternedType
 		return InternedType(table, existing)
 	var result = table
 	let id = len(result.entries)
-	result.entries = result.entries.append(TypeDescriptor(TypeKind.Array(Array()), element, []))
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Array(Array()), element, [], NO_TYPE))
+	return InternedType(result, id)
+
+export def is_dict(table: TypeTable, id: i64) -> bool
+	return has_kind(table, id, TypeKind.Dictionary(Dictionary()))
+
+export def dict_key(table: TypeTable, id: i64) -> i64
+	if not is_dict(table, id)
+		return NO_TYPE
+	return table.entries[!id].key
+
+export def dict_value(table: TypeTable, id: i64) -> i64
+	if not is_dict(table, id)
+		return NO_TYPE
+	return table.entries[!id].payload
+
+export def find_dict(table: TypeTable, key: i64, value: i64) -> i64
+	for id in PRIMITIVE_TYPE_COUNT..len(table.entries)
+		if is_dict(table, id) and dict_key(table, id) == key and dict_value(table, id) == value
+			return id
+	return NO_TYPE
+
+export def intern_dict(table: TypeTable, key: i64, value: i64) -> InternedType
+	if (key != TYPE_I64 and key != TYPE_STRING) or not valid_type(table, value)
+		return InternedType(table, NO_TYPE)
+	let existing = find_dict(table, key, value)
+	if existing != NO_TYPE
+		return InternedType(table, existing)
+	var result = table
+	let id = len(result.entries)
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Dictionary(Dictionary()), value, [], key))
 	return InternedType(result, id)
 
 export def is_record(table: TypeTable, id: i64) -> bool
@@ -105,7 +136,7 @@ export def intern_record(table: TypeTable, fields: Array[RecordField]) -> Intern
 		return InternedType(table, existing)
 	var result = table
 	let id = len(result.entries)
-	result.entries = result.entries.append(TypeDescriptor(TypeKind.Record(Record()), NO_TYPE, ordered))
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Record(Record()), NO_TYPE, ordered, NO_TYPE))
 	result.records = result.records.insert(key, id)
 	return InternedType(result, id)
 
@@ -136,6 +167,8 @@ def unsupported_type(table: TypeTable, type: i64) -> string
 		return "unsupported array element type"
 	if is_record(table, type)
 		return "unsupported record field type"
+	if is_dict(table, type)
+		return "unsupported dictionary value type"
 	return "unsupported optional payload"
 
 # The current string lookup instructions require this type even without an
@@ -157,13 +190,13 @@ export def verify_types(table: TypeTable) -> string
 		match descriptor.kind
 			Optional
 				optionals += 1
-				if len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
+				if descriptor.key != NO_TYPE or len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
 					return "invalid optional payload type"
 				if find_optional(table, descriptor.payload) != id
 					return "noncanonical optional type"
 			Record
 				records += 1
-				if descriptor.payload != NO_TYPE
+				if descriptor.payload != NO_TYPE or descriptor.key != NO_TYPE
 					return "invalid record descriptor"
 				var previous = ""
 				for field in descriptor.fields
@@ -173,10 +206,15 @@ export def verify_types(table: TypeTable) -> string
 				if (table.records.get(record_key(descriptor.fields)) or NO_TYPE) != id
 					return "noncanonical record type"
 			Array
-				if len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
+				if descriptor.key != NO_TYPE or len(descriptor.fields) != 0 or descriptor.payload < 0 or descriptor.payload >= id
 					return "invalid array element type"
 				if find_array(table, descriptor.payload) != id
 					return "noncanonical array type"
+			Dictionary
+				if len(descriptor.fields) != 0 or (descriptor.key != TYPE_I64 and descriptor.key != TYPE_STRING) or descriptor.payload < 0 or descriptor.payload >= id
+					return "invalid dictionary descriptor"
+				if find_dict(table, descriptor.key, descriptor.payload) != id
+					return "noncanonical dictionary type"
 			I64 | Bool | String
 				return "duplicate primitive type"
 	if len(table.optionals) != optionals
@@ -196,6 +234,8 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 			return true
 		Optional
 			return optional_payload(table, id) == TYPE_I64
+		Dictionary
+			return runtime_type(table, dict_value(table, id)) and not is_optional(table, dict_value(table, id))
 		Array
 			let element = array_element(table, id)
 			return not is_optional(table, element) and runtime_type(table, element)
@@ -236,6 +276,11 @@ export rec Output(input: i64, type: OutputType, stderr: bool)
 export rec Return(input: i64)
 export rec Call(dst: i64, function: i64, arguments: Array[i64])
 export rec MakeArray(dst: i64, inputs: Array[i64])
+export rec MakeDict(dst: i64)
+export rec CopyDict(dst: i64, input: i64)
+export rec DictLength(dst: i64, input: i64)
+export rec DictInsert(dst: i64, input: i64, key: i64, value: i64)
+export rec DictRead(dst: i64, input: i64, key: i64)
 export rec CopyArray(dst: i64, input: i64)
 export rec ArrayLength(dst: i64, input: i64)
 export rec ArrayRead(dst: i64, input: i64, index: i64)
@@ -267,7 +312,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Always initializes the scalar destination; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = MakeDict | CopyDict | DictLength | DictInsert | DictRead | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -304,6 +349,7 @@ enum StorageKind
 	OptionalValue
 	RecordValue
 	ArrayReference
+	DictionaryReference
 
 rec Flow(dst: i64, inputs: Array[i64], types: Array[i64], next: i64, other: i64, type: i64)
 
@@ -316,6 +362,8 @@ def storage(table: TypeTable, type: i64) -> StorageKind
 		return RecordValue()
 	if is_array(table, type)
 		return ArrayReference()
+	if is_dict(table, type)
+		return DictionaryReference()
 	return Scalar()
 
 def in_bounds(slot: i64, count: i64) -> bool
@@ -360,6 +408,43 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 		var output_type = integer
 		let instruction = program.instructions[!i]
 		match instruction
+			MakeDict(target)
+				if not typed or not in_bounds(target, program.slots) or not is_dict(table, types[!target]) or not runtime_type(table, types[!target])
+					return "invalid dictionary type"
+				dst = target
+				writes = true
+				output_type = types[!target]
+			CopyDict(target, input)
+				if not typed or not in_bounds(input, program.slots) or not in_bounds(target, program.slots) or not is_dict(table, types[!target])
+					return "dictionary copy requires dictionary"
+				dst = target
+				writes = true
+				output_type = types[!target]
+				inputs = [input]
+				input_types = [output_type]
+			DictLength(target, input)
+				if not typed or not in_bounds(input, program.slots) or not is_dict(table, types[!input])
+					return "dictionary length requires dictionary"
+				dst = target
+				writes = true
+				inputs = [input]
+				input_types = [types[!input]]
+			DictInsert(target, input, key, value)
+				if not typed or not in_bounds(input, program.slots) or not is_dict(table, types[!input]) or not in_bounds(key, program.slots) or not in_bounds(value, program.slots)
+					return "dictionary insert requires dictionary"
+				dst = target
+				writes = true
+				output_type = types[!input]
+				inputs = [input, key, value]
+				input_types = [types[!input], dict_key(table, types[!input]), dict_value(table, types[!input])]
+			DictRead(target, input, key)
+				if not typed or not in_bounds(input, program.slots) or not is_dict(table, types[!input]) or not in_bounds(key, program.slots)
+					return "dictionary read requires dictionary"
+				dst = target
+				writes = true
+				output_type = dict_value(table, types[!input])
+				inputs = [input, key]
+				input_types = [types[!input], dict_key(table, types[!input])]
 			MakeArray(target, fields)
 				if not in_bounds(target, program.slots)
 					return "invalid destination slot"
@@ -665,7 +750,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | OptionalCopy | OptionalDefault | OptionalUnwrap
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -800,7 +885,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -829,7 +914,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
+			MakeDict | CopyDict | DictLength | DictInsert | DictRead | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -873,6 +958,16 @@ export def verify_module(module: Module) -> string
 # Convert each function's interval to local IDs before pruning its control flow.
 export def rebase(instruction: Instruction, base: i64) -> Instruction
 	match instruction
+		MakeDict(dst)
+			return MakeDict(dst - base)
+		CopyDict(dst, input)
+			return CopyDict(dst - base, input - base)
+		DictLength(dst, input)
+			return DictLength(dst - base, input - base)
+		DictInsert(dst, input, key, value)
+			return DictInsert(dst - base, input - base, key - base, value - base)
+		DictRead(dst, input, key)
+			return DictRead(dst - base, input - base, key - base)
 		MakeArray(dst, inputs)
 			var fields = Array[i64]()
 			for input in inputs

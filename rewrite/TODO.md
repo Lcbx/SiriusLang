@@ -151,8 +151,13 @@ overwrites, loop exits and early returns.
 
 - [ ] Generalize `Optional[T]`, unwrapping, lazy defaults and `else return` to
   records, strings and other managed payloads. Add optional `[?index]` access.
-- [ ] Add `Dict[K,V]()`, `.get`, `.insert` and `len`, starting with the actual
-  `Dict[string, Binding]` symbol tables. Preserve CoW scope snapshots.
+- [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
+  and checked `[!key]` reads for `i64` and `string` keys with supported
+  acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW
+  and ARC snapshots are covered by `test_rewrite_dictionaries.py`.
+- [ ] Add optional `.get(key)` for all value types (including managed records),
+  then dictionary iteration and the actual `Dict[string, Binding]` symbol-table
+  usage. Checked lookup currently traps on absence.
 - [ ] Add separator `.join(Array[string])`, used by literal decoding and C
   emission, with UTF-8 byte and embedded-NUL behavior matching current strings.
 

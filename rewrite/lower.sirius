@@ -42,6 +42,8 @@ def decode(source: string, begin: i64, end: i64, interpolated: bool) -> Decoded
 	return Decoded("".join(parts), "")
 
 def copy(dst: i64, input: i64, type: i64, table: IR.TypeTable) -> IR.Instruction
+	if IR.is_dict(table, type)
+		return IR.CopyDict(dst, input)
 	if IR.is_array(table, type)
 		return IR.CopyArray(dst, input)
 	if IR.is_record(table, type)
@@ -66,6 +68,13 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.Copy(i, node.left))
 			Parser.ArrayElement
 				instructions = instructions.append(IR.ArrayRead(i, node.left, node.right))
+			Parser.DictLiteral
+				instructions = instructions.append(IR.MakeDict(i))
+			Parser.DictPair
+				instructions = instructions.append(IR.Nop())
+			Parser.DictInsert
+				let pair = parsed.nodes[!node.right]
+				instructions = instructions.append(IR.DictInsert(i, node.left, pair.left, pair.right))
 			Parser.ArrayLiteral
 				var reversed = Array[i64]()
 				var argument = node.left
@@ -81,7 +90,10 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				var input = node.left
 				if Parser.kind_is(parsed.nodes[!input].kind, Parser.ArrayTarget()) or Parser.kind_is(parsed.nodes[!input].kind, Parser.FieldTarget())
 					input = checked.references[!input]
-				instructions = instructions.append(IR.ArrayRead(i, input, node.right))
+				if IR.is_dict(checked.type_table, checked.types[!input])
+					instructions = instructions.append(IR.DictRead(i, input, node.right))
+				else
+					instructions = instructions.append(IR.ArrayRead(i, input, node.right))
 			Parser.ArrayAppend
 				instructions = instructions.append(IR.ArrayAppend(i, node.left, node.right))
 			Parser.ArrayTarget
@@ -161,7 +173,9 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 					return IR.Program(instructions, 0, literal.error, token.line)
 				instructions = instructions.append(IR.StringConstant(i, literal.value))
 			Parser.Length
-				if IR.is_array(checked.type_table, checked.types[!node.left])
+				if IR.is_dict(checked.type_table, checked.types[!node.left])
+					instructions = instructions.append(IR.DictLength(i, node.left))
+				elif IR.is_array(checked.type_table, checked.types[!node.left])
 					instructions = instructions.append(IR.ArrayLength(i, node.left))
 				else
 					instructions = instructions.append(IR.StringLength(i, node.left))

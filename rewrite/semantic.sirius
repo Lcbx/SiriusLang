@@ -20,6 +20,19 @@ def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records:
 	if token < 0 or token >= len(parsed.tokens)
 		return ResolvedType(table, IR.NO_TYPE, token)
 	let type_name = name(parsed, token)
+	if type_name == "Dict"
+		if token + 1 >= len(parsed.tokens) or name(parsed, token + 1) != "["
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let key = resolve_type(parsed, token + 2, table, records)
+		if key.type != IR.TYPE_I64 and key.type != IR.TYPE_STRING
+			return ResolvedType(table, IR.NO_TYPE, token)
+		if key.next >= len(parsed.tokens) or name(parsed, key.next) != ","
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let value = resolve_type(parsed, key.next + 1, key.table, records)
+		if value.type == IR.NO_TYPE or value.next >= len(parsed.tokens) or name(parsed, value.next) != "]" or not IR.runtime_type(value.table, value.type) or IR.is_optional(value.table, value.type)
+			return ResolvedType(table, IR.NO_TYPE, token)
+		let dict = IR.intern_dict(value.table, key.type, value.type)
+		return ResolvedType(dict.table, dict.id, value.next + 1)
 	if type_name == "Array"
 		if token + 1 >= len(parsed.tokens) or name(parsed, token + 1) != "["
 			return ResolvedType(table, IR.NO_TYPE, token)
@@ -57,7 +70,7 @@ export def check(parsed: Parser.State) -> Checked
 	# preserving stable IDs for existing programs. Record-dependent arrays are
 	# resolved after the referenced record has been declared.
 	for i in 0..len(parsed.tokens)
-		if name(parsed, i) == "Array" and i + 1 < len(parsed.tokens) and name(parsed, i + 1) == "["
+		if (name(parsed, i) == "Array" or name(parsed, i) == "Dict") and i + 1 < len(parsed.tokens) and name(parsed, i + 1) == "["
 			let resolved = resolve_type(parsed, i, type_table, record_types)
 			if resolved.type != IR.NO_TYPE
 				type_table = resolved.table
@@ -66,7 +79,7 @@ export def check(parsed: Parser.State) -> Checked
 		var error = ""
 		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
 			error = "duplicate record: " + target
-		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "len" or target == "str" or target == "print" or target == "eprint"
+		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "Dict" or target == "len" or target == "str" or target == "print" or target == "eprint"
 			error = "reserved record name: " + target
 		if error != ""
 			return Checked(parsed, type_table, signatures, references, types, constructor_calls, error, parsed.tokens[!record.token].line)
@@ -145,6 +158,19 @@ export def check(parsed: Parser.State) -> Checked
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.DictLiteral
+				let resolved = resolve_type(parsed, node.token, type_table, record_types)
+				type_table = resolved.table
+				type = resolved.type
+				if not IR.is_dict(type_table, type)
+					error = "invalid dictionary constructor"
+			Parser.DictPair
+				type = -1
+			Parser.DictInsert
+				type = types[!node.left]
+				let pair = parsed.nodes[!node.right]
+				if not IR.is_dict(type_table, type) or types[!pair.left] != IR.dict_key(type_table, type) or not IR.compatible(type_table, types[!pair.right], IR.dict_value(type_table, type))
+					error = "dictionary insert type mismatch"
 			Parser.ArrayLiteral
 				var element = integer
 				if name(parsed, node.token) == "Array"
@@ -169,9 +195,15 @@ export def check(parsed: Parser.State) -> Checked
 						error = "array element type mismatch"
 					arg = parsed.nodes[!arg].right
 			Parser.ArrayRead
-				type = IR.array_element(type_table, types[!node.left])
-				if type == IR.NO_TYPE or types[!node.right] != integer
-					error = "checked array read requires array and i64 index"
+				let source = types[!node.left]
+				if IR.is_dict(type_table, source)
+					type = IR.dict_value(type_table, source)
+					if types[!node.right] != IR.dict_key(type_table, source)
+						error = "dictionary key type mismatch"
+				else
+					type = IR.array_element(type_table, source)
+					if type == IR.NO_TYPE or types[!node.right] != integer
+						error = "checked array read requires array and i64 index"
 			Parser.ArrayAppend
 				type = types[!node.left]
 				if not IR.is_array(type_table, type) or types[!node.right] != IR.array_element(type_table, type)
@@ -357,11 +389,11 @@ export def check(parsed: Parser.State) -> Checked
 				type = text
 			Parser.Length
 				type = integer
-				if types[!node.left] != text and not IR.is_array(type_table, types[!node.left])
-					error = "len requires string or array"
+				if types[!node.left] != text and not IR.is_array(type_table, types[!node.left]) and not IR.is_dict(type_table, types[!node.left])
+					error = "len requires string, array or dictionary"
 			Parser.StringConvert
 				type = text
-				if IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left])
+				if IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or IR.is_dict(type_table, types[!node.left])
 					error = "str(record) is not yet supported"
 			Parser.Add
 				type = types[!node.left]
