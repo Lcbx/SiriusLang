@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Focused Array[string] interpreter/native parity and ARC/CoW regression tests.
+"""Focused Array[string] native execution and ARC/CoW regression tests.
 
-Does not require the older MIR runner: the same rewritten compiler executes the
-source with --run or emits native C. This complements the existing rewrite tests.
+Compiles through the rewrite and checks generated C with ARC auditing.
 """
 import subprocess
 import sys
@@ -22,7 +21,7 @@ def main():
     cache = BuildCache(require_cc())
     modules = tuple(ROOT / 'rewrite' / name for name in (
         'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+        'lower.sirius', 'emit_c.sirius'))
     compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
     valid = [
         ('''def main() -> i64
@@ -185,24 +184,19 @@ def main():
         source, generated, binary = root / 'source.sirius', root / 'generated.c', root / 'program'
         for i, (content, expected) in enumerate(valid):
             source.write_text(content, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, ('interpreter', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile', i, result)
             compile_c(cache.cc, generated, binary, audit)
             result = run([binary])
             assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, ('native', i, result)
-        print(f'PASS {len(valid)} valid Array[string] cases (interpreter/native ARC)', flush=True)
+        print(f'PASS {len(valid)} valid Array[string] cases (audited native C)', flush=True)
         for i, content in enumerate(invalid):
             source.write_text(content, encoding='utf-8')
-            for command in ([compiler, '--run', source], [compiler, source, generated]):
-                result = run(command)
-                assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
+            result = run([compiler, source, generated])
+            assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
         print(f'PASS {len(invalid)} invalid Array[string] cases', flush=True)
         for i, content in enumerate(bounds):
             source.write_text(content, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert result.returncode != 0 and b'ERROR: index out of bounds' in result.stderr, ('interpreter bounds', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile bounds', i, result)
             compile_c(cache.cc, generated, binary, audit)

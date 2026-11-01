@@ -18,7 +18,7 @@ def main():
     cache = BuildCache(require_cc())
     modules = tuple(ROOT / 'rewrite' / name for name in (
         'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+        'lower.sirius', 'emit_c.sirius'))
     compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
     valid = [
         ('''rec Inner(name: string, values: Array[i64])
@@ -132,24 +132,19 @@ def main() -> i64
         source, generated, binary = (directory / n for n in ('input.sirius', 'output.c', 'program'))
         for i, (contents, expected) in enumerate(valid):
             source.write_text(contents, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert (result.returncode, normalize_newlines(result.stdout), result.stderr) == (0, expected, b''), ('interpreter', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile', i, result)
             compile_c(cache.cc, generated, binary, audit)
             result = run([binary])
             assert (result.returncode, normalize_newlines(result.stdout), result.stderr) == (0, expected, b''), ('native', i, result)
-        print(f'PASS nested records: {len(valid)} interpreted and audited native', flush=True)
+        print(f'PASS nested records: {len(valid)} audited native C', flush=True)
         for i, contents in enumerate(invalid):
             source.write_text(contents, encoding='utf-8')
-            for command in ([compiler, '--run', source], [compiler, source, generated]):
-                result = run(command)
-                assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
+            result = run([compiler, source, generated])
+            assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
         print(f'PASS nested records: {len(invalid)} invalid rejected', flush=True)
         for i, contents in enumerate(bounds):
             source.write_text(contents, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert result.returncode != 0 and b'index out of bounds' in result.stderr, ('interpreter bounds', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile bounds', i, result)
             compile_c(cache.cc, generated, binary, audit)

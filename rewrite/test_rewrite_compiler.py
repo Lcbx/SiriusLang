@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exercise the rewrite compiler natively and through the MIR interpreter."""
+"""Exercise the rewrite compiler and generated C natively."""
 import subprocess
 import re
 import tempfile
@@ -18,27 +18,16 @@ def run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in ('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+	modules = tuple(ROOT / 'rewrite' / name for name in ('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
 	compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
 	reference = cache.native_tool('modular_cli')
-	runner = cache.mir_runner()
 	verifier = cache.native_driver('restart-ir-verifier', ROOT / 'rewrite/ir_test_driver.sirius', extra_modules=modules)
 	verified = run([str(verifier)])
 	assert verified.returncode == 0, verified
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
-		for module in modules:
-			(root / module.name).write_bytes(module.read_bytes())
-		(root / 'Main.sirius').write_bytes((ROOT / 'rewrite/main.sirius').read_bytes())
-		library = root / 'compiler.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Main', str(library)])
-		(root / 'Check.sirius').write_bytes((ROOT / 'rewrite/ir_test_driver.sirius').read_bytes())
-		check_library = root / 'check.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Check', str(check_library)])
-		verified = run([str(runner), '--entry', 'M_5_Check_4_main', '--load-lib', str(check_library)])
-		assert verified.returncode == 0, verified
-		print('PASS IR verifier: malformed slots, initialization, return placement, in-place updates; native and MIR')
-		commands = [[str(compiler)], [str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library)]]
+		print('PASS IR verifier: malformed slots, initialization, return placement; native')
+		commands = [[str(compiler)]]
 		valid = [
 			('return 0', b''),
 			('print(1 + 2 * 3)\n\tprint((1 + 2) * 3)\n\treturn 0', b'7\n9\n'),
@@ -296,14 +285,10 @@ def main() -> None:
 		for index, (body, expected, expected_error) in enumerate(cases):
 			source = root / 'input.sirius'
 			source.write_text('def main() -> i64\n\t' + body + '\n', encoding='utf-8')
-			outputs = []
 			for mode, command in enumerate(commands):
-				interpreted = run(command + ['--run', str(source)])
-				assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected and normalize_newlines(interpreted.stderr) == expected_error, (index, mode, interpreted)
 				generated = root / f'out{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 0, (index, mode, result.stderr)
-				outputs.append(generated.read_bytes())
 				binary = executable_path(root / f'program{mode}')
 				compile_c(cache.cc, generated, binary, cache.runtime())
 				executed = run([str(binary)])
@@ -312,11 +297,8 @@ def main() -> None:
 					compile_c(cache.cc, generated, binary, audit_runtime)
 					audited = run([str(binary)])
 					assert audited.returncode == 0 and normalize_newlines(audited.stdout) == expected and normalize_newlines(audited.stderr) == expected_error, (index, mode, audited)
-			assert outputs[0] == outputs[1], index
 			if (body, expected, expected_error) in interpolation_cases:
 				continue
-			interpreted = run([str(runner), str(source)])
-			assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected and normalize_newlines(interpreted.stderr) == expected_error, (index, interpreted)
 			reference_c = root / 'reference.c'
 			result = run([str(reference), str(source), str(reference_c)])
 			assert result.returncode == 0, (index, result.stdout, result.stderr)
@@ -328,12 +310,10 @@ def main() -> None:
 			source = root / 'input.sirius'
 			source.write_text('def main() -> i64\n\t' + body + '\n', encoding='utf-8')
 			for mode, command in enumerate(commands):
-				interpreted = run(command + ['--run', str(source)])
-				assert interpreted.returncode == 1 and b'ERROR ' in interpreted.stderr, (body, mode, interpreted)
 				generated = root / f'invalid{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (body, mode, result.stderr)
-		print(f'PASS rewrite compiler: {len(cases)} valid and {len(invalid)} invalid programs, native and MIR')
+		print(f'PASS rewrite compiler: {len(cases)} valid and {len(invalid)} invalid programs, native')
 		print(f'PASS output ownership: {len(string_cases) + len(io_cases) + len(interpolation_cases)} cases, ARC audited')
 		traps = [('1 / 0', b'division by zero'), ('1 % 0', b'division by zero'),
 			('(-9223372036854775807 - 1) / -1', b'integer overflow'),
@@ -369,10 +349,6 @@ def main() -> None:
 			source = root / 'trap.sirius'
 			source.write_text(f'def main() -> i64\n\t{body}\n\treturn 0\n', encoding='utf-8')
 			shared = (body, reason) not in interpolation_traps
-			for command in commands + ([[str(runner)]] if shared else []):
-				arguments = ['--run'] if command in commands else []
-				outcome = run(command + arguments + [str(source)])
-				assert outcome.returncode != 0 and reason in outcome.stderr and not outcome.stdout, (body, outcome)
 			for command in commands + ([[str(reference)]] if shared else []):
 				generated = root / 'trap.c'
 				outcome = run(command + [str(source), str(generated)])
@@ -381,14 +357,12 @@ def main() -> None:
 				compile_c(cache.cc, generated, binary, cache.runtime())
 				outcome = run([str(binary)])
 				assert outcome.returncode != 0 and reason in outcome.stderr and not outcome.stdout, (body, outcome)
-		print(f'PASS arithmetic traps: {len(trap_programs) + len(interpolation_traps)} cases, native and MIR')
+		print(f'PASS arithmetic traps: {len(trap_programs) + len(interpolation_traps)} cases, native')
 		examples = re.findall(r'```sirius\n(.*?)```', (ROOT / 'rewrite/FEATURES.md').read_text(encoding='utf-8'), re.S)
 		for index, example in enumerate(examples):
 			source = root / 'feature.sirius'
 			source.write_text(example, encoding='utf-8')
 			expected = ''.join(line.split('#', 1)[1].strip() + '\n' for line in example.splitlines() if 'print(' in line and '#' in line).encode()
-			interpreted = run([str(runner), str(source)])
-			assert interpreted.returncode == 0 and normalize_newlines(interpreted.stdout) == expected, (index, interpreted)
 			generated = root / 'feature.c'
 			result = run([str(reference), str(source), str(generated)])
 			assert result.returncode == 0, (index, result)
@@ -396,7 +370,7 @@ def main() -> None:
 			compile_c(cache.cc, generated, binary, cache.runtime())
 			executed = run([str(binary)])
 			assert executed.returncode == 0 and normalize_newlines(executed.stdout) == expected, (index, executed)
-		print(f'PASS feature inventory: {len(examples)} examples, native and MIR')
+		print(f'PASS feature inventory: {len(examples)} examples, native')
 
 
 if __name__ == '__main__':

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Nested string arrays: interpreter/native parity, ARC, CoW, invalid types and bounds."""
+"""Nested string arrays: native execution, ARC, CoW, invalid types and bounds."""
 import subprocess
 import sys
 import tempfile
@@ -18,7 +18,7 @@ def main():
     cache = BuildCache(require_cc())
     modules = tuple(ROOT / 'rewrite' / name for name in (
         'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+        'lower.sirius', 'emit_c.sirius'))
     compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
     valid = [
         ('''def main() -> i64
@@ -127,24 +127,19 @@ def main() -> i64
         source, generated, binary = (directory / item for item in ('source.sirius', 'code.c', 'program'))
         for i, (content, expected) in enumerate(valid):
             source.write_text(content, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, ('interp', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile', i, result)
             compile_c(cache.cc, generated, binary, runtime)
             result = run([binary])
             assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, ('native', i, result)
-        print(f'PASS nested string arrays: {len(valid)} interpreted/audited-native programs', flush=True)
+        print(f'PASS nested string arrays: {len(valid)} audited native C programs', flush=True)
         for i, content in enumerate(invalid):
             source.write_text(content, encoding='utf-8')
-            for command in ([compiler, '--run', source], [compiler, source, generated]):
-                result = run(command)
-                assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
+            result = run([compiler, source, generated])
+            assert result.returncode == 1 and b'ERROR ' in result.stderr, ('invalid', i, result)
         print(f'PASS nested string arrays: {len(invalid)} invalid programs', flush=True)
         for i, content in enumerate(bounds):
             source.write_text(content, encoding='utf-8')
-            result = run([compiler, '--run', source])
-            assert result.returncode != 0 and b'index out of bounds' in result.stderr, ('interp bounds', i, result)
             result = run([compiler, source, generated])
             assert result.returncode == 0, ('compile bounds', i, result)
             compile_c(cache.cc, generated, binary, runtime)

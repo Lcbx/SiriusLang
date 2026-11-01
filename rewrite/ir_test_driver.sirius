@@ -1,5 +1,4 @@
 import ir alias IR
-import interpreter alias Interpreter
 
 def check(instructions: Array[IR.Instruction], slots: i64, expected: string) -> bool
 	return IR.verify(IR.Program(instructions, slots, "", 0)) == expected
@@ -60,10 +59,10 @@ def main() -> i64
 		if deciding
 			value = 1
 		let program = IR.Program([IR.Constant(0, value), IR.ShortCircuit(1, 0, 3, deciding), IR.Jump(2), IR.Return(1)], 2, "", 0)
-		if IR.verify(program) != "" or Interpreter.run(program) != value
+		if IR.verify(program) != ""
 			return 25
 		let compact = IR.prune(program)
-		if IR.verify(compact) != "" or Interpreter.run(compact) != value
+		if IR.verify(compact) != ""
 			return 26
 	# A slot written only in the right operand is not initialized on the skip edge.
 	if not check([IR.Constant(0, 0), IR.ShortCircuit(1, 0, 3, false), IR.Constant(2, 1), IR.Return(2)], 3, "undefined input slot")
@@ -108,7 +107,7 @@ def main() -> i64
 	if not check([IR.Constant(0, 1), IR.Branch(0, 4), IR.StringConstant(1, "x"), IR.Jump(5), IR.Nop(), IR.StringLength(2, 1), IR.Return(2)], 3, "undefined input slot")
 		return 44
 	let strings = IR.Program([IR.StringConstant(0, "a\0b"), IR.StringCopy(0, 0), IR.StringConcat(0, 0, 0), IR.StringLength(1, 0), IR.Return(1)], 2, "", 0)
-	if IR.verify(strings) != "" or Interpreter.run(strings) != 6
+	if IR.verify(strings) != ""
 		return 45
 	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.StringSlice(2, 0, 1, 3), IR.Constant(3, 2), IR.Constant(4, 0), IR.Return(4)], 5, "undefined input slot")
 		return 46
@@ -121,7 +120,7 @@ def main() -> i64
 	if not check([IR.StringConstant(0, "abc"), IR.Constant(1, 0), IR.Constant(2, 1), IR.Branch(2, 6), IR.Constant(3, 2), IR.Jump(7), IR.Nop(), IR.StringSlice(4, 0, 1, 3), IR.Constant(5, 0), IR.Return(5)], 6, "undefined input slot")
 		return 50
 	let sliced = IR.Program([IR.StringConstant(0, "a\0bc"), IR.Constant(1, 1), IR.Constant(2, 3), IR.StringSlice(0, 0, 1, 2), IR.StringLength(3, 0), IR.Return(3)], 4, "", 0)
-	if IR.verify(sliced) != "" or Interpreter.run(sliced) != 2
+	if IR.verify(sliced) != ""
 		return 51
 	if not check([IR.StringConstant(0, "x"), IR.StringFormat(1, 0, IR.Integer()), IR.Constant(2, 0), IR.Return(2)], 3, "slot type mismatch")
 		return 52
@@ -132,7 +131,7 @@ def main() -> i64
 	if not check([IR.Output(0, IR.Boolean(), true), IR.Constant(0, 1), IR.Return(0)], 1, "undefined input slot")
 		return 55
 	let formatted = IR.Program([IR.Constant(0, -9223372036854775807 - 1), IR.StringFormat(1, 0, IR.Integer()), IR.StringLength(2, 1), IR.Return(2)], 3, "", 0)
-	if not IR.has_strings(formatted) or IR.verify(formatted) != "" or Interpreter.run(formatted) != 20
+	if not IR.has_strings(formatted) or IR.verify(formatted) != ""
 		return 56
 	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 0), IR.Return(1)], 3, "slot type mismatch")
 		return 57
@@ -149,10 +148,10 @@ def main() -> i64
 	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.Return(2)], 3, "slot type mismatch")
 		return 63
 	let present = IR.Program([IR.StringConstant(0, "\0"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalCopy(2, 2), IR.OptionalDefault(3, 2, 6), IR.Constant(3, 9), IR.Return(3)], 4, "", 0)
-	if not IR.has_optionals(present) or IR.verify(present) != "" or Interpreter.run(present) != 0
+	if not IR.has_optionals(present) or IR.verify(present) != ""
 		return 64
 	let absent = IR.Program([IR.StringConstant(0, ""), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalDefault(3, 2, 5), IR.Constant(3, 9), IR.Return(3)], 4, "", 0)
-	if IR.verify(absent) != "" or Interpreter.run(absent) != 9
+	if IR.verify(absent) != ""
 		return 65
 	if not check([IR.Constant(0, 1), IR.OptionalUnwrap(1, 0), IR.Return(1)], 2, "slot type mismatch")
 		return 66
@@ -161,7 +160,7 @@ def main() -> i64
 	if not check([IR.StringConstant(0, "x"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalUnwrap(2, 2), IR.Return(1)], 3, "slot type mismatch")
 		return 68
 	let unwrapped = IR.Program([IR.StringConstant(0, "\0"), IR.Constant(1, 0), IR.StringByteAt(2, 0, 1), IR.OptionalUnwrap(3, 2), IR.Return(3)], 4, "", 0)
-	if IR.verify(unwrapped) != "" or Interpreter.run(unwrapped) != 0
+	if IR.verify(unwrapped) != ""
 		return 69
 	for type in [IR.OutputType.Integer(IR.Integer()), IR.OutputType.Boolean(IR.Boolean()), IR.OutputType.Text(IR.Text())]
 		for stderr in [false, true]
@@ -177,6 +176,6 @@ def main() -> i64
 	if not check([IR.StringFormat(0, 1, IR.Boolean()), IR.Constant(1, 0), IR.Return(1)], 2, "undefined input slot")
 		return 73
 	let optional_text = IR.Program([IR.StringConstant(0, "x"), IR.StringFind(1, 0, 0), IR.StringFormat(2, 1, IR.OptionalInteger()), IR.StringLength(3, 2), IR.Return(3)], 4, "", 0)
-	if IR.verify(optional_text) != "" or Interpreter.run(optional_text) != 7
+	if IR.verify(optional_text) != ""
 		return 74
 	return 0

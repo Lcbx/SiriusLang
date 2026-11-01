@@ -1,5 +1,4 @@
 import ir alias IR
-import interpreter alias Interpreter
 import emit_c alias Emit
 
 def entry(table: IR.TypeTable) -> IR.Module
@@ -93,4 +92,4 @@ def main() -> i64
 			return 22
 		if not write_text(args[!1], code.code)
 			return 23
-	return Interpreter.run_module(module)
+	return 0

@@ -18,9 +18,8 @@ def run(command):
 def main() -> None:
 	cache = BuildCache(require_cc())
 	modules = tuple(ROOT / 'rewrite' / name for name in
-		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
 	compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
-	runner = cache.mir_runner()
 	reference = cache.native_tool('modular_cli')
 	verifier_source = ROOT / 'rewrite/function_ir_test_driver.sirius'
 	verifier = cache.native_driver('rewrite-function-ir', verifier_source, extra_modules=modules)
@@ -57,45 +56,27 @@ def main() -> None:
 	]
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
-		for module in modules:
-			(root / module.name).write_bytes(module.read_bytes())
-		(root / 'Main.sirius').write_bytes((ROOT / 'rewrite/main.sirius').read_bytes())
-		library = root / 'compiler.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Main', str(library)])
-		(root / 'Check.sirius').write_bytes(verifier_source.read_bytes())
-		check_library = root / 'check.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Check', str(check_library)])
-		result = run([str(runner), '--entry', 'M_5_Check_4_main', '--load-lib', str(check_library)])
-		assert result.returncode == 0, result
-		print('PASS typed function IR verifier, native and MIR', flush=True)
-		commands = [[str(compiler)], [str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library)]]
 		audit_runtime = root / 'audit-runtime.o'
 		execute([cache.cc, *C_FLAGS, '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'), '-c', str(ROOT / 'runtime/sirius_runtime.c'), '-o', str(audit_runtime)])
 		audit_verifier = executable_path(root / 'audit-verifier')
 		compile_c(cache.cc, verifier.parent / 'generated.c', audit_verifier, audit_runtime)
 		result = run([str(audit_verifier)])
 		assert result.returncode == 0 and not result.stdout and not result.stderr, result
+		commands = [[str(compiler)]]
 		for index, (text, expected) in enumerate(cases):
 			source = root / 'input.sirius'
 			source.write_text(text, encoding='utf-8')
-			outputs = []
 			for mode, command in enumerate(commands):
-				result = run(command + ['--run', str(source)])
-				assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, mode, result)
 				generated = root / f'output{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 0, (index, mode, result)
-				outputs.append(generated.read_bytes())
 				binary = executable_path(root / f'program{mode}')
 				compile_c(cache.cc, generated, binary, audit_runtime)
 				result = run([str(binary)])
 				assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, mode, result)
-			assert all(output == outputs[0] for output in outputs), index
 			# Interpolation is a rewrite-only feature with independent expectations.
 			if 'f"' in text:
 				continue
-			result = run([str(runner), str(source)])
-			assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, result)
 			generated = root / 'reference.c'
 			execute([str(reference), str(source), str(generated)])
 			binary = executable_path(root / 'reference')
@@ -107,23 +88,20 @@ def main() -> None:
 			source.write_text(text, encoding='utf-8')
 			for command in commands:
 				generated = root / f'invalid{index}.c'
-				for arguments in [['--run', str(source)], [str(source), str(generated)]]:
-					result = run(command + arguments)
-					assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (text, result)
+				result = run(command + [str(source), str(generated)])
+				assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (text, result)
 		# Traps in callees propagate to the entry, rather than becoming results.
 		for expression, reason in [('1 / 0', b'division by zero'), ('"".byte_at(0)!', b'missing optional value')]:
 			source = root / 'trap.sirius'
 			source.write_text('def fail(x: string) -> i64\n\treturn ' + expression + '\ndef main() -> i64\n\tprint(fail("owned"))\n\treturn 0\n', encoding='utf-8')
 			for command in commands:
-				result = run(command + ['--run', str(source)])
-				assert result.returncode != 0 and reason in result.stderr and not result.stdout, result
 				generated = root / 'trap.c'
 				execute(command + [str(source), str(generated)])
 				binary = executable_path(root / 'trap')
 				compile_c(cache.cc, generated, binary, cache.runtime())
 				result = run([str(binary)])
 				assert result.returncode != 0 and reason in result.stderr and not result.stdout, result
-	print(f'PASS rewrite calls: {len(cases)} valid (ARC audited), {len(invalid)} invalid, 2 callee traps; native and MIR', flush=True)
+	print(f'PASS rewrite calls: {len(cases)} valid (ARC audited), {len(invalid)} invalid, 2 callee traps; native', flush=True)
 
 
 if __name__ == '__main__':

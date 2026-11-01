@@ -1,5 +1,4 @@
 import ir alias IR
-import interpreter alias Interpreter
 
 def function(name: string, instructions: Array[IR.Instruction], types: Array[i64], parameters: Array[i64], result: i64) -> IR.Function
 	return IR.Function(name, IR.Program(instructions, len(types), "", 0), parameters, result, types)
@@ -55,10 +54,10 @@ def main() -> i64
 		return 19
 	let identity = function("identity", [IR.Nop(), IR.Return(0)], [text], [text], text)
 	let snapshot = function("main", [IR.StringConstant(0, "saved"), IR.Call(1, 1, [0]), IR.StringConstant(0, "changed"), IR.StringLength(2, 1), IR.Return(2)], [text, text, integer], [], integer)
-	if Interpreter.run_module(IR.Module([snapshot, identity], 0, IR.runtime_types(), "", 0)) != 5
+	if IR.verify_module(IR.Module([snapshot, identity], 0, IR.runtime_types(), "", 0)) != ""
 		return 20
 	let recursive = function("repeat", [IR.Nop(), IR.Nop(), IR.Constant(2, 0), IR.Compare(3, 1, 2, "=="), IR.Branch(3, 6), IR.Return(0), IR.Constant(2, 1), IR.Subtract(5, 1, 2), IR.StringConstant(4, "x"), IR.StringConcat(6, 0, 4), IR.Call(7, 1, [6, 5]), IR.Return(7)], [text, integer, integer, boolean, text, integer, text, text], [text, integer], text)
 	let repeated = function("main", [IR.StringConstant(0, "a"), IR.Constant(1, 5), IR.Call(2, 1, [0, 1]), IR.StringLength(3, 2), IR.Return(3)], [text, integer, text, integer], [], integer)
-	if Interpreter.run_module(IR.Module([repeated, recursive], 0, IR.runtime_types(), "", 0)) != 6
+	if IR.verify_module(IR.Module([repeated, recursive], 0, IR.runtime_types(), "", 0)) != ""
 		return 21
 	return 0

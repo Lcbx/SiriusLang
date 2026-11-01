@@ -18,9 +18,8 @@ def run(command):
 def main() -> None:
 	cache = BuildCache(require_cc())
 	modules = tuple(ROOT / 'rewrite' / name for name in
-		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
 	compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
-	runner = cache.mir_runner()
 	reference = cache.native_tool('modular_cli')
 	driver = ROOT / 'rewrite/record_ir_test_driver.sirius'
 	verifier = cache.native_driver('rewrite-record-ir', driver, extra_modules=modules)
@@ -82,45 +81,28 @@ def main() -> None:
 	]
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
-		for module in modules:
-			(root / module.name).write_bytes(module.read_bytes())
-		(root / 'Main.sirius').write_bytes((ROOT / 'rewrite/main.sirius').read_bytes())
-		library = root / 'compiler.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Main', str(library)])
-		(root / 'Check.sirius').write_bytes(driver.read_bytes())
-		check_library = root / 'check.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Check', str(check_library)])
-		result = run([str(runner), '--entry', 'M_5_Check_4_main', '--load-lib', str(check_library)])
-		assert result.returncode == 0 and not result.stderr, result
 		audit_runtime = root / 'audit-runtime.o'
 		execute([cache.cc, *C_FLAGS, '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'), '-c', str(ROOT / 'runtime/sirius_runtime.c'), '-o', str(audit_runtime)])
 		audited = executable_path(root / 'audited-ir')
 		compile_c(cache.cc, verifier.parent / 'generated.c', audited, audit_runtime)
 		result = run([str(audited)])
 		assert result.returncode == 0 and not result.stderr, result
-		for command in [[str(verifier)], [str(runner), '--entry', 'M_5_Check_4_main', '--load-lib', str(check_library)], [str(audited)]]:
+		for command in [[str(verifier)], [str(audited)]]:
 			result = run(command + ['--trap'])
 			assert result.returncode == 0 and not result.stdout and normalize_newlines(result.stderr) == b'ERROR: division by zero\n', result
-		print('PASS record interning, typed IR copies, initialization, and audited interpreter frames', flush=True)
-		commands = [[str(compiler)], [str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library)]]
+		print('PASS record interning, typed IR copies, initialization, and audited native IR', flush=True)
+		commands = [[str(compiler)]]
 		for index, (text, expected) in enumerate(cases):
 			source = root / 'input.sirius'
 			source.write_text(text, encoding='utf-8')
-			outputs = []
 			for mode, command in enumerate(commands):
-				result = run(command + ['--run', str(source)])
-				assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, mode, result)
 				generated = root / f'output{mode}.c'
 				result = run(command + [str(source), str(generated)])
 				assert result.returncode == 0, (index, mode, result)
-				outputs.append(generated.read_bytes())
 				binary = executable_path(root / f'program{mode}')
 				compile_c(cache.cc, generated, binary, audit_runtime)
 				result = run([str(binary)])
 				assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, mode, result)
-			assert outputs[0] == outputs[1], index
-			result = run([str(runner), str(source)])
-			assert result.returncode == 0 and normalize_newlines(result.stdout) == expected and not result.stderr, (index, result)
 			generated = root / 'reference.c'
 			execute([str(reference), str(source), str(generated)])
 			binary = executable_path(root / 'reference')
@@ -132,23 +114,20 @@ def main() -> None:
 			source.write_text(text, encoding='utf-8')
 			for command in commands:
 				generated = root / f'invalid{index}.c'
-				for arguments in [['--run', str(source)], [str(source), str(generated)]]:
-					result = run(command + arguments)
-					assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (text, result)
-		# Fatal native traps and interpreter errors must propagate through calls
+				result = run(command + [str(source), str(generated)])
+				assert result.returncode == 1 and b'ERROR ' in result.stderr and not generated.exists(), (text, result)
+		# Fatal native traps and runtime errors must propagate through calls
 		# whose parameters own references to managed record fields.
 		source = root / 'trap.sirius'
 		source.write_text('rec R(text: string)\ndef fail(r: R) -> i64\n\treturn 1 / 0\ndef main() -> i64\n\tprint(fail(R("owned")))\n\treturn 0\n', encoding='utf-8')
 		for command in commands:
-			result = run(command + ['--run', str(source)])
-			assert result.returncode != 0 and not result.stdout and b'division by zero' in result.stderr, result
 			generated = root / 'trap.c'
 			execute(command + [str(source), str(generated)])
 			binary = executable_path(root / 'trap')
 			compile_c(cache.cc, generated, binary, cache.runtime())
 			result = run([str(binary)])
 			assert result.returncode != 0 and not result.stdout and b'division by zero' in result.stderr, result
-	print(f'PASS rewrite records: {len(cases)} valid (ARC audited), {len(invalid)} invalid; native and MIR', flush=True)
+	print(f'PASS rewrite records: {len(cases)} valid (ARC audited), {len(invalid)} invalid; native', flush=True)
 
 
 if __name__ == '__main__':

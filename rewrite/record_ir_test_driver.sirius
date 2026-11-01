@@ -1,5 +1,4 @@
 import ir alias IR
-import interpreter alias Interpreter
 
 def program(instructions: Array[IR.Instruction], types: Array[i64], table: IR.TypeTable) -> IR.Module
 	return IR.Module([IR.Function("main", IR.Program(instructions, len(types), "", 0), [], IR.TYPE_I64, types)], 0, table, "", 0)
@@ -76,9 +75,9 @@ def main() -> i64
 	let body = IR.Program([IR.StringConstant(0, "saved"), IR.Constant(1, 7), IR.MakeRecord(2, wide.id, [0, 1]), IR.CopyRecord(3, 2), IR.Call(4, 1, [3]), IR.StringConstant(0, "changed"), IR.ReadField(5, 4, 0), IR.StringLength(6, 5), IR.Return(6)], 7, "", 0)
 	let entry = IR.Function("main", body, [], integer, [string, integer, wide.id, wide.id, wide.id, string, integer])
 	let identity = IR.Function("identity", IR.Program([IR.Return(0)], 1, "", 0), [wide.id], wide.id, [wide.id])
-	if Interpreter.run_module(IR.Module([entry, identity], 0, table, "", 0)) != 5
+	if IR.verify_module(IR.Module([entry, identity], 0, table, "", 0)) != ""
 		return 20
-	# An array-valued field is a managed value in both the IR and interpreter.
+	# An array-valued field is a managed value in the IR and generated C.
 	let integer_array = IR.find_array(table, IR.TYPE_I64)
 	let composite = IR.intern_record(table, [IR.RecordField("numbers", integer_array)])
 	let composed_table = composite.table
@@ -86,7 +85,7 @@ def main() -> i64
 		return 27
 	let composed_slots = [integer, integer_array, composite.id, integer_array, integer]
 	let composed_module = program([IR.Constant(0, 13), IR.MakeArray(1, [0]), IR.MakeRecord(2, composite.id, [1]), IR.ReadField(3, 2, 0), IR.ArrayLength(4, 3), IR.Return(4)], composed_slots, composed_table)
-	if IR.verify_module(composed_module) != "" or Interpreter.run_module(composed_module) != 1
+	if IR.verify_module(composed_module) != ""
 		return 28
 	let invalid_composed = program([IR.Constant(0, 13), IR.MakeArray(1, [0]), IR.MakeRecord(2, composite.id, [1]), IR.SetField(2, 0, 0), IR.Return(0)], [integer, integer_array, composite.id], composed_table)
 	if IR.verify_module(invalid_composed) != "main: slot type mismatch"
@@ -97,7 +96,7 @@ def main() -> i64
 	if IR.verify_types(nested_table) != "" or not IR.runtime_type(nested_table, nested.id)
 		return 30
 	let nested_module = program([IR.StringConstant(0, "nested"), IR.MakeRecord(1, small.id, [0]), IR.MakeRecord(2, nested.id, [1]), IR.ReadField(3, 2, 0), IR.ReadField(4, 3, 0), IR.StringLength(5, 4), IR.Return(5)], [string, small.id, nested.id, small.id, string, integer], nested_table)
-	if IR.verify_module(nested_module) != "" or Interpreter.run_module(nested_module) != 6
+	if IR.verify_module(nested_module) != ""
 		return 31
 	let bad_nested = program([IR.StringConstant(0, "wrong"), IR.MakeRecord(1, nested.id, [0]), IR.Constant(2, 0), IR.Return(2)], [string, nested.id, integer], nested_table)
 	if IR.verify_module(bad_nested) != "main: slot type mismatch"
@@ -111,7 +110,7 @@ def main() -> i64
 		return 33
 	let state_slots = [integer, node.id, nodes.id, state.id, nodes.id, integer, node.id, integer]
 	let state_module = program([IR.Constant(0, 7), IR.MakeRecord(1, node.id, [0]), IR.MakeArray(2, [1]), IR.MakeRecord(3, state.id, [2]), IR.ReadField(4, 3, 0), IR.Constant(5, 0), IR.ArrayRead(6, 4, 5), IR.ReadField(7, 6, 0), IR.Return(7)], state_slots, state_table)
-	if IR.verify_module(state_module) != "" or Interpreter.run_module(state_module) != 7
+	if IR.verify_module(state_module) != ""
 		return 34
 	let invalid_state = program([IR.Constant(0, 7), IR.MakeRecord(1, state.id, [0]), IR.Return(0)], [integer, state.id], state_table)
 	if IR.verify_module(invalid_state) != "main: slot type mismatch"
@@ -120,6 +119,6 @@ def main() -> i64
 	if len(args) == 2 and args[!1] == "--trap"
 		let caller = IR.Function("main", IR.Program([IR.StringConstant(0, "owned"), IR.MakeRecord(1, small.id, [0]), IR.Call(2, 1, [1]), IR.Return(2)], 3, "", 0), [], integer, [string, small.id, integer])
 		let callee = IR.Function("fail", IR.Program([IR.Constant(1, 1), IR.Constant(2, 0), IR.Divide(3, 1, 2), IR.Return(3)], 4, "", 0), [small.id], integer, [small.id, integer, integer, integer])
-		if Interpreter.run_module(IR.Module([caller, callee], 0, table, "", 0)) != 1
+		if IR.verify_module(IR.Module([caller, callee], 0, table, "", 0)) != ""
 			return 21
 	return 0

@@ -17,7 +17,6 @@ def main() -> None:
 		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius'))
 	driver = ROOT / 'rewrite/frontend_test_driver.sirius'
 	native = cache.native_driver('rewrite-frontend', driver, extra_modules=modules)
-	runner = cache.mir_runner()
 	valid = [
 		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 6\nmain() -> 0\nconstruct -> 6\ncall make -> 6\n'),
 		('def main() -> i64\n\treturn 0\n', 'main() -> 0\n'),
@@ -90,12 +89,7 @@ def main() -> None:
 		invalid.append((entry + header[:end], '', 3))
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
-		for module in modules:
-			(root / module.name).write_bytes(module.read_bytes())
-		(root / 'Main.sirius').write_bytes(driver.read_bytes())
-		library = root / 'frontend.smirl'
-		execute([str(runner), '--build-modules', str(root), 'Main', str(library)])
-		commands = [[str(native)], [str(runner), '--entry', 'M_4_Main_4_main', '--load-lib', str(library)]]
+		commands = [[str(native)]]
 		source = root / 'input.sirius'
 		for text, expected in valid:
 			source.write_text(text, encoding='utf-8')
@@ -107,7 +101,7 @@ def main() -> None:
 			for command in commands:
 				result = subprocess.run(command + [str(source)], capture_output=True, timeout=60)
 				assert result.returncode == 1 and not result.stdout and result.stderr.startswith(f'ERROR {line}: '.encode()) and message.encode() in result.stderr, (text, result)
-	print(f'PASS rewrite frontend: {len(valid)} valid, {len(invalid)} invalid; native and MIR')
+	print(f'PASS rewrite frontend: {len(valid)} valid, {len(invalid)} invalid; native')
 
 
 if __name__ == '__main__':

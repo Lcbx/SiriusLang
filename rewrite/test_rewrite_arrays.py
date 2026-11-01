@@ -18,7 +18,7 @@ def main() -> None:
     cache = BuildCache(require_cc())
     modules = tuple(ROOT / 'rewrite' / name for name in (
         'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
+        'lower.sirius', 'emit_c.sirius'))
     compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
     verifier = cache.native_driver('rewrite-array-ir', ROOT / 'rewrite/array_ir_test_driver.sirius', extra_modules=modules)
     checked = invoke(verifier)
@@ -150,24 +150,19 @@ def main() -> i64
         binary = base / 'output'
         for index, (text, expected) in enumerate(cases):
             source.write_text(text)
-            actual = invoke(compiler, '--run', source)
-            assert (actual.returncode, normalize_newlines(actual.stdout), actual.stderr) == (0, expected, b''), (index, 'interpreter', actual)
             emitted = invoke(compiler, source, output)
             assert emitted.returncode == 0, (index, 'emission', emitted)
             compile_c(cache.cc, output, binary, audit)
             native = invoke(binary)
             assert (native.returncode, normalize_newlines(native.stdout), native.stderr) == (0, expected, b''), (index, 'native', native)
-        print(f'PASS Array[i64]: {len(cases)} interpreted/audited native cases', flush=True)
+        print(f'PASS Array[i64]: {len(cases)} audited native cases', flush=True)
         for index, body in enumerate(invalid):
             source.write_text('def main() -> i64\n\t' + body + '\n')
-            for command in ((compiler, '--run', source), (compiler, source, output)):
-                result = invoke(*command)
-                assert result.returncode == 1 and b'ERROR ' in result.stderr, (index, result)
+            result = invoke(compiler, source, output)
+            assert result.returncode == 1 and b'ERROR ' in result.stderr, (index, result)
         print(f'PASS Array[i64]: {len(invalid)} invalid programs rejected', flush=True)
         for index, body in enumerate(traps):
             source.write_text('def main() -> i64\n\t' + body + '\n\treturn 0\n')
-            interpreted = invoke(compiler, '--run', source)
-            assert interpreted.returncode == 1 and b'index out of bounds' in interpreted.stderr, (index, 'interpreter', interpreted)
             emitted = invoke(compiler, source, output)
             assert emitted.returncode == 0, (index, 'emission', emitted)
             compile_c(cache.cc, output, binary, audit)

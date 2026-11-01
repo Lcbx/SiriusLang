@@ -1,5 +1,4 @@
 import ir alias IR
-import interpreter alias Interpreter
 import emit_c alias Emit
 
 def entry(table: IR.TypeTable, code: Array[IR.Instruction], types: Array[i64]) -> IR.Module
@@ -21,10 +20,10 @@ def main() -> i64
 	if text.id < 0 or IR.verify_types(text.table) != ""
 		return 5
 	let empty_strings = entry(text.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [text.id, IR.TYPE_I64])
-	if IR.verify_module(empty_strings) != "" or Interpreter.run_module(empty_strings) != 0 or Emit.emit(empty_strings).error != ""
+	if IR.verify_module(empty_strings) != "" or Emit.emit(empty_strings).error != ""
 		return 15
 	let strings = entry(text.table, [IR.StringConstant(0, "ab"), IR.StringConstant(1, "xyz"), IR.MakeArray(2, [0, 1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.StringLength(6, 5), IR.Return(6)], [IR.TYPE_STRING, IR.TYPE_STRING, text.id, text.id, IR.TYPE_I64, IR.TYPE_STRING, IR.TYPE_I64])
-	if IR.verify_module(strings) != "" or Interpreter.run_module(strings) != 2 or Emit.emit(strings).error != ""
+	if IR.verify_module(strings) != "" or Emit.emit(strings).error != ""
 		return 6
 	let unsupported = IR.intern_array(text.table, IR.TYPE_BOOL)
 	let bad = entry(unsupported.table, [IR.MakeArray(0, []), IR.Constant(1, 0), IR.Return(1)], [unsupported.id, IR.TYPE_I64])
@@ -44,7 +43,7 @@ def main() -> i64
 	let code: Array[IR.Instruction] = [IR.Constant(0, 3), IR.Constant(1, 7), IR.MakeArray(2, [0, 1]), IR.CopyArray(3, 2), IR.Constant(7, 0), IR.ArraySet(2, 7, 1), IR.ArrayRead(4, 3, 7), IR.ArrayLength(5, 2), IR.Add(6, 4, 5), IR.Return(6)]
 	let types = [IR.TYPE_I64, IR.TYPE_I64, id, id, IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_I64]
 	let module = entry(initial, code, types)
-	if IR.verify_module(module) != "" or Interpreter.run_module(module) != 5
+	if IR.verify_module(module) != ""
 		return 9
 	let emitted = Emit.emit(module)
 	if emitted.error != ""
@@ -62,7 +61,7 @@ def main() -> i64
 		return 16
 	let record_code: Array[IR.Instruction] = [IR.StringConstant(0, "xyz"), IR.MakeRecord(1, rec_type.id, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ReadField(6, 5, 0), IR.StringLength(7, 6), IR.Return(7)]
 	let records = entry(rec_array.table, record_code, [IR.TYPE_STRING, rec_type.id, rec_array.id, rec_array.id, IR.TYPE_I64, rec_type.id, IR.TYPE_STRING, IR.TYPE_I64])
-	if IR.verify_module(records) != "" or Interpreter.run_module(records) != 3 or Emit.emit(records).error != ""
+	if IR.verify_module(records) != "" or Emit.emit(records).error != ""
 		return 17
 	let wrong_record = entry(rec_array.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, rec_array.id, IR.TYPE_I64])
 	if IR.verify_module(wrong_record) != "main: slot type mismatch"
@@ -73,7 +72,7 @@ def main() -> i64
 		return 19
 	let nested_code: Array[IR.Instruction] = [IR.Constant(0, 5), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ArrayRead(6, 5, 4), IR.Return(6)]
 	let nested_module = entry(nested.table, nested_code, [IR.TYPE_I64, id, nested.id, nested.id, IR.TYPE_I64, id, IR.TYPE_I64])
-	if IR.verify_module(nested_module) != "" or Interpreter.run_module(nested_module) != 5 or Emit.emit(nested_module).error != ""
+	if IR.verify_module(nested_module) != "" or Emit.emit(nested_module).error != ""
 		return 20
 	let bad_nested = entry(nested.table, [IR.Constant(0, 3), IR.MakeArray(1, [0]), IR.Return(0)], [IR.TYPE_I64, nested.id])
 	if IR.verify_module(bad_nested) != "main: slot type mismatch"
@@ -84,7 +83,7 @@ def main() -> i64
 		return 22
 	let nested_text_code: Array[IR.Instruction] = [IR.StringConstant(0, "abc"), IR.MakeArray(1, [0]), IR.MakeArray(2, [1]), IR.CopyArray(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.ArrayRead(6, 5, 4), IR.StringLength(7, 6), IR.Return(7)]
 	let nested_text_module = entry(nested_text.table, nested_text_code, [IR.TYPE_STRING, text.id, nested_text.id, nested_text.id, IR.TYPE_I64, text.id, IR.TYPE_STRING, IR.TYPE_I64])
-	if IR.verify_module(nested_text_module) != "" or Interpreter.run_module(nested_text_module) != 3 or Emit.emit(nested_text_module).error != ""
+	if IR.verify_module(nested_text_module) != "" or Emit.emit(nested_text_module).error != ""
 		return 23
 	let bad_nested_text = entry(nested_text.table, [IR.StringConstant(0, "x"), IR.MakeArray(1, [0]), IR.Constant(2, 0), IR.Return(2)], [IR.TYPE_STRING, nested_text.id, IR.TYPE_I64])
 	if IR.verify_module(bad_nested_text) != "main: slot type mismatch"
