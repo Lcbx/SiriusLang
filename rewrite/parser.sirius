@@ -27,6 +27,8 @@ export enum NodeKind
 	OptionalUnwrap
 	OptionalExit
 	OptionalConstruct
+	EnumConstruct
+	EnumIndex
 	BooleanLiteral
 	Compare
 	AndStart
@@ -88,7 +90,8 @@ export rec Node(kind: NodeKind, left: i64, right: i64, token: i64)
 export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64, end: i64)
 export rec Field(token: i64, annotation: i64)
 export rec Record(token: i64, fields: Array[Field])
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], index: i64, error: string, error_line: i64)
+export rec Enum(token: i64, labels: Array[i64])
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -296,7 +299,28 @@ def expression(p: State, minimum: i64) -> Parsed
 		result = node(next, IntegerLiteral(), -1, -1, token)
 	elif current(next).kind == Lex.TokenKind.index(Lex.Name)
 		next.index += 1
-		if text(next) == "("
+		if text(next) == "." and next.index + 2 < len(next.tokens) and next_text(next) != ""
+			# Qualified enum constructors and Enum.index are compile-time names.
+			# Ordinary field reads continue through the postfix path below.
+			var qualifier = next
+			qualifier.index += 1
+			let label_token = qualifier.index
+			if qualifier.tokens[!label_token].kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == "(" and text(qualifier) != "get" and text(qualifier) != "insert" and text(qualifier) != "append" and text(qualifier) != "slice" and text(qualifier) != "starts_with" and text(qualifier) != "ends_with" and text(qualifier) != "byte_at" and text(qualifier) != "find" and text(qualifier) != "join"
+				let member = text(qualifier)
+				qualifier.index += 1
+				qualifier = expect(qualifier, "(")
+				if member == "index"
+					# A bare name may denote a label type or a local value.
+					if current(qualifier).kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == ")"
+						let argument_token = qualifier.index
+						qualifier.index += 1
+						result = node(expect(qualifier, ")"), EnumIndex(), -1, argument_token, token)
+					else
+						let input = expression(qualifier, PREC_OR)
+						result = node(expect(input.state, ")"), EnumIndex(), input.node, -1, token)
+				else
+					result = node(expect(qualifier, ")"), EnumConstruct(), label_token, -1, token)
+		if result.node < 0 and text(next) == "("
 			next.index += 1
 			var arguments = -1
 			var count = 0
@@ -312,7 +336,7 @@ def expression(p: State, minimum: i64) -> Parsed
 				if text(next) == ")"
 					next = fail(next, "expected argument after comma")
 			result = node(expect(next, ")"), Call(), arguments, count, token)
-		else
+		elif result.node < 0
 			result = node(next, Variable(), -1, -1, token)
 	else
 		return Parsed(fail(next, "expected integer expression"), -1)
@@ -768,13 +792,29 @@ def block(initial: State, loop_start: i64) -> State
 
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)
 			p.error_line = token.line
 			return p
 	while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+		if text(p) == "enum"
+			p.index += 1
+			let enum_name = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "enum name")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Indent), "enum alternatives")
+			var labels = Array[i64]()
+			while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Dedent) and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+				let label = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "enum label")
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline after enum label")
+				labels = labels.append(label)
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
+			if p.error == ""
+				p.enums = p.enums.append(Enum(enum_name, labels))
+			continue
 		if text(p) == "rec"
 			p.index += 1
 			let record_name = p.index

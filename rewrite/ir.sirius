@@ -7,6 +7,7 @@ export enum TypeKind
 	Record
 	Array
 	Dictionary
+	Enum
 
 export let NO_TYPE = -1
 export let TYPE_I64 = 0
@@ -104,6 +105,46 @@ export def intern_dict(table: TypeTable, key: i64, value: i64) -> InternedType
 	var result = table
 	let id = len(result.entries)
 	result.entries = result.entries.append(TypeDescriptor(TypeKind.Dictionary(Dictionary()), value, [], key))
+	return InternedType(result, id)
+
+export def is_enum(table: TypeTable, id: i64) -> bool
+	return has_kind(table, id, TypeKind.Enum(Enum()))
+
+# Enum identity consists of its ordered labels (nominal names are aliases).
+export def enum_index(table: TypeTable, id: i64, label: string) -> i64
+	if not is_enum(table, id)
+		return -1
+	let fields = table.entries[!id].fields
+	for i in 0..len(fields)
+		if fields[!i].name == label
+			return i
+	return -1
+
+def equal_enum_fields(left: Array[RecordField], right: Array[RecordField]) -> bool
+	if len(left) != len(right)
+		return false
+	for i in 0..len(left)
+		if left[!i].name != right[!i].name or left[!i].type != right[!i].type
+			return false
+	return true
+
+export def intern_enum(table: TypeTable, labels: Array[string]) -> InternedType
+	if len(labels) < 2
+		return InternedType(table, NO_TYPE)
+	var fields = Array[RecordField]()
+	for label in labels
+		if label == ""
+			return InternedType(table, NO_TYPE)
+		for prior in fields
+			if prior.name == label
+				return InternedType(table, NO_TYPE)
+		fields = fields.append(RecordField(label, NO_TYPE))
+	for id in PRIMITIVE_TYPE_COUNT..len(table.entries)
+		if is_enum(table, id) and equal_enum_fields(table.entries[!id].fields, fields)
+			return InternedType(table, id)
+	var result = table
+	let id = len(result.entries)
+	result.entries = result.entries.append(TypeDescriptor(TypeKind.Enum(Enum()), NO_TYPE, fields, NO_TYPE))
 	return InternedType(result, id)
 
 export def is_record(table: TypeTable, id: i64) -> bool
@@ -215,6 +256,19 @@ export def verify_types(table: TypeTable) -> string
 					return "invalid dictionary descriptor"
 				if find_dict(table, descriptor.key, descriptor.payload) != id
 					return "noncanonical dictionary type"
+			Enum
+				if descriptor.payload != NO_TYPE or descriptor.key != NO_TYPE or len(descriptor.fields) < 2
+					return "invalid enum descriptor"
+				for i in 0..len(descriptor.fields)
+					let field = descriptor.fields[!i]
+					if field.type != NO_TYPE or field.name == ""
+						return "invalid enum label"
+					for previous in 0..i
+						if descriptor.fields[!previous].name == field.name
+							return "duplicate enum label"
+				for previous in PRIMITIVE_TYPE_COUNT..id
+					if is_enum(table, previous) and equal_enum_fields(table.entries[!previous].fields, descriptor.fields)
+						return "noncanonical enum type"
 			I64 | Bool | String
 				return "duplicate primitive type"
 	if len(table.optionals) != optionals
@@ -230,7 +284,7 @@ export def runtime_type(table: TypeTable, id: i64) -> bool
 	if not valid_type(table, id)
 		return false
 	match table.entries[!id].kind
-		I64 | Bool | String
+		I64 | Bool | String | Enum
 			return true
 		Optional
 			return runtime_type(table, optional_payload(table, id))
@@ -252,6 +306,8 @@ let FIRST_TWO_INPUTS_MASK = 3
 let FIXED_INPUT_COUNT = 3
 
 # Scalar slots hold i64 values or normalized booleans (0/1).
+export rec EnumConstant(dst: i64, tag: i64)
+export rec EnumIndex(dst: i64, input: i64)
 export rec Constant(dst: i64, value: i64)
 export rec Negate(dst: i64, input: i64)
 export rec Not(dst: i64, input: i64)
@@ -319,7 +375,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Initializes the payload destination on both edges; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = EnumConstant | EnumIndex | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -683,6 +739,20 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				dst = target
 				writes = true
 				output_type = text
+			EnumConstant(target, tag)
+				if not typed or not in_bounds(target, program.slots) or not is_enum(table, types[!target]) or tag < 0 or tag >= len(table.entries[!types[!target]].fields)
+					return "invalid enum tag"
+				dst = target
+				writes = true
+				output_type = types[!target]
+			EnumIndex(target, input)
+				if not typed or not in_bounds(input, program.slots) or not is_enum(table, types[!input])
+					return "enum index requires enum"
+				dst = target
+				writes = true
+				output_type = integer
+				inputs = [input]
+				input_types = [types[!input]]
 			Constant(target, value)
 				dst = target
 				writes = true
@@ -787,7 +857,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			Copy(target, input)
 				if typed
 					output_type = types[!target]
-					if output_type != integer and output_type != boolean
+					if output_type != integer and output_type != boolean and not is_enum(table, output_type)
 						return "slot type mismatch"
 					input_types[!0] = output_type
 			OptionalCopy(target, input)
@@ -815,8 +885,8 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				input_types[!0] = boolean
 			Compare(target, left, right, op)
 				output_type = boolean
-				if typed and types[!left] == boolean and (op == "==" or op == "!=")
-					input_types = [boolean, boolean]
+				if typed and (types[!left] == boolean or is_enum(table, types[!left])) and (op == "==" or op == "!=")
+					input_types = [types[!left], types[!left]]
 			StringCompare | StringStarts | StringEnds
 				output_type = boolean
 			Branch
@@ -832,7 +902,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
+			EnumConstant | EnumIndex | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -967,7 +1037,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return
 				continue
-			MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -996,7 +1066,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -1040,6 +1110,10 @@ export def verify_module(module: Module) -> string
 # Convert each function's interval to local IDs before pruning its control flow.
 export def rebase(instruction: Instruction, base: i64) -> Instruction
 	match instruction
+		EnumConstant(dst, tag)
+			return EnumConstant(dst - base, tag)
+		EnumIndex(dst, input)
+			return EnumIndex(dst - base, input - base)
 		MakeOptional(dst, input)
 			var source = -1
 			if input >= 0

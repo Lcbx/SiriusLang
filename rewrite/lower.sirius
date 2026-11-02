@@ -62,6 +62,15 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.EnumConstruct
+				instructions = instructions.append(IR.EnumConstant(i, checked.references[!i]))
+			Parser.EnumIndex
+				if node.left >= 0
+					instructions = instructions.append(IR.EnumIndex(i, node.left))
+				elif checked.references[!i] >= 0
+					instructions = instructions.append(IR.EnumIndex(i, checked.references[!i]))
+				else
+					instructions = instructions.append(IR.Constant(i, -checked.references[!i] - 2))
 			Parser.Zero
 				instructions = instructions.append(IR.Constant(i, 0))
 			Parser.ArrayIndex
@@ -138,6 +147,9 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.Parameter | Parser.Argument
 				instructions = instructions.append(IR.Nop())
 			Parser.Call
+				if IR.is_enum(checked.type_table, checked.types[!i]) and checked.references[!i] < -1
+					instructions = instructions.append(IR.EnumConstant(i, -checked.references[!i] - 2))
+					continue
 				var reversed = Array[i64]()
 				var argument = node.left
 				while argument >= 0

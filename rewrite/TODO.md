@@ -181,10 +181,15 @@ missing lookups, managed defaults and shared updates are covered.
 
 ### 4. Enums, labeled unions and matching
 
-- [ ] Add enum declarations, record-based union aliases, contextual constructor
-  selection and explicit `Union.Label(payload)` construction. Collect dependent
-  declarations before resolving their types, including enum fields in unions.
-- [ ] Implement `Union.index(label_or_value)` in declaration order.
+- [x] Introduce payload-free `enum` declarations and ordered labels. Native enum
+  values have an unowned scalar tag; `Label()` and `Enum.Label()` construct
+  values, `Enum.index(value_or_label)` returns a stable declaration-order index,
+  and equality and aggregate storage use canonical enum descriptors. Covered by
+  `test_rewrite_enums.py` and `enum_ir_test_driver.sirius`.
+- [ ] Add record-based union aliases, payload-bearing alternatives, contextual
+  constructor selection and explicit `Union.Label(payload)` construction. Collect
+  dependent declarations before resolving their types, including enum fields in unions.
+- [ ] Extend declaration-order `.index(label_or_value)` from enums to unions.
 - [ ] Add exhaustive `match`: payload binding, bare tags, grouped alternatives
   and shared compatible payload binders, as used by [ir.sirius](ir.sirius).
 - [ ] Implement structural equality for the enum/record/union values used by the

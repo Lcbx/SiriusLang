@@ -269,7 +269,7 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 	var lines = [declaration(function, id, table) + " {\n"]
 	var has_scalars = false
 	for type in function.types
-		if type == IR.TYPE_I64 or type == IR.TYPE_BOOL
+		if type == IR.TYPE_I64 or type == IR.TYPE_BOOL or IR.is_enum(table, type)
 			has_scalars = true
 	if has_scalars
 		lines = lines.append("uint64_t v[" + str(program.slots) + "]; (void)v;\n")
@@ -454,7 +454,7 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 						lines = lines.append("store_dict(&" + dict_slot(dst) + ", " + read + ");\n")
 					elif managed_array(table, element)
 						lines = lines.append("store_managed_array(&" + managed_array_slot(dst) + ", " + read + ");\n")
-					elif element == IR.TYPE_BOOL
+					elif element == IR.TYPE_BOOL or IR.is_enum(table, element)
 						lines = lines.append(slot(dst) + " = " + read + ";\n")
 					else
 						lines = lines.append("store_array(&" + array_slot(dst) + ", " + read + ");\n")
@@ -621,6 +621,10 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				fallthrough = false
 			IR.Nop
 				fallthrough = true
+			IR.EnumConstant(dst, tag)
+				lines = lines.append(slot(dst) + " = UINT64_C(" + str(tag) + ");\n")
+			IR.EnumIndex(dst, input)
+				lines = lines.append(slot(dst) + " = " + slot(input) + ";\n")
 			IR.Constant(dst, value)
 				lines = lines.append(slot(dst) + " = UINT64_C(" + str(value) + ");\n")
 			IR.Negate(dst, input)

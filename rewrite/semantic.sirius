@@ -63,6 +63,7 @@ export def check(parsed: Parser.State) -> Checked
 	var type_table = IR.runtime_types()
 	var record_types = Dict[string, i64]()
 	var constructors = Dict[string, Constructor]()
+	var enum_labels = Dict[string, i64]()
 	var constructor_calls = Dict[i64, Constructor]()
 	var references = Array[i64]()
 	var types = Array[i64]()
@@ -78,11 +79,38 @@ export def check(parsed: Parser.State) -> Checked
 			let resolved = resolve_type(parsed, i, type_table, record_types)
 			if resolved.type != IR.NO_TYPE
 				type_table = resolved.table
+	# Enums use a scalar tag but preserve alternative names and their order in
+	# canonical descriptors. A bare label call is valid only when unambiguous.
+	for enumeration in parsed.enums
+		let target = name(parsed, enumeration.token)
+		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE or target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Array" or target == "Dict" or target == "Optional" or target == "len" or target == "str" or target == "print" or target == "eprint"
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, "duplicate or reserved enum: " + target, parsed.tokens[!enumeration.token].line)
+		var labels = Array[string]()
+		for label in enumeration.labels
+			labels = labels.append(name(parsed, label))
+		let interned = IR.intern_enum(type_table, labels)
+		if interned.id == IR.NO_TYPE
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, "enum requires two distinct labels", parsed.tokens[!enumeration.token].line)
+		type_table = interned.table
+		record_types = record_types.insert(target, interned.id)
+		for i in 0..len(labels)
+			let label = labels[!i]
+			if label == "index" or label == "main"
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, "reserved enum label: " + label, parsed.tokens[!enumeration.labels[!i]].line)
+			if (constructors.get(label) or Constructor(IR.NO_TYPE, [])).type != IR.NO_TYPE
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, "enum label conflicts with record: " + label, parsed.tokens[!enumeration.labels[!i]].line)
+			let previous = enum_labels.get(label) or IR.NO_TYPE
+			if previous != IR.NO_TYPE
+				enum_labels = enum_labels.insert(label, -2) # ambiguous
+			else
+				enum_labels = enum_labels.insert(label, interned.id)
 	for record in parsed.records
 		let target = name(parsed, record.token)
 		var error = ""
 		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
-			error = "duplicate record: " + target
+			error = "duplicate record or enum: " + target
+		elif (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE
+			error = "record name conflicts with enum label: " + target
 		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "Dict" or target == "len" or target == "str" or target == "print" or target == "eprint"
 			error = "reserved record name: " + target
 		if error != ""
@@ -117,7 +145,9 @@ export def check(parsed: Parser.State) -> Checked
 		if (functions.get(target) or -1) >= 0
 			error = "duplicate function: " + target
 		elif (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
-			error = "function name conflicts with record: " + target
+			error = "function name conflicts with type: " + target
+		elif (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE
+			error = "function name conflicts with enum label: " + target
 		elif target == "len" or target == "str" or target == "print" or target == "eprint"
 			error = "reserved builtin function: " + target
 		var parameters = Array[i64]()
@@ -162,6 +192,37 @@ export def check(parsed: Parser.State) -> Checked
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.EnumConstruct
+				let target = name(parsed, node.token)
+				let enum_type = record_types.get(target) or IR.NO_TYPE
+				if not IR.is_enum(type_table, enum_type)
+					error = "unknown enum: " + target
+				else
+					reference = IR.enum_index(type_table, enum_type, name(parsed, node.left))
+					type = enum_type
+					if reference < 0
+						error = "unknown enum label"
+			Parser.EnumIndex
+				let enum_type = record_types.get(name(parsed, node.token)) or IR.NO_TYPE
+				type = integer
+				if not IR.is_enum(type_table, enum_type)
+					error = "enum index requires enum type"
+				elif node.left >= 0
+					if types[!node.left] != enum_type
+						error = "enum index requires matching enum value"
+				else
+					let target = name(parsed, node.right)
+					let binding = bindings.get(target) or Binding(-1, false, -1)
+					if binding.node >= 0
+						reference = binding.node
+						if types[!reference] != enum_type
+							error = "enum index requires matching enum value"
+					else
+						let index = IR.enum_index(type_table, enum_type, target)
+						if index < 0
+							error = "unknown enum index label"
+						else
+							reference = -index - 2
 			Parser.OptionalConstruct
 				let resolved = resolve_type(parsed, node.token, type_table, record_types)
 				type_table = resolved.table
@@ -323,12 +384,17 @@ export def check(parsed: Parser.State) -> Checked
 					constructor_calls = constructor_calls.insert(i, constructor)
 					for field in constructor.parameters
 						parameters = parameters.append(field.type)
+				elif reference < 0 and (enum_labels.get(target) or IR.NO_TYPE) >= 0
+					type = enum_labels.get(target) or IR.NO_TYPE
+					reference = -IR.enum_index(type_table, type, target) - 2
 				elif reference < 0
-					error = "unknown function: " + target
+					error = "unknown or ambiguous function/enum label: " + target
 				else
 					let signature = signatures[!reference]
 					type = signature.result
 					parameters = signature.parameters
+				if reference < -1
+					parameters = []
 				if error == ""
 					if node.right != len(parameters)
 						error = "argument count mismatch: " + target
@@ -433,7 +499,9 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.StringConvert
 				type = text
 				let source = types[!node.left]
-				if IR.is_record(type_table, source) or IR.is_array(type_table, source) or IR.is_dict(type_table, source)
+				if IR.is_enum(type_table, source)
+					error = "str(enum) requires an explicit conversion"
+				elif IR.is_record(type_table, source) or IR.is_array(type_table, source) or IR.is_dict(type_table, source)
 					error = "str(aggregate) is not yet supported"
 				elif IR.is_optional(type_table, source) and source != optional
 					error = "str(Optional[T]) is currently supported only for i64"
@@ -463,6 +531,8 @@ export def check(parsed: Parser.State) -> Checked
 				type = types[!node.left]
 				if IR.is_optional(type_table, type)
 					error = "printing Optional requires unwrapping or a default"
+				elif IR.is_enum(type_table, type)
+					error = "printing enum requires explicit index or conversion"
 				elif IR.is_record(type_table, type) or IR.is_array(type_table, type)
 					error = "printing aggregates is not yet supported"
 			Parser.If | Parser.While
@@ -483,7 +553,7 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.Compare
 				type = boolean
 				let op = name(parsed, node.token)
-				if IR.is_optional(type_table, types[!node.left]) or IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or (types[!node.left] == boolean and op != "==" and op != "!=")
+				if IR.is_optional(type_table, types[!node.left]) or IR.is_record(type_table, types[!node.left]) or IR.is_array(type_table, types[!node.left]) or types[!node.left] != types[!node.right] or ((types[!node.left] == boolean or IR.is_enum(type_table, types[!node.left])) and op != "==" and op != "!=")
 					error = "invalid comparison operands"
 			Parser.Negate | Parser.Subtract | Parser.Multiply | Parser.Divide | Parser.Remainder | Parser.BitAnd | Parser.BitOr | Parser.ShiftLeft | Parser.ShiftRight
 				type = integer

@@ -1,0 +1,46 @@
+import ir alias IR
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable, instructions: Array[IR.Instruction], slots: Array[i64]) -> IR.Module
+	let body = IR.Program(instructions, len(slots), "", 0)
+	return IR.Module([IR.Function("main", body, [], IR.TYPE_I64, slots)], 0, table, "", 0)
+
+def main() -> i64
+	let initial = IR.runtime_types()
+	let first = IR.intern_enum(initial, ["Red", "Green", "Blue"])
+	if first.id == IR.NO_TYPE or IR.verify_types(first.table) != ""
+		return 1
+	if IR.enum_index(first.table, first.id, "Blue") != 2 or IR.enum_index(first.table, first.id, "absent") != -1
+		return 2
+	let repeat = IR.intern_enum(first.table, ["Red", "Green", "Blue"])
+	if repeat.id != first.id or len(repeat.table.entries) != len(first.table.entries)
+		return 3
+	let reorder = IR.intern_enum(first.table, ["Green", "Red", "Blue"])
+	if reorder.id == first.id or IR.verify_types(reorder.table) != ""
+		return 4
+	if IR.intern_enum(initial, ["one"]).id != IR.NO_TYPE or IR.intern_enum(initial, ["one", "one"]).id != IR.NO_TYPE
+		return 5
+	let code: Array[IR.Instruction] = [IR.EnumConstant(0, 2), IR.Copy(1, 0), IR.EnumIndex(2, 1), IR.Return(2)]
+	let valid = entry(first.table, code, [first.id, first.id, IR.TYPE_I64])
+	if IR.verify_module(valid) != "" or Emit.emit(valid).error != ""
+		return 6
+	let invalid_tag = entry(first.table, [IR.EnumConstant(0, 3), IR.EnumIndex(1, 0), IR.Return(1)], [first.id, IR.TYPE_I64])
+	if IR.verify_module(invalid_tag) != "main: invalid enum tag"
+		return 7
+	let invalid_constant = entry(first.table, [IR.Constant(0, 0), IR.EnumIndex(1, 0), IR.Return(1)], [first.id, IR.TYPE_I64])
+	if IR.verify_module(invalid_constant) != "main: slot type mismatch"
+		return 8
+	let wrong_index = entry(first.table, [IR.Constant(0, 3), IR.EnumIndex(1, 0), IR.Return(1)], [IR.TYPE_I64, IR.TYPE_I64])
+	if IR.verify_module(wrong_index) != "main: enum index requires enum"
+		return 9
+	var duplicate = first.table
+	duplicate.entries = duplicate.entries.append(first.table.entries[!first.id])
+	if IR.verify_types(duplicate) != "noncanonical enum type"
+		return 10
+	var corrupt = first.table
+	corrupt.entries[!first.id].fields[!1].name = "Red"
+	if IR.verify_types(corrupt) != "duplicate enum label"
+		return 11
+	if IR.verify_types(first.table) != "" or IR.verify_types(initial) != ""
+		return 12
+	return 0

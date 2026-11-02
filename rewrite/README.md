@@ -19,6 +19,34 @@ bindings, assignments (`=`, `+=`, `-=`, `*=`, `/=`), integer `print`,
 and `for i in start..end`. Guards evaluate the condition once and evaluate the
 exit only when it is false. They reuse ordinary branch and exit nodes.
 
+Payload-free enums support ordered labels and a dedicated scalar tag type:
+
+```sirius
+enum Color
+    Red
+    Green
+    Blue
+
+def main() -> i64
+    let red = Red()                  # Color.Red() also works
+    let green = Color.Green()
+    let index = Color.index(green)   # 1: declaration order
+    let fixed = Color.index(Red)     # 0: label without construction
+    print(index)
+    print(fixed)
+    return 0
+```
+
+Enums have canonical structural types based on their *ordered* label sequences.
+Matching sequences are compatible; reordering labels changes the type. Bare
+constructors must identify an unambiguous label. Equality (`==`, `!=`), function
+parameters/results, record fields, arrays, dictionaries, optionals and CoW
+snapshots are supported. Unlike integers, enums cannot be used in arithmetic
+or printed implicitly; use `.index` for an explicit integer representation.
+Payload-bearing unions and exhaustive `match` remain unimplemented.
+`python rewrite/test_rewrite_enums.py` checks native execution, invalid sources
+and ARC; `enum_ir_test_driver.sirius` checks typed IR invariants.
+
 The compiler supports multiple functions with annotated parameters
 and results (`i64`, `bool`, `string`, `Optional[T]` for executable payload types, record types, and
 recursively composed `Array[T]` annotations over supported element types). It collects all signatures
