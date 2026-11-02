@@ -96,6 +96,35 @@ def main() -> i64
 	let absent_constructor = IR.Function("main", IR.Program([IR.MakeOptional(0, -1), IR.OptionalDefault(1, 0, 3), IR.Constant(1, 9), IR.Return(1)], 2, "", 0), [], IR.TYPE_I64, [integer.id, IR.TYPE_I64])
 	if IR.verify_module(IR.Module([absent_constructor], 0, integer.table, "", 0)) != ""
 		return 30
+	# Typed join and dictionary cursor instructions reject incorrect layouts.
+	let strings = IR.intern_array(nested.table, IR.TYPE_STRING)
+	let join_code = IR.Program([IR.StringConstant(0, ","), IR.StringConstant(1, "a"), IR.MakeArray(2, [1]), IR.StringJoin(3, 0, 2), IR.StringLength(4, 3), IR.Return(4)], 5, "", 0)
+	let joining = IR.Module([IR.Function("main", join_code, [], IR.TYPE_I64, [IR.TYPE_STRING, IR.TYPE_STRING, strings.id, IR.TYPE_STRING, IR.TYPE_I64])], 0, strings.table, "", 0)
+	if IR.verify_module(joining) != "" or Emit.emit(joining).error != ""
+		return 31
+	let not_strings = IR.intern_array(strings.table, IR.TYPE_I64)
+	var join_bad = IR.Module([IR.Function("main", join_code, [], IR.TYPE_I64, [IR.TYPE_STRING, IR.TYPE_STRING, not_strings.id, IR.TYPE_STRING, IR.TYPE_I64])], 0, not_strings.table, "", 0)
+	if IR.verify_module(join_bad) != "main: slot type mismatch"
+		return 32
+	let empty_bad = IR.Program([IR.StringConstant(0, ","), IR.MakeArray(2, []), IR.StringJoin(3, 0, 2), IR.Constant(4, 0), IR.Return(4)], 5, "", 0)
+	join_bad = IR.Module([IR.Function("main", empty_bad, [], IR.TYPE_I64, [IR.TYPE_STRING, IR.TYPE_I64, not_strings.id, IR.TYPE_STRING, IR.TYPE_I64])], 0, not_strings.table, "", 0)
+	if IR.verify_module(join_bad) != "main: join requires Array[string]"
+		return 33
+	let dict = IR.intern_dict(strings.table, IR.TYPE_STRING, IR.TYPE_I64)
+	let iter_code = IR.Program([IR.MakeDict(0), IR.Constant(1, -1), IR.DictNext(2, 0, 1), IR.DictKey(3, 0, 1), IR.Constant(4, 0), IR.Return(4)], 5, "", 0)
+	let iterating = IR.Module([IR.Function("main", iter_code, [], IR.TYPE_I64, [dict.id, IR.TYPE_I64, IR.TYPE_BOOL, IR.TYPE_STRING, IR.TYPE_I64])], 0, dict.table, "", 0)
+	if IR.verify_module(iterating) != "" or Emit.emit(iterating).error != ""
+		return 34
+	let wrong_cursor = IR.Module([IR.Function("main", iter_code, [], IR.TYPE_I64, [dict.id, IR.TYPE_STRING, IR.TYPE_BOOL, IR.TYPE_STRING, IR.TYPE_I64])], 0, dict.table, "", 0)
+	if IR.verify_module(wrong_cursor) != "main: slot type mismatch"
+		return 35
+	let wrong_key = IR.Module([IR.Function("main", iter_code, [], IR.TYPE_I64, [dict.id, IR.TYPE_I64, IR.TYPE_BOOL, IR.TYPE_I64, IR.TYPE_I64])], 0, dict.table, "", 0)
+	if IR.verify_module(wrong_key) != "main: slot type mismatch"
+		return 36
+	let bad_iter_code = IR.Program([IR.Constant(0, 0), IR.Constant(1, -1), IR.DictNext(2, 0, 1), IR.DictKey(3, 0, 1), IR.Constant(4, 0), IR.Return(4)], 5, "", 0)
+	let bad_iter_source = IR.Module([IR.Function("main", bad_iter_code, [], IR.TYPE_I64, [IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_BOOL, IR.TYPE_STRING, IR.TYPE_I64])], 0, dict.table, "", 0)
+	if IR.verify_module(bad_iter_source) != "main: invalid dictionary iteration"
+		return 37
 	# Optional[bool] was interned first: Optional[i64]'s ID differs from the
 	# default table. Both backends must use descriptors for slots and calls.
 	if integer.id == IR.find_optional(IR.runtime_types(), IR.TYPE_I64)

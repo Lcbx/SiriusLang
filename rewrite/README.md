@@ -124,8 +124,12 @@ Checked reads trap on missing keys; `.get(key)` and `[?key]` instead return `Opt
 for any supported dictionary value type, including managed records and nested
 aggregates. Generic native dictionary storage retains/drops managed keys and
 values and uses CoW when an earlier snapshot exists. Dictionaries can be passed
-to functions and embedded in records or arrays. Dictionary iteration and
-literals are not yet implemented. Run `python rewrite/test_rewrite_dictionaries.py`
+to functions and embedded in records or arrays. `for key in dict` iterates
+over keys (not values), with owned string keys and a stable snapshot of the
+source dictionary even if a mutable binding is subsequently reassigned.
+Iteration order follows hash slots and is not specified; do not rely on it
+for deterministic output. Dictionary literals are not yet implemented.
+Run `python rewrite/test_rewrite_dictionaries.py`
 and `python rewrite/test_rewrite_optionals.py` for ARC, snapshots, missing-key
 behavior, invalid types and managed defaults.
 
@@ -178,6 +182,11 @@ IR verification rejects mixing string and scalar storage. String `.slice(start,
 end)`, `.starts_with(prefix)` and `.ends_with(suffix)` support chaining on any
 string expression. Slice offsets are bytes and must satisfy
 `0 <= start <= end <= len(text)`; empty slices and empty prefixes/suffixes work.
+`separator.join(Array[string])` assembles strings in one runtime operation,
+preserving UTF-8 bytes and embedded NULs; an empty array produces an empty
+string. The separator is inserted only between elements.
+`python rewrite/test_rewrite_join.py` covers native execution, managed
+argument ownership, CoW, malformed calls and byte behavior.
 String `.byte_at(index)` and `.find(needle)` return `Optional[i64]`; inferred
 or annotated optional bindings support copying and assignment. `optional or fallback`
 evaluates its fallback only on absence, including when a present payload is zero

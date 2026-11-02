@@ -356,6 +356,13 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 					audit_value = "true"
 				if audit_key == "true" or audit_value == "true"
 					lines = lines.append("s_dict_arc_audit_fields(" + dict_slot(dst) + ", " + audit_key + ", " + audit_value + ");\n")
+			IR.DictNext(dst, input, cursor)
+				lines = lines.append(slot(cursor) + " = (uint64_t)s_dict_next_slot(" + dict_slot(input) + ", signed_value(" + slot(cursor) + "));\n")
+				lines = lines.append(slot(dst) + " = signed_value(" + slot(cursor) + ") >= 0;\n")
+			IR.DictKey(dst, input, cursor)
+				let key_type = function.types[!dst]
+				let item = "*(" + c_type(key_type, table) + " const *)s_dict_key_slot(" + dict_slot(input) + ", signed_value(" + slot(cursor) + "))"
+				lines = lines.append(store_value(table, key_type, value_slot(dst, key_type, table), retain_value(table, key_type, item)))
 			IR.DictGet(dst, input, key)
 				let type = function.types[!dst]
 				let payload = IR.optional_payload(table, type)
@@ -553,6 +560,8 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 			IR.StringByteAt(dst, left, right)
 				let type = function.types[!dst]
 				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "s_string_byte_at(" + string_slot(left) + ", signed_value(" + slot(right) + "))"))
+			IR.StringJoin(dst, separator, parts)
+				lines = lines.append("store_string(&" + string_slot(dst) + ", s_string_join(" + string_slot(separator) + ", " + managed_array_slot(parts) + "));\n")
 			IR.StringFind(dst, left, right)
 				let type = function.types[!dst]
 				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "s_string_find(" + string_slot(left) + ", " + string_slot(right) + ")"))

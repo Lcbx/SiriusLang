@@ -65,9 +65,16 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.Zero
 				instructions = instructions.append(IR.Constant(i, 0))
 			Parser.ArrayIndex
-				instructions = instructions.append(IR.Copy(i, node.left))
+				let iterable = parsed.nodes[!node.right].left
+				if IR.is_dict(checked.type_table, checked.types[!iterable])
+					instructions = instructions.append(IR.Constant(i, -1))
+				else
+					instructions = instructions.append(IR.Copy(i, node.left))
 			Parser.ArrayElement
-				instructions = instructions.append(IR.ArrayRead(i, node.left, node.right))
+				if IR.is_dict(checked.type_table, checked.types[!node.left])
+					instructions = instructions.append(IR.DictKey(i, node.left, node.right))
+				else
+					instructions = instructions.append(IR.ArrayRead(i, node.left, node.right))
 			Parser.DictLiteral
 				instructions = instructions.append(IR.MakeDict(i))
 			Parser.DictPair
@@ -160,6 +167,8 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.StringByteAt(i, node.left, node.right))
 			Parser.StringFind
 				instructions = instructions.append(IR.StringFind(i, node.left, node.right))
+			Parser.StringJoin
+				instructions = instructions.append(IR.StringJoin(i, node.left, node.right))
 			Parser.SliceBounds
 				instructions = instructions.append(IR.Nop())
 			Parser.StringSlice
@@ -204,6 +213,10 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.One
 				instructions = instructions.append(IR.Constant(i, 1))
 			Parser.RangeCompare
+				let binding = parsed.nodes[!node.left]
+				if Parser.kind_is(binding.kind, Parser.ArrayIndex()) and IR.is_dict(checked.type_table, checked.types[!parsed.nodes[!node.right].left])
+					instructions = instructions.append(IR.DictNext(i, parsed.nodes[!node.right].left, node.left))
+					continue
 				# Match the existing compiler: a bare upper-bound name uses
 				# its binding slot, while other expressions retain their value.
 				var upper = node.right
@@ -213,7 +226,11 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.RangeCondition
 				instructions = instructions.append(IR.Branch(node.left, node.right))
 			Parser.RangeStep
-				instructions = instructions.append(IR.Add(node.left, node.left, node.right))
+				let binding = parsed.nodes[!node.left]
+				if Parser.kind_is(binding.kind, Parser.ArrayIndex()) and IR.is_dict(checked.type_table, checked.types[!parsed.nodes[!binding.right].left])
+					instructions = instructions.append(IR.Nop())
+				else
+					instructions = instructions.append(IR.Add(node.left, node.left, node.right))
 			Parser.AndStart | Parser.OrStart
 				if IR.is_optional(checked.type_table, checked.types[!node.left])
 					instructions = instructions.append(IR.OptionalDefault(i, node.left, node.right))

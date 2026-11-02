@@ -165,10 +165,15 @@ overwrites, loop exits and early returns.
   and ARC snapshots are covered by `test_rewrite_dictionaries.py`.
 - [x] Add `.get(key) -> Optional[V]` to dictionaries, including managed record,
   array and dictionary payloads; checked reads continue to trap on absence.
-- [ ] Add dictionary iteration and migrate the rewrite's symbol-table operations
-  to the rewrite-built compiler as self-compilation advances.
-- [ ] Add separator `.join(Array[string])`, used by literal decoding and C
-  emission, with UTF-8 byte and embedded-NUL behavior matching current strings.
+- [x] Support `for key in dict` with a read-only snapshot and no mandated
+  key order; native lowering uses the existing dictionary cursor runtime.
+  Cover `i64` and `string` keys, nested loops, CoW and managed symbol-table
+  values with ARC-audited native tests.
+- [ ] Migrate the rewrite's symbol-table operations to rewrite-built native
+  code as later source features become available.
+- [x] Add separator `.join(Array[string])`, reusing the existing runtime
+  implementation with UTF-8 byte and embedded-NUL behavior. Cover empty and
+  singleton arrays, nested calls, ARC and invalid operand types.
 
 Exit check: the scoped binding dictionary patterns in [semantic.sirius](semantic.sirius)
 and chunk assembly in [lower.sirius](lower.sirius) run in small standalone programs;

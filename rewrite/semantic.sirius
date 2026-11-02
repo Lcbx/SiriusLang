@@ -247,9 +247,13 @@ export def check(parsed: Parser.State) -> Checked
 					scopes[!depth] = bindings
 				depth += 1
 			Parser.ArrayElement
-				type = IR.array_element(type_table, types[!node.left])
+				let iterable = types[!node.left]
+				if IR.is_dict(type_table, iterable)
+					type = IR.dict_key(type_table, iterable)
+				else
+					type = IR.array_element(type_table, iterable)
 				if type == IR.NO_TYPE or types[!node.right] != integer
-					error = "array iteration requires array and i64 index"
+					error = "iteration requires array or dictionary and i64 index"
 				bindings = bindings.insert(name(parsed, node.token), Binding(i, false, depth - 1))
 			Parser.Zero
 				type = integer
@@ -345,6 +349,11 @@ export def check(parsed: Parser.State) -> Checked
 				type = IR.optional_payload(type_table, input)
 				if type == IR.NO_TYPE
 					error = "unwrapping requires Optional[T]"
+			Parser.StringJoin
+				type = text
+				let operand = types[!node.right]
+				if types[!node.left] != text or not IR.is_array(type_table, operand) or IR.array_element(type_table, operand) != text
+					error = "join requires string separator and Array[string]"
 			Parser.StringByteAt | Parser.StringFind
 				type = optional
 				var argument = text

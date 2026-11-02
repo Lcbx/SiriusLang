@@ -23,6 +23,7 @@ export enum NodeKind
 	StringEnds
 	StringByteAt
 	StringFind
+	StringJoin
 	OptionalUnwrap
 	OptionalExit
 	OptionalConstruct
@@ -363,7 +364,7 @@ def expression(p: State, minimum: i64) -> Parsed
 				let value = expression(after, PREC_OR)
 				result = node(expect(value.state, ")"), ArrayAppend(), result.node, value.node, method_token)
 				continue
-			if method != "slice" and method != "starts_with" and method != "ends_with" and method != "byte_at" and method != "find"
+			if method != "slice" and method != "starts_with" and method != "ends_with" and method != "byte_at" and method != "find" and method != "join"
 				return Parsed(fail(after, "unsupported string method"), -1)
 			after = expect(after, "(")
 			let first = expression(after, PREC_OR)
@@ -380,6 +381,8 @@ def expression(p: State, minimum: i64) -> Parsed
 					kind = NodeKind.StringByteAt(StringByteAt())
 				elif method == "find"
 					kind = NodeKind.StringFind(StringFind())
+				elif method == "join"
+					kind = NodeKind.StringJoin(StringJoin())
 				result = node(expect(first.state, ")"), kind, result.node, first.node, method_token)
 			continue
 		let priority = precedence(op)

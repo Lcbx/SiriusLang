@@ -15,7 +15,16 @@ def run(command):
 
 
 def sirius(code):
-    return code.strip().replace('\n        ', '\n\t').replace('\n    def ', '\ndef ').replace('\n    rec ', '\nrec ').replace('\n    ', '\n\t') + '\n'
+    # Test snippets use differing baseline indentation; normalize each to tabs.
+    lines = code.strip().replace('\n    def ', '\ndef ').replace('\n    rec ', '\nrec ').splitlines()
+    spaces = [len(line) - len(line.lstrip(' ')) for line in lines if line.startswith(' ')]
+    base = min(spaces) if spaces else 4
+    result = []
+    for line in lines:
+        count = len(line) - len(line.lstrip(' '))
+        level = 1 + max(0, count - base) // 4 if count else 0
+        result.append('\t' * level + line.lstrip(' '))
+    return '\n'.join(result) + '\n'
 
 
 def main():
@@ -85,6 +94,10 @@ def main():
         print(d[!"x"])
         return 0
     ''','value\n'),
+    ('empty dict iteration', 'def main() -> i64\n    let names = Dict[string, i64]()\n    var seen = 0\n    for name in names\n        seen += 1\n    print(seen)\n    return 0', '0\n'),
+    ('record dict keys snapshot', 'rec Binding(id: i64, name: string)\ndef main() -> i64\n    var symbols = Dict[string, Binding]().insert("x", Binding(1, "one"))\n    symbols = symbols.insert("y", Binding(2, "two"))\n    let before = symbols\n    var total = 0\n    for key in symbols\n        total += before[!key].id\n        symbols = symbols.insert("z", Binding(3, "three"))\n    print(total)\n    print(len(before))\n    print(len(symbols))\n    return 0', '3\n2\n3\n'),
+    ('integer keys continue and break', 'def main() -> i64\n    var d = Dict[i64, string]()\n    for i in 0..8\n        d = d.insert(i, str(i))\n    var total = 0\n    for key in d\n        if key == 3\n            continue\n        total += key\n    print(total)\n    var count = 0\n    for key in d\n        count += 1\n        break\n    print(count)\n    return 0', '25\n1\n'),
+    ('nested dict loops', 'def main() -> i64\n    let d = Dict[i64, i64]().insert(1, 4).insert(2, 5)\n    var product = 0\n    for x in d\n        for y in d\n            product += x * y\n    print(product)\n    return 0', '9\n'),
     ]
     invalid=[
     ('unhashable key', 'def main() -> i64\n    let x = Dict[Array[i64], i64]()\n    return 0\n'),
@@ -93,6 +106,8 @@ def main():
     ('invalid lookup', 'def main() -> i64\n    let x = Dict[string, i64]()\n    print(x[!0])\n    return 0\n'),
     ('wrong arity', 'def main() -> i64\n    let x = Dict[string, i64]().insert("x")\n    return 0\n'),
     ('no mutation through let','def main() -> i64\n    let x = Dict[string, i64]()\n    x = x.insert("a", 1)\n    return 0\n'),
+    ('iterate integer', 'def main() -> i64\n    for key in 7\n        print(key)\n    return 0\n'),
+    ('iterate string', 'def main() -> i64\n    for key in "abc"\n        print(key)\n    return 0\n'),
     ]
     bounds=[('missing key','def main() -> i64\n    let x = Dict[string, i64]()\n    print(x[!"absent"])\n    return 0\n')]
 
