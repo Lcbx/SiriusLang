@@ -5,17 +5,17 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 
 from build_support import BuildCache, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in
-		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius'))
-	driver = ROOT / 'rewrite/frontend_test_driver.sirius'
+	modules = REWRITE_MODULES[:4]
+	driver = DRIVERS / 'frontend_test_driver.sirius'
 	native = cache.native_driver('rewrite-frontend', driver, extra_modules=modules)
 	valid = [
 		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 6\nmain() -> 0\nconstruct -> 6\ncall make -> 6\n'),

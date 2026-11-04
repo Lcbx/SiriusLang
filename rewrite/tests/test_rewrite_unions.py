@@ -6,13 +6,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
-MODULES = tuple(ROOT / 'rewrite' / name for name in (
-    'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-    'lower.sirius', 'emit_c.sirius'))
+MODULES = REWRITE_MODULES
 
 
 def run(*items):
@@ -131,9 +130,9 @@ def main():
     # An override avoids rebuilding the large original compiler when available.
     override = os.environ.get('SIRIUS_REWRITE_COMPILER')
     cache = BuildCache(require_cc())
-    compiler = Path(override) if override else cache.native_driver('rewrite-unions', ROOT / 'rewrite/main.sirius', extra_modules=MODULES)
+    compiler = Path(override) if override else cache.native_driver('rewrite-unions', ENTRY, extra_modules=MODULES)
     if not override:
-        verifier = cache.native_driver('rewrite-union-ir', ROOT / 'rewrite/union_ir_test_driver.sirius', extra_modules=MODULES)
+        verifier = cache.native_driver('rewrite-union-ir', DRIVERS / 'union_ir_test_driver.sirius', extra_modules=MODULES)
         output = run(verifier)
         assert output.returncode == 0 and not output.stdout and not output.stderr, ('union verifier', output)
         print('PASS union typed IR verification', flush=True)

@@ -8,13 +8,14 @@ from pathlib import Path
 
 from build_support import BuildCache, require_cc
 from project_paths import ROOT
+from rewrite_paths import BENCHMARKS, MODULES
 
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	old = cache.native_driver('restart-lexer-bench-reference', ROOT / 'rewrite/lexer_reference_bench.sirius')
-	new = cache.native_driver('restart-lexer-bench', ROOT / 'rewrite/lexer_bench.sirius',
-		extra_modules=(ROOT / 'rewrite/lexer.sirius',))
+	old = cache.native_driver('restart-lexer-bench-reference', BENCHMARKS / 'lexer_reference_bench.sirius')
+	new = cache.native_driver('restart-lexer-bench', BENCHMARKS / 'lexer_bench.sirius',
+		extra_modules=(MODULES[0],))
 	with tempfile.TemporaryDirectory() as directory:
 		fixture = Path(directory) / 'input.sirius'
 		for name, data in [('compiler', (ROOT / 'src/hir_analyze.sirius').read_bytes()),

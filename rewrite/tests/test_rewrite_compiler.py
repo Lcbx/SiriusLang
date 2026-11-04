@@ -7,10 +7,11 @@ import tempfile
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, executable_path, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
@@ -19,10 +20,10 @@ def run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in ('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
-	compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
+	modules = REWRITE_MODULES
+	compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('restart-compiler', ENTRY, extra_modules=modules)
 	reference = cache.native_tool('modular_cli')
-	verifier = cache.native_driver('restart-ir-verifier', ROOT / 'rewrite/ir_test_driver.sirius', extra_modules=modules)
+	verifier = cache.native_driver('restart-ir-verifier', DRIVERS / 'ir_test_driver.sirius', extra_modules=modules)
 	verified = run([str(verifier)])
 	assert verified.returncode == 0, verified
 	with tempfile.TemporaryDirectory() as directory:

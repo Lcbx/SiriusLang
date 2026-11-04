@@ -6,13 +6,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
-MODULES = tuple(ROOT / 'rewrite' / name for name in (
-    'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-    'lower.sirius', 'emit_c.sirius'))
+MODULES = REWRITE_MODULES
 
 
 def run(*args):
@@ -131,10 +130,10 @@ def main():
     cache = BuildCache(require_cc())
     override = os.environ.get('SIRIUS_REWRITE_COMPILER')
     compiler = Path(override) if override else cache.native_driver(
-        'rewrite-enums', ROOT / 'rewrite/main.sirius', extra_modules=MODULES)
+        'rewrite-enums', ENTRY, extra_modules=MODULES)
     if not override:
         verifier = cache.native_driver('rewrite-enum-ir',
-            ROOT / 'rewrite/enum_ir_test_driver.sirius', extra_modules=MODULES)
+            DRIVERS / 'enum_ir_test_driver.sirius', extra_modules=MODULES)
         result = run(verifier)
         assert result.returncode == 0 and not result.stdout and not result.stderr, ('enum IR', result)
         print('PASS enum typed IR verification', flush=True)

@@ -5,9 +5,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def invoke(*command: object) -> subprocess.CompletedProcess[bytes]:
@@ -16,11 +17,9 @@ def invoke(*command: object) -> subprocess.CompletedProcess[bytes]:
 
 def main() -> None:
     cache = BuildCache(require_cc())
-    modules = tuple(ROOT / 'rewrite' / name for name in (
-        'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'emit_c.sirius'))
-    compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
-    verifier = cache.native_driver('rewrite-array-ir', ROOT / 'rewrite/array_ir_test_driver.sirius', extra_modules=modules)
+    modules = REWRITE_MODULES
+    compiler = cache.native_driver('restart-compiler', ENTRY, extra_modules=modules)
+    verifier = cache.native_driver('rewrite-array-ir', DRIVERS / 'array_ir_test_driver.sirius', extra_modules=modules)
     checked = invoke(verifier)
     assert (checked.returncode, normalize_newlines(checked.stdout), checked.stderr) == (0, b'PASS arrays IR\n', b''), checked
     cases = [

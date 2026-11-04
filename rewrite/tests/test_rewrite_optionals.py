@@ -6,13 +6,12 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
-MODULES = tuple(ROOT / 'rewrite' / name for name in (
-    'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-    'lower.sirius', 'emit_c.sirius'))
+MODULES = REWRITE_MODULES
 
 def run(*args):
     return subprocess.run([str(arg) for arg in args], capture_output=True, timeout=60)
@@ -410,7 +409,7 @@ TRAPS = [
 
 def main():
     cache = BuildCache(require_cc())
-    compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('rewrite-optionals', ROOT / 'rewrite/main.sirius', extra_modules=MODULES)
+    compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('rewrite-optionals', ENTRY, extra_modules=MODULES)
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         runtime = root / 'runtime.o'

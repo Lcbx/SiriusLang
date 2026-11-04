@@ -6,9 +6,10 @@ import tempfile
 import textwrap
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def source(code):
@@ -21,10 +22,8 @@ def run(args):
 
 def main():
     cache = BuildCache(require_cc())
-    modules = tuple(ROOT / 'rewrite' / name for name in (
-        'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-        'lower.sirius', 'emit_c.sirius'))
-    compiler = cache.native_driver('rewrite-join', ROOT / 'rewrite/main.sirius', extra_modules=modules)
+    modules = REWRITE_MODULES
+    compiler = cache.native_driver('rewrite-join', ENTRY, extra_modules=modules)
     valid = [
         ('normal', '''def main() -> i64
     print("-".join(["alpha", "beta", "gamma"]))

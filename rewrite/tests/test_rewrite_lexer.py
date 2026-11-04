@@ -6,10 +6,11 @@ import tempfile
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 
 from build_support import BuildCache, execute, require_cc
 from project_paths import ROOT, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 from test_tokenizer import fixture_bytes
 
 
@@ -22,8 +23,8 @@ def run(command: list[str]) -> bytes:
 def main() -> None:
 	cache = BuildCache(require_cc())
 	old = cache.native_driver('restart-lexer-reference', ROOT / 'tests/tokenizer/module_driver.sirius')
-	driver = ROOT / 'rewrite/lexer_test_driver.sirius'
-	new = cache.native_driver('restart-lexer', driver, extra_modules=(ROOT / 'rewrite/lexer.sirius',))
+	driver = DRIVERS / 'lexer_test_driver.sirius'
+	new = cache.native_driver('restart-lexer', driver, extra_modules=(REWRITE_MODULES[0],))
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)
 		cases = [(p.name, fixture_bytes(p)) for p in sorted((ROOT / 'tests/tokenizer/fixtures').glob('*.sirius'))]

@@ -5,10 +5,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, executable_path, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def run(command):
@@ -17,11 +18,10 @@ def run(command):
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in
-		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
-	compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
+	modules = REWRITE_MODULES
+	compiler = cache.native_driver('restart-compiler', ENTRY, extra_modules=modules)
 	reference = cache.native_tool('modular_cli')
-	verifier_source = ROOT / 'rewrite/function_ir_test_driver.sirius'
+	verifier_source = DRIVERS / 'function_ir_test_driver.sirius'
 	verifier = cache.native_driver('rewrite-function-ir', verifier_source, extra_modules=modules)
 	result = run([str(verifier)])
 	assert result.returncode == 0, result

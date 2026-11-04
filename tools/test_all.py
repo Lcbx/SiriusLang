@@ -57,7 +57,7 @@ def select_scripts(root: Path, include: tuple[str, ...] = (), exclude: tuple[str
 
 	candidates = list(root.glob('test_*.py'))
 	if root.name == 'tools':
-		candidates.extend((root.parent / 'rewrite').glob('test_*.py'))
+		candidates.extend((root.parent / 'rewrite' / 'tests').glob('test_*.py'))
 	return [path for path in sorted(candidates, key=lambda path: path.name)
 		if path.name != Path(__file__).name
 		and (not include or matches(path, include)) and not matches(path, exclude)

@@ -4,10 +4,21 @@ This directory contains an incomplete compiler implemented in Sirius. The
 feature inventory in [FEATURES.md](FEATURES.md) describes the existing
 compiler, not the rewrite. The existing bootstrap does not use this directory.
 
+## Layout
+
+- [`src/`](src/) — rewrite compiler modules, with [`main.sirius`](src/main.sirius) as the entry point.
+- [`tests/`](tests/) — Python native/ARC/invalid-program regression suites; [`tests/drivers/`](tests/drivers/) contains standalone Sirius IR and frontend drivers.
+- [`benchmarks/`](benchmarks/) — Sirius lexer comparison drivers, invoked by `tools/benchmark_rewrite_lexer.py`.
+- [`README.md`](README.md), [`TODO.md`](TODO.md), [`FEATURES.md`](FEATURES.md) — current behavior, self-compilation plan, and original-language inventory.
+
+Run `python tools/test_all.py --group rewrite` from the repository root, or
+`python rewrite/tests/test_rewrite_match.py` for a single suite. The original
+compiler's bootstrap and source tree are unchanged.
+
 The first component is a lexer with compact integer kinds derived from
 `TokenKind.index(label)`. These indices are internal to the rewrite, not
 compatible with the existing compiler's serialized codes. Token positions are
-byte offsets. Test with `python rewrite/test_rewrite_lexer.py`.
+byte offsets. Test with `python rewrite/tests/test_rewrite_lexer.py`.
 For paired native lexer timings run `python tools/benchmark_rewrite_lexer.py`;
 this does not measure end-to-end compilation.
 
@@ -94,10 +105,10 @@ runtime tags trap rather than falling through. `match` also supports enum
 labels without payload binders. Grouped tags, shared binders, qualified
 patterns, nested field patterns and wildcard/default arms remain unsupported;
 these are needed before the rewrite can compile its own grouped IR matches.
-`python rewrite/test_rewrite_unions.py` covers the native subset and ARC;
-`union_ir_test_driver.sirius` checks type/IR verification.
-`python rewrite/test_rewrite_enums.py` checks enum native execution, invalid
-sources and ARC; `enum_ir_test_driver.sirius` checks enum typed IR invariants.
+`python rewrite/tests/test_rewrite_unions.py` covers the native subset and ARC;
+`tests/drivers/union_ir_test_driver.sirius` checks type/IR verification.
+`python rewrite/tests/test_rewrite_enums.py` checks enum native execution, invalid
+sources and ARC; `tests/drivers/enum_ir_test_driver.sirius` checks enum typed IR invariants.
 
 The compiler supports multiple functions with annotated parameters
 and results (`i64`, `bool`, `string`, `Optional[T]` for executable payload types, record types, and
@@ -135,10 +146,10 @@ remain checked and trap when missing. Optional values can also be stored
 inside records, arrays and dictionaries, including as nested optionals. Record
 descriptors contain canonical fields; `Array[i64]` and `Array[string]`
 have canonical element descriptors. Dictionary descriptors are canonical for `i64` or `string` keys and any supported acyclic value type.
-Run `python rewrite/test_rewrite_frontend.py` and
-`python rewrite/test_rewrite_functions.py` from the repository root for checking,
+Run `python rewrite/tests/test_rewrite_frontend.py` and
+`python rewrite/tests/test_rewrite_functions.py` from the repository root for checking,
 native execution, string snapshots and ARC coverage.
-`python rewrite/test_rewrite_types.py` covers canonicalization, malformed tables,
+`python rewrite/tests/test_rewrite_types.py` covers canonicalization, malformed tables,
 type-table snapshots and optional IDs that differ from the default table,
 including native execution, C emission and ARC auditing.
 
@@ -165,7 +176,7 @@ copy and update types and initialization. Nested records must refer to earlier
 declarations (cycles and forward references are not supported).
 Recursive or forward record references, record literals, constructor bodies,
 record equality and direct record formatting remain unimplemented.
-`python rewrite/test_rewrite_records.py` covers native behavior,
+`python rewrite/tests/test_rewrite_records.py` covers native behavior,
 canonical aliases, constructor order, invalid records and managed-field ARC.
 
 `Array[T]` supports arbitrary acyclic nesting where `T` is `i64`,
@@ -209,8 +220,8 @@ over keys (not values), with owned string keys and a stable snapshot of the
 source dictionary even if a mutable binding is subsequently reassigned.
 Iteration order follows hash slots and is not specified; do not rely on it
 for deterministic output. Dictionary literals are not yet implemented.
-Run `python rewrite/test_rewrite_dictionaries.py`
-and `python rewrite/test_rewrite_optionals.py` for ARC, snapshots, missing-key
+Run `python rewrite/tests/test_rewrite_dictionaries.py`
+and `python rewrite/tests/test_rewrite_optionals.py` for ARC, snapshots, missing-key
 behavior, invalid types and managed defaults.
 
 The empty literal `[]` is not yet accepted; use `Array[T]()` at any
@@ -218,28 +229,28 @@ supported depth. Array-valued fields in records can be constructed, read,
 replaced and recursively updated, including paths such as
 `state.nodes[!i].right = target` and `forest.trees[!i][!j].text = value`.
 Generated C reuses generic array copy/drop callbacks. Direct array formatting and general
-array methods remain unsupported. Run `python rewrite/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/test_rewrite_arrays.py` for integer-array regressions
-and direct array IR verification, and `python rewrite/test_rewrite_managed_arrays.py`
+array methods remain unsupported. Run `python rewrite/tests/test_rewrite_nested_text_arrays.py` for two-level managed string array ARC and CoW coverage. Run `python rewrite/tests/test_rewrite_arrays.py` for integer-array regressions
+and direct array IR verification, and `python rewrite/tests/test_rewrite_managed_arrays.py`
 for string-element native execution, ARC auditing, invalid program
-rejection and bounds traps. `python rewrite/test_rewrite_record_arrays.py`
+rejection and bounds traps. `python rewrite/tests/test_rewrite_record_arrays.py`
 exercises record elements, including managed fields, CoW, invalid operands,
 function calls, loops and bounds traps.
-`python rewrite/test_rewrite_nested_updates.py` covers indexed record-field
+`python rewrite/tests/test_rewrite_nested_updates.py` covers indexed record-field
 updates, compound operators, snapshots, invalid targets, and bounds traps.
-`python rewrite/test_rewrite_recursive_updates.py` covers arbitrary paths through
+`python rewrite/tests/test_rewrite_recursive_updates.py` covers arbitrary paths through
 supported record and array fields, including ARC, invalid types and bounds.
-`python rewrite/test_rewrite_nested_arrays.py` covers two-level integer arrays, nested CoW updates, record fields, functions, invalid programs, bounds and ARC.
-`python rewrite/test_rewrite_arbitrary_nesting.py` covers deeper arrays,
+`python rewrite/tests/test_rewrite_nested_arrays.py` covers two-level integer arrays, nested CoW updates, record fields, functions, invalid programs, bounds and ARC.
+`python rewrite/tests/test_rewrite_arbitrary_nesting.py` covers deeper arrays,
 boolean elements, arrays of records, recursive assignment, invalid types,
 checked bounds and audited native ownership.
-`python rewrite/test_rewrite_record_array_fields.py` covers array-of-record
+`python rewrite/tests/test_rewrite_record_array_fields.py` covers array-of-record
 fields in nested records and arrays, CoW updates, invalid programs, and ARC.
-`python rewrite/test_rewrite_composed_records.py` covers array-valued record
+`python rewrite/tests/test_rewrite_composed_records.py` covers array-valued record
 fields, records in arrays, calls, aliases, CoW, ARC, invalid types, and bounds traps.
-`python rewrite/test_rewrite_nested_records.py` checks nested record construction,
+`python rewrite/tests/test_rewrite_nested_records.py` checks nested record construction,
 field reads/replacement, copied snapshots, function frames and bounds traps.
-The `test_rewrite_arrays.py` suite preserves integer-array regressions, while
-`array_ir_test_driver.sirius` verifies integer, string, nested integer and record-array IR.
+The `tests/test_rewrite_arrays.py` suite preserves integer-array regressions, while
+`tests/drivers/array_ir_test_driver.sirius` verifies integer, string, nested integer and record-array IR.
 
 Ranges are ascending and
 half-open and bind an immutable local `i`. Bound expressions are evaluated
@@ -265,7 +276,7 @@ string expression. Slice offsets are bytes and must satisfy
 `separator.join(Array[string])` assembles strings in one runtime operation,
 preserving UTF-8 bytes and embedded NULs; an empty array produces an empty
 string. The separator is inserted only between elements.
-`python rewrite/test_rewrite_join.py` covers native execution, managed
+`python rewrite/tests/test_rewrite_join.py` covers native execution, managed
 argument ownership, CoW, malformed calls and byte behavior.
 String `.byte_at(index)` and `.find(needle)` return `Optional[i64]`; inferred
 or annotated optional bindings support copying and assignment. `optional or fallback`
@@ -325,7 +336,7 @@ loops lower to scalar copies, comparisons, increments and existing branches;
 they do not allocate an array of elements.
 It does not yet implement the existing compiler's artifact formats or CLI.
 
-`python rewrite/test_rewrite_compiler.py` builds the rewrite natively,
+`python rewrite/tests/test_rewrite_compiler.py` builds the rewrite natively,
 checks invalid inputs and generated C, and compares supported programs
 with the existing native compiler.
 Run the rewrite tests with `python tools/test_all.py --group rewrite`.

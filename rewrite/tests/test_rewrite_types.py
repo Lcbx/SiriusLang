@@ -5,10 +5,11 @@ import sys
 import tempfile
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tools'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'tools'))
 
 from build_support import BuildCache, C_FLAGS, compile_c, execute, require_cc
 from project_paths import ROOT, executable_path, normalize_newlines
+from rewrite_paths import ENTRY, MODULES as REWRITE_MODULES, DRIVERS
 
 
 def run(command):
@@ -17,9 +18,8 @@ def run(command):
 
 def main() -> None:
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in
-		('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
-	driver = ROOT / 'rewrite/type_test_driver.sirius'
+	modules = REWRITE_MODULES
+	driver = DRIVERS / 'type_test_driver.sirius'
 	native = cache.native_driver('rewrite-types', driver, extra_modules=modules)
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)

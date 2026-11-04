@@ -9,6 +9,7 @@ from pathlib import Path
 
 from build_support import BuildCache, require_cc
 from project_paths import ROOT
+from rewrite_paths import ENTRY, MODULES
 
 
 def main() -> None:
@@ -16,8 +17,8 @@ def main() -> None:
 	parser.add_argument('--bindings', type=int, default=0, help='benchmark this many distinct bindings instead of assignments')
 	args = parser.parse_args()
 	cache = BuildCache(require_cc())
-	modules = tuple(ROOT / 'rewrite' / name for name in ('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'interpreter.sirius', 'emit_c.sirius'))
-	rewrite = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
+	modules = MODULES
+	rewrite = cache.native_driver('restart-compiler', ENTRY, extra_modules=modules)
 	reference = cache.native_tool('modular_cli')
 	with tempfile.TemporaryDirectory() as directory:
 		root = Path(directory)

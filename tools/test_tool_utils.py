@@ -202,9 +202,9 @@ def main() -> None:
 		assert groups_for(root / 'test_a.py') == ()
 		assert 'smoke' in GROUP_PATTERNS
 		tools = root / 'project' / 'tools'
-		rewrite = tools.parent / 'rewrite'
+		rewrite = tools.parent / 'rewrite' / 'tests'
 		tools.mkdir(parents=True)
-		rewrite.mkdir()
+		rewrite.mkdir(parents=True)
 		(tools / 'test_a.py').touch()
 		(rewrite / 'test_rewrite_lexer.py').touch()
 		assert [p.name for p in select_scripts(tools)] == ['test_a.py', 'test_rewrite_lexer.py']

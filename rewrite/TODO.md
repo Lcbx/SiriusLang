@@ -27,7 +27,7 @@ that must all be implemented before self-compilation.
 
 Self-compilation is complete when:
 
-- The rewrite compiles the complete source graph rooted at [main.sirius](main.sirius),
+- The rewrite compiles the complete source graph rooted at [main.sirius](src/main.sirius),
   without using the original compiler for any module.
 - Successive rewrite-built compilers emit identical C for that graph under the
   same options. Generated C compiles with the project's strict C11 checks.
@@ -42,14 +42,14 @@ Self-compilation is complete when:
 - [x] Parse multiple declarations and function bodies; collect signatures before
   checking bodies so forward calls and mutual recursion type-check. Checked calls
   carry resolved function IDs, and signatures carry the existing scalar type IDs.
-  Covered natively by `test_rewrite_frontend.py`.
+  Covered natively by `tests/test_rewrite_frontend.py`.
 - [x] Introduce canonical type IDs for scalars and composed types. Carry checked
   types, resolved names and call targets into per-function IR; do not recover
   types from syntax during C emission. `IR.TypeTable` interns `Optional` descriptors
   by payload type ID, including nested types; three scalar IDs are reserved.
   The checker and both IR consumers share the table. Noncanonical caches,
   duplicate descriptors and invalid/cyclic payload links fail verification.
-  `test_rewrite_types.py` covers interning, table snapshots and different optional
+  `tests/test_rewrite_types.py` covers interning, table snapshots and different optional
   IDs across native execution and C emission, with ARC checks. Managed optional
   payloads were subsequently implemented in milestone 3.
 - [x] Add typed parameters, results, direct calls and per-call local frames.
@@ -58,7 +58,7 @@ Self-compilation is complete when:
 - [x] Define argument borrowing, owned results and cleanup on every return,
   initially for strings. Generate C declarations before function definitions.
 
-`test_rewrite_functions.py` covers recursive and mutually recursive scalar/string
+`tests/test_rewrite_functions.py` covers recursive and mutually recursive scalar/string
 calls, mixed argument types, source order, lazy defaults, early exits, string
 snapshots, invalid calls, missing returns and callee traps. Generated programs
 run with ARC auditing; direct IR tests verify function ownership contracts.
@@ -83,11 +83,11 @@ justifies replacing it.
 - [x] Support `Array[i64]` and `Array[string]` record fields in native C,
   with owned snapshots and recursive field-level array retain/release in native
   C, including arrays of records containing arrays. Covered by
-  `test_rewrite_composed_records.py` and direct record IR tests.
+  `tests/test_rewrite_composed_records.py` and direct record IR tests.
 - [x] Allow fields containing previously declared record types, retaining/releasing
   their contents recursively. Tests cover multi-level reads, replacement,
   calls and snapshots in
-  `test_rewrite_nested_records.py`. Forward/cyclic record definitions remain unsupported.
+  `tests/test_rewrite_nested_records.py`. Forward/cyclic record definitions remain unsupported.
 - [x] Support record fields of type `Array[Array[i64]]`, including recursive
   updates, owned inner-element snapshots, and audited native C checks.
 - [x] Support `Array[Array[string]]` record fields through managed element callbacks.
@@ -99,21 +99,21 @@ justifies replacing it.
   `.append`, `for item in array`, checked `[!index]` reads (including Python-style
   negative indices), bounds traps and indexed mutable updates. Use the existing
   reference-counted `S_Array_i64` runtime with CoW; native results,
-  the existing `test_rewrite_arrays.py` covers integer-array regressions,
-  and `test_rewrite_managed_arrays.py` adds managed string-array ARC/parity checks.
-  `array_ir_test_driver.sirius` verifies both element types.
+  the existing `tests/test_rewrite_arrays.py` covers integer-array regressions,
+  and `tests/test_rewrite_managed_arrays.py` adds managed string-array ARC/parity checks.
+  `tests/drivers/array_ir_test_driver.sirius` verifies both element types.
 - [x] Extend arrays to `string` elements using generic `S_Array` storage and
   string copy/drop callbacks; test CoW overwrite, append, function calls,
   iteration, UTF-8, embedded NUL, invalid types and bounds in native C.
 - [x] Extend array elements to flat records with `i64`, `bool` and `string`
   fields. Reuse generic `S_Array` with per-record retain/release callbacks;
   cover construction, calls, iteration, overwrite, self-assignment, snapshots,
-  invalid programs and bounds traps in `test_rewrite_record_arrays.py`.
+  invalid programs and bounds traps in `tests/test_rewrite_record_arrays.py`.
 - [x] Support `Array[Array[i64]]`: nested literals and empty construction,
   annotations, calls, iteration, append/set, negative checked indexing and
   recursive CoW updates. Generic `S_Array` owns `S_Array_i64 *` elements via
-  retain/release callbacks; see `test_rewrite_nested_arrays.py`.
-- [x] Support `Array[Array[string]]` with generic outer `S_Array` storage and retain/release callbacks for inner managed arrays; `test_rewrite_nested_text_arrays.py` covers native ARC, CoW, calls, record fields and errors.
+  retain/release callbacks; see `tests/test_rewrite_nested_arrays.py`.
+- [x] Support `Array[Array[string]]` with generic outer `S_Array` storage and retain/release callbacks for inner managed arrays; `tests/test_rewrite_nested_text_arrays.py` covers native ARC, CoW, calls, record fields and errors.
 - [x] Derive generic native array element copy/drop/get operations from type
   descriptors instead of separate nested-string, nested-integer and record
   array emitters. Keep `Array[i64]` specialized.
@@ -121,7 +121,7 @@ justifies replacing it.
   array depth. Descriptor-driven element copy/drop callbacks recursively own
   managed record and array elements. Tests cover snapshots and update paths
   through multiple arrays, record fields and function boundaries;
-  see `test_rewrite_arbitrary_nesting.py`.
+  see `tests/test_rewrite_arbitrary_nesting.py`.
 - [x] Support direct field updates on mutable record bindings (`p.index += 1`,
   `p.text = new_text`) for flat scalar/string fields. Typed `SetField` updates
   the owned slot, retaining new strings and releasing overwritten ones. Source
@@ -135,9 +135,9 @@ justifies replacing it.
   record and array types (`outer.inner.name`, `outer.inner.data[!i]`,
   `rows[!i].inner.name`). Intermediate reads own values and are written back in
   reverse order through `SetField`/`ArraySet`; CoW preserves snapshots and
-  indices are evaluated once. Covered by `test_rewrite_recursive_updates.py`.
+  indices are evaluated once. Covered by `tests/test_rewrite_recursive_updates.py`.
   `p.nodes[!id].right` is now covered with record-array-valued fields.
-  See `test_rewrite_record_array_fields.py` for owned record elements,
+  See `tests/test_rewrite_record_array_fields.py` for owned record elements,
   function boundaries and audited CoW updates.
 - [x] Extend native IR verification and C ownership through supported nested
   array/record layouts, reusing `S_Array`, typed callbacks and the specialized
@@ -151,7 +151,7 @@ overwrites, loop exits and early returns.
 
 - [x] Generalize `Optional[T]`, unwrapping, lazy defaults and `else return` to
   records, strings, arrays, dictionaries and other executable payloads, with
-  type-specific ARC ownership (`test_rewrite_optionals.py`).
+  type-specific ARC ownership (`tests/test_rewrite_optionals.py`).
 - [x] Support `Optional[T]` in record fields, array elements and dictionary
   values, including nested optionals and CoW/ARC snapshots.
 - [x] Add optional `[?index]` reads for arrays and dictionaries, including
@@ -162,7 +162,7 @@ overwrites, loop exits and early returns.
 - [x] Add canonical `Dict[K,V]` descriptors, `Dict[K,V]()`, `.insert`, `len`,
   and checked `[!key]` reads for `i64` and `string` keys with supported
   acyclic values. Native C uses generic dictionary copy/drop callbacks; CoW
-  and ARC snapshots are covered by `test_rewrite_dictionaries.py`.
+  and ARC snapshots are covered by `tests/test_rewrite_dictionaries.py`.
 - [x] Add `.get(key) -> Optional[V]` to dictionaries, including managed record,
   array and dictionary payloads; checked reads continue to trap on absence.
 - [x] Support `for key in dict` with a read-only snapshot and no mandated
@@ -175,8 +175,8 @@ overwrites, loop exits and early returns.
   implementation with UTF-8 byte and embedded-NUL behavior. Cover empty and
   singleton arrays, nested calls, ARC and invalid operand types.
 
-Exit check: the scoped binding dictionary patterns in [semantic.sirius](semantic.sirius)
-and chunk assembly in [lower.sirius](lower.sirius) run in small standalone programs;
+Exit check: the scoped binding dictionary patterns in [semantic.sirius](src/semantic.sirius)
+and chunk assembly in [lower.sirius](src/lower.sirius) run in small standalone programs;
 missing lookups, managed defaults and shared updates are covered.
 
 ### 4. Enums, labeled unions and matching
@@ -185,12 +185,12 @@ missing lookups, managed defaults and shared updates are covered.
   values have an unowned scalar tag; `Label()` and `Enum.Label()` construct
   values, `Enum.index(value_or_label)` returns a stable declaration-order index,
   and equality and aggregate storage use canonical enum descriptors. Covered by
-  `test_rewrite_enums.py` and `enum_ir_test_driver.sirius`.
+  `tests/test_rewrite_enums.py` and `tests/drivers/enum_ir_test_driver.sirius`.
 - [x] Add record-based labeled union aliases (`let U = A | B`) and explicit
   `U.A(record)` construction. Canonical descriptors retain ordered labels and
   structural record payloads; native values store an inline tagged payload with
   type-specific ARC. Arrays, dictionaries, optionals and functions carry union
-  values with owned copies. `test_rewrite_unions.py` covers the subset.
+  values with owned copies. `tests/test_rewrite_unions.py` covers the subset.
 - [x] Extend declaration-order `.index(label_or_value)` to labeled unions.
 - [ ] Add contextual constructor selection for direct records, implicit
   conversion of uniquely compatible payloads, and union-dependent record
@@ -198,10 +198,10 @@ missing lookups, managed defaults and shared updates are covered.
 - [x] Add exhaustive `match` over enums and labeled unions with bare tags,
   positional record-field bindings, duplicate/missing-label checks and native
   tag tests/field extraction. Matched fields are owned copies with ARC/CoW;
-  unreachable unmatched-tag paths trap. Covered by `test_rewrite_match.py` and
-  `union_ir_test_driver.sirius`.
+  unreachable unmatched-tag paths trap. Covered by `tests/test_rewrite_match.py` and
+  `tests/drivers/union_ir_test_driver.sirius`.
 - [ ] Add grouped alternatives, qualified patterns and shared compatible
-  payload binders, as required by [ir.sirius](ir.sirius). The checker should
+  payload binders, as required by [ir.sirius](src/ir.sirius). The checker should
   resolve each group's canonical field indices once and confirm that shared
   binders have compatible types before lowering.
 - [ ] Implement structural equality for the enum/record/union values used by the
@@ -235,7 +235,7 @@ functions, lambdas and general callback inference are not needed by today's grap
   single-file compilation. Define the actual CLI before documenting
   a bootstrap command; no existing artifact formats are required for this stage.
 
-Exit checks: compile [lexer.sirius](lexer.sirius) with its test driver first, then
+Exit checks: compile [lexer.sirius](src/lexer.sirius) with its test driver first, then
 the parser, checker, IR verifier and full compiler graph. Test missing/private
 imports, cycles, colliding names and I/O errors. Track each remaining source
 construct as a concrete blocker rather than flattening modules or stripping types
