@@ -134,6 +134,24 @@ export def check(parsed: Parser.State) -> Checked
 		type_table = interned.table
 		record_types = record_types.insert(target, interned.id)
 		constructors = constructors.insert(target, Constructor(interned.id, fields))
+	# Union aliases refer to declared record constructors. Keep label order
+	# independent of the structural identity of the payload records.
+	for alias in parsed.unions
+		let target = name(parsed, alias.token)
+		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE or (constructors.get(target) or Constructor(IR.NO_TYPE, [])).type != IR.NO_TYPE or (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE or target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Array" or target == "Optional" or target == "Dict"
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, "duplicate or reserved union: " + target, parsed.tokens[!alias.token].line)
+		var variants = Array[IR.RecordField]()
+		for label in alias.labels
+			let alternative = name(parsed, label)
+			let variant = constructors.get(alternative) or Constructor(IR.NO_TYPE, [])
+			if variant.type == IR.NO_TYPE
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, "union alternative must be a record: " + alternative, parsed.tokens[!label].line)
+			variants = variants.append(IR.RecordField(alternative, variant.type))
+		let interned = IR.intern_union(type_table, variants)
+		if interned.id == IR.NO_TYPE
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, "union requires two distinct record alternatives", parsed.tokens[!alias.token].line)
+		type_table = interned.table
+		record_types = record_types.insert(target, interned.id)
 	# Array element layouts refer to already canonicalized record descriptors.
 	for record in parsed.records
 		let id = record_types.get(name(parsed, record.token)) or IR.NO_TYPE
@@ -202,11 +220,22 @@ export def check(parsed: Parser.State) -> Checked
 					type = enum_type
 					if reference < 0
 						error = "unknown enum label"
+			Parser.UnionConstruct
+				let target = name(parsed, node.token)
+				type = record_types.get(target) or IR.NO_TYPE
+				if not IR.is_union(type_table, type)
+					error = "unknown union: " + target
+				else
+					reference = IR.union_index(type_table, type, name(parsed, node.right))
+					if reference < 0
+						error = "unknown union alternative"
+					elif not IR.compatible(type_table, types[!node.left], IR.union_payload(type_table, type, reference))
+						error = "union payload type mismatch"
 			Parser.EnumIndex
 				let enum_type = record_types.get(name(parsed, node.token)) or IR.NO_TYPE
 				type = integer
-				if not IR.is_enum(type_table, enum_type)
-					error = "enum index requires enum type"
+				if not IR.is_enum(type_table, enum_type) and not IR.is_union(type_table, enum_type)
+					error = "enum/union index requires enum or union type"
 				elif node.left >= 0
 					if types[!node.left] != enum_type
 						error = "enum index requires matching enum value"
@@ -218,7 +247,9 @@ export def check(parsed: Parser.State) -> Checked
 						if types[!reference] != enum_type
 							error = "enum index requires matching enum value"
 					else
-						let index = IR.enum_index(type_table, enum_type, target)
+						var index = IR.enum_index(type_table, enum_type, target)
+						if IR.is_union(type_table, enum_type)
+							index = IR.union_index(type_table, enum_type, target)
 						if index < 0
 							error = "unknown enum index label"
 						else

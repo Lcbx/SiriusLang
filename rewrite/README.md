@@ -43,9 +43,39 @@ constructors must identify an unambiguous label. Equality (`==`, `!=`), function
 parameters/results, record fields, arrays, dictionaries, optionals and CoW
 snapshots are supported. Unlike integers, enums cannot be used in arithmetic
 or printed implicitly; use `.index` for an explicit integer representation.
-Payload-bearing unions and exhaustive `match` remain unimplemented.
-`python rewrite/test_rewrite_enums.py` checks native execution, invalid sources
-and ARC; `enum_ir_test_driver.sirius` checks typed IR invariants.
+Record-based labeled unions support ordered alternatives and explicit
+`Union.Label(record)` construction:
+
+```sirius
+rec Meters(value: i64)
+rec Feet(value: i64)
+let Distance = Meters | Feet
+
+def main() -> i64
+    let first: Distance = Distance.Meters(Meters(7))
+    let second = Distance.Feet(Feet(8))
+    print(Distance.index(first))   # 0
+    print(Distance.index(second))  # 1
+    return 0
+```
+
+The stored tag is the label's **declaration-order index**, even when record
+payloads have identical structural types. Payloads are owned inline with the
+tagged value, with retain/release for managed fields. Unions work as function
+parameters/results, optional payloads, array elements and dictionary values;
+copying preserves value semantics and CoW. Union descriptors are canonical for
+the same ordered sequence of label names and payload types. Neither a record
+nor an already-tagged union converts implicitly to another union alternative.
+
+This stage collects aliases after their record alternatives; references to a
+union type in an earlier record declaration, contextual conversion from a
+record constructor, bare constructor selection, union equality, payload
+access, and exhaustive `match` are still unsupported. Such operations need
+further semantic and IR work before rewrite self-compilation.
+`python rewrite/test_rewrite_unions.py` covers the native subset and ARC;
+`union_ir_test_driver.sirius` checks type/IR verification.
+`python rewrite/test_rewrite_enums.py` checks enum native execution, invalid
+sources and ARC; `enum_ir_test_driver.sirius` checks enum typed IR invariants.
 
 The compiler supports multiple functions with annotated parameters
 and results (`i64`, `bool`, `string`, `Optional[T]` for executable payload types, record types, and

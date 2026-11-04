@@ -48,6 +48,8 @@ def copy(dst: i64, input: i64, type: i64, table: IR.TypeTable) -> IR.Instruction
 		return IR.CopyArray(dst, input)
 	if IR.is_record(table, type)
 		return IR.CopyRecord(dst, input)
+	if IR.is_union(table, type)
+		return IR.CopyUnion(dst, input)
 	if IR.is_optional(table, type)
 		return IR.OptionalCopy(dst, input)
 	if type == IR.TYPE_STRING
@@ -62,13 +64,26 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.UnionConstruct
+				instructions = instructions.append(IR.MakeUnion(i, node.left, checked.references[!i]))
 			Parser.EnumConstruct
 				instructions = instructions.append(IR.EnumConstant(i, checked.references[!i]))
 			Parser.EnumIndex
+				var target = IR.NO_TYPE
 				if node.left >= 0
-					instructions = instructions.append(IR.EnumIndex(i, node.left))
+					target = checked.types[!node.left]
 				elif checked.references[!i] >= 0
-					instructions = instructions.append(IR.EnumIndex(i, checked.references[!i]))
+					target = checked.types[!checked.references[!i]]
+				if node.left >= 0
+					if IR.is_union(checked.type_table, target)
+						instructions = instructions.append(IR.UnionIndex(i, node.left))
+					else
+						instructions = instructions.append(IR.EnumIndex(i, node.left))
+				elif checked.references[!i] >= 0
+					if IR.is_union(checked.type_table, target)
+						instructions = instructions.append(IR.UnionIndex(i, checked.references[!i]))
+					else
+						instructions = instructions.append(IR.EnumIndex(i, checked.references[!i]))
 				else
 					instructions = instructions.append(IR.Constant(i, -checked.references[!i] - 2))
 			Parser.Zero

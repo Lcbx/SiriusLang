@@ -1,0 +1,49 @@
+import ir alias IR
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable, instructions: Array[IR.Instruction], slots: Array[i64]) -> IR.Module
+	let body = IR.Program(instructions, len(slots), "", 0)
+	return IR.Module([IR.Function("main", body, [], IR.TYPE_I64, slots)], 0, table, "", 0)
+
+def main() -> i64
+	let base = IR.runtime_types()
+	let integer = IR.intern_record(base, [IR.RecordField("value", IR.TYPE_I64)])
+	let text = IR.intern_record(integer.table, [IR.RecordField("value", IR.TYPE_STRING)])
+	let alternatives = [IR.RecordField("Meters", integer.id), IR.RecordField("Label", text.id)]
+	let union = IR.intern_union(text.table, alternatives)
+	if union.id == IR.NO_TYPE or IR.verify_types(union.table) != ""
+		return 1
+	if IR.union_index(union.table, union.id, "Meters") != 0 or IR.union_index(union.table, union.id, "Label") != 1
+		return 2
+	if IR.union_payload(union.table, union.id, 1) != text.id or IR.union_payload(union.table, union.id, 2) != IR.NO_TYPE
+		return 3
+	let repeat = IR.intern_union(union.table, alternatives)
+	if repeat.id != union.id or len(repeat.table.entries) != len(union.table.entries)
+		return 4
+	let reverse = IR.intern_union(union.table, [alternatives[!1], alternatives[!0]])
+	if reverse.id == union.id or IR.verify_types(reverse.table) != ""
+		return 5
+	if IR.intern_union(text.table, [alternatives[!0]]).id != IR.NO_TYPE or IR.intern_union(text.table, [alternatives[!0], alternatives[!0]]).id != IR.NO_TYPE
+		return 6
+	let code: Array[IR.Instruction] = [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.CopyUnion(3, 2), IR.UnionIndex(4, 3), IR.Return(4)]
+	let valid = entry(union.table, code, [IR.TYPE_I64, integer.id, union.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(valid) != "" or Emit.emit(valid).error != ""
+		return 7
+	let bad_tag = entry(union.table, [IR.Constant(0, 1), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 9), IR.UnionIndex(3, 2), IR.Return(3)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(bad_tag) != "main: invalid union construction"
+		return 8
+	let wrong_payload = entry(union.table, [IR.Constant(0, 1), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 1), IR.UnionIndex(3, 2), IR.Return(3)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(wrong_payload) != "main: slot type mismatch"
+		return 9
+	let bad_copy = entry(union.table, [IR.Constant(0, 1), IR.CopyUnion(1, 0), IR.Return(0)], [IR.TYPE_I64, IR.TYPE_I64])
+	if IR.verify_module(bad_copy) != "main: union copy requires union"
+		return 10
+	var duplicate = union.table
+	duplicate.entries = duplicate.entries.append(union.table.entries[!union.id])
+	if IR.verify_types(duplicate) != "noncanonical union type"
+		return 11
+	var bad_label = union.table
+	bad_label.entries[!union.id].fields[!1].name = "Meters"
+	if IR.verify_types(bad_label) != "duplicate union label"
+		return 12
+	return 0

@@ -29,6 +29,7 @@ export enum NodeKind
 	OptionalConstruct
 	EnumConstruct
 	EnumIndex
+	UnionConstruct
 	BooleanLiteral
 	Compare
 	AndStart
@@ -91,7 +92,8 @@ export rec Function(token: i64, parameters: Array[i64], result: i64, start: i64,
 export rec Field(token: i64, annotation: i64)
 export rec Record(token: i64, fields: Array[Field])
 export rec Enum(token: i64, labels: Array[i64])
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], index: i64, error: string, error_line: i64)
+export rec UnionAlias(token: i64, labels: Array[i64])
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], unions: Array[UnionAlias], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -319,7 +321,11 @@ def expression(p: State, minimum: i64) -> Parsed
 						let input = expression(qualifier, PREC_OR)
 						result = node(expect(input.state, ")"), EnumIndex(), input.node, -1, token)
 				else
-					result = node(expect(qualifier, ")"), EnumConstruct(), label_token, -1, token)
+					if text(qualifier) == ")"
+						result = node(expect(qualifier, ")"), EnumConstruct(), label_token, -1, token)
+					else
+						let payload = expression(qualifier, PREC_OR)
+						result = node(expect(payload.state, ")"), UnionConstruct(), payload.node, label_token, token)
 		if result.node < 0 and text(next) == "("
 			next.index += 1
 			var arguments = -1
@@ -792,7 +798,7 @@ def block(initial: State, loop_start: i64) -> State
 
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), Array[UnionAlias](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)
@@ -814,6 +820,23 @@ export def parse(source: string) -> State
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
 			if p.error == ""
 				p.enums = p.enums.append(Enum(enum_name, labels))
+			continue
+		if text(p) == "let"
+			p.index += 1
+			let union_name = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "union type name")
+			p = expect(p, "=")
+			var labels = Array[i64]()
+			while p.error == ""
+				let variant = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "union alternative")
+				labels = labels.append(variant)
+				if text(p) != "|"
+					break
+				p.index += 1
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+			if p.error == ""
+				p.unions = p.unions.append(UnionAlias(union_name, labels))
 			continue
 		if text(p) == "rec"
 			p.index += 1
