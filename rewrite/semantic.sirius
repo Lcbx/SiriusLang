@@ -65,6 +65,7 @@ export def check(parsed: Parser.State) -> Checked
 	var constructors = Dict[string, Constructor]()
 	var enum_labels = Dict[string, i64]()
 	var constructor_calls = Dict[i64, Constructor]()
+	var match_coverage = Dict[i64, Array[bool]]()
 	var references = Array[i64]()
 	var types = Array[i64]()
 	var signatures = Array[Signature]()
@@ -210,6 +211,63 @@ export def check(parsed: Parser.State) -> Checked
 		var type = -1
 		var error = ""
 		match node.kind
+			Parser.MatchCase
+				let subject = types[!node.left]
+				let label = name(parsed, node.token)
+				type = boolean
+				if IR.is_union(type_table, subject)
+					reference = IR.union_index(type_table, subject, label)
+					if reference >= 0 and node.right >= 0
+						let record = constructors.get(label) or Constructor(IR.NO_TYPE, [])
+						if len(record.parameters) != node.right
+							error = "match payload binding count mismatch"
+				elif IR.is_enum(type_table, subject)
+					reference = IR.enum_index(type_table, subject, label)
+					if node.right > 0
+						error = "enum match cannot bind fields"
+				else
+					error = "match requires enum or labeled union"
+				if reference < 0 and error == ""
+					error = "unknown match alternative: " + label
+				if error == ""
+					var seen = match_coverage.get(node.left) or Array[bool]()
+					if len(seen) == 0
+						for field in type_table.entries[!subject].fields
+							seen = seen.append(false)
+					if seen[!reference]
+						error = "duplicate match alternative: " + label
+					else
+						seen[!reference] = true
+						match_coverage = match_coverage.insert(node.left, seen)
+			Parser.MatchBind
+				let test = parsed.nodes[!node.right]
+				let subject = types[!test.left]
+				let payload = IR.union_payload(type_table, subject, references[!node.right])
+				let declared = constructors.get(name(parsed, test.token)) or Constructor(IR.NO_TYPE, [])
+				if payload == IR.NO_TYPE or node.left < 0 or node.left >= len(declared.parameters)
+					error = "invalid match payload binding"
+				else
+					reference = IR.field_index(type_table, payload, declared.parameters[!node.left].name)
+					if reference < 0
+						error = "invalid match payload field"
+					else
+						type = type_table.entries[!payload].fields[!reference].type
+					let target = name(parsed, node.token)
+					let existing = bindings.get(target) or Binding(-1, false, -1)
+					if existing.node >= 0 and existing.depth == depth
+						error = "duplicate match binding: " + target
+					else
+						bindings = bindings.insert(target, Binding(i, false, depth))
+			Parser.MatchFail
+				type = -1
+			Parser.MatchEnd
+				let seen = match_coverage.get(node.left) or Array[bool]()
+				for present in seen
+					if not present
+						error = "non-exhaustive match"
+				if len(seen) == 0
+					error = "non-exhaustive match"
+				match_coverage = match_coverage.insert(node.left, [])
 			Parser.EnumConstruct
 				let target = name(parsed, node.token)
 				let enum_type = record_types.get(target) or IR.NO_TYPE

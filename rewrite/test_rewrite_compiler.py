@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Exercise the rewrite compiler and generated C natively."""
 import subprocess
+import os
 import re
 import tempfile
 import sys
@@ -19,7 +20,7 @@ def run(args: list[str]) -> subprocess.CompletedProcess[bytes]:
 def main() -> None:
 	cache = BuildCache(require_cc())
 	modules = tuple(ROOT / 'rewrite' / name for name in ('lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius', 'lower.sirius', 'emit_c.sirius'))
-	compiler = cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
+	compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('restart-compiler', ROOT / 'rewrite/main.sirius', extra_modules=modules)
 	reference = cache.native_tool('modular_cli')
 	verifier = cache.native_driver('restart-ir-verifier', ROOT / 'rewrite/ir_test_driver.sirius', extra_modules=modules)
 	verified = run([str(verifier)])

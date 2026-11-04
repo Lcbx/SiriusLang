@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Managed Optional[T] lookup, defaults, unwinding and ARC regressions."""
 import subprocess
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -409,7 +410,7 @@ TRAPS = [
 
 def main():
     cache = BuildCache(require_cc())
-    compiler = cache.native_driver('rewrite-optionals', ROOT / 'rewrite/main.sirius', extra_modules=MODULES)
+    compiler = Path(os.environ['SIRIUS_REWRITE_COMPILER']) if os.environ.get('SIRIUS_REWRITE_COMPILER') else cache.native_driver('rewrite-optionals', ROOT / 'rewrite/main.sirius', extra_modules=MODULES)
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         runtime = root / 'runtime.o'

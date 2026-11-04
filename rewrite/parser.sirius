@@ -30,6 +30,10 @@ export enum NodeKind
 	EnumConstruct
 	EnumIndex
 	UnionConstruct
+	MatchCase
+	MatchBind
+	MatchFail
+	MatchEnd
 	BooleanLiteral
 	Compare
 	AndStart
@@ -519,6 +523,55 @@ def block(initial: State, loop_start: i64) -> State
 		let token = p.index
 		if returned
 			return fail(p, "statement after control-flow exit")
+		if text(p) == "match"
+			p.index += 1
+			let subject = expression(p, PREC_OR)
+			p = expect_kind(subject.state, Lex.TokenKind.index(Lex.Newline), "newline")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Indent), "indented match arms")
+			var exits = Array[i64]()
+			var arms = 0
+			while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Dedent) and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+				let label = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative")
+				var binders = Array[i64]()
+				var arity = -1 # A bare label ignores its record payload.
+				if text(p) == "("
+					p = expect(p, "(")
+					while p.error == "" and text(p) != ")"
+						let binder = p.index
+						p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match field binding")
+						binders = binders.append(binder)
+						if text(p) != ","
+							break
+						p = expect(p, ",")
+					p = expect(p, ")")
+					arity = len(binders)
+				let test = node(p, MatchCase(), subject.node, arity, label)
+				let branch = node(test.state, If(), test.node, -1, label)
+				p = branch.state
+				for i in 0..len(binders)
+					p = node(p, MatchBind(), i, test.node, binders[!i]).state
+				p = block(p, loop_start)
+				if p.error != ""
+					return p
+				let exit = node(p, Else(), -1, -1, label)
+				p = exit.state
+				p.nodes[!branch.node].right = exit.node + 1
+				exits = exits.append(exit.node)
+				arms += 1
+			if arms == 0
+				return fail(p, "match requires at least one arm")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
+			# An exhaustive match has no legal unmatched tag. Make the final
+			# false edge terminate, rather than inventing a missing return.
+			p = node(p, MatchFail(), -1, -1, token).state
+			let end = len(p.nodes)
+			for exit in exits
+				p.nodes[!exit].right = end
+			for i in 0..arms
+				p = node(p, EndIf(), -1, -1, token).state
+			p = node(p, MatchEnd(), subject.node, -1, token).state
+			continue
 		if text(p) == "for"
 			p.index += 1
 			let name = p.index

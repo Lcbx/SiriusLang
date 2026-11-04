@@ -681,6 +681,21 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				lines = lines.append(store_value(table, type, value_slot(dst, type, table), retain_value(table, type, value_slot(input, type, table))))
 			IR.UnionIndex(dst, input)
 				lines = lines.append(slot(dst) + " = " + value_slot(input, function.types[!input], table) + ".tag;\n")
+			IR.TagTest(dst, input, tag)
+				var value = slot(input)
+				if IR.is_union(table, function.types[!input])
+					value = value_slot(input, function.types[!input], table) + ".tag"
+				lines = lines.append(slot(dst) + " = " + value + " == UINT64_C(" + str(tag) + ");\n")
+			IR.UnionField(dst, input, tag, field)
+				let type = function.types[!input]
+				let payload = IR.union_payload(table, type, tag)
+				let field_type = table.entries[!payload].fields[!field].type
+				let source = value_slot(input, type, table)
+				lines = lines.append("if (" + source + ".tag != UINT64_C(" + str(tag) + ")) s_panic(\"union match tag mismatch\");\n")
+				lines = lines.append(store_value(table, field_type, value_slot(dst, field_type, table), retain_value(table, field_type, source + ".data.p" + str(tag) + ".f" + str(field))))
+			IR.Trap
+				lines = lines.append("s_panic(\"invalid match tag\");\n")
+				fallthrough = false
 			IR.EnumConstant(dst, tag)
 				lines = lines.append(slot(dst) + " = UINT64_C(" + str(tag) + ");\n")
 			IR.EnumIndex(dst, input)

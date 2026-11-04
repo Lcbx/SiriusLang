@@ -69,9 +69,31 @@ nor an already-tagged union converts implicitly to another union alternative.
 
 This stage collects aliases after their record alternatives; references to a
 union type in an earlier record declaration, contextual conversion from a
-record constructor, bare constructor selection, union equality, payload
-access, and exhaustive `match` are still unsupported. Such operations need
-further semantic and IR work before rewrite self-compilation.
+record constructor, bare constructor selection, and union equality are still
+unsupported. Exhaustive `match` is supported for enums and record-based unions:
+
+```sirius
+rec Meters(value: i64)
+rec Feet(value: i64)
+let Distance = Meters | Feet
+
+def length(value: Distance) -> i64
+    match value
+        Meters(n)
+            return n
+        Feet(n)
+            return n * 2
+```
+
+Arms are checked by **label**, not by structural record shape, and every
+alternative must appear exactly once. Positional binders follow each record's
+constructor field order (the compiler maps them to canonical field storage),
+are immutable and local to their arm, and own managed payload snapshots.
+A bare tag ignores the payload. The scrutinee is evaluated once; unmatched
+runtime tags trap rather than falling through. `match` also supports enum
+labels without payload binders. Grouped tags, shared binders, qualified
+patterns, nested field patterns and wildcard/default arms remain unsupported;
+these are needed before the rewrite can compile its own grouped IR matches.
 `python rewrite/test_rewrite_unions.py` covers the native subset and ARC;
 `union_ir_test_driver.sirius` checks type/IR verification.
 `python rewrite/test_rewrite_enums.py` checks enum native execution, invalid

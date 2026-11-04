@@ -195,8 +195,15 @@ missing lookups, managed defaults and shared updates are covered.
 - [ ] Add contextual constructor selection for direct records, implicit
   conversion of uniquely compatible payloads, and union-dependent record
   declarations. Explicit conversion must never relabel an existing union.
-- [ ] Add exhaustive `match`: payload binding, bare tags, grouped alternatives
-  and shared compatible payload binders, as used by [ir.sirius](ir.sirius).
+- [x] Add exhaustive `match` over enums and labeled unions with bare tags,
+  positional record-field bindings, duplicate/missing-label checks and native
+  tag tests/field extraction. Matched fields are owned copies with ARC/CoW;
+  unreachable unmatched-tag paths trap. Covered by `test_rewrite_match.py` and
+  `union_ir_test_driver.sirius`.
+- [ ] Add grouped alternatives, qualified patterns and shared compatible
+  payload binders, as required by [ir.sirius](ir.sirius). The checker should
+  resolve each group's canonical field indices once and confirm that shared
+  binders have compatible types before lowering.
 - [ ] Implement structural equality for the enum/record/union values used by the
   compiler, without replacing structural types with nominal record identities.
 

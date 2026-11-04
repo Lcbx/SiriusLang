@@ -64,6 +64,15 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		match node.kind
+			Parser.MatchCase
+				instructions = instructions.append(IR.TagTest(i, node.left, checked.references[!i]))
+			Parser.MatchBind
+				let test = parsed.nodes[!node.right]
+				instructions = instructions.append(IR.UnionField(i, test.left, checked.references[!node.right], checked.references[!i]))
+			Parser.MatchFail
+				instructions = instructions.append(IR.Trap())
+			Parser.MatchEnd
+				instructions = instructions.append(IR.Nop())
 			Parser.UnionConstruct
 				instructions = instructions.append(IR.MakeUnion(i, node.left, checked.references[!i]))
 			Parser.EnumConstruct
