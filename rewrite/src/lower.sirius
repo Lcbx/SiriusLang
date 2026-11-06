@@ -420,6 +420,25 @@ def lower_function(checked: Semantic.Checked, function_id: i64, function_base: i
 		local = local.append(IR.rebase(mapped, function.start))
 	return IR.prune(IR.Program(local, function.end - function.start + len(extra_types), "", parsed.tokens[!function.token].line))
 
+# Keep original local function positions during graph linking. Uninstantiated
+# templates occupy temporary slots, which are removed before verification and
+# C emission. Concrete specializations get their own checked body and slots.
+def empty_template() -> IR.Function
+	return IR.Function("template", IR.Program([IR.Trap()], 0, "", 0), [], IR.TYPE_I64, [])
+
+def lower_definition(checked: Semantic.Checked, id: i64, function_base: i64) -> IR.Function
+	let signature = checked.signatures[!id]
+	let parsed = checked.parsed.functions[!id]
+	let body = lower_function(checked, id, function_base)
+	var types = Array[i64]()
+	for node in parsed.start..parsed.end
+		types = types.append(checked.types[!node])
+	for node in parsed.start..parsed.end
+		let conversion = checked.conversions.get(node) or Semantic.Conversion(IR.NO_TYPE, -1)
+		if conversion.type != IR.NO_TYPE
+			types = types.append(conversion.type)
+	return IR.Function(signature.name, body, signature.parameters, signature.result, types)
+
 def lower_checked(checked: Semantic.Checked, function_base: i64) -> IR.Module
 	var functions = Array[IR.Function]()
 	if checked.error != ""
@@ -427,28 +446,38 @@ def lower_checked(checked: Semantic.Checked, function_base: i64) -> IR.Module
 	var entry = -1
 	for id in 0..len(checked.parsed.functions)
 		let signature = checked.signatures[!id]
-		let parsed = checked.parsed.functions[!id]
-		let body = lower_function(checked, id, function_base)
-		if body.error != ""
-			return IR.Module(functions, -1, checked.type_table, body.error, body.line)
-		var types = Array[i64]()
-		for node in parsed.start..parsed.end
-			types = types.append(checked.types[!node])
-		for node in parsed.start..parsed.end
-			let conversion = checked.conversions.get(node) or Semantic.Conversion(IR.NO_TYPE, -1)
-			if conversion.type != IR.NO_TYPE
-				types = types.append(conversion.type)
-		functions = functions.append(IR.Function(signature.name, body, signature.parameters, signature.result, types))
+		if Semantic.generic_signature(signature)
+			functions = functions.append(empty_template())
+			continue
+		let function = lower_definition(checked, id, function_base)
+		if function.body.error != ""
+			return IR.Module(functions, -1, checked.type_table, function.body.error, function.body.line)
+		functions = functions.append(function)
 		if signature.name == "main"
 			entry = function_base + id
 	return IR.Module(functions, entry, checked.type_table, "", 0)
 
 export def lower(source: string) -> IR.Module
-	return lower_checked(Semantic.check(Parser.parse(source)), 0)
+	let checked = Semantic.check(Parser.parse(source))
+	if checked.error != ""
+		return IR.Module([], -1, checked.type_table, checked.error, checked.line)
+	for signature in checked.signatures
+		if Semantic.generic_signature(signature)
+			return IR.Module([], -1, checked.type_table, "generic functions require --compile-modules", 1)
+	return lower_checked(checked, 0)
 
-# Every source has its own checker environment. Public signatures are carried
-# across edges explicitly; only their declaring modules own their function
-# bodies. A single canonical descriptor table is shared by all checked units.
+# Module environments remain isolated. A template holds the defining module
+# and function ID; argument types come from checked call operand slots, not
+# names in the consumer. A specialization is checked in that defining module.
+rec Environment(unit: Modules.Unit, external: Array[Semantic.External], types: Dict[string, i64], constructors: Dict[string, Semantic.Constructor], base: i64)
+rec Pending(template: i64, arguments: Array[i64])
+
+def specialization_key(template: i64, arguments: Array[i64]) -> string
+	var key = str(template)
+	for type in arguments
+		key += ":" + str(type)
+	return key
+
 export def lower_graph(graph: Modules.Graph) -> IR.Module
 	var functions = Array[IR.Function]()
 	var table = IR.runtime_types()
@@ -457,6 +486,9 @@ export def lower_graph(graph: Modules.Graph) -> IR.Module
 	var exported = Dict[string, Array[Semantic.External]]()
 	var public_types = Dict[string, Array[ExportedType]]()
 	var public_constructors = Dict[string, Array[ExportedConstructor]]()
+	var environments = Array[Environment]()
+	var template_modules = Dict[i64, i64]()
+	var template_locals = Dict[i64, i64]()
 	var entry = -1
 	for unit in graph.units
 		var external = Array[Semantic.External]()
@@ -482,10 +514,14 @@ export def lower_graph(graph: Modules.Graph) -> IR.Module
 		if lowered.error != ""
 			return IR.Module(functions, -1, checked.type_table, unit.name + ": " + lowered.error, lowered.line)
 		table = lowered.type_table
+		environments = environments.append(Environment(unit, external, types, constructors, base))
 		var public_functions = Array[Semantic.External]()
 		for id in 0..len(lowered.functions)
 			let function = lowered.functions[!id]
 			let signature = checked.signatures[!id]
+			if Semantic.generic_signature(signature)
+				template_modules = template_modules.insert(base + id, len(environments) - 1)
+				template_locals = template_locals.insert(base + id, id)
 			if unit.parsed.exports.get(signature.name) or false
 				public_functions = public_functions.append(Semantic.External(signature.name, signature, base + id))
 			functions = functions.append(IR.Function(unit.name + "." + function.name, function.body, function.parameters, function.result, function.types))
@@ -508,8 +544,8 @@ export def lower_graph(graph: Modules.Graph) -> IR.Module
 			let name = unit.parsed.source.slice(token.start, token.end)
 			if unit.parsed.exports.get(name) or false
 				unit_types = unit_types.append(ExportedType(name, checked.declared_types.get(name) or IR.NO_TYPE))
-				# Expose the positional binding layout only *through* the public
-				# union type; private record constructors themselves stay private.
+				# Union patterns expose ordered payload positions, but not private
+				# record constructors through the importing module namespace.
 				for alternative in alias.labels
 					let label_token = unit.parsed.tokens[!alternative]
 					let label = unit.parsed.source.slice(label_token.start, label_token.end)
@@ -519,4 +555,77 @@ export def lower_graph(graph: Modules.Graph) -> IR.Module
 		public_constructors = public_constructors.insert(unit.name, unit_constructors)
 		if is_entry
 			entry = lowered.entry
-	return IR.Module(functions, entry, table, "", 0)
+
+	# Discover and cache calls in definition order, including calls introduced
+	# by specializing another template. Register before checking so direct
+	# recursive calls converge to the same function ID.
+	var pending = Dict[i64, Pending]()
+	var instances = Dict[string, i64]()
+	var cursor = 0
+	var count = 0
+	while cursor < len(functions)
+		let job = pending.get(cursor) or Pending(-1, [])
+		if job.template >= 0
+			let environment_id = template_modules.get(job.template) or -1
+			let local_id = template_locals.get(job.template) or -1
+			let environment = environments[!environment_id]
+			let checked = Semantic.check_specialization(environment.unit.parsed, table, environment.external, environment.types, environment.constructors, local_id, job.arguments)
+			if checked.error != ""
+				return IR.Module(functions, -1, checked.type_table, environment.unit.name + ": " + checked.error, checked.line)
+			table = checked.type_table
+			let lowered = lower_definition(checked, local_id, environment.base)
+			if lowered.body.error != ""
+				return IR.Module(functions, -1, table, environment.unit.name + ": " + lowered.body.error, lowered.body.line)
+			functions[!cursor] = IR.Function(environment.unit.name + "." + lowered.name + "$" + str(cursor), lowered.body, lowered.parameters, lowered.result, lowered.types)
+		let function = functions[!cursor]
+		var instructions = Array[IR.Instruction]()
+		for instruction in function.body.instructions
+			match instruction
+				IR.Call(dst, target, arguments)
+					let module_id = template_modules.get(target) or -1
+					if module_id < 0
+						instructions = instructions.append(instruction)
+						continue
+					var concrete = Array[i64]()
+					for operand in arguments
+						if operand < 0 or operand >= len(function.types) or function.types[!operand] == IR.NO_TYPE
+							return IR.Module(functions, -1, table, "unresolved generic argument", function.body.line)
+						concrete = concrete.append(function.types[!operand])
+					let key = specialization_key(target, concrete)
+					var instance = instances.get(key) or -1
+					if instance < 0
+						if count >= 128
+							return IR.Module(functions, -1, table, "generic specialization limit exceeded", function.body.line)
+						instance = len(functions)
+						instances = instances.insert(key, instance)
+						pending = pending.insert(instance, Pending(target, concrete))
+						functions = functions.append(empty_template())
+						count += 1
+					instructions = instructions.append(IR.Call(dst, instance, arguments))
+				IR.EnumConstant | IR.EnumIndex | IR.MakeUnion | IR.CopyUnion | IR.RewrapValue | IR.UnionIndex | IR.TagTest | IR.TagAny | IR.UnionField | IR.UnionFields | IR.Trap | IR.MakeDict | IR.CopyDict | IR.DictLength | IR.DictInsert | IR.DictRead | IR.DictGet | IR.DictNext | IR.DictKey | IR.MakeArray | IR.CopyArray | IR.ArrayLength | IR.ArrayRead | IR.ArrayGet | IR.ArrayAppend | IR.ArraySet | IR.MakeRecord | IR.CopyRecord | IR.ReadField | IR.SetField | IR.Constant | IR.Negate | IR.Not | IR.Add | IR.Subtract | IR.Multiply | IR.Divide | IR.Remainder | IR.BitAnd | IR.BitOr | IR.ShiftLeft | IR.ShiftRight | IR.Copy | IR.Output | IR.Return | IR.Compare | IR.ValueCompare | IR.Branch | IR.ShortCircuit | IR.Jump | IR.Nop | IR.StringConstant | IR.StringCopy | IR.StringConcat | IR.StringLength | IR.StringCompare | IR.StringSlice | IR.StringStarts | IR.StringEnds | IR.StringFormat | IR.StringByteAt | IR.StringFind | IR.StringJoin | IR.MakeOptional | IR.OptionalCopy | IR.OptionalDefault | IR.OptionalUnwrap
+					instructions = instructions.append(instruction)
+		functions[!cursor] = IR.Function(function.name, IR.Program(instructions, function.body.slots, function.body.error, function.body.line), function.parameters, function.result, function.types)
+		cursor += 1
+
+	# No template placeholder survives into verified IR or generated C.
+	var remap = Array[i64]()
+	var compact = Array[IR.Function]()
+	for id in 0..len(functions)
+		if (template_modules.get(id) or -1) >= 0
+			remap = remap.append(-1)
+		else
+			remap = remap.append(len(compact))
+			compact = compact.append(functions[!id])
+	var finished = Array[IR.Function]()
+	for function in compact
+		var rewritten = Array[IR.Instruction]()
+		for instruction in function.body.instructions
+			match instruction
+				IR.Call(dst, target, arguments)
+					if target < 0 or target >= len(remap) or remap[!target] < 0
+						return IR.Module([], -1, table, "unresolved generic function target", function.body.line)
+					rewritten = rewritten.append(IR.Call(dst, remap[!target], arguments))
+				IR.EnumConstant | IR.EnumIndex | IR.MakeUnion | IR.CopyUnion | IR.RewrapValue | IR.UnionIndex | IR.TagTest | IR.TagAny | IR.UnionField | IR.UnionFields | IR.Trap | IR.MakeDict | IR.CopyDict | IR.DictLength | IR.DictInsert | IR.DictRead | IR.DictGet | IR.DictNext | IR.DictKey | IR.MakeArray | IR.CopyArray | IR.ArrayLength | IR.ArrayRead | IR.ArrayGet | IR.ArrayAppend | IR.ArraySet | IR.MakeRecord | IR.CopyRecord | IR.ReadField | IR.SetField | IR.Constant | IR.Negate | IR.Not | IR.Add | IR.Subtract | IR.Multiply | IR.Divide | IR.Remainder | IR.BitAnd | IR.BitOr | IR.ShiftLeft | IR.ShiftRight | IR.Copy | IR.Output | IR.Return | IR.Compare | IR.ValueCompare | IR.Branch | IR.ShortCircuit | IR.Jump | IR.Nop | IR.StringConstant | IR.StringCopy | IR.StringConcat | IR.StringLength | IR.StringCompare | IR.StringSlice | IR.StringStarts | IR.StringEnds | IR.StringFormat | IR.StringByteAt | IR.StringFind | IR.StringJoin | IR.MakeOptional | IR.OptionalCopy | IR.OptionalDefault | IR.OptionalUnwrap
+					rewritten = rewritten.append(instruction)
+		finished = finished.append(IR.Function(function.name, IR.Program(rewritten, function.body.slots, function.body.error, function.body.line), function.parameters, function.result, function.types))
+	return IR.Module(finished, remap[!entry], table, "", 0)

@@ -1069,9 +1069,11 @@ export def parse(source: string) -> State
 		while p.error == "" and text(p) != ")"
 			let parameter_name = p.index
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "parameter name")
-			p = expect(p, ":")
-			let type_token = p.index
-			p = annotation(p)
+			var type_token = -1
+			if text(p) == ":"
+				p.index += 1
+				type_token = p.index
+				p = annotation(p)
 			let parameter = node(p, Parameter(), -1, type_token, parameter_name)
 			p = parameter.state
 			parameters = parameters.append(parameter.node)

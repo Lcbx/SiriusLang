@@ -135,7 +135,10 @@ def context_for(parsed: Parser.State, expression: i64, expected: i64, table: IR.
 			argument = item.right
 	return result
 
-export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, external: Array[External], imported_types: Dict[string, i64], imported_constructors: Dict[string, Constructor], needs_main: bool) -> Checked
+# Concrete compilation checks only non-generic bodies. A selected specialization
+# checks one function under its concrete parameter types, retaining the same
+# source-local type/constructor visibility and external signature environment.
+def check_module_inner(parsed: Parser.State, initial_table: IR.TypeTable, external: Array[External], imported_types: Dict[string, i64], imported_constructors: Dict[string, Constructor], needs_main: bool, selected: i64, selected_types: Array[i64]) -> Checked
 	var type_table = initial_table
 	var record_types = imported_types
 	var constructors = imported_constructors
@@ -149,6 +152,7 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 	var signatures = Array[Signature]()
 	var external_targets = Array[i64]()
 	var functions = Dict[string, i64]()
+	var parameter_types = Dict[i64, i64]()
 	if parsed.error != ""
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, parsed.error, parsed.error_line)
 	# Pre-intern complete builtin array annotations before record declarations,
@@ -244,6 +248,7 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 		let id = record_types.get(name(parsed, record.token)) or IR.NO_TYPE
 		type_table = IR.intern_array(type_table, id).table
 	# Collect every signature before checking any body, including recursive calls.
+	var declaration_id = 0
 	for function in parsed.functions
 		let target = name(parsed, function.token)
 		var error = ""
@@ -256,14 +261,22 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 		elif target == "len" or target == "str" or target == "print" or target == "eprint"
 			error = "reserved builtin function: " + target
 		var parameters = Array[i64]()
+		var parameter_id = 0
 		for parameter in function.parameters
 			let token = parsed.nodes[!parameter].right
-			let resolved = resolve_type(parsed, token, type_table, record_types)
-			type_table = resolved.table
-			let type = resolved.type
-			if type == IR.NO_TYPE
-				error = "unknown type: " + name(parsed, token)
+			var type = IR.NO_TYPE
+			if token < 0
+				if declaration_id == selected and parameter_id < len(selected_types)
+					type = selected_types[!parameter_id]
+			else
+				let resolved = resolve_type(parsed, token, type_table, record_types)
+				type_table = resolved.table
+				type = resolved.type
+				if type == IR.NO_TYPE
+					error = "unknown type: " + name(parsed, token)
+			parameter_types = parameter_types.insert(parameter, type)
 			parameters = parameters.append(type)
+			parameter_id += 1
 		let resolved_result = resolve_type(parsed, function.result, type_table, record_types)
 		type_table = resolved_result.table
 		let result = resolved_result.type
@@ -275,6 +288,7 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, error, parsed.tokens[!function.token].line)
 		functions = functions.insert(target, len(signatures))
 		signatures = signatures.append(Signature(target, parameters, result))
+		declaration_id += 1
 	if needs_main and (functions.get("main") or -1) < 0
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, "missing main function", 1)
 	for item in external
@@ -287,6 +301,8 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 	for fid in 0..len(parsed.functions)
 		let function = parsed.functions[!fid]
 		for id in function.start..function.end
+			if (selected >= 0 and selected != fid) or (selected < 0 and generic_signature(signatures[!fid]))
+				continue
 			let node = parsed.nodes[!id]
 			if Parser.kind_is(node.kind, Parser.Return())
 				contexts = context_for(parsed, node.left, signatures[!fid].result, type_table, contexts)
@@ -305,6 +321,11 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 						parameters = parameters.append(field.type)
 				elif function_id >= 0
 					parameters = signatures[!function_id].parameters
+					if selected >= 0 and function_id == selected
+						for position in 0..len(parameters)
+							let parameter = parsed.functions[!selected].parameters[!position]
+							if parsed.nodes[!parameter].right < 0
+								parameters[!position] = IR.NO_TYPE
 				if len(parameters) == node.right
 					var argument = node.left
 					var position = node.right
@@ -331,6 +352,10 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 			bindings = Dict[string, Binding]()
 			scopes = Array[Dict[string, Binding]]()
 			depth = 0
+		if (selected >= 0 and selected != function_id) or (selected < 0 and generic_signature(signatures[!function_id]))
+			references = references.append(-1)
+			types = types.append(IR.NO_TYPE)
+			continue
 		let node = parsed.nodes[!i]
 		var reference = -1
 		var type = IR.NO_TYPE
@@ -631,9 +656,7 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 					error = accepted.error
 			Parser.Parameter
 				let target = name(parsed, node.token)
-				let resolved = resolve_type(parsed, node.right, type_table, record_types)
-				type_table = resolved.table
-				type = resolved.type
+				type = parameter_types.get(i) or IR.NO_TYPE
 				if (bindings.get(target) or Binding(-1, false, -1)).node >= 0
 					error = "duplicate parameter: " + target
 				bindings = bindings.insert(target, Binding(i, false, depth))
@@ -660,6 +683,11 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 					let signature = signatures[!reference]
 					type = signature.result
 					parameters = signature.parameters
+					if selected >= 0 and reference == selected
+						for position in 0..len(parameters)
+							let parameter = parsed.functions[!selected].parameters[!position]
+							if parsed.nodes[!parameter].right < 0
+								parameters[!position] = IR.NO_TYPE
 				if reference < -1
 					parameters = []
 				if error == ""
@@ -671,10 +699,11 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 						while argument >= 0
 							parameter -= 1
 							let item = parsed.nodes[!argument].left
-							let accepted = accept_value(parsed, type_table, item, types[!item], parameters[!parameter], conversions, "argument type mismatch: " + target)
-							conversions = accepted.conversions
-							if accepted.error != ""
-								error = accepted.error
+							if parameters[!parameter] != IR.NO_TYPE
+								let accepted = accept_value(parsed, type_table, item, types[!item], parameters[!parameter], conversions, "argument type mismatch: " + target)
+								conversions = accepted.conversions
+								if accepted.error != ""
+									error = accepted.error
 							argument = parsed.nodes[!argument].right
 			Parser.Return
 				type = signatures[!function_id].result
@@ -844,6 +873,19 @@ export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, exter
 	return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, "", 0)
 
 # Preserve the explicit single-file entry point and rejection of imports.
+# A generic template is identified by one or more omitted parameter types.
+export def generic_signature(signature: Signature) -> bool
+	for parameter in signature.parameters
+		if parameter == IR.NO_TYPE
+			return true
+	return false
+
+export def check_specialization(parsed: Parser.State, initial_table: IR.TypeTable, external: Array[External], imported_types: Dict[string, i64], imported_constructors: Dict[string, Constructor], function_id: i64, arguments: Array[i64]) -> Checked
+	return check_module_inner(parsed, initial_table, external, imported_types, imported_constructors, false, function_id, arguments)
+
+export def check_module(parsed: Parser.State, initial_table: IR.TypeTable, external: Array[External], imported_types: Dict[string, i64], imported_constructors: Dict[string, Constructor], needs_main: bool) -> Checked
+	return check_module_inner(parsed, initial_table, external, imported_types, imported_constructors, needs_main, -1, [])
+
 export def check(parsed: Parser.State) -> Checked
 	if len(parsed.imports) != 0
 		let table = IR.runtime_types()

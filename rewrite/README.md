@@ -47,10 +47,26 @@ arrays, optionals and dictionaries. C emission, ownership and CoW are shared
 with the single-file compiler. The original two-argument single-file CLI is
 unchanged, and deliberately rejects sources that contain imports.
 
-This is **not** complete module support: cross-module generic specialization,
-source-to-source module re-exports, and some constructor/type forms remain
-deferred. Modules must form an acyclic graph and imported function signatures
-must be explicitly typed. See [`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py),
+The module-linking path supports a first stage of **generic specialization**:
+parameters may omit their type annotations, but the function result must still
+be explicitly annotated with a concrete type. A function such as
+`export def length(values) -> i64` specializes at each call site, including
+transitive imported calls. An instance is cached by defining function identity
+and canonical concrete argument types; recursive calls of the same signature
+reuse the instance. Template bodies are checked in their defining module's
+scope for each requested instantiation, including private helpers and types.
+The linker removes unspecialized template placeholders before IR verification
+and C emission. A conservative limit of 128 new instances per linked program
+rejects runaway polymorphic recursion. Generated C is deterministic, and
+managed values retain ARC and CoW semantics. See
+[`tests/test_rewrite_generics.py`](tests/test_rewrite_generics.py).
+
+This is **not** complete module/generic support: result-type inference, generic
+specialization in the two-argument single-file CLI, source-to-source re-exports,
+and some constructor/type forms remain deferred. A generic template with no
+call sites is parsed but not body-checked until instantiated; ordinary concrete
+functions continue to be checked eagerly. Modules must form an acyclic graph.
+See [`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py),
 [`tests/test_rewrite_linked_modules.py`](tests/test_rewrite_linked_modules.py),
 and [`tests/test_rewrite_imported_unions.py`](tests/test_rewrite_imported_unions.py).
 

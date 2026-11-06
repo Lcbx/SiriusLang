@@ -19,7 +19,8 @@ fields; recursive field/index updates now work for supported aggregate types,
 including recursive `Array[T]` layouts for supported scalars and records.
 Acyclic source-module linking is implemented for exported functions, records,
 enums and tagged unions, including qualified constructors and match arms;
-generic specialization and re-exports remain unimplemented.
+generic specialization with explicit result annotations is implemented for
+linked modules; inferred generic results and re-exports remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
 including records stored in arrays.
@@ -248,9 +249,16 @@ invalid payloads and incompatible grouped binders fail.
 
 ### 5. Specialization required by the compiler
 
-- [ ] Specialize functions with omitted parameter types from concrete call sites;
-  infer results and cache specializations by function identity and argument types.
-  Require annotations where recursive result inference cannot terminate.
+- [x] Specialize omitted parameter types at concrete call sites of linked
+  modules and cache by defining function ID and concrete argument types.
+  Support imported and transitive calls, recursive reuse, deterministic output,
+  ARC and CoW, with a bounded expansion for polymorphic recursion.
+  `tests/test_rewrite_generics.py` covers native execution and invalid cases.
+- [ ] Infer generic result types and allow specialization in standalone
+  single-file compilation. For now every generic function requires an explicit
+  concrete result annotation, and templates are instantiated only by the
+  source-module linker. Require annotations when recursive inference cannot
+  terminate.
 - [ ] Implement the generic comparison and output operations required by
   compiler sources, specializing native C operations by checked type.
   Reject unsupported operations during checking.
@@ -274,8 +282,11 @@ functions, lambdas and general callback inference are not needed by today's grap
 - [x] Resolve imported enum/union constructors, index operations, and match
   qualifiers through the importing module's own aliases, without importing
   private declarations as unqualified names.
-- [ ] Add cross-module generic specialization and any other syntax used by
-  the rewrite's own compiler graph.
+- [x] Implement cross-module specialization of explicitly result-typed
+  generic functions with omitted parameter annotations and source-local
+  visibility. Intern concrete type descriptors and eliminate unused templates.
+- [ ] Add generic result inference, remaining type/constructor syntax, and any
+  other constructs required by the rewrite's own compiler graph.
 - [ ] Support `arguments()`, `read_text` and `write_text`, including failure
   results, argument arrays, and `Optional[string]` early exits used by the CLI.
 - [x] Add `--compile-modules root Entry output.c`, rooted at the entry
