@@ -99,7 +99,7 @@ export rec Record(token: i64, fields: Array[Field])
 export rec Enum(token: i64, labels: Array[i64])
 export rec UnionAlias(token: i64, labels: Array[i64])
 export rec Import(path: string, alias: string, token: i64)
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], unions: Array[UnionAlias], imports: Array[Import], exports: Dict[string, bool], match_qualifiers: Dict[i64, i64], index: i64, error: string, error_line: i64)
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], unions: Array[UnionAlias], imports: Array[Import], exports: Dict[string, bool], match_qualifiers: Dict[i64, i64], qualified_calls: Dict[i64, i64], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -313,11 +313,65 @@ def expression(p: State, minimum: i64) -> Parsed
 			var qualifier = next
 			qualifier.index += 1
 			let label_token = qualifier.index
-			if qualifier.tokens[!label_token].kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == "(" and text(qualifier) != "get" and text(qualifier) != "insert" and text(qualifier) != "append" and text(qualifier) != "slice" and text(qualifier) != "starts_with" and text(qualifier) != "ends_with" and text(qualifier) != "byte_at" and text(qualifier) != "find" and text(qualifier) != "join"
+			# Three-part names are reserved for imported enum/union members:
+			# Alias.Type.Label(...), Alias.Type.index(...). Keep local field
+			# access and ordinary two-part imported calls unchanged.
+			var imported_receiver = false
+			let receiver = next.source.slice(next.tokens[!token].start, next.tokens[!token].end)
+			for imported in next.imports
+				if imported.alias == receiver
+					imported_receiver = true
+			if imported_receiver and qualifier.tokens[!label_token].kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == "."
+				let type_token = label_token
+				qualifier.index += 1
+				qualifier = expect(qualifier, ".")
+				let member_token = qualifier.index
+				let member = text(qualifier)
+				qualifier = expect_kind(qualifier, Lex.TokenKind.index(Lex.Name), "imported type member")
+				qualifier = expect(qualifier, "(")
+				if member == "index"
+					if current(qualifier).kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == ")"
+						let argument_token = qualifier.index
+						qualifier.index += 1
+						result = node(expect(qualifier, ")"), EnumIndex(), -1, argument_token, type_token)
+					else
+						let input = expression(qualifier, PREC_OR)
+						result = node(expect(input.state, ")"), EnumIndex(), input.node, -1, type_token)
+				elif text(qualifier) == ")"
+					result = node(expect(qualifier, ")"), EnumConstruct(), member_token, -1, type_token)
+				else
+					let payload = expression(qualifier, PREC_OR)
+					result = node(expect(payload.state, ")"), UnionConstruct(), payload.node, member_token, type_token)
+				if result.node >= 0
+					result.state.qualified_calls = result.state.qualified_calls.insert(result.node, token)
+			elif qualifier.tokens[!label_token].kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == "(" and text(qualifier) != "get" and text(qualifier) != "insert" and text(qualifier) != "append" and text(qualifier) != "slice" and text(qualifier) != "starts_with" and text(qualifier) != "ends_with" and text(qualifier) != "byte_at" and text(qualifier) != "find" and text(qualifier) != "join"
 				let member = text(qualifier)
 				qualifier.index += 1
 				qualifier = expect(qualifier, "(")
-				if member == "index"
+				var imported_alias = false
+				let receiver = next.source.slice(next.tokens[!token].start, next.tokens[!token].end)
+				for imported in next.imports
+					if imported.alias == receiver
+						imported_alias = true
+				if imported_alias
+					var arguments = -1
+					var count = 0
+					while qualifier.error == "" and text(qualifier) != ")"
+						let value = expression(qualifier, PREC_OR)
+						let argument = node(value.state, Argument(), value.node, arguments, token)
+						qualifier = argument.state
+						arguments = argument.node
+						count += 1
+						if text(qualifier) != ","
+							break
+						qualifier.index += 1
+						if text(qualifier) == ")"
+							qualifier = fail(qualifier, "expected argument after comma")
+					let called = node(expect(qualifier, ")"), Call(), arguments, count, label_token)
+					result = called
+					if result.node >= 0
+						result.state.qualified_calls = result.state.qualified_calls.insert(result.node, token)
+				elif member == "index"
 					# A bare name may denote a label type or a local value.
 					if current(qualifier).kind == Lex.TokenKind.index(Lex.Name) and next_text(qualifier) == ")"
 						let argument_token = qualifier.index
@@ -541,6 +595,7 @@ def block(initial: State, loop_start: i64) -> State
 			while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Dedent) and current(p).kind != Lex.TokenKind.index(Lex.Eof)
 				var labels = Array[i64]()
 				var qualifiers = Array[i64]()
+				var modules = Array[i64]()
 				let parenthesized = text(p) == "("
 				if parenthesized
 					p = expect(p, "(")
@@ -549,14 +604,22 @@ def block(initial: State, loop_start: i64) -> State
 					let first_token = p.index
 					p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative")
 					var qualifier = -1
+					var module_token = -1
 					var label = first_token
 					if text(p) == "."
 						qualifier = first_token
 						p = expect(p, ".")
 						label = p.index
 						p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative after qualifier")
+						if text(p) == "."
+							module_token = qualifier
+							qualifier = label
+							p = expect(p, ".")
+							label = p.index
+							p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative after type")
 					labels = labels.append(label)
 					qualifiers = qualifiers.append(qualifier)
+					modules = modules.append(module_token)
 					if text(p) == "|"
 						p = expect(p, "|")
 					else
@@ -587,6 +650,8 @@ def block(initial: State, loop_start: i64) -> State
 					p = candidate.state
 					if qualifiers[!j] >= 0
 						p.match_qualifiers = p.match_qualifiers.insert(candidate.node, qualifiers[!j])
+					if modules[!j] >= 0
+						p.qualified_calls = p.qualified_calls.insert(candidate.node, modules[!j])
 				let group = node(p, MatchGroup(), first, len(p.nodes) - 1, labels[!0])
 				let branch = node(group.state, If(), group.node, -1, labels[!0])
 				p = branch.state
@@ -896,7 +961,7 @@ def name_text(p: State, token_id: i64) -> string
 
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), Array[UnionAlias](), Array[Import](), Dict[string, bool](), Dict[i64, i64](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), Array[UnionAlias](), Array[Import](), Dict[string, bool](), Dict[i64, i64](), Dict[i64, i64](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)

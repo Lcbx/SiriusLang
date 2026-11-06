@@ -15,22 +15,44 @@ Run `python tools/test_all.py --group rewrite` from the repository root, or
 `python rewrite/tests/test_rewrite_match.py` for a single suite. The original
 compiler's bootstrap and source tree are unchanged.
 
-Source-module front-end groundwork is implemented in
-[`src/modules.sirius`](src/modules.sirius): `import Path.Module alias Local` and
-`export def`/`rec`/`enum`/union-`let` declarations are parsed and retained.
-`Modules.load(root, entry)` reads acyclic source graphs rooted at
-`root/Path/Module.sirius`, rejects missing files, malformed module names,
-import cycles, duplicate aliases and local alias/declaration conflicts, and
-returns units in deterministic dependency-before-consumer order. Its
-`imported_visibility` query distinguishes exported, private, and missing
-members through the consumer's explicit alias. The rewrite CLI also accepts
-`--check-modules source-root Entry`, which prints that traversal order; this
-is a graph checker, **not** module compilation. Single-file `export`
-declarations compile as before, but sources with imports are explicitly
-rejected by the single-file checker until cross-module checking and linking
-are implemented. Qualified type annotations can now be parsed, but cannot
-be resolved by the single-file checker. See
-[`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py).
+Source-module loading and initial linking live in
+[`src/modules.sirius`](src/modules.sirius), [`src/semantic.sirius`](src/semantic.sirius)
+and [`src/lower.sirius`](src/lower.sirius). `import Path.Module alias Local`
+resolves modules under `source-root/Path/Module.sirius`. Acyclic dependencies
+are checked in source order and linked dependency-first. Private declarations
+are not visible through aliases; exported function signatures, record types,
+record constructors, enum types and union aliases can be referred to from the
+importing module where supported. Types share one canonical descriptor table;
+function IDs are stable in traversal/source order, not dictionary order.
+The source-module CLI is:
+
+```sh
+rewrite --check-modules source-root Entry
+rewrite --compile-modules source-root Entry generated.c
+```
+
+For example, `import Util alias U` permits `U.make(3)` and a
+`let value: U.Box = U.Box(3)` for an exported record `Box`.
+Exported enum and tagged-union aliases use three-part names for labels:
+`U.Color.Red()`, `U.Value.Number(U.Number(3))`,
+`U.Color.index(U.Color.Red())`, and match arms such as
+`(U.Value.Number | U.Value.Word)(n, text)` when their payload binder types
+agree. A public union's private record alternatives remain matchable via
+`U.Value.Alternative`, but private record *constructors* are not exported.
+Imported positional match bindings use the declaring module's constructor
+field order; canonical descriptor field order is never substituted.
+Imported function calls are statically checked (including nested and
+transitive dependencies); exported functions may accept and return records,
+arrays, optionals and dictionaries. C emission, ownership and CoW are shared
+with the single-file compiler. The original two-argument single-file CLI is
+unchanged, and deliberately rejects sources that contain imports.
+
+This is **not** complete module support: cross-module generic specialization,
+source-to-source module re-exports, and some constructor/type forms remain
+deferred. Modules must form an acyclic graph and imported function signatures
+must be explicitly typed. See [`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py),
+[`tests/test_rewrite_linked_modules.py`](tests/test_rewrite_linked_modules.py),
+and [`tests/test_rewrite_imported_unions.py`](tests/test_rewrite_imported_unions.py).
 
 The first component is a lexer with compact integer kinds derived from
 `TokenKind.index(label)`. These indices are internal to the rewrite, not
@@ -137,7 +159,7 @@ relabeled. Distinct dictionary key types cannot be coerced. The typed
 `RewrapValue` IR instruction is checked before code emission and uses generated
 C helpers with owned results. `tests/test_rewrite_aggregate_rewrap.py` and
 `tests/drivers/rewrap_ir_test_driver.sirius` cover these operations with ARC
-and invalid-program checks. Imported qualified constructors remain unsupported.
+and invalid-program checks.
 `==` and `!=` compare records, optionals, enums and unions structurally:
 records compare corresponding canonical fields, unions compare both their
 label and payload, and optionals distinguish absent from present values.
@@ -182,10 +204,12 @@ Patterns may qualify alternatives with an existing type name, for example
 requires that the qualifier describe the scrutinee's canonical enum/union
 type; structurally equivalent type aliases are accepted. Qualified and bare
 references to the same tag count as duplicates, including across grouped arms.
-Shared binders retain the same positional and ownership rules. This currently
-covers names declared in the source file only: imported module names and
-constructors require module loading. Nested field patterns and wildcard/default
-arms remain unsupported.
+Shared binders retain the same positional and ownership rules. Imported
+`Alias.Union.Label` and `Alias.Enum.Label` work with linked source modules,
+including shared bindings for qualified union alternatives. Only exported type
+aliases are accessible; a public union can nevertheless be destructured when
+its underlying record declarations are private. Nested field patterns and
+wildcard/default arms remain unsupported.
 `python rewrite/tests/test_rewrite_unions.py` covers the native subset and ARC;
 `tests/drivers/union_ir_test_driver.sirius` checks type/IR verification.
 `python rewrite/tests/test_rewrite_enums.py` checks enum native execution, invalid

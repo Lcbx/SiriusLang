@@ -17,7 +17,9 @@ copies and calls in native C. `Array[i64]` and `Array[string]` now support liter
 checked reads and CoW updates, including arrays of records with managed
 fields; recursive field/index updates now work for supported aggregate types,
 including recursive `Array[T]` layouts for supported scalars and records.
-A module loader remains unimplemented.
+Acyclic source-module linking is implemented for exported functions, records,
+enums and tagged unions, including qualified constructors and match arms;
+generic specialization and re-exports remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
 including records stored in arrays.
@@ -209,8 +211,9 @@ missing lookups, managed defaults and shared updates are covered.
   separate array/dictionary storage (rather than aliasing incompatible
   element layouts) with ARC-safe copies. CoW snapshots and malformed IR are
   covered in `tests/test_rewrite_aggregate_rewrap.py` and its IR driver.
-- [ ] Support qualified imported constructors; module loading remains a
-  prerequisite.
+- [x] Support qualified imported record constructors (`Alias.Record(...)`)
+  through a module-specific public interface and shared canonical descriptors.
+  Imported enum/union label constructors are covered separately below.
 - [x] Add exhaustive `match` over enums and labeled unions with bare tags,
   positional record-field bindings, duplicate/missing-label checks and native
   tag tests/field extraction. Matched fields are owned copies with ARC/CoW;
@@ -226,9 +229,13 @@ missing lookups, managed defaults and shared updates are covered.
   compatibility against the scrutinee's canonical type, and reject duplicate
   alternatives regardless of spelling. The same native + ARC fixture suite
   checks valid patterns and invalid qualifiers.
-- [ ] Extend qualified type/constructor references and match patterns to
-  imported modules after source loading is implemented. Nested field patterns
-  and wildcard/default arms are deferred.
+- [x] Extend enum/union label constructors, `.index` and qualified matches to
+  imported modules (`Alias.Type.Label`). Shared positional binders use the
+  defining module's constructor field order, even for private record variants
+  of public unions. Public type access is enforced without exporting private
+  constructors. Native ARC and invalid-source cases are covered by
+  `tests/test_rewrite_imported_unions.py`. Nested field patterns and
+  wildcard/default arms are deferred.
 - [x] Implement `==` and `!=` for enums, records, tagged unions and optionals
   using typed descriptors, without nominalizing records. Recursive record
   fields compare arrays and dictionaries by value; direct collection comparison
@@ -259,14 +266,21 @@ functions, lambdas and general callback inference are not needed by today's grap
   public/private member visibility queries. Expose a parse-only CLI
   `--check-modules root Entry`; `tests/test_rewrite_modules.py` covers missing
   imports, alias conflicts, cycles and repeatable dependency order.
-- [ ] Load acyclic source imports with aliases and exports; preserve private
-  names, qualified type/constructor references and cross-module specialization.
-  Assign stable symbols and emission order independent of dictionary iteration.
+- [x] Link acyclic source imports with explicit aliases, private/public
+  boundaries, exported typed function calls, record types and constructors;
+  share canonical descriptors, and assign stable function IDs in source order.
+  Cover transitive calls, managed record payloads, invalid imports and ARC
+  with `tests/test_rewrite_linked_modules.py`.
+- [x] Resolve imported enum/union constructors, index operations, and match
+  qualifiers through the importing module's own aliases, without importing
+  private declarations as unqualified names.
+- [ ] Add cross-module generic specialization and any other syntax used by
+  the rewrite's own compiler graph.
 - [ ] Support `arguments()`, `read_text` and `write_text`, including failure
   results, argument arrays, and `Optional[string]` early exits used by the CLI.
-- [ ] Add a source-module compilation entry point rooted at `main`, while keeping
-  single-file compilation. Define the actual CLI before documenting
-  a bootstrap command; no existing artifact formats are required for this stage.
+- [x] Add `--compile-modules root Entry output.c`, rooted at the entry
+  module's `main` and keeping the original single-file CLI unchanged. The
+  compile path verifies one linked IR module before C emission.
 
 Exit checks: compile [lexer.sirius](src/lexer.sirius) with its test driver first, then
 the parser, checker, IR verifier and full compiler graph. Test missing/private

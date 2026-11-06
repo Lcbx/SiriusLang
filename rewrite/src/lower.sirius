@@ -2,12 +2,15 @@ import parser alias Parser
 import lexer alias Lex
 import semantic alias Semantic
 import ir alias IR
+import modules alias Modules
 
 let DECIMAL_RADIX = 10
 let I64_MAX_DECIMAL_PREFIX = 922337203685477580
 let I64_MAX_DECIMAL_LAST_DIGIT = 7
 
 rec Decoded(value: string, error: string)
+rec ExportedType(name: string, type: i64)
+rec ExportedConstructor(name: string, constructor: Semantic.Constructor)
 
 def decode(source: string, begin: i64, end: i64, interpolated: bool) -> Decoded
 	var parts = Array[string]()
@@ -63,7 +66,7 @@ def input_slot(id: i64, redirected: Dict[i64, i64]) -> i64
 		return id
 	return redirected.get(id) or id
 
-def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
+def lower_function(checked: Semantic.Checked, function_id: i64, function_base: i64) -> IR.Program
 	let parsed = checked.parsed
 	let source = parsed.source
 	let function = parsed.functions[!function_id]
@@ -228,7 +231,12 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 								fields = fields.append(arguments[!parameter])
 					instructions = instructions.append(IR.MakeRecord(i, constructor.type, fields))
 				else
-					instructions = instructions.append(IR.Call(i, checked.references[!i], arguments))
+					var target = checked.references[!i]
+					if target < len(parsed.functions)
+						target += function_base
+					else
+						target = checked.external_targets[!target - len(parsed.functions)]
+					instructions = instructions.append(IR.Call(i, target, arguments))
 			Parser.OptionalConstruct
 				instructions = instructions.append(IR.MakeOptional(i, input_slot(node.left, redirects)))
 			Parser.OptionalUnwrap
@@ -412,16 +420,15 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 		local = local.append(IR.rebase(mapped, function.start))
 	return IR.prune(IR.Program(local, function.end - function.start + len(extra_types), "", parsed.tokens[!function.token].line))
 
-export def lower(source: string) -> IR.Module
-	let checked = Semantic.check(Parser.parse(source))
+def lower_checked(checked: Semantic.Checked, function_base: i64) -> IR.Module
 	var functions = Array[IR.Function]()
 	if checked.error != ""
 		return IR.Module(functions, -1, checked.type_table, checked.error, checked.line)
 	var entry = -1
-	for id in 0..len(checked.signatures)
+	for id in 0..len(checked.parsed.functions)
 		let signature = checked.signatures[!id]
 		let parsed = checked.parsed.functions[!id]
-		let body = lower_function(checked, id)
+		let body = lower_function(checked, id, function_base)
 		if body.error != ""
 			return IR.Module(functions, -1, checked.type_table, body.error, body.line)
 		var types = Array[i64]()
@@ -433,5 +440,83 @@ export def lower(source: string) -> IR.Module
 				types = types.append(conversion.type)
 		functions = functions.append(IR.Function(signature.name, body, signature.parameters, signature.result, types))
 		if signature.name == "main"
-			entry = id
+			entry = function_base + id
 	return IR.Module(functions, entry, checked.type_table, "", 0)
+
+export def lower(source: string) -> IR.Module
+	return lower_checked(Semantic.check(Parser.parse(source)), 0)
+
+# Every source has its own checker environment. Public signatures are carried
+# across edges explicitly; only their declaring modules own their function
+# bodies. A single canonical descriptor table is shared by all checked units.
+export def lower_graph(graph: Modules.Graph) -> IR.Module
+	var functions = Array[IR.Function]()
+	var table = IR.runtime_types()
+	if graph.error != ""
+		return IR.Module(functions, -1, table, graph.error, 0)
+	var exported = Dict[string, Array[Semantic.External]]()
+	var public_types = Dict[string, Array[ExportedType]]()
+	var public_constructors = Dict[string, Array[ExportedConstructor]]()
+	var entry = -1
+	for unit in graph.units
+		var external = Array[Semantic.External]()
+		for imported in unit.parsed.imports
+			let exposed = exported.get(imported.path) or Array[Semantic.External]()
+			for item in exposed
+				external = external.append(Semantic.External(imported.alias + "." + item.name, item.signature, item.function_id))
+		var types = Dict[string, i64]()
+		var constructors = Dict[string, Semantic.Constructor]()
+		for imported in unit.parsed.imports
+			let exposed_types = public_types.get(imported.path) or Array[ExportedType]()
+			for member in exposed_types
+				types = types.insert(imported.alias + "." + member.name, member.type)
+			let exposed_constructors = public_constructors.get(imported.path) or Array[ExportedConstructor]()
+			for member in exposed_constructors
+				constructors = constructors.insert(imported.alias + "." + member.name, member.constructor)
+		let is_entry = unit.name == graph.units[!len(graph.units) - 1].name
+		let checked = Semantic.check_module(unit.parsed, table, external, types, constructors, is_entry)
+		if checked.error != ""
+			return IR.Module(functions, -1, checked.type_table, unit.name + ": " + checked.error, checked.line)
+		let base = len(functions)
+		let lowered = lower_checked(checked, base)
+		if lowered.error != ""
+			return IR.Module(functions, -1, checked.type_table, unit.name + ": " + lowered.error, lowered.line)
+		table = lowered.type_table
+		var public_functions = Array[Semantic.External]()
+		for id in 0..len(lowered.functions)
+			let function = lowered.functions[!id]
+			let signature = checked.signatures[!id]
+			if unit.parsed.exports.get(signature.name) or false
+				public_functions = public_functions.append(Semantic.External(signature.name, signature, base + id))
+			functions = functions.append(IR.Function(unit.name + "." + function.name, function.body, function.parameters, function.result, function.types))
+		exported = exported.insert(unit.name, public_functions)
+		var unit_types = Array[ExportedType]()
+		var unit_constructors = Array[ExportedConstructor]()
+		for record in unit.parsed.records
+			let token = unit.parsed.tokens[!record.token]
+			let name = unit.parsed.source.slice(token.start, token.end)
+			if unit.parsed.exports.get(name) or false
+				unit_types = unit_types.append(ExportedType(name, checked.declared_types.get(name) or IR.NO_TYPE))
+				unit_constructors = unit_constructors.append(ExportedConstructor(name, checked.declared_constructors.get(name) or Semantic.Constructor(IR.NO_TYPE, [])))
+		for enumeration in unit.parsed.enums
+			let token = unit.parsed.tokens[!enumeration.token]
+			let name = unit.parsed.source.slice(token.start, token.end)
+			if unit.parsed.exports.get(name) or false
+				unit_types = unit_types.append(ExportedType(name, checked.declared_types.get(name) or IR.NO_TYPE))
+		for alias in unit.parsed.unions
+			let token = unit.parsed.tokens[!alias.token]
+			let name = unit.parsed.source.slice(token.start, token.end)
+			if unit.parsed.exports.get(name) or false
+				unit_types = unit_types.append(ExportedType(name, checked.declared_types.get(name) or IR.NO_TYPE))
+				# Expose the positional binding layout only *through* the public
+				# union type; private record constructors themselves stay private.
+				for alternative in alias.labels
+					let label_token = unit.parsed.tokens[!alternative]
+					let label = unit.parsed.source.slice(label_token.start, label_token.end)
+					let declaration = checked.declared_constructors.get(label) or Semantic.Constructor(IR.NO_TYPE, [])
+					unit_constructors = unit_constructors.append(ExportedConstructor(name + "." + label, declaration))
+		public_types = public_types.insert(unit.name, unit_types)
+		public_constructors = public_constructors.insert(unit.name, unit_constructors)
+		if is_entry
+			entry = lowered.entry
+	return IR.Module(functions, entry, table, "", 0)
