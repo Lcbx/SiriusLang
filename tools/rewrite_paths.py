@@ -12,4 +12,4 @@ BENCHMARKS = REWRITE / 'benchmarks'
 ENTRY = SOURCE / 'main.sirius'
 MODULES = tuple(SOURCE / name for name in (
     'lexer.sirius', 'parser.sirius', 'semantic.sirius', 'ir.sirius',
-    'lower.sirius', 'emit_c.sirius'))
+    'lower.sirius', 'emit_c.sirius', 'modules.sirius'))

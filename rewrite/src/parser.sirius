@@ -98,7 +98,8 @@ export rec Field(token: i64, annotation: i64)
 export rec Record(token: i64, fields: Array[Field])
 export rec Enum(token: i64, labels: Array[i64])
 export rec UnionAlias(token: i64, labels: Array[i64])
-export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], unions: Array[UnionAlias], index: i64, error: string, error_line: i64)
+export rec Import(path: string, alias: string, token: i64)
+export rec State(source: string, tokens: Array[Lex.Token], nodes: Array[Node], functions: Array[Function], records: Array[Record], enums: Array[Enum], unions: Array[UnionAlias], imports: Array[Import], exports: Dict[string, bool], match_qualifiers: Dict[i64, i64], index: i64, error: string, error_line: i64)
 export rec Parsed(state: State, node: i64)
 
 export def kind_is(kind: NodeKind, expected: NodeKind) -> bool
@@ -513,7 +514,13 @@ def annotation(p: State) -> State
 		result = expect(result, "[")
 		result = annotation(result)
 		return expect(result, "]")
-	return expect_kind(result, Lex.TokenKind.index(Lex.Name), "type name")
+	result = expect_kind(result, Lex.TokenKind.index(Lex.Name), "type name")
+	# Preserve module-qualified annotations for source import resolution. The
+	# single-file checker still diagnoses them as unsupported until linking.
+	while result.error == "" and text(result) == "."
+		result.index += 1
+		result = expect_kind(result, Lex.TokenKind.index(Lex.Name), "qualified type member")
+	return result
 
 def block(initial: State, loop_start: i64) -> State
 	var p = initial
@@ -533,14 +540,23 @@ def block(initial: State, loop_start: i64) -> State
 			var arms = 0
 			while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Dedent) and current(p).kind != Lex.TokenKind.index(Lex.Eof)
 				var labels = Array[i64]()
+				var qualifiers = Array[i64]()
 				let parenthesized = text(p) == "("
 				if parenthesized
 					p = expect(p, "(")
 				var more = true
 				while p.error == "" and more
-					let label = p.index
+					let first_token = p.index
 					p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative")
+					var qualifier = -1
+					var label = first_token
+					if text(p) == "."
+						qualifier = first_token
+						p = expect(p, ".")
+						label = p.index
+						p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "match alternative after qualifier")
 					labels = labels.append(label)
+					qualifiers = qualifiers.append(qualifier)
 					if text(p) == "|"
 						p = expect(p, "|")
 					else
@@ -566,8 +582,11 @@ def block(initial: State, loop_start: i64) -> State
 					else
 						arity = len(binders)
 				let first = len(p.nodes)
-				for label in labels
-					p = node(p, MatchCase(), subject.node, arity, label).state
+				for j in 0..len(labels)
+					let candidate = node(p, MatchCase(), subject.node, arity, labels[!j])
+					p = candidate.state
+					if qualifiers[!j] >= 0
+						p.match_qualifiers = p.match_qualifiers.insert(candidate.node, qualifiers[!j])
 				let group = node(p, MatchGroup(), first, len(p.nodes) - 1, labels[!0])
 				let branch = node(group.state, If(), group.node, -1, labels[!0])
 				p = branch.state
@@ -871,15 +890,49 @@ def block(initial: State, loop_start: i64) -> State
 		return p
 	return expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
 
+def name_text(p: State, token_id: i64) -> string
+	let token = p.tokens[!token_id]
+	return p.source.slice(token.start, token.end)
+
 export def parse(source: string) -> State
 	let tokens = Lex.tokenize(source)
-	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), Array[UnionAlias](), 0, "", 0)
+	var p = State(source, tokens, Array[Node](), Array[Function](), Array[Record](), Array[Enum](), Array[UnionAlias](), Array[Import](), Dict[string, bool](), Dict[i64, i64](), 0, "", 0)
 	for token in tokens
 		if token.kind >= Lex.TokenKind.index(Lex.InvalidChar)
 			p.error = Lex.label(token.kind)
 			p.error_line = token.line
 			return p
 	while p.error == "" and current(p).kind != Lex.TokenKind.index(Lex.Eof)
+		if text(p) == "import"
+			let declaration = p.index
+			p.index += 1
+			let first = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "imported module")
+			var path = name_text(p, first)
+			while p.error == "" and text(p) == "."
+				p.index += 1
+				let segment = p.index
+				p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "module path segment")
+				if p.error == ""
+					path += "." + name_text(p, segment)
+			p = expect(p, "alias")
+			let alias_token = p.index
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Name), "import alias")
+			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
+			if p.error == ""
+				let alias = name_text(p, alias_token)
+				for previous in p.imports
+					if previous.alias == alias
+						p = fail(p, "duplicate import alias: " + alias)
+				p.imports = p.imports.append(Import(path, alias, declaration))
+			continue
+		var exported = false
+		if text(p) == "export"
+			exported = true
+			p.index += 1
+			if text(p) != "enum" and text(p) != "rec" and text(p) != "let" and text(p) != "def"
+				p = fail(p, "export requires a declaration")
+				continue
 		if text(p) == "enum"
 			p.index += 1
 			let enum_name = p.index
@@ -895,6 +948,8 @@ export def parse(source: string) -> State
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Dedent), "dedent")
 			if p.error == ""
 				p.enums = p.enums.append(Enum(enum_name, labels))
+				if exported
+					p.exports = p.exports.insert(name_text(p, enum_name), true)
 			continue
 		if text(p) == "let"
 			p.index += 1
@@ -912,6 +967,8 @@ export def parse(source: string) -> State
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
 			if p.error == ""
 				p.unions = p.unions.append(UnionAlias(union_name, labels))
+				if exported
+					p.exports = p.exports.insert(name_text(p, union_name), true)
 			continue
 		if text(p) == "rec"
 			p.index += 1
@@ -935,6 +992,8 @@ export def parse(source: string) -> State
 			p = expect_kind(p, Lex.TokenKind.index(Lex.Newline), "newline")
 			if p.error == ""
 				p.records = p.records.append(Record(record_name, fields))
+				if exported
+					p.exports = p.exports.insert(name_text(p, record_name), true)
 			continue
 		p = expect(p, "def")
 		let name = p.index
@@ -963,6 +1022,8 @@ export def parse(source: string) -> State
 		p = block(p, -1)
 		if p.error == ""
 			p.functions = p.functions.append(Function(name, parameters, result, start, len(p.nodes)))
+			if exported
+				p.exports = p.exports.insert(name_text(p, name), true)
 	return expect_kind(p, Lex.TokenKind.index(Lex.Eof), "end of file")
 
 

@@ -1,0 +1,136 @@
+import parser alias Parser
+
+# The source graph is constructed by DFS in import/source order. Units are
+# stored postorder (dependencies first); no dictionary traversal determines
+# compilation order. This is a frontend loader, not a MIR linker.
+export rec Unit(name: string, parsed: Parser.State)
+export rec Graph(units: Array[Unit], visits: Dict[string, i64], error: string)
+
+# Only dotted Sirius identifiers are accepted. This keeps imports inside the
+# caller-provided source root (no slashes, empty segments or '..' traversal).
+export def valid_name(name: string) -> bool
+	if len(name) == 0
+		return false
+	var at_start = true
+	for i in 0..len(name)
+		let c = name.byte_at(i) or 0
+		if c == 46 # dot
+			if at_start
+				return false
+			at_start = true
+			continue
+		let letter = (c >= 65 and c <= 90) or (c >= 97 and c <= 122) or c == 95
+		let digit = c >= 48 and c <= 57
+		if not letter and (at_start or not digit)
+			return false
+		at_start = false
+	return not at_start
+
+def file_path(root: string, name: string) -> string
+	var result = root + "/"
+	for i in 0..len(name)
+		let c = name.byte_at(i) or 0
+		if c == 46
+			result += "/"
+		else
+			result += name.slice(i, i + 1)
+	return result + ".sirius"
+
+# Public/private/missing is determined by the defining source, never the
+# consumer's scope. Import aliases are not transitive public re-exports.
+export def visibility(graph: Graph, module: string, member: string) -> string
+	for unit in graph.units
+		if unit.name != module
+			continue
+		if unit.parsed.exports.get(member) or false
+			return "public"
+		for function in unit.parsed.functions
+			if token_text(unit.parsed, function.token) == member
+				return "private"
+		for record in unit.parsed.records
+			if token_text(unit.parsed, record.token) == member
+				return "private"
+		for enumeration in unit.parsed.enums
+			if token_text(unit.parsed, enumeration.token) == member
+				return "private"
+		for alias in unit.parsed.unions
+			if token_text(unit.parsed, alias.token) == member
+				return "private"
+		return "missing"
+	return "missing module"
+
+# Resolve through the consumer's declared alias (not a global name lookup).
+# Returns public, private, missing, or unknown alias/module.
+export def imported_visibility(graph: Graph, consumer: string, alias: string, member: string) -> string
+	for unit in graph.units
+		if unit.name != consumer
+			continue
+		for imported in unit.parsed.imports
+			if imported.alias == alias
+				return visibility(graph, imported.path, member)
+		return "unknown alias"
+	return "missing module"
+
+def token_text(parsed: Parser.State, token_id: i64) -> string
+	let token = parsed.tokens[!token_id]
+	return parsed.source.slice(token.start, token.end)
+
+def visit(graph: Graph, root: string, name: string) -> Graph
+	var state = graph
+	if state.error != ""
+		return state
+	if not valid_name(name)
+		state.error = "invalid module name: " + name
+		return state
+	let status = state.visits.get(name) or 0
+	if status == 1
+		state.error = "cyclic source import: " + name
+		return state
+	if status == 2
+		return state
+	let path = file_path(root, name)
+	let contents = read_text(path) else return Graph(state.units, state.visits, "cannot read module: " + name + " (" + path + ")")
+	let parsed = Parser.parse(contents)
+	if parsed.error != ""
+		state.error = name + ":" + str(parsed.error_line) + ": " + parsed.error
+		return state
+	var declarations = Dict[string, bool]()
+	for function in parsed.functions
+		let symbol = token_text(parsed, function.token)
+		if declarations.get(symbol) or false
+			state.error = name + ": duplicate declaration: " + symbol
+			return state
+		declarations = declarations.insert(symbol, true)
+	for record in parsed.records
+		let symbol = token_text(parsed, record.token)
+		if declarations.get(symbol) or false
+			state.error = name + ": duplicate declaration: " + symbol
+			return state
+		declarations = declarations.insert(symbol, true)
+	for enumeration in parsed.enums
+		let symbol = token_text(parsed, enumeration.token)
+		if declarations.get(symbol) or false
+			state.error = name + ": duplicate declaration: " + symbol
+			return state
+		declarations = declarations.insert(symbol, true)
+	for alias in parsed.unions
+		let symbol = token_text(parsed, alias.token)
+		if declarations.get(symbol) or false
+			state.error = name + ": duplicate declaration: " + symbol
+			return state
+		declarations = declarations.insert(symbol, true)
+	for imported in parsed.imports
+		if declarations.get(imported.alias) or false
+			state.error = name + ": import alias conflicts with declaration: " + imported.alias
+			return state
+	state.visits = state.visits.insert(name, 1)
+	for imported in parsed.imports
+		state = visit(state, root, imported.path)
+		if state.error != ""
+			return state
+	state.visits = state.visits.insert(name, 2)
+	state.units = state.units.append(Unit(name, parsed))
+	return state
+
+export def load(root: string, entry: string) -> Graph
+	return visit(Graph(Array[Unit](), Dict[string, i64](), ""), root, entry)

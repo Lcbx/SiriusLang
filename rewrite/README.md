@@ -15,6 +15,23 @@ Run `python tools/test_all.py --group rewrite` from the repository root, or
 `python rewrite/tests/test_rewrite_match.py` for a single suite. The original
 compiler's bootstrap and source tree are unchanged.
 
+Source-module front-end groundwork is implemented in
+[`src/modules.sirius`](src/modules.sirius): `import Path.Module alias Local` and
+`export def`/`rec`/`enum`/union-`let` declarations are parsed and retained.
+`Modules.load(root, entry)` reads acyclic source graphs rooted at
+`root/Path/Module.sirius`, rejects missing files, malformed module names,
+import cycles, duplicate aliases and local alias/declaration conflicts, and
+returns units in deterministic dependency-before-consumer order. Its
+`imported_visibility` query distinguishes exported, private, and missing
+members through the consumer's explicit alias. The rewrite CLI also accepts
+`--check-modules source-root Entry`, which prints that traversal order; this
+is a graph checker, **not** module compilation. Single-file `export`
+declarations compile as before, but sources with imports are explicitly
+rejected by the single-file checker until cross-module checking and linking
+are implemented. Qualified type annotations can now be parsed, but cannot
+be resolved by the single-file checker. See
+[`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py).
+
 The first component is a lexer with compact integer kinds derived from
 `TokenKind.index(label)`. These indices are internal to the rewrite, not
 compatible with the existing compiler's serialized codes. Token positions are
@@ -160,8 +177,15 @@ be identical, and resolves canonical field offsets separately for each label.
 The shared body runs once for the selected tag and its managed binders own
 CoW-safe snapshots. `(Meters)(n)` and `(Red | Green)()` are also accepted;
 `Meters(n) | Feet(n)` is not a supported grouped pattern spelling.
-Qualified patterns, nested field patterns and wildcard/default arms remain
-unsupported.
+Patterns may qualify alternatives with an existing type name, for example
+`Distance.Meters(n)` or `(Distance.Meters | Distance.Feet)(n)`. The checker
+requires that the qualifier describe the scrutinee's canonical enum/union
+type; structurally equivalent type aliases are accepted. Qualified and bare
+references to the same tag count as duplicates, including across grouped arms.
+Shared binders retain the same positional and ownership rules. This currently
+covers names declared in the source file only: imported module names and
+constructors require module loading. Nested field patterns and wildcard/default
+arms remain unsupported.
 `python rewrite/tests/test_rewrite_unions.py` covers the native subset and ARC;
 `tests/drivers/union_ir_test_driver.sirius` checks type/IR verification.
 `python rewrite/tests/test_rewrite_enums.py` checks enum native execution, invalid

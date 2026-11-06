@@ -118,6 +118,8 @@ export def check(parsed: Parser.State) -> Checked
 	var functions = Dict[string, i64]()
 	if parsed.error != ""
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, parsed.error, parsed.error_line)
+	if len(parsed.imports) != 0
+		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "source imports require module linking (not yet implemented)", parsed.tokens[!parsed.imports[!0].token].line)
 	# Pre-intern complete builtin array annotations before record declarations,
 	# preserving stable IDs for existing programs. Record-dependent arrays are
 	# resolved after the referenced record has been declared.
@@ -302,7 +304,15 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.MatchCase
 				let subject = types[!node.left]
 				let label = name(parsed, node.token)
+				let qualifier_token = parsed.match_qualifiers.get(i) or -1
 				type = boolean
+				if qualifier_token >= 0 and (IR.is_enum(type_table, subject) or IR.is_union(type_table, subject))
+					let qualifier = name(parsed, qualifier_token)
+					let qualified_type = record_types.get(qualifier) or IR.NO_TYPE
+					if qualified_type == IR.NO_TYPE
+						error = "unknown match qualifier: " + qualifier
+					elif not IR.compatible(type_table, qualified_type, subject)
+						error = "match qualifier type mismatch: " + qualifier
 				if IR.is_union(type_table, subject)
 					reference = IR.union_index(type_table, subject, label)
 					if reference >= 0 and node.right >= 0

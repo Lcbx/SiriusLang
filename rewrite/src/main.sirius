@@ -1,12 +1,21 @@
 import emit_c alias Emit
+import modules alias Modules
 
 let EXIT_COMPILE_ERROR = 1
 let EXIT_IO_OR_USAGE_ERROR = 2
 
 def main() -> i64
 	let args = arguments()
+	if len(args) == 4 and args[!1] == "--check-modules"
+		let graph = Modules.load(args[!2], args[!3])
+		if graph.error != ""
+			eprint("ERROR " + graph.error)
+			return EXIT_COMPILE_ERROR
+		for unit in graph.units
+			print(unit.name)
+		return 0
 	if len(args) != 3
-		eprint("usage: rewrite input.sirius output.c")
+		eprint("usage: rewrite input.sirius output.c | rewrite --check-modules source-root Entry")
 		return EXIT_IO_OR_USAGE_ERROR
 	let contents = read_text(args[!1]) else return EXIT_IO_OR_USAGE_ERROR
 	let result = Emit.compile(contents)

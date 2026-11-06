@@ -266,6 +266,82 @@ def main() -> i64
     return 0
 ''', b'6\n'),
 
+    ('qualified enum labels and mixed groups', '''enum Color
+    Red
+    Blue
+    Green
+def classify(color: Color) -> i64
+    match color
+        Color.Red | Blue
+            return 1
+        Color.Green
+            return 2
+def main() -> i64
+    print(classify(Color.Red()))
+    print(classify(Color.Blue()))
+    print(classify(Color.Green()))
+    return 0
+''', b'1\n1\n2\n'),
+    ('qualified union labels with shared positional binders', '''rec First(z: i64, a: string)
+rec Second(a: i64, z: string)
+let Choice = First | Second
+def show(item: Choice) -> i64
+    match item
+        (Choice.First | Choice.Second)(code, text)
+            print(text)
+            return code
+def main() -> i64
+    print(show(Choice.First(First(7, "first"))))
+    print(show(Choice.Second(Second(8, "second"))))
+    return 0
+''', b'first\n7\nsecond\n8\n'),
+    ('qualified union with managed CoW snapshot', '''rec Strings(words: Array[string])
+rec Other(text: string)
+let Item = Strings | Other
+def main() -> i64
+    var names = ["initial"]
+    let value = Item.Strings(Strings(names))
+    names[!0] = "modified"
+    match value
+        Item.Strings(words)
+            print(words[!0])
+        Item.Other(text)
+            print(text)
+    return 0
+''', b'initial\n'),
+    ('compatible structural enum qualifiers', '''enum First
+    A
+    B
+enum Second
+    A
+    B
+def main() -> i64
+    let x = Second.B()
+    match x
+        First.A
+            print(1)
+        First.B
+            print(2)
+    return 0
+''', b'2\n'),
+    ('mixed qualified grouped enum and nested union match', '''enum Status
+    Ready
+    Stopped
+rec Number(n: i64)
+rec Message(s: string)
+let Value = Number | Message
+def main() -> i64
+    let state = Status.Ready()
+    let value = Value.Message(Message("hello"))
+    match state
+        (Status.Ready | Status.Stopped)()
+            match value
+                Value.Number(n)
+                    print(n)
+                Value.Message(s)
+                    print(s)
+    return 0
+''', b'hello\n'),
 ]
 
 INVALID = [
@@ -485,6 +561,99 @@ def main() -> i64
     return 0
 ''', b'grouped match bindings require parenthesized alternatives'),
 
+    ('unknown match qualifier', '''enum Color
+    Red
+    Blue
+def main() -> i64
+    match Color.Red()
+        Missing.Red
+            print(1)
+        Color.Blue
+            print(2)
+    return 0
+''', b'unknown match qualifier'),
+    ('mismatched enum qualifier', '''enum Color
+    Red
+    Blue
+enum Size
+    Big
+    Small
+def main() -> i64
+    match Color.Red()
+        Size.Big
+            print(1)
+        Color.Blue
+            print(2)
+    return 0
+''', b'match qualifier type mismatch'),
+    ('mismatched union qualifier', '''rec A()
+rec B()
+rec C()
+let One = A | B
+let Two = A | C
+def main() -> i64
+    match One.A(A())
+        Two.A
+            print(1)
+        One.B
+            print(2)
+    return 0
+''', b'match qualifier type mismatch'),
+    ('non-union type qualifier', '''rec A()
+rec B()
+let Value = A | B
+def main() -> i64
+    match Value.A(A())
+        A.A
+            print(1)
+        Value.B
+            print(2)
+    return 0
+''', b'match qualifier type mismatch'),
+    ('unknown qualified label', '''enum Color
+    Red
+    Blue
+def main() -> i64
+    match Color.Red()
+        Color.Green
+            print(1)
+        Color.Blue
+            print(2)
+    return 0
+''', b'unknown match alternative'),
+    ('qualified and unqualified alternatives duplicate', '''enum Color
+    Red
+    Blue
+def main() -> i64
+    match Color.Red()
+        Color.Red
+            print(1)
+        Red | Color.Blue
+            print(2)
+    return 0
+''', b'duplicate match alternative'),
+    ('malformed qualified tag', '''enum Color
+    Red
+    Blue
+def main() -> i64
+    match Color.Red()
+        Color.
+            print(1)
+        Color.Blue
+            print(2)
+    return 0
+''', b'expected match alternative after qualifier'),
+    ('qualified enum with payload binding', '''enum Color
+    Red
+    Blue
+def main() -> i64
+    match Color.Red()
+        Color.Red(x)
+            print(x)
+        Color.Blue
+            print(2)
+    return 0
+''', b'enum match cannot bind fields'),
 ]
 
 

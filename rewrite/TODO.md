@@ -221,8 +221,14 @@ missing lookups, managed defaults and shared updates are covered.
   indices and verifies identical binder types before lowering; native tagged
   dispatch preserves managed ARC/CoW snapshots. Covered by
   [test_rewrite_match.py](tests/test_rewrite_match.py) and IR verifier tests.
-- [ ] Add qualified match patterns (including imported alternatives). Nested
-  field patterns and wildcard/default arms are deferred.
+- [x] Add local `Type.Label` match patterns for enums and unions, including
+  mixed qualified/bare groups and shared payload binders. Check qualifier
+  compatibility against the scrutinee's canonical type, and reject duplicate
+  alternatives regardless of spelling. The same native + ARC fixture suite
+  checks valid patterns and invalid qualifiers.
+- [ ] Extend qualified type/constructor references and match patterns to
+  imported modules after source loading is implemented. Nested field patterns
+  and wildcard/default arms are deferred.
 - [x] Implement `==` and `!=` for enums, records, tagged unions and optionals
   using typed descriptors, without nominalizing records. Recursive record
   fields compare arrays and dictionaries by value; direct collection comparison
@@ -248,6 +254,11 @@ functions, lambdas and general callback inference are not needed by today's grap
 
 ### 6. Source modules and compiler I/O
 
+- [x] Parse source `import Path.Module alias Local` and `export` declarations;
+  build a deterministic, cycle-checked graph with source-local aliases and
+  public/private member visibility queries. Expose a parse-only CLI
+  `--check-modules root Entry`; `tests/test_rewrite_modules.py` covers missing
+  imports, alias conflicts, cycles and repeatable dependency order.
 - [ ] Load acyclic source imports with aliases and exports; preserve private
   names, qualified type/constructor references and cross-module specialization.
   Assign stable symbols and emission order independent of dictionary iteration.

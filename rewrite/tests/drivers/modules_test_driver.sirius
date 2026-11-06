@@ -1,0 +1,32 @@
+import parser alias Parser
+import modules alias Modules
+
+def main() -> i64
+	let args = arguments()
+	if len(args) != 3
+		return 99
+	let graph = Modules.load(args[!1], args[!2])
+	if graph.error != ""
+		eprint(graph.error)
+		return 1
+	for unit in graph.units
+		print(unit.name)
+	if Modules.visibility(graph, "Utils", "public_fn") != "public"
+		return 2
+	if Modules.visibility(graph, "Utils", "Box") != "public" or Modules.visibility(graph, "Utils", "Choice") != "public" or Modules.visibility(graph, "Utils", "Color") != "public"
+		return 10
+	if Modules.visibility(graph, "Utils", "private_fn") != "private"
+		return 3
+	if Modules.visibility(graph, "Utils", "unseen") != "missing"
+		return 4
+	if Modules.imported_visibility(graph, args[!2], "U", "public_fn") != "public"
+		return 6
+	if Modules.imported_visibility(graph, args[!2], "U", "private_fn") != "private"
+		return 7
+	if Modules.imported_visibility(graph, args[!2], "U", "unseen") != "missing"
+		return 8
+	if Modules.imported_visibility(graph, args[!2], "Q", "public_fn") != "unknown alias"
+		return 9
+	if not Modules.valid_name("Some.Module_2") or Modules.valid_name("A..B") or Modules.valid_name("../no") or Modules.valid_name("9A")
+		return 5
+	return 0
