@@ -386,7 +386,10 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				instructions = instructions.append(IR.Return(input_slot(node.left, redirects)))
 		let conversion = checked.conversions.get(i) or Semantic.Conversion(IR.NO_TYPE, -1)
 		if conversion.type != IR.NO_TYPE
-			instructions = instructions.append(IR.MakeUnion(input_slot(i, redirects), i, conversion.tag))
+			if conversion.tag >= 0
+				instructions = instructions.append(IR.MakeUnion(input_slot(i, redirects), i, conversion.tag))
+			else
+				instructions = instructions.append(IR.RewrapValue(input_slot(i, redirects), i))
 	# A reachable sentinel exposes a missing return; dead block markers are pruned.
 	starts = starts.append(len(instructions))
 	instructions = instructions.append(IR.Nop())
@@ -404,7 +407,7 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 				mapped = IR.Instruction.ShortCircuit(IR.ShortCircuit(dst, input, starts[!target - function.start] + function.start, when_true))
 			IR.OptionalDefault(dst, input, target)
 				mapped = IR.Instruction.OptionalDefault(IR.OptionalDefault(dst, input, starts[!target - function.start] + function.start))
-			IR.EnumConstant | IR.EnumIndex | IR.MakeUnion | IR.CopyUnion | IR.UnionIndex | IR.TagTest | IR.TagAny | IR.UnionField | IR.UnionFields | IR.Trap | IR.MakeOptional | IR.MakeDict | IR.CopyDict | IR.DictLength | IR.DictInsert | IR.DictRead | IR.DictGet | IR.DictNext | IR.DictKey | IR.MakeArray | IR.CopyArray | IR.ArrayLength | IR.ArrayRead | IR.ArrayGet | IR.ArrayAppend | IR.ArraySet | IR.MakeRecord | IR.CopyRecord | IR.ReadField | IR.SetField | IR.Call | IR.Constant | IR.Negate | IR.Not | IR.Add | IR.Subtract | IR.Multiply | IR.Divide | IR.Remainder | IR.BitAnd | IR.BitOr | IR.ShiftLeft | IR.ShiftRight | IR.Copy | IR.Output | IR.Compare | IR.ValueCompare | IR.Nop | IR.Return | IR.StringConstant | IR.StringCopy | IR.StringConcat | IR.StringLength | IR.StringCompare | IR.StringSlice | IR.StringStarts | IR.StringEnds | IR.StringFormat | IR.StringByteAt | IR.StringFind | IR.StringJoin | IR.OptionalCopy | IR.OptionalUnwrap
+			IR.EnumConstant | IR.EnumIndex | IR.MakeUnion | IR.CopyUnion | IR.RewrapValue | IR.UnionIndex | IR.TagTest | IR.TagAny | IR.UnionField | IR.UnionFields | IR.Trap | IR.MakeOptional | IR.MakeDict | IR.CopyDict | IR.DictLength | IR.DictInsert | IR.DictRead | IR.DictGet | IR.DictNext | IR.DictKey | IR.MakeArray | IR.CopyArray | IR.ArrayLength | IR.ArrayRead | IR.ArrayGet | IR.ArrayAppend | IR.ArraySet | IR.MakeRecord | IR.CopyRecord | IR.ReadField | IR.SetField | IR.Call | IR.Constant | IR.Negate | IR.Not | IR.Add | IR.Subtract | IR.Multiply | IR.Divide | IR.Remainder | IR.BitAnd | IR.BitOr | IR.ShiftLeft | IR.ShiftRight | IR.Copy | IR.Output | IR.Compare | IR.ValueCompare | IR.Nop | IR.Return | IR.StringConstant | IR.StringCopy | IR.StringConcat | IR.StringLength | IR.StringCompare | IR.StringSlice | IR.StringStarts | IR.StringEnds | IR.StringFormat | IR.StringByteAt | IR.StringFind | IR.StringJoin | IR.OptionalCopy | IR.OptionalUnwrap
 				mapped = instruction
 		local = local.append(IR.rebase(mapped, function.start))
 	return IR.prune(IR.Program(local, function.end - function.start + len(extra_types), "", parsed.tokens[!function.token].line))

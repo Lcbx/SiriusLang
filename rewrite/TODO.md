@@ -202,9 +202,15 @@ missing lookups, managed defaults and shared updates are covered.
   Resolve record/union declarations in source order so later records can hold
   earlier union types. Tests: `tests/test_rewrite_contextual_unions.py`.
   Tagged unions are never implicitly relabeled.
-- [ ] Extend contextual coercion to rewrap **already constructed** arrays,
-  optionals and dictionary values (rather than only accepting constructors,
-  literals and element operations), and support qualified imported constructors.
+- [x] Extend contextual coercion to **already constructed** arrays,
+  optionals and dictionaries, recursively rewrapping stored payload values
+  when their record type maps to one unique union alternative. Typed
+  `RewrapValue` checks both source and destination, and C helpers allocate
+  separate array/dictionary storage (rather than aliasing incompatible
+  element layouts) with ARC-safe copies. CoW snapshots and malformed IR are
+  covered in `tests/test_rewrite_aggregate_rewrap.py` and its IR driver.
+- [ ] Support qualified imported constructors; module loading remains a
+  prerequisite.
 - [x] Add exhaustive `match` over enums and labeled unions with bare tags,
   positional record-field bindings, duplicate/missing-label checks and native
   tag tests/field extraction. Matched fields are owned copies with ARC/CoW;

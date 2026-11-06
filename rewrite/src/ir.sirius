@@ -226,6 +226,33 @@ export def field_index(table: TypeTable, type: i64, name: string) -> i64
 			return i
 	return -1
 
+# A stored record has no nominal constructor label. When converting a
+# previously built aggregate, only a uniquely matching union alternative may
+# be used; direct record constructors are handled contextually by the checker.
+export def unique_union_tag(table: TypeTable, source: i64, target: i64) -> i64
+	if not is_record(table, source) or not is_union(table, target)
+		return -1
+	var selected = -1
+	for tag in 0..len(table.entries[!target].fields)
+		if compatible(table, source, union_payload(table, target, tag))
+			if selected >= 0
+				return -2
+			selected = tag
+	return selected
+
+export def can_rewrap(table: TypeTable, source: i64, target: i64) -> bool
+	if compatible(table, source, target)
+		return true
+	if unique_union_tag(table, source, target) >= 0
+		return true
+	if is_optional(table, source) and is_optional(table, target)
+		return can_rewrap(table, optional_payload(table, source), optional_payload(table, target))
+	if is_array(table, source) and is_array(table, target)
+		return can_rewrap(table, array_element(table, source), array_element(table, target))
+	if is_dict(table, source) and is_dict(table, target) and dict_key(table, source) == dict_key(table, target)
+		return can_rewrap(table, dict_value(table, source), dict_value(table, target))
+	return false
+
 export def compatible(table: TypeTable, source: i64, target: i64) -> bool
 	if source == target
 		return true
@@ -364,6 +391,7 @@ export rec EnumConstant(dst: i64, tag: i64)
 export rec EnumIndex(dst: i64, input: i64)
 export rec MakeUnion(dst: i64, input: i64, tag: i64)
 export rec CopyUnion(dst: i64, input: i64)
+export rec RewrapValue(dst: i64, input: i64)
 export rec UnionIndex(dst: i64, input: i64)
 export rec TagTest(dst: i64, input: i64, tag: i64)
 # A group tests tags together; its subject is evaluated only once.
@@ -442,7 +470,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Initializes the payload destination on both edges; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | ValueCompare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = EnumConstant | EnumIndex | MakeUnion | CopyUnion | RewrapValue | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | ValueCompare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -823,6 +851,16 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				output_type = types[!target]
 				inputs = [input]
 				input_types = [union_payload(table, output_type, tag)]
+			RewrapValue(target, input)
+				if not typed or not in_bounds(target, program.slots) or not in_bounds(input, program.slots)
+					return "invalid rewrap slots"
+				if types[!target] == types[!input] or not can_rewrap(table, types[!input], types[!target])
+					return "invalid value rewrap"
+				dst = target
+				writes = true
+				output_type = types[!target]
+				inputs = [input]
+				input_types = [types[!input]]
 			CopyUnion(target, input)
 				if not typed or not in_bounds(target, program.slots) or not in_bounds(input, program.slots) or not is_union(table, types[!target])
 					return "union copy requires union"
@@ -1058,7 +1096,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | RewrapValue | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -1193,7 +1231,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return | Trap
 				continue
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | RewrapValue | UnionIndex | TagTest | TagAny | UnionField | UnionFields | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -1222,7 +1260,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | RewrapValue | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -1274,6 +1312,8 @@ export def rebase(instruction: Instruction, base: i64) -> Instruction
 			return MakeUnion(dst - base, input - base, tag)
 		CopyUnion(dst, input)
 			return CopyUnion(dst - base, input - base)
+		RewrapValue(dst, input)
+			return RewrapValue(dst - base, input - base)
 		UnionIndex(dst, input)
 			return UnionIndex(dst - base, input - base)
 		TagTest(dst, input, tag)

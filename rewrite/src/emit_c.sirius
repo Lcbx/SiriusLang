@@ -340,6 +340,106 @@ def dict_item_helpers(table: IR.TypeTable) -> string
 			parts = parts.append("static inline void dict_drop_value_" + str(type) + "(void *src) { " + release_value(table, value, "*(" + c + "const *)src") + "; }\n")
 	return "".join(parts)
 
+# Rewrapping an existing aggregate changes its element representation. Each
+# generated helper returns an owned value; array/dict append copies it and then
+# drops the temporary. Source values remain borrowed and unchanged.
+rec RewrapPair(source: i64, target: i64)
+
+def rewrap_name(source: i64, target: i64) -> string
+	return "rewrap_" + str(source) + "_" + str(target)
+
+def rewrap_expr(table: IR.TypeTable, source: i64, target: i64, value: string) -> string
+	if IR.compatible(table, source, target)
+		return retain_value(table, target, value)
+	return rewrap_name(source, target) + "(" + value + ")"
+
+def add_rewrap_pair(table: IR.TypeTable, source: i64, target: i64, pairs: Array[RewrapPair]) -> Array[RewrapPair]
+	if IR.compatible(table, source, target)
+		return pairs
+	var result = pairs
+	if IR.is_optional(table, source) and IR.is_optional(table, target)
+		result = add_rewrap_pair(table, IR.optional_payload(table, source), IR.optional_payload(table, target), result)
+	elif IR.is_array(table, source) and IR.is_array(table, target)
+		result = add_rewrap_pair(table, IR.array_element(table, source), IR.array_element(table, target), result)
+	elif IR.is_dict(table, source) and IR.is_dict(table, target)
+		result = add_rewrap_pair(table, IR.dict_value(table, source), IR.dict_value(table, target), result)
+	for pair in result
+		if pair.source == source and pair.target == target
+			return result
+	return result.append(RewrapPair(source, target))
+
+def rewrap_definition(table: IR.TypeTable, source: i64, target: i64) -> string
+	let name = rewrap_name(source, target)
+	let argument = c_type(source, table) + "value"
+	if IR.is_record(table, source) and IR.is_union(table, target)
+		let tag = IR.unique_union_tag(table, source, target)
+		return "static inline U" + str(target) + " " + name + "(" + argument + ") { U" + str(target) + " result = {0}; result.tag = " + str(tag) + "; result.data.p" + str(tag) + " = " + retain_value(table, source, "value") + "; return result; }\n"
+	if IR.is_optional(table, source) and IR.is_optional(table, target)
+		let item = rewrap_expr(table, IR.optional_payload(table, source), IR.optional_payload(table, target), "value.value")
+		return "static inline O" + str(target) + " " + name + "(" + argument + ") { O" + str(target) + " result = {0}; if (value.has_value) { result.has_value = true; result.value = " + item + "; } return result; }\n"
+	if IR.is_array(table, source) and IR.is_array(table, target)
+		let from_element = IR.array_element(table, source)
+		let to_element = IR.array_element(table, target)
+		let c = c_type(from_element, table)
+		let converted = rewrap_expr(table, from_element, to_element, "*item")
+		var lines = ["static inline S_Array *" + name + "(" + argument + ") {\n"]
+		lines = lines.append("S_Array *result = s_array_new(sizeof(" + c_type(to_element, table) + "), copy_item_" + str(to_element) + ", drop_item_" + str(to_element) + ");\n")
+		lines = lines.append("for (size_t i = 0; i < s_array_length(value); ++i) {\n")
+		lines = lines.append(c + "const *item = s_array_at(value, (int64_t)i);\n")
+		lines = lines.append(c_type(to_element, table) + "converted = " + converted + ";\n")
+		lines = lines.append("result = s_array_append(result, &converted);\n")
+		lines = lines.append(release_value(table, to_element, "converted") + ";\n")
+		return "".join(lines) + "} return result; }\n"
+	if IR.is_dict(table, source) and IR.is_dict(table, target)
+		let key = IR.dict_key(table, target)
+		let from_value = IR.dict_value(table, source)
+		let to_value = IR.dict_value(table, target)
+		var key_copy = "NULL"
+		var key_drop = "NULL"
+		var hash = "s_hash_i64_key"
+		var equal = "s_eq_i64_key"
+		if key == IR.TYPE_STRING
+			key_copy = "dict_copy_key_" + str(target)
+			key_drop = "dict_drop_key_" + str(target)
+			hash = "s_hash_string_key"
+			equal = "s_eq_string_key"
+		var value_copy = "NULL"
+		var value_drop = "NULL"
+		if to_value != IR.TYPE_I64 and to_value != IR.TYPE_BOOL
+			value_copy = "dict_copy_value_" + str(target)
+			value_drop = "dict_drop_value_" + str(target)
+		var lines = ["static inline S_Dict *" + name + "(" + argument + ") {\n"]
+		lines = lines.append("S_Dict *result = s_dict_new(sizeof(" + c_type(key, table) + "), sizeof(" + c_type(to_value, table) + "), " + key_copy + ", " + key_drop + ", " + value_copy + ", " + value_drop + ", " + hash + ", " + equal + ");\n")
+		var audit_key = "false"
+		var audit_value = "false"
+		if key == IR.TYPE_STRING
+			audit_key = "true"
+		if to_value == IR.TYPE_STRING or IR.is_array(table, to_value) or IR.is_dict(table, to_value)
+			audit_value = "true"
+		if audit_key == "true" or audit_value == "true"
+			lines = lines.append("s_dict_arc_audit_fields(result, " + audit_key + ", " + audit_value + ");\n")
+		lines = lines.append("int64_t cursor = -1; while ((cursor = s_dict_next_slot(value, cursor)) >= 0) {\n")
+		lines = lines.append(c_type(from_value, table) + "const *item = s_dict_value_slot(value, cursor);\n")
+		lines = lines.append(c_type(to_value, table) + "converted = " + rewrap_expr(table, from_value, to_value, "*item") + ";\n")
+		lines = lines.append("result = s_dict_insert(result, s_dict_key_slot(value, cursor), &converted);\n")
+		lines = lines.append(release_value(table, to_value, "converted") + ";\n")
+		return "".join(lines) + "} return result; }\n"
+	return ""
+
+def rewrap_definitions(module: IR.Module) -> string
+	var pairs = Array[RewrapPair]()
+	for function in module.functions
+		for instruction in function.body.instructions
+			match instruction
+				IR.RewrapValue(dst, input)
+					pairs = add_rewrap_pair(module.type_table, function.types[!input], function.types[!dst], pairs)
+				IR.EnumConstant | IR.EnumIndex | IR.MakeUnion | IR.CopyUnion | IR.UnionIndex | IR.TagTest | IR.TagAny | IR.UnionField | IR.UnionFields | IR.Trap | IR.MakeOptional | IR.MakeDict | IR.CopyDict | IR.DictLength | IR.DictInsert | IR.DictRead | IR.DictGet | IR.DictNext | IR.DictKey | IR.MakeArray | IR.CopyArray | IR.ArrayLength | IR.ArrayRead | IR.ArrayGet | IR.ArrayAppend | IR.ArraySet | IR.MakeRecord | IR.CopyRecord | IR.ReadField | IR.SetField | IR.Call | IR.Constant | IR.Negate | IR.Not | IR.Add | IR.Subtract | IR.Multiply | IR.Divide | IR.Remainder | IR.BitAnd | IR.BitOr | IR.ShiftLeft | IR.ShiftRight | IR.Copy | IR.Output | IR.Compare | IR.ValueCompare | IR.Nop | IR.Return | IR.StringConstant | IR.StringCopy | IR.StringConcat | IR.StringLength | IR.StringCompare | IR.StringSlice | IR.StringStarts | IR.StringEnds | IR.StringFormat | IR.StringByteAt | IR.StringFind | IR.StringJoin | IR.OptionalCopy | IR.OptionalUnwrap | IR.OptionalDefault | IR.Branch | IR.ShortCircuit | IR.Jump
+					continue
+	var lines = Array[string]()
+	for pair in pairs
+		lines = lines.append(rewrap_definition(module.type_table, pair.source, pair.target))
+	return "".join(lines)
+
 def record_literal(type: i64, values: Array[string]) -> string
 	if len(values) == 0
 		return "(R" + str(type) + "){0}"
@@ -738,6 +838,10 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				lines = lines.append("{ U" + str(type) + " value = {0}; value.tag = " + str(tag) + "; value.data.p" + str(tag) + " = " + retain_value(table, payload, value_slot(input, payload, table)) + ";\n")
 				lines = lines.append(store_value(table, type, value_slot(dst, type, table), "value"))
 				lines = lines.append("}\n")
+			IR.RewrapValue(dst, input)
+				let from_type = function.types[!input]
+				let type = function.types[!dst]
+				lines = lines.append(store_value(table, type, value_slot(dst, type, table), rewrap_expr(table, from_type, type, value_slot(input, from_type, table))))
 			IR.CopyUnion(dst, input)
 				let type = function.types[!dst]
 				lines = lines.append(store_value(table, type, value_slot(dst, type, table), retain_value(table, type, value_slot(input, type, table))))
@@ -868,6 +972,7 @@ export def emit(module: IR.Module) -> Result
 	lines = lines.append(dict_item_helpers(module.type_table))
 	if has_managed_arrays
 		lines = lines.append(array_item_helpers(module.type_table))
+	lines = lines.append(rewrap_definitions(module))
 	for id in 0..len(module.functions)
 		lines = lines.append(declaration(module.functions[!id], id, module.type_table) + ";\n")
 	for id in 0..len(module.functions)

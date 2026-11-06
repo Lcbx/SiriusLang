@@ -93,9 +93,34 @@ ARC, branch targets and CoW snapshots are preserved in native output.
 Direct `.index` calls also accept contextually injected constructor expressions,
 but not stored untagged records (even when their shape uniquely matches).
 `tests/test_rewrite_contextual_unions.py` covers success and failure cases.
-Conversion of already-constructed arrays, optional values and dictionaries
-*between different aggregate types*, as well as qualified imported
-constructors, remains unimplemented.
+Already-constructed `Array[T]`, `Optional[T]`, and `Dict[K,T]` values can be
+contextually rewrapped to the corresponding union-containing aggregate when
+every recursively mapped record type has **exactly one** compatible union
+alternative. For example:
+
+```sirius
+rec Number(value: i64)
+rec Word(value: string)
+let Item = Number | Word
+
+def main() -> i64
+    let raw = [Word("first"), Word("second")]
+    let tagged: Array[Item] = raw
+    print(Item.index(tagged[!0]))  # 1
+    return 0
+```
+
+For a changed array/dictionary element type, conversion allocates a **new**
+collection and recursively copies its elements; it is not a constant-time CoW
+pointer cast. Optionals recursively copy their present payload and preserve
+absence. The source remains unchanged, including its managed-reference and
+CoW state. Nested arrays, dictionaries, and optionals may be rewrapped, but
+structurally ambiguous stored records and already-tagged unions cannot be
+relabeled. Distinct dictionary key types cannot be coerced. The typed
+`RewrapValue` IR instruction is checked before code emission and uses generated
+C helpers with owned results. `tests/test_rewrite_aggregate_rewrap.py` and
+`tests/drivers/rewrap_ir_test_driver.sirius` cover these operations with ARC
+and invalid-program checks. Imported qualified constructors remain unsupported.
 `==` and `!=` compare records, optionals, enums and unions structurally:
 records compare corresponding canonical fields, unions compare both their
 label and payload, and optionals distinguish absent from present values.

@@ -1,0 +1,48 @@
+import ir alias IR
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable, code: Array[IR.Instruction], slots: Array[i64]) -> IR.Module
+	return IR.Module([IR.Function("main", IR.Program(code, len(slots), "", 0), [], IR.TYPE_I64, slots)], 0, table, "", 0)
+
+def main() -> i64
+	let base = IR.runtime_types()
+	let numeric = IR.intern_record(base, [IR.RecordField("value", IR.TYPE_I64)])
+	let textual = IR.intern_record(numeric.table, [IR.RecordField("text", IR.TYPE_STRING)])
+	let union = IR.intern_union(textual.table, [IR.RecordField("Number", numeric.id), IR.RecordField("Text", textual.id)])
+	let o_raw = IR.intern_optional(union.table, numeric.id)
+	let o_union = IR.intern_optional(o_raw.table, union.id)
+	let a_raw = IR.intern_array(o_union.table, numeric.id)
+	let a_union = IR.intern_array(a_raw.table, union.id)
+	let d_raw = IR.intern_dict(a_union.table, IR.TYPE_I64, numeric.id)
+	let d_union = IR.intern_dict(d_raw.table, IR.TYPE_I64, union.id)
+	let table = d_union.table
+	if not IR.can_rewrap(table, o_raw.id, o_union.id) or not IR.can_rewrap(table, a_raw.id, a_union.id) or not IR.can_rewrap(table, d_raw.id, d_union.id)
+		return 1
+	if IR.can_rewrap(table, union.id, numeric.id) or IR.can_rewrap(table, a_union.id, a_raw.id)
+		return 2
+	let optional = entry(table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.MakeOptional(2, 1), IR.RewrapValue(3, 2), IR.OptionalUnwrap(4, 3), IR.UnionIndex(5, 4), IR.Return(5)], [IR.TYPE_I64, numeric.id, o_raw.id, o_union.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(optional) != "" or Emit.emit(optional).error != ""
+		return 3
+	let array = entry(table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.MakeArray(2, [1]), IR.RewrapValue(3, 2), IR.Constant(4, 0), IR.ArrayRead(5, 3, 4), IR.UnionIndex(6, 5), IR.Return(6)], [IR.TYPE_I64, numeric.id, a_raw.id, a_union.id, IR.TYPE_I64, union.id, IR.TYPE_I64])
+	if IR.verify_module(array) != "" or Emit.emit(array).error != ""
+		return 4
+	let dict = entry(table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.MakeDict(2), IR.DictInsert(3, 2, 0, 1), IR.RewrapValue(4, 3), IR.DictRead(5, 4, 0), IR.UnionIndex(6, 5), IR.Return(6)], [IR.TYPE_I64, numeric.id, d_raw.id, d_raw.id, d_union.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(dict) != "" or Emit.emit(dict).error != ""
+		return 5
+	let missing_input = entry(table, [IR.Constant(0, 7), IR.RewrapValue(2, 1), IR.Return(0)], [IR.TYPE_I64, numeric.id, union.id])
+	if IR.verify_module(missing_input) != "main: undefined input slot"
+		return 6
+	let invalid_slot = entry(table, [IR.Constant(0, 7), IR.RewrapValue(2, 99), IR.Return(0)], [IR.TYPE_I64, numeric.id, union.id])
+	if IR.verify_module(invalid_slot) != "main: invalid rewrap slots"
+		return 7
+	let invalid_target = entry(table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.RewrapValue(2, 1), IR.Return(0)], [IR.TYPE_I64, numeric.id, numeric.id])
+	if IR.verify_module(invalid_target) != "main: invalid value rewrap"
+		return 8
+	let reverse = entry(table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.MakeUnion(2, 1, 0), IR.RewrapValue(3, 2), IR.Return(0)], [IR.TYPE_I64, numeric.id, union.id, numeric.id])
+	if IR.verify_module(reverse) != "main: invalid value rewrap"
+		return 9
+	let two = IR.intern_union(table, [IR.RecordField("First", numeric.id), IR.RecordField("Second", numeric.id)])
+	let ambiguous = entry(two.table, [IR.Constant(0, 7), IR.MakeRecord(1, numeric.id, [0]), IR.RewrapValue(2, 1), IR.Return(0)], [IR.TYPE_I64, numeric.id, two.id])
+	if IR.can_rewrap(two.table, numeric.id, two.id) or IR.verify_module(ambiguous) != "main: invalid value rewrap"
+		return 10
+	return 0

@@ -69,6 +69,8 @@ def accept_value(parsed: Parser.State, table: IR.TypeTable, expression: i64, act
 	if IR.compatible(table, actual, expected)
 		return Accepted(conversions, "")
 	if not IR.is_record(table, actual) or not IR.is_union(table, expected)
+		if IR.can_rewrap(table, actual, expected)
+			return Accepted(conversions.insert(expression, Conversion(expected, -1)), "")
 		return Accepted(conversions, mismatch)
 	let node = parsed.nodes[!expression]
 	if Parser.kind_is(node.kind, Parser.Call())
