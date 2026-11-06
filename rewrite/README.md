@@ -48,25 +48,49 @@ with the single-file compiler. The original two-argument single-file CLI is
 unchanged, and deliberately rejects sources that contain imports.
 
 The module-linking path supports a first stage of **generic specialization**:
-parameters may omit their type annotations, but the function result must still
-be explicitly annotated with a concrete type. A function such as
-`export def length(values) -> i64` specializes at each call site, including
-transitive imported calls. An instance is cached by defining function identity
-and canonical concrete argument types; recursive calls of the same signature
-reuse the instance. Template bodies are checked in their defining module's
-scope for each requested instantiation, including private helpers and types.
-The linker removes unspecialized template placeholders before IR verification
+parameters may omit their type annotations and the result may be omitted when
+it has a statically determined result rule. For example:
+
+```sirius
+# Utility.sirius
+export def identity(value)
+    return value
+export def length(values)
+    return len(values)
+```
+
+A result may be inferred from a returned parameter (including an imported or
+local forwarding call), an integer/string/Boolean literal, `len`, a comparison,
+string formatting or string predicates, integer operators, or an addition whose
+left operand has an inferable result rule. For parameter-dependent results, the
+caller's concrete argument type determines the result type *before* checking the
+caller; every instantiated body is checked against that type. Inference also
+works through transitive imported forwarding calls and through forward local
+function declarations. Multiple return paths must agree for each instantiated
+type. An omitted result with an unsupported expression (such as a local binding
+or a record field/array element projection) is rejected with an explicit request
+to add `-> Type`. Cyclic inferred-result dependencies without an anchored rule
+are also rejected; annotate a return type to break the cycle. `main` still
+requires the explicit signature `main() -> i64`.
+
+An instance is cached by defining function identity and canonical concrete
+argument types; recursive calls of the same signature reuse the instance.
+Template bodies are checked in their defining module's scope, including private
+helpers and types. The linker removes unused templates before IR verification
 and C emission. A conservative limit of 128 new instances per linked program
 rejects runaway polymorphic recursion. Generated C is deterministic, and
 managed values retain ARC and CoW semantics. See
-[`tests/test_rewrite_generics.py`](tests/test_rewrite_generics.py).
+[`tests/test_rewrite_generics.py`](tests/test_rewrite_generics.py) and
+[`tests/test_rewrite_inferred_generics.py`](tests/test_rewrite_inferred_generics.py).
 
-This is **not** complete module/generic support: result-type inference, generic
+This is **not** general return type inference: arbitrary derived values and
+result-dependent recursive inference remain deferred, as do generic
 specialization in the two-argument single-file CLI, source-to-source re-exports,
-and some constructor/type forms remain deferred. A generic template with no
-call sites is parsed but not body-checked until instantiated; ordinary concrete
-functions continue to be checked eagerly. Modules must form an acyclic graph.
-See [`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py),
+and some constructor/type forms. Even unused generic functions with omitted
+results must have a resolvable result rule, but their full bodies are not
+checked until instantiated; ordinary concrete functions continue
+to be checked eagerly. Modules must form an acyclic graph. See
+[`tests/test_rewrite_modules.py`](tests/test_rewrite_modules.py),
 [`tests/test_rewrite_linked_modules.py`](tests/test_rewrite_linked_modules.py),
 and [`tests/test_rewrite_imported_unions.py`](tests/test_rewrite_imported_unions.py).
 

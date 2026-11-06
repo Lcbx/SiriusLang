@@ -1,7 +1,10 @@
 import parser alias Parser
 import ir alias IR
 
-export rec Signature(name: string, parameters: Array[i64], result: i64)
+# A negative result with result_parameter >= 0 denotes the type of that
+# argument, resolved at each call site. The checked instance always has a
+# concrete result. Annotations keep result_parameter == -1.
+export rec Signature(name: string, parameters: Array[i64], result: i64, result_parameter: i64)
 export rec External(name: string, signature: Signature, function_id: i64)
 export rec Constructor(type: i64, parameters: Array[IR.RecordField])
 export rec Conversion(type: i64, tag: i64)
@@ -134,6 +137,55 @@ def context_for(parsed: Parser.State, expression: i64, expected: i64, table: IR.
 			result = context_for(parsed, item.left, IR.array_element(table, expected), table, result)
 			argument = item.right
 	return result
+
+# Result inference is deliberately based on a small set of unambiguous
+# expression forms. It produces a type rule, never an unchecked result type:
+# every instantiated body is subsequently checked against that rule.
+rec ResultRule(type: i64, parameter: i64)
+
+def inferred_expression(parsed: Parser.State, function: Parser.Function, expression: i64, signatures: Array[Signature], functions: Dict[string, i64]) -> ResultRule
+	if expression < 0
+		return ResultRule(IR.NO_TYPE, -1)
+	let node = parsed.nodes[!expression]
+	if Parser.kind_is(node.kind, Parser.IntegerLiteral()) or Parser.kind_is(node.kind, Parser.Length()) or Parser.kind_is(node.kind, Parser.EnumIndex())
+		return ResultRule(IR.TYPE_I64, -1)
+	if Parser.kind_is(node.kind, Parser.BooleanLiteral()) or Parser.kind_is(node.kind, Parser.Compare()) or Parser.kind_is(node.kind, Parser.Not()) or Parser.kind_is(node.kind, Parser.StringStarts()) or Parser.kind_is(node.kind, Parser.StringEnds())
+		return ResultRule(IR.TYPE_BOOL, -1)
+	if Parser.kind_is(node.kind, Parser.StringLiteral()) or Parser.kind_is(node.kind, Parser.StringPart()) or Parser.kind_is(node.kind, Parser.StringConvert()) or Parser.kind_is(node.kind, Parser.StringJoin())
+		return ResultRule(IR.TYPE_STRING, -1)
+	# Integer-only operators and addition have known result rules; the body
+	# checker still rejects invalid operand combinations at instantiation.
+	if Parser.kind_is(node.kind, Parser.Negate()) or Parser.kind_is(node.kind, Parser.Subtract()) or Parser.kind_is(node.kind, Parser.Multiply()) or Parser.kind_is(node.kind, Parser.Divide()) or Parser.kind_is(node.kind, Parser.Remainder()) or Parser.kind_is(node.kind, Parser.BitAnd()) or Parser.kind_is(node.kind, Parser.BitOr()) or Parser.kind_is(node.kind, Parser.ShiftLeft()) or Parser.kind_is(node.kind, Parser.ShiftRight())
+		return ResultRule(IR.TYPE_I64, -1)
+	if Parser.kind_is(node.kind, Parser.Add())
+		return inferred_expression(parsed, function, node.left, signatures, functions)
+	if Parser.kind_is(node.kind, Parser.Variable())
+		for i in 0..len(function.parameters)
+			let parameter = parsed.nodes[!function.parameters[!i]]
+			if name(parsed, parameter.token) == name(parsed, node.token)
+				return ResultRule(IR.NO_TYPE, i)
+	if Parser.kind_is(node.kind, Parser.Call())
+		let target = functions.get(call_name(parsed, expression)) or -1
+		if target >= 0
+			let signature = signatures[!target]
+			if signature.result != IR.NO_TYPE
+				return ResultRule(signature.result, -1)
+			if signature.result_parameter >= 0 and signature.result_parameter < node.right
+				var argument = node.left
+				var position = node.right
+				while argument >= 0
+					position -= 1
+					if position == signature.result_parameter
+						return inferred_expression(parsed, function, parsed.nodes[!argument].left, signatures, functions)
+					argument = parsed.nodes[!argument].right
+	return ResultRule(IR.NO_TYPE, -1)
+
+def inferred_result(parsed: Parser.State, function: Parser.Function, signatures: Array[Signature], functions: Dict[string, i64]) -> ResultRule
+	for i in function.start..function.end
+		let node = parsed.nodes[!i]
+		if Parser.kind_is(node.kind, Parser.Return())
+			return inferred_expression(parsed, function, node.left, signatures, functions)
+	return ResultRule(IR.NO_TYPE, -1)
 
 # Concrete compilation checks only non-generic bodies. A selected specialization
 # checks one function under its concrete parameter types, retaining the same
@@ -277,17 +329,19 @@ def check_module_inner(parsed: Parser.State, initial_table: IR.TypeTable, extern
 			parameter_types = parameter_types.insert(parameter, type)
 			parameters = parameters.append(type)
 			parameter_id += 1
-		let resolved_result = resolve_type(parsed, function.result, type_table, record_types)
-		type_table = resolved_result.table
-		let result = resolved_result.type
-		if result == IR.NO_TYPE
-			error = "unknown type: " + name(parsed, function.result)
+		var result = IR.NO_TYPE
+		if function.result >= 0
+			let resolved_result = resolve_type(parsed, function.result, type_table, record_types)
+			type_table = resolved_result.table
+			result = resolved_result.type
+			if result == IR.NO_TYPE
+				error = "unknown type: " + name(parsed, function.result)
 		if target == "main" and (len(parameters) != 0 or result != IR.TYPE_I64)
 			error = "main must have signature main() -> i64"
 		if error != ""
 			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, error, parsed.tokens[!function.token].line)
 		functions = functions.insert(target, len(signatures))
-		signatures = signatures.append(Signature(target, parameters, result))
+		signatures = signatures.append(Signature(target, parameters, result, -1))
 		declaration_id += 1
 	if needs_main and (functions.get("main") or -1) < 0
 		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, "missing main function", 1)
@@ -295,6 +349,36 @@ def check_module_inner(parsed: Parser.State, initial_table: IR.TypeTable, extern
 		functions = functions.insert(item.name, len(signatures))
 		signatures = signatures.append(item.signature)
 		external_targets = external_targets.append(item.function_id)
+	# Resolve body-derived return rules after all names are collected, allowing
+	# imported forwarding calls and forward local signatures. A bounded fixed
+	# point handles local forwarding chains; cycles without an anchor are errors.
+	for pass in 0..len(parsed.functions) + 1
+		var progress = false
+		for fid in 0..len(parsed.functions)
+			let function = parsed.functions[!fid]
+			if function.result >= 0 or signatures[!fid].result != IR.NO_TYPE or signatures[!fid].result_parameter >= 0
+				continue
+			let rule = inferred_result(parsed, function, signatures, functions)
+			if rule.type != IR.NO_TYPE or rule.parameter >= 0
+				var result = rule.type
+				if rule.parameter >= 0 and signatures[!fid].parameters[!rule.parameter] != IR.NO_TYPE
+					result = signatures[!fid].parameters[!rule.parameter]
+				signatures[!fid] = Signature(signatures[!fid].name, signatures[!fid].parameters, result, rule.parameter)
+				progress = true
+		if not progress
+			break
+	for fid in 0..len(parsed.functions)
+		let function = parsed.functions[!fid]
+		if function.result < 0 and signatures[!fid].result == IR.NO_TYPE and signatures[!fid].result_parameter < 0
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, external_targets, record_types, constructors, "cannot infer function result; add -> annotation", parsed.tokens[!function.token].line)
+	# A specialized function substitutes its concrete argument types into the
+	# inferred result rule; an uninstantiated template keeps its parameter rule.
+	if selected >= 0
+		let signature = signatures[!selected]
+		if signature.result_parameter >= 0
+			let pos = signature.result_parameter
+			if pos < len(signature.parameters) and signature.parameters[!pos] != IR.NO_TYPE
+				signatures[!selected] = Signature(signature.name, signature.parameters, signature.parameters[!pos], pos)
 	# Seed expected types for expression trees that need context before their
 	# children are checked (notably arrays with mixed union alternatives).
 	var contexts = Dict[i64, i64]()
@@ -704,6 +788,10 @@ def check_module_inner(parsed: Parser.State, initial_table: IR.TypeTable, extern
 								conversions = accepted.conversions
 								if accepted.error != ""
 									error = accepted.error
+							if reference >= 0 and signatures[!reference].result_parameter == parameter
+								type = types[!item]
+								if parameters[!parameter] != IR.NO_TYPE
+									type = parameters[!parameter]
 							argument = parsed.nodes[!argument].right
 			Parser.Return
 				type = signatures[!function_id].result

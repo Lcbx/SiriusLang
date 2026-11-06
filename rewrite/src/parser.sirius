@@ -1083,9 +1083,11 @@ export def parse(source: string) -> State
 			if text(p) == ")"
 				p = fail(p, "expected parameter after comma")
 		p = expect(p, ")")
-		p = expect(p, "->")
-		let result = p.index
-		p = annotation(p)
+		var result = -1
+		if text(p) == "->"
+			p.index += 1
+			result = p.index
+			p = annotation(p)
 		p = block(p, -1)
 		if p.error == ""
 			p.functions = p.functions.append(Function(name, parameters, result, start, len(p.nodes)))

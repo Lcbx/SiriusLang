@@ -20,6 +20,8 @@ def main() -> None:
 	valid = [
 		('rec A(z: i64, a: string)\nrec B(a: string, z: i64)\ndef make() -> A\n\treturn B("ok", 7)\ndef main() -> i64\n\tprint(make().a)\n\treturn 0\n', 'make() -> 6\nmain() -> 0\nconstruct -> 6\ncall make -> 6\n'),
 		('def main() -> i64\n\treturn 0\n', 'main() -> 0\n'),
+		('def main() -> i64\n\treturn 0\ndef f(x) -> i64\n\treturn 0\n', 'main() -> 0\nf( -1) -> 0\n'),
+		('def main() -> i64\n\treturn 0\ndef f()\n\treturn 0\n', 'main() -> 0\nf() -> 0\n'),
 		('def main() -> i64\n\treturn twice(21)\n'
 		 'def twice(value: i64) -> i64\n\treturn value * 2\n',
 		 'main() -> 0\ntwice( 0) -> 0\ncall twice -> 0\n'),
@@ -67,7 +69,7 @@ def main() -> None:
 		(entry + 'def f() -> string\n\tlet x = "".byte_at(0) else return 1\n\treturn ""\n', 'return type mismatch', 4),
 		(entry + 'def f() -> bool\n\treturn 0\n', 'return type mismatch', 4),
 		(entry + 'def f() -> Optional[i64]\n\treturn 0\n', 'return type mismatch', 4),
-		('def main() -> i64\n\treturn unknown()\n', 'unknown function', 2),
+		('def main() -> i64\n\treturn unknown()\n', 'unknown or ambiguous function', 2),
 		('def main() -> i64\n\treturn f(1)\ndef f() -> i64\n\treturn 0\n', 'argument count mismatch', 2),
 		('def main() -> i64\n\treturn f()\ndef f(x: i64) -> i64\n\treturn x\n', 'argument count mismatch', 2),
 		('def main() -> i64\n\treturn f(true, 1)\ndef f(x: i64, y: bool) -> i64\n\treturn x\n', 'argument type mismatch', 2),
@@ -77,8 +79,7 @@ def main() -> None:
 		(entry + 'def f() -> i64\n\treturn g(false)\ndef g(x: i64) -> i64\n\treturn f()\n', 'argument type mismatch', 4),
 		('def main() -> i64\n\treturn unknown()\ndef f() -> i64\n\treturn 0\ndef f() -> i64\n\treturn 1\n', 'duplicate function: f', 5),
 	]
-	for declaration in ['def f(x) -> i64', 'def f(x: string,) -> i64',
-		'def f(x: Optional[]) -> i64', 'def f()']:
+	for declaration in ['def f(x: string,) -> i64', 'def f(x: Optional[]) -> i64']:
 		invalid.append((entry + declaration + '\n\treturn 0\n', 'expected', 3))
 	invalid.append((entry + 'def strings() -> Array[string]\n\treturn 0\n', 'return type mismatch', 4))
 	for expression in ['f(,)', 'f(1,)', 'f(1 2)']:

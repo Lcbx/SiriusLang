@@ -19,8 +19,8 @@ fields; recursive field/index updates now work for supported aggregate types,
 including recursive `Array[T]` layouts for supported scalars and records.
 Acyclic source-module linking is implemented for exported functions, records,
 enums and tagged unions, including qualified constructors and match arms;
-generic specialization with explicit result annotations is implemented for
-linked modules; inferred generic results and re-exports remain unimplemented.
+generic specialization supports explicit results and a bounded subset of inferred
+results for linked modules; general result inference and re-exports remain unimplemented.
 Previously declared record types are accepted as record fields. Array-valued
 record fields (`Array[i64]`, `Array[string]`, `Array[Record]`) are supported,
 including records stored in arrays.
@@ -254,11 +254,15 @@ invalid payloads and incompatible grouped binders fail.
   Support imported and transitive calls, recursive reuse, deterministic output,
   ARC and CoW, with a bounded expansion for polymorphic recursion.
   `tests/test_rewrite_generics.py` covers native execution and invalid cases.
-- [ ] Infer generic result types and allow specialization in standalone
-  single-file compilation. For now every generic function requires an explicit
-  concrete result annotation, and templates are instantiated only by the
-  source-module linker. Require annotations when recursive inference cannot
-  terminate.
+- [x] Infer returned-parameter and fixed-result rules for linked generic
+  functions, including transitive imported forwarding, forward local calls,
+  arithmetic, and multiple-return validation at instantiation. Unsupported
+  projections and cyclic inference require explicit annotations. Covered by
+  `tests/test_rewrite_inferred_generics.py` with native ARC/CoW checks.
+- [ ] Extend inference to projected and computed aggregates and general
+  recursive result dependencies, and allow generic specialization in standalone
+  single-file compilation. Templates currently instantiate only through the
+  source-module linker.
 - [ ] Implement the generic comparison and output operations required by
   compiler sources, specializing native C operations by checked type.
   Reject unsupported operations during checking.
@@ -285,8 +289,9 @@ functions, lambdas and general callback inference are not needed by today's grap
 - [x] Implement cross-module specialization of explicitly result-typed
   generic functions with omitted parameter annotations and source-local
   visibility. Intern concrete type descriptors and eliminate unused templates.
-- [ ] Add generic result inference, remaining type/constructor syntax, and any
-  other constructs required by the rewrite's own compiler graph.
+- [ ] Extend the bounded generic result inference to remaining expression
+  forms, including aggregate projections, and implement any other constructs
+  required by the rewrite's own compiler graph.
 - [ ] Support `arguments()`, `read_text` and `write_text`, including failure
   results, argument arrays, and `Optional[string]` early exits used by the CLI.
 - [x] Add `--compile-modules root Entry output.c`, rooted at the entry
