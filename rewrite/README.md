@@ -75,12 +75,27 @@ payloads have identical structural types. Payloads are owned inline with the
 tagged value, with retain/release for managed fields. Unions work as function
 parameters/results, optional payloads, array elements and dictionary values;
 copying preserves value semantics and CoW. Union descriptors are canonical for
-the same ordered sequence of label names and payload types. Neither a record
-nor an already-tagged union converts implicitly to another union alternative.
+the same ordered sequence of label names and payload types. Record-to-union injection is contextual: typed bindings, function arguments,
+returns, optional construction, array literals/append/indexed updates,
+dictionary inserts, and record fields accept a matching payload. A direct
+constructor such as `Feet(5)` chooses its declared label even when another
+variant has the same structural payload type; a stored record can be injected
+only when **exactly one** alternative has its shape. Ambiguous stored records
+produce an error instead of arbitrarily choosing a tag. Already-tagged unions
+cannot be relabeled by an implicit or explicit conversion.
 
-This stage collects aliases after their record alternatives; references to a
-union type in an earlier record declaration, contextual conversion from a
-record constructor, and bare constructor selection are still unsupported.
+Record and union aliases resolve in declaration order, so records may contain
+previously declared union aliases (`rec Holder(value: Distance)`). Forward or
+cyclic references remain invalid. Contextually typed array literals accept
+mixed union variants, including nested literals, while untyped literals stay
+homogeneous. Converted records are copied into explicit typed union slots;
+ARC, branch targets and CoW snapshots are preserved in native output.
+Direct `.index` calls also accept contextually injected constructor expressions,
+but not stored untagged records (even when their shape uniquely matches).
+`tests/test_rewrite_contextual_unions.py` covers success and failure cases.
+Conversion of already-constructed arrays, optional values and dictionaries
+*between different aggregate types*, as well as qualified imported
+constructors, remains unimplemented.
 `==` and `!=` compare records, optionals, enums and unions structurally:
 records compare corresponding canonical fields, unions compare both their
 label and payload, and optionals distinguish absent from present values.

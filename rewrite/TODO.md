@@ -192,9 +192,19 @@ missing lookups, managed defaults and shared updates are covered.
   type-specific ARC. Arrays, dictionaries, optionals and functions carry union
   values with owned copies. `tests/test_rewrite_unions.py` covers the subset.
 - [x] Extend declaration-order `.index(label_or_value)` to labeled unions.
-- [ ] Add contextual constructor selection for direct records, implicit
-  conversion of uniquely compatible payloads, and union-dependent record
-  declarations. Explicit conversion must never relabel an existing union.
+- [x] Add contextual union injection for direct record constructors and
+  structurally unique stored records in typed bindings, calls, returns,
+  `Array[Union]` literals/append/indexed updates, `Dict[K,Union]` inserts,
+  optional payloads, record fields and explicit union `.index` calls. Direct
+  constructors select their label even if payloads have the same shape;
+  ambiguous stored records are rejected. Lowering emits verified `MakeUnion`
+  instructions with owned temporary slots, preserving CoW and branch targets.
+  Resolve record/union declarations in source order so later records can hold
+  earlier union types. Tests: `tests/test_rewrite_contextual_unions.py`.
+  Tagged unions are never implicitly relabeled.
+- [ ] Extend contextual coercion to rewrap **already constructed** arrays,
+  optionals and dictionary values (rather than only accepting constructors,
+  literals and element operations), and support qualified imported constructors.
 - [x] Add exhaustive `match` over enums and labeled unions with bare tags,
   positional record-field bindings, duplicate/missing-label checks and native
   tag tests/field extraction. Matched fields are owned copies with ARC/CoW;

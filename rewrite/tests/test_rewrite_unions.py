@@ -112,7 +112,7 @@ INVALID = [
     ('no implicit relabel', 'rec A(x: i64)\nrec B(x: string)\nlet U = A | B\ndef main() -> i64\n    let value = U.A(U.B(B("x")))\n    return 0\n', b'union payload type mismatch'),
     ('distinct order is a distinct type', 'rec A(x: i64)\nrec B(x: string)\nlet U = A | B\nlet V = B | A\ndef accept(value: U) -> i64\n    return 0\ndef main() -> i64\n    return accept(V.A(A(3)))\n', b'argument type mismatch'),
     ('reserved alias name', 'rec A(x: i64)\nrec B(x: string)\nlet i64 = A | B\ndef main() -> i64\n    return 0\n', b'duplicate or reserved union'),
-    ('no implicit record-to-union', 'rec A(x: i64)\nrec B(x: string)\nlet U = A | B\ndef take(x: U) -> i64\n    return 0\ndef main() -> i64\n    return take(A(2))\n', b'argument type mismatch'),
+    ('ambiguous stored record-to-union', 'rec A(x: i64)\nrec B(x: i64)\nlet U = A | B\ndef take(x: U) -> i64\n    return 0\ndef main() -> i64\n    let value = A(2)\n    return take(value)\n', b'ambiguous union injection'),
 ]
 
 

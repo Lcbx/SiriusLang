@@ -3,7 +3,8 @@ import ir alias IR
 
 export rec Signature(name: string, parameters: Array[i64], result: i64)
 export rec Constructor(type: i64, parameters: Array[IR.RecordField])
-export rec Checked(parsed: Parser.State, type_table: IR.TypeTable, signatures: Array[Signature], references: Array[i64], types: Array[i64], constructor_calls: Dict[i64, Constructor], match_fields: Dict[i64, Array[i64]], error: string, line: i64)
+export rec Conversion(type: i64, tag: i64)
+export rec Checked(parsed: Parser.State, type_table: IR.TypeTable, signatures: Array[Signature], references: Array[i64], types: Array[i64], constructor_calls: Dict[i64, Constructor], match_fields: Dict[i64, Array[i64]], conversions: Dict[i64, Conversion], error: string, line: i64)
 rec Binding(node: i64, mutable: bool, depth: i64)
 
 def name(parsed: Parser.State, token_id: i64) -> string
@@ -59,6 +60,47 @@ def resolve_type(parsed: Parser.State, token: i64, table: IR.TypeTable, records:
 		return ResolvedType(table, IR.TYPE_STRING, token + 1)
 	return ResolvedType(table, records.get(type_name) or IR.NO_TYPE, token + 1)
 
+# A record constructor's name is a contextual label; other record values
+# have structural identity only. With same-shaped alternatives, a stored
+# record cannot choose a label. Existing tagged values never get relabeled.
+rec Accepted(conversions: Dict[i64, Conversion], error: string)
+
+def accept_value(parsed: Parser.State, table: IR.TypeTable, expression: i64, actual: i64, expected: i64, conversions: Dict[i64, Conversion], mismatch: string) -> Accepted
+	if IR.compatible(table, actual, expected)
+		return Accepted(conversions, "")
+	if not IR.is_record(table, actual) or not IR.is_union(table, expected)
+		return Accepted(conversions, mismatch)
+	let node = parsed.nodes[!expression]
+	if Parser.kind_is(node.kind, Parser.Call())
+		let label = name(parsed, node.token)
+		let selected = IR.union_index(table, expected, label)
+		if selected >= 0 and IR.compatible(table, actual, IR.union_payload(table, expected, selected))
+			return Accepted(conversions.insert(expression, Conversion(expected, selected)), "")
+	var selected = -1
+	for tag in 0..len(table.entries[!expected].fields)
+		if IR.compatible(table, actual, IR.union_payload(table, expected, tag))
+			if selected >= 0
+				return Accepted(conversions, "ambiguous union injection; select a label explicitly")
+			selected = tag
+	if selected < 0
+		return Accepted(conversions, mismatch)
+	return Accepted(conversions.insert(expression, Conversion(expected, selected)), "")
+
+# Context is propagated before type checking: children of a typed array
+# literal must know the element type before the enclosing literal is checked.
+def context_for(parsed: Parser.State, expression: i64, expected: i64, table: IR.TypeTable, contexts: Dict[i64, i64]) -> Dict[i64, i64]
+	if expression < 0 or expected == IR.NO_TYPE
+		return contexts
+	var result = contexts.insert(expression, expected)
+	let node = parsed.nodes[!expression]
+	if Parser.kind_is(node.kind, Parser.ArrayLiteral()) and IR.is_array(table, expected)
+		var argument = node.left
+		while argument >= 0
+			let item = parsed.nodes[!argument]
+			result = context_for(parsed, item.left, IR.array_element(table, expected), table, result)
+			argument = item.right
+	return result
+
 export def check(parsed: Parser.State) -> Checked
 	var type_table = IR.runtime_types()
 	var record_types = Dict[string, i64]()
@@ -67,12 +109,13 @@ export def check(parsed: Parser.State) -> Checked
 	var constructor_calls = Dict[i64, Constructor]()
 	var match_coverage = Dict[i64, Array[bool]]()
 	var match_fields = Dict[i64, Array[i64]]()
+	var conversions = Dict[i64, Conversion]()
 	var references = Array[i64]()
 	var types = Array[i64]()
 	var signatures = Array[Signature]()
 	var functions = Dict[string, i64]()
 	if parsed.error != ""
-		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, parsed.error, parsed.error_line)
+		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, parsed.error, parsed.error_line)
 	# Pre-intern complete builtin array annotations before record declarations,
 	# preserving stable IDs for existing programs. Record-dependent arrays are
 	# resolved after the referenced record has been declared.
@@ -86,74 +129,81 @@ export def check(parsed: Parser.State) -> Checked
 	for enumeration in parsed.enums
 		let target = name(parsed, enumeration.token)
 		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE or target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Array" or target == "Dict" or target == "Optional" or target == "len" or target == "str" or target == "print" or target == "eprint"
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "duplicate or reserved enum: " + target, parsed.tokens[!enumeration.token].line)
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "duplicate or reserved enum: " + target, parsed.tokens[!enumeration.token].line)
 		var labels = Array[string]()
 		for label in enumeration.labels
 			labels = labels.append(name(parsed, label))
 		let interned = IR.intern_enum(type_table, labels)
 		if interned.id == IR.NO_TYPE
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "enum requires two distinct labels", parsed.tokens[!enumeration.token].line)
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "enum requires two distinct labels", parsed.tokens[!enumeration.token].line)
 		type_table = interned.table
 		record_types = record_types.insert(target, interned.id)
 		for i in 0..len(labels)
 			let label = labels[!i]
 			if label == "index" or label == "main"
-				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "reserved enum label: " + label, parsed.tokens[!enumeration.labels[!i]].line)
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "reserved enum label: " + label, parsed.tokens[!enumeration.labels[!i]].line)
 			if (constructors.get(label) or Constructor(IR.NO_TYPE, [])).type != IR.NO_TYPE
-				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "enum label conflicts with record: " + label, parsed.tokens[!enumeration.labels[!i]].line)
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "enum label conflicts with record: " + label, parsed.tokens[!enumeration.labels[!i]].line)
 			let previous = enum_labels.get(label) or IR.NO_TYPE
 			if previous != IR.NO_TYPE
 				enum_labels = enum_labels.insert(label, -2) # ambiguous
 			else
 				enum_labels = enum_labels.insert(label, interned.id)
-	for record in parsed.records
-		let target = name(parsed, record.token)
-		var error = ""
-		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
-			error = "duplicate record or enum: " + target
-		elif (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE
-			error = "record name conflicts with enum label: " + target
-		elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "Dict" or target == "len" or target == "str" or target == "print" or target == "eprint"
-			error = "reserved record name: " + target
-		if error != ""
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, error, parsed.tokens[!record.token].line)
-		var fields = Array[IR.RecordField]()
-		var names = Dict[string, bool]()
-		for field in record.fields
-			let field_name = name(parsed, field.token)
-			let resolved = resolve_type(parsed, field.annotation, type_table, record_types)
-			type_table = resolved.table
-			let type = resolved.type
-			if names.get(field_name) or false
-				error = "duplicate record field: " + field_name
-			elif not IR.runtime_type(type_table, type)
-				error = "unsupported record field type"
+	# Resolve records and unions in declaration order. A record may now refer
+	# to an earlier union alias, but cyclic and forward references stay invalid.
+	var record_cursor = 0
+	var union_cursor = 0
+	while record_cursor < len(parsed.records) or union_cursor < len(parsed.unions)
+		if union_cursor < len(parsed.unions) and (record_cursor >= len(parsed.records) or parsed.unions[!union_cursor].token < parsed.records[!record_cursor].token)
+			let alias = parsed.unions[!union_cursor]
+			union_cursor += 1
+			let target = name(parsed, alias.token)
+			if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE or (constructors.get(target) or Constructor(IR.NO_TYPE, [])).type != IR.NO_TYPE or (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE or target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Array" or target == "Optional" or target == "Dict"
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "duplicate or reserved union: " + target, parsed.tokens[!alias.token].line)
+			var variants = Array[IR.RecordField]()
+			for label in alias.labels
+				let alternative = name(parsed, label)
+				let variant = constructors.get(alternative) or Constructor(IR.NO_TYPE, [])
+				if variant.type == IR.NO_TYPE
+					return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "union alternative must be a record: " + alternative, parsed.tokens[!label].line)
+				variants = variants.append(IR.RecordField(alternative, variant.type))
+			let interned = IR.intern_union(type_table, variants)
+			if interned.id == IR.NO_TYPE
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "union requires two distinct record alternatives", parsed.tokens[!alias.token].line)
+			type_table = interned.table
+			record_types = record_types.insert(target, interned.id)
+		else
+			let record = parsed.records[!record_cursor]
+			record_cursor += 1
+			let target = name(parsed, record.token)
+			var error = ""
+			if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE
+				error = "duplicate record or enum: " + target
+			elif (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE
+				error = "record name conflicts with enum label: " + target
+			elif target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Optional" or target == "Array" or target == "Dict" or target == "len" or target == "str" or target == "print" or target == "eprint"
+				error = "reserved record name: " + target
 			if error != ""
-				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, error, parsed.tokens[!field.token].line)
-			names = names.insert(field_name, true)
-			fields = fields.append(IR.RecordField(field_name, type))
-		let interned = IR.intern_record(type_table, fields)
-		type_table = interned.table
-		record_types = record_types.insert(target, interned.id)
-		constructors = constructors.insert(target, Constructor(interned.id, fields))
-	# Union aliases refer to declared record constructors. Keep label order
-	# independent of the structural identity of the payload records.
-	for alias in parsed.unions
-		let target = name(parsed, alias.token)
-		if (record_types.get(target) or IR.NO_TYPE) != IR.NO_TYPE or (constructors.get(target) or Constructor(IR.NO_TYPE, [])).type != IR.NO_TYPE or (enum_labels.get(target) or IR.NO_TYPE) != IR.NO_TYPE or target == "main" or target == "i64" or target == "bool" or target == "string" or target == "Array" or target == "Optional" or target == "Dict"
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "duplicate or reserved union: " + target, parsed.tokens[!alias.token].line)
-		var variants = Array[IR.RecordField]()
-		for label in alias.labels
-			let alternative = name(parsed, label)
-			let variant = constructors.get(alternative) or Constructor(IR.NO_TYPE, [])
-			if variant.type == IR.NO_TYPE
-				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "union alternative must be a record: " + alternative, parsed.tokens[!label].line)
-			variants = variants.append(IR.RecordField(alternative, variant.type))
-		let interned = IR.intern_union(type_table, variants)
-		if interned.id == IR.NO_TYPE
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "union requires two distinct record alternatives", parsed.tokens[!alias.token].line)
-		type_table = interned.table
-		record_types = record_types.insert(target, interned.id)
+				return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, error, parsed.tokens[!record.token].line)
+			var fields = Array[IR.RecordField]()
+			var names = Dict[string, bool]()
+			for field in record.fields
+				let field_name = name(parsed, field.token)
+				let resolved = resolve_type(parsed, field.annotation, type_table, record_types)
+				type_table = resolved.table
+				let type = resolved.type
+				if names.get(field_name) or false
+					error = "duplicate record field: " + field_name
+				elif not IR.runtime_type(type_table, type)
+					error = "unsupported record field type"
+				if error != ""
+					return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, error, parsed.tokens[!field.token].line)
+				names = names.insert(field_name, true)
+				fields = fields.append(IR.RecordField(field_name, type))
+			let interned = IR.intern_record(type_table, fields)
+			type_table = interned.table
+			record_types = record_types.insert(target, interned.id)
+			constructors = constructors.insert(target, Constructor(interned.id, fields))
 	# Array element layouts refer to already canonicalized record descriptors.
 	for record in parsed.records
 		let id = record_types.get(name(parsed, record.token)) or IR.NO_TYPE
@@ -187,11 +237,46 @@ export def check(parsed: Parser.State) -> Checked
 		if target == "main" and (len(parameters) != 0 or result != IR.TYPE_I64)
 			error = "main must have signature main() -> i64"
 		if error != ""
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, error, parsed.tokens[!function.token].line)
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, error, parsed.tokens[!function.token].line)
 		functions = functions.insert(target, len(signatures))
 		signatures = signatures.append(Signature(target, parameters, result))
 	if (functions.get("main") or -1) < 0
-		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "missing main function", 1)
+		return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "missing main function", 1)
+	# Seed expected types for expression trees that need context before their
+	# children are checked (notably arrays with mixed union alternatives).
+	var contexts = Dict[i64, i64]()
+	for fid in 0..len(parsed.functions)
+		let function = parsed.functions[!fid]
+		for id in function.start..function.end
+			let node = parsed.nodes[!id]
+			if Parser.kind_is(node.kind, Parser.Return())
+				contexts = context_for(parsed, node.left, signatures[!fid].result, type_table, contexts)
+			elif Parser.kind_is(node.kind, Parser.Binding()) or Parser.kind_is(node.kind, Parser.MutableBinding())
+				if node.right >= 0
+					let resolved = resolve_type(parsed, node.right, type_table, record_types)
+					type_table = resolved.table
+					contexts = context_for(parsed, node.left, resolved.type, type_table, contexts)
+			elif Parser.kind_is(node.kind, Parser.Call())
+				let target = name(parsed, node.token)
+				var parameters = Array[i64]()
+				let function_id = functions.get(target) or -1
+				let constructor = constructors.get(target) or Constructor(IR.NO_TYPE, [])
+				if constructor.type != IR.NO_TYPE
+					for field in constructor.parameters
+						parameters = parameters.append(field.type)
+				elif function_id >= 0
+					parameters = signatures[!function_id].parameters
+				if len(parameters) == node.right
+					var argument = node.left
+					var position = node.right
+					while argument >= 0
+						position -= 1
+						contexts = context_for(parsed, parsed.nodes[!argument].left, parameters[!position], type_table, contexts)
+						argument = parsed.nodes[!argument].right
+			elif Parser.kind_is(node.kind, Parser.OptionalConstruct()) and node.left >= 0
+				let resolved = resolve_type(parsed, node.token, type_table, record_types)
+				type_table = resolved.table
+				contexts = context_for(parsed, node.left, resolved.type, type_table, contexts)
 	var bindings = Dict[string, Binding]()
 	var scopes = Array[Dict[string, Binding]]()
 	var depth = 0
@@ -309,8 +394,12 @@ export def check(parsed: Parser.State) -> Checked
 				if not IR.is_enum(type_table, enum_type) and not IR.is_union(type_table, enum_type)
 					error = "enum/union index requires enum or union type"
 				elif node.left >= 0
-					if types[!node.left] != enum_type
-						error = "enum index requires matching enum value"
+					if IR.is_union(type_table, enum_type) and IR.is_record(type_table, types[!node.left]) and not Parser.kind_is(parsed.nodes[!node.left].kind, Parser.Call())
+						error = "union index requires tagged value or direct constructor"
+					else
+						let accepted = accept_value(parsed, type_table, node.left, types[!node.left], enum_type, conversions, "enum index requires matching enum value")
+						conversions = accepted.conversions
+						error = accepted.error
 				else
 					let target = name(parsed, node.right)
 					let binding = bindings.get(target) or Binding(-1, false, -1)
@@ -335,8 +424,10 @@ export def check(parsed: Parser.State) -> Checked
 					let optional = IR.intern_optional(type_table, resolved.type)
 					type_table = optional.table
 					type = optional.id
-					if node.left >= 0 and not IR.compatible(type_table, types[!node.left], resolved.type)
-						error = "optional payload type mismatch"
+					if node.left >= 0
+						let accepted = accept_value(parsed, type_table, node.left, types[!node.left], resolved.type, conversions, "optional payload type mismatch")
+						conversions = accepted.conversions
+						error = accepted.error
 			Parser.DictLiteral
 				let resolved = resolve_type(parsed, node.token, type_table, record_types)
 				type_table = resolved.table
@@ -358,8 +449,12 @@ export def check(parsed: Parser.State) -> Checked
 			Parser.DictInsert
 				type = types[!node.left]
 				let pair = parsed.nodes[!node.right]
-				if not IR.is_dict(type_table, type) or types[!pair.left] != IR.dict_key(type_table, type) or not IR.compatible(type_table, types[!pair.right], IR.dict_value(type_table, type))
+				if not IR.is_dict(type_table, type) or types[!pair.left] != IR.dict_key(type_table, type)
 					error = "dictionary insert type mismatch"
+				else
+					let accepted = accept_value(parsed, type_table, pair.right, types[!pair.right], IR.dict_value(type_table, type), conversions, "dictionary insert type mismatch")
+					conversions = accepted.conversions
+					error = accepted.error
 			Parser.ArrayLiteral
 				var element = integer
 				if name(parsed, node.token) == "Array"
@@ -372,7 +467,12 @@ export def check(parsed: Parser.State) -> Checked
 						error = "empty array literal requires Array[T]()"
 					else
 						element = types[!parsed.nodes[!node.left].left]
-					if IR.runtime_type(type_table, element)
+					let expected = contexts.get(i) or IR.NO_TYPE
+					if IR.is_array(type_table, expected)
+						element = IR.array_element(type_table, expected)
+						if IR.runtime_type(type_table, element)
+							type = expected
+					if type == IR.NO_TYPE and IR.runtime_type(type_table, element)
 						let interned = IR.intern_array(type_table, element)
 						type_table = interned.table
 						type = interned.id
@@ -380,8 +480,16 @@ export def check(parsed: Parser.State) -> Checked
 					error = "unsupported array element type"
 				var arg = node.left
 				while arg >= 0
-					if types[!parsed.nodes[!arg].left] != element
+					let item = parsed.nodes[!arg].left
+					# Untyped literals must stay homogeneous; do not infer a union
+					# context merely because the first element is already tagged.
+					if (contexts.get(i) or IR.NO_TYPE) == IR.NO_TYPE and types[!item] != element
 						error = "array element type mismatch"
+					else
+						let accepted = accept_value(parsed, type_table, item, types[!item], element, conversions, "array element type mismatch")
+						conversions = accepted.conversions
+						if accepted.error != ""
+							error = accepted.error
 					arg = parsed.nodes[!arg].right
 			Parser.ArrayRead | Parser.ArrayGet
 				let source = types[!node.left]
@@ -399,8 +507,12 @@ export def check(parsed: Parser.State) -> Checked
 					type = interned.id
 			Parser.ArrayAppend
 				type = types[!node.left]
-				if not IR.is_array(type_table, type) or types[!node.right] != IR.array_element(type_table, type)
+				if not IR.is_array(type_table, type)
 					error = "append element type mismatch"
+				else
+					let accepted = accept_value(parsed, type_table, node.right, types[!node.right], IR.array_element(type_table, type), conversions, "append element type mismatch")
+					conversions = accepted.conversions
+					error = accepted.error
 			Parser.ArrayIndex
 				type = integer
 				if types[!node.left] != integer or types[!node.right] != integer
@@ -437,8 +549,9 @@ export def check(parsed: Parser.State) -> Checked
 				if not IR.is_array(type_table, type) or types[!node.right] != integer
 					error = "indexed assignment requires array and i64 index"
 			Parser.ArraySet
-				if types[!node.right] != IR.array_element(type_table, types[!node.left])
-					error = "array assignment type mismatch"
+				let accepted = accept_value(parsed, type_table, node.right, types[!node.right], IR.array_element(type_table, types[!node.left]), conversions, "array assignment type mismatch")
+				conversions = accepted.conversions
+				error = accepted.error
 			Parser.FieldRead
 				let source = types[!node.left]
 				reference = IR.field_index(type_table, source, name(parsed, node.token))
@@ -451,8 +564,10 @@ export def check(parsed: Parser.State) -> Checked
 				reference = IR.field_index(type_table, type, name(parsed, node.token))
 				if reference < 0
 					error = "unknown record field: " + name(parsed, node.token)
-				elif not IR.compatible(type_table, types[!node.right], type_table.entries[!type].fields[!reference].type)
-					error = "assignment type mismatch"
+				else
+					let accepted = accept_value(parsed, type_table, node.right, types[!node.right], type_table.entries[!type].fields[!reference].type, conversions, "assignment type mismatch")
+					conversions = accepted.conversions
+					error = accepted.error
 			Parser.FieldAssign
 				let base = parsed.nodes[!node.left]
 				let target = name(parsed, base.token)
@@ -463,8 +578,10 @@ export def check(parsed: Parser.State) -> Checked
 					error = "cannot assign to immutable binding: " + target
 				elif reference < 0
 					error = "unknown record field: " + name(parsed, node.token)
-				elif not IR.compatible(type_table, types[!node.right], type_table.entries[!type].fields[!reference].type)
-					error = "assignment type mismatch"
+				else
+					let accepted = accept_value(parsed, type_table, node.right, types[!node.right], type_table.entries[!type].fields[!reference].type, conversions, "assignment type mismatch")
+					conversions = accepted.conversions
+					error = accepted.error
 			Parser.Parameter
 				let target = name(parsed, node.token)
 				let resolved = resolve_type(parsed, node.right, type_table, record_types)
@@ -506,13 +623,17 @@ export def check(parsed: Parser.State) -> Checked
 						var parameter = node.right
 						while argument >= 0
 							parameter -= 1
-							if not IR.compatible(type_table, types[!argument], parameters[!parameter])
-								error = "argument type mismatch: " + target
+							let item = parsed.nodes[!argument].left
+							let accepted = accept_value(parsed, type_table, item, types[!item], parameters[!parameter], conversions, "argument type mismatch: " + target)
+							conversions = accepted.conversions
+							if accepted.error != ""
+								error = accepted.error
 							argument = parsed.nodes[!argument].right
 			Parser.Return
 				type = signatures[!function_id].result
-				if not IR.compatible(type_table, types[!node.left], type)
-					error = "return type mismatch"
+				let accepted = accept_value(parsed, type_table, node.left, types[!node.left], type, conversions, "return type mismatch")
+				conversions = accepted.conversions
+				error = accepted.error
 			Parser.OptionalUnwrap | Parser.OptionalExit
 				let input = types[!node.left]
 				type = IR.optional_payload(type_table, input)
@@ -571,8 +692,10 @@ export def check(parsed: Parser.State) -> Checked
 					if Parser.kind_is(node.kind, Parser.Assign())
 						if not binding.mutable
 							error = "cannot assign to immutable binding: " + target
-						elif not IR.compatible(type_table, types[!node.left], type)
-							error = "assignment type mismatch"
+						else
+							let accepted = accept_value(parsed, type_table, node.left, types[!node.left], type, conversions, "assignment type mismatch")
+							conversions = accepted.conversions
+							error = accepted.error
 			Parser.Binding | Parser.MutableBinding
 				let target = name(parsed, node.token)
 				let existing = bindings.get(target) or Binding(-1, false, -1)
@@ -585,8 +708,10 @@ export def check(parsed: Parser.State) -> Checked
 					let expected = resolved.type
 					if expected == IR.NO_TYPE
 						error = "unknown type: " + name(parsed, node.right)
-					elif not IR.compatible(type_table, type, expected)
-						error = "binding type mismatch"
+					else
+						let accepted = accept_value(parsed, type_table, node.left, type, expected, conversions, "binding type mismatch")
+						conversions = accepted.conversions
+						error = accepted.error
 					type = expected
 				bindings = bindings.insert(target, Binding(i, Parser.kind_is(node.kind, Parser.MutableBinding()), depth))
 			Parser.IntegerLiteral
@@ -628,8 +753,9 @@ export def check(parsed: Parser.State) -> Checked
 					error = "logical operator requires bool"
 			Parser.LogicalEnd
 				type = types[!node.left]
-				if types[!node.right] != type
-					error = "logical/default operand type mismatch"
+				let accepted = accept_value(parsed, type_table, node.right, types[!node.right], type, conversions, "logical/default operand type mismatch")
+				conversions = accepted.conversions
+				error = accepted.error
 			Parser.Print | Parser.Eprint
 				type = types[!node.left]
 				if IR.is_optional(type_table, type)
@@ -665,7 +791,7 @@ export def check(parsed: Parser.State) -> Checked
 				if node.right >= 0 and types[!node.right] != integer
 					error = "expected i64 operand"
 		if error != ""
-			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, error, parsed.tokens[!node.token].line)
+			return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, error, parsed.tokens[!node.token].line)
 		references = references.append(reference)
 		types = types.append(type)
-	return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, "", 0)
+	return Checked(parsed, type_table, signatures, references, types, constructor_calls, match_fields, conversions, "", 0)
