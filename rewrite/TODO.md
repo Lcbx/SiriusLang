@@ -256,11 +256,13 @@ invalid payloads and incompatible grouped binders fail.
   `tests/test_rewrite_generics.py` covers native execution and invalid cases.
 - [x] Infer returned-parameter and fixed-result rules for linked generic
   functions, including transitive imported forwarding, forward local calls,
-  arithmetic, and multiple-return validation at instantiation. Unsupported
-  projections and cyclic inference require explicit annotations. Covered by
-  `tests/test_rewrite_inferred_generics.py` with native ARC/CoW checks.
-- [ ] Extend inference to projected and computed aggregates and general
-  recursive result dependencies, and allow generic specialization in standalone
+  arithmetic, and multiple-return validation at instantiation. Checked
+  index/field projection paths and compositions through imported calls are also
+  supported. Cyclic dependencies and local intermediate bindings still require
+  explicit results. Covered by `tests/test_rewrite_inferred_generics.py`
+  with native ARC/CoW checks.
+- [ ] Extend inference to other computed aggregates, optional reads, and
+  general recursive result dependencies; allow generic specialization in standalone
   single-file compilation. Templates currently instantiate only through the
   source-module linker.
 - [ ] Implement the generic comparison and output operations required by
@@ -290,7 +292,7 @@ functions, lambdas and general callback inference are not needed by today's grap
   generic functions with omitted parameter annotations and source-local
   visibility. Intern concrete type descriptors and eliminate unused templates.
 - [ ] Extend the bounded generic result inference to remaining expression
-  forms, including aggregate projections, and implement any other constructs
+  forms beyond checked index/field projections, and implement constructs
   required by the rewrite's own compiler graph.
 - [ ] Support `arguments()`, `read_text` and `write_text`, including failure
   results, argument arrays, and `Optional[string]` early exits used by the CLI.

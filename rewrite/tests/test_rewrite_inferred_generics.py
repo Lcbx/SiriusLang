@@ -128,10 +128,73 @@ def main() -> i64
     print(L.say(2))
     return 0
 '''}, b'always\nalways\n', 3),
+    ({'Lib': '''export def head(values)
+    return values[!0]
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    print(L.head([5, 8]))
+    print(L.head(["one", "two"]))
+    print(L.head([true, false]))
+    print(L.head([9]))
+    return 0
+'''}, b'5\none\ntrue\n9\n', 4),
+    ({'Types': '''export rec Item(name: string, value: i64)
+export rec Holder(items: Array[Item], title: string)
+''', 'Lib': '''import Types alias T
+export def title(box)
+    return box.title
+export def inner(box)
+    return box.items[!0].name
+''', 'Mid': '''import Lib alias L
+export def forwarded(box)
+    return L.inner(box)
+''', 'Main': '''import Types alias T
+import Lib alias L
+import Mid alias M
+def main() -> i64
+    var items = [T.Item("old", 4)]
+    let h = T.Holder(items, "before")
+    let name = M.forwarded(h)
+    let title = L.title(h)
+    items[!0] = T.Item("new", 5)
+    print(name)
+    print(title)
+    print(M.forwarded(h))
+    return 0
+'''}, b'old\nbefore\nold\n', 4),
+    ({'Lib': '''export def element(values)
+    return values[!0]
+export def composed(box)
+    return element(box.items)
+''', 'Main': '''import Lib alias L
+rec Box(items: Array[string], note: i64)
+def main() -> i64
+    let box = Box(["part"], 1)
+    print(L.composed(box))
+    return 0
+'''}, b'part\n', 3),
+    ({'Lib': '''export def read(values)
+    return values[!"key"]
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    let mapping = Dict[string, string]().insert("key", "data")
+    print(L.read(mapping))
+    return 0
+'''}, b'data\n', 2),
+    ({'Lib': '''export def head(values: Array[string])
+    return values[!0]
+export def choice(other, box)
+    return box.field
+''', 'Main': '''import Lib alias L
+rec Packet(field: string)
+def main() -> i64
+    print(L.head(["typed"]))
+    print(L.choice(true, Packet("selected")))
+    return 0
+'''}, b'typed\nselected\n', 3),
 ]
 
 INVALID = [
-    ({'Lib': 'export def unsupported(x)\n    return x[!0]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.unsupported([1])\n'}, 'cannot infer function result'),
     ({'Lib': 'export def unsupported(x)\n    let y = x\n    return y\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.unsupported(1)\n'}, 'cannot infer function result'),
     ({'Lib': 'export def broken(x)\n    return broken(x)\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.broken(1)\n'}, 'cannot infer function result'),
     ({'Lib': 'export def choose(x, flag: bool)\n    if flag\n        return x\n    return 4\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.choose("word", true))\n    return 0\n'}, 'return type mismatch'),
@@ -140,6 +203,10 @@ INVALID = [
     ({'Lib': 'export def impossible(x)\n    return missing\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return 0\n'}, 'cannot infer function result'),
     ({'Main': 'def main()\n    return 0\n'}, 'main must have signature'),
     ({'Lib': 'export def index(x)\n    return x\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.index([1, "x"]))\n    return 0\n'}, 'array element type mismatch'),
+    ({'Lib': 'export def head(x)\n    return x[!0]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.head(42))\n    return 0\n'}, 'invalid inferred result projection'),
+    ({'Lib': 'export def field(x)\n    return x.absent\n', 'Main': 'import Lib alias L\nrec Data(name: string)\ndef main() -> i64\n    print(L.field(Data("test")))\n    return 0\n'}, 'invalid inferred result projection'),
+    ({'Lib': 'export def head(x)\n    return x[!"wrong"]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.head([1, 2]))\n    return 0\n'}, 'checked array read requires array and i64 index'),
+    ({'Lib': 'export def unsupported(x)\n    return x[?0]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.unsupported([1])\n'}, 'cannot infer function result'),
 ]
 
 
@@ -154,6 +221,9 @@ def main():
     with tempfile.TemporaryDirectory(prefix='rewrite-inferred-generics-') as tmp:
         root = Path(tmp)
         generated = root / 'generated.c'
+        runtime = root / 'runtime.o'
+        execute([cache.cc, *C_FLAGS, '-DSIRIUS_ARC_AUDIT', '-I', str(ROOT / 'runtime'),
+                 '-c', str(ROOT / 'runtime/sirius_runtime.c'), '-o', str(runtime)])
         for number, (files, expected, count) in enumerate(VALID):
             for name, text in files.items():
                 (root / f'{name}.sirius').write_text(source(text))
@@ -166,8 +236,8 @@ def main():
             assert definitions == count, (number, definitions, count)
             binary = executable_path(root / f'case_{number}')
             execute([cache.cc, *C_FLAGS, '-Wno-unused-function', '-DSIRIUS_ARC_AUDIT',
-                     '-I', str(ROOT / 'runtime'), generated, cache.runtime(),
-                     *link_flags(cache.cc), '-o', binary])
+                     '-I', str(ROOT / 'runtime'), str(generated), str(runtime),
+                     *link_flags(cache.cc), '-o', str(binary)])
             actual = run(binary)
             assert actual.returncode == 0 and normalize_newlines(actual.stdout) == expected and not actual.stderr, (number, actual)
         for number, (files, fragment) in enumerate(INVALID):

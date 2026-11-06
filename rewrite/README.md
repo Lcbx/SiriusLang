@@ -62,16 +62,20 @@ export def length(values)
 A result may be inferred from a returned parameter (including an imported or
 local forwarding call), an integer/string/Boolean literal, `len`, a comparison,
 string formatting or string predicates, integer operators, or an addition whose
-left operand has an inferable result rule. For parameter-dependent results, the
-caller's concrete argument type determines the result type *before* checking the
-caller; every instantiated body is checked against that type. Inference also
-works through transitive imported forwarding calls and through forward local
-function declarations. Multiple return paths must agree for each instantiated
-type. An omitted result with an unsupported expression (such as a local binding
-or a record field/array element projection) is rejected with an explicit request
-to add `-> Type`. Cyclic inferred-result dependencies without an anchored rule
-are also rejected; annotate a return type to break the cycle. `main` still
-requires the explicit signature `main() -> i64`.
+left operand has an inferable result rule. Parameter-dependent results can also
+follow checked index reads (`values[!0]`, including dictionaries) and record
+fields (`box.items[!0].name`) across multiple levels. Inferred projection
+paths carry field **names**, not physical field offsets, and can be composed
+through local or imported forwarding calls. For parameter-dependent results,
+the caller's concrete argument type determines the result type *before*
+checking the caller; every instantiated body is checked against that type.
+Invalid projected types are diagnosed rather than treated as unspecified
+results. Inference also works through forward local function declarations.
+Multiple return paths must agree for each instantiated type. Local intermediate
+bindings and optional/unchecked index reads (`values[?0]`) still require an
+explicit `-> Type`. Cyclic inferred-result dependencies without an anchored
+rule are also rejected; annotate a return type to break the cycle. `main`
+still requires the explicit signature `main() -> i64`.
 
 An instance is cached by defining function identity and canonical concrete
 argument types; recursive calls of the same signature reuse the instance.
