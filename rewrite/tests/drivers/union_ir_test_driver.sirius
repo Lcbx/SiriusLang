@@ -61,4 +61,26 @@ def main() -> i64
 	let bad_source = entry(union.table, [IR.Constant(0, 1), IR.TagTest(1, 0, 0), IR.Return(0)], [IR.TYPE_I64, IR.TYPE_BOOL])
 	if IR.verify_module(bad_source) != "main: invalid match tag test"
 		return 17
+	let grouped = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.TagAny(3, 2, [0, 1]), IR.Branch(3, 7), IR.UnionFields(4, 2, [0, 1], [0, 0]), IR.Return(0), IR.Trap()], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_BOOL, IR.TYPE_I64])
+	if IR.verify_module(grouped) != "main: grouped match payload type mismatch"
+		return 18
+	let grouped_tag = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.TagAny(3, 2, [0, 1]), IR.Return(0)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_BOOL])
+	if IR.verify_module(grouped_tag) != "" or Emit.emit(grouped_tag).error != ""
+		return 19
+	let duplicate_group = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.TagAny(3, 2, [0, 0]), IR.Return(0)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_BOOL])
+	if IR.verify_module(duplicate_group) != "main: duplicate grouped match tag"
+		return 20
+	let bad_group_tag = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.TagAny(3, 2, [0, 2]), IR.Return(0)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_BOOL])
+	if IR.verify_module(bad_group_tag) != "main: invalid grouped match tag"
+		return 21
+	let bad_group_field = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.UnionFields(3, 2, [0, 1], [0, 1]), IR.Return(0)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(bad_group_field) != "main: invalid grouped match payload field"
+		return 22
+	let missing_group_field = entry(union.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 0), IR.UnionFields(3, 2, [0, 1], [0]), IR.Return(0)], [IR.TYPE_I64, integer.id, union.id, IR.TYPE_I64])
+	if IR.verify_module(missing_group_field) != "main: invalid grouped match payload read"
+		return 23
+	let both_integer = IR.intern_union(union.table, [IR.RecordField("First", integer.id), IR.RecordField("Second", integer.id)])
+	let good_group = entry(both_integer.table, [IR.Constant(0, 7), IR.MakeRecord(1, integer.id, [0]), IR.MakeUnion(2, 1, 1), IR.TagAny(3, 2, [0, 1]), IR.Branch(3, 7), IR.UnionFields(4, 2, [0, 1], [0, 0]), IR.Return(4), IR.Trap()], [IR.TYPE_I64, integer.id, both_integer.id, IR.TYPE_BOOL, IR.TYPE_I64])
+	if IR.verify_module(good_group) != "" or Emit.emit(good_group).error != ""
+		return 24
 	return 0

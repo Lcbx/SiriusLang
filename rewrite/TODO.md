@@ -200,12 +200,18 @@ missing lookups, managed defaults and shared updates are covered.
   tag tests/field extraction. Matched fields are owned copies with ARC/CoW;
   unreachable unmatched-tag paths trap. Covered by `tests/test_rewrite_match.py` and
   `tests/drivers/union_ir_test_driver.sirius`.
-- [ ] Add grouped alternatives, qualified patterns and shared compatible
-  payload binders, as required by [ir.sirius](src/ir.sirius). The checker should
-  resolve each group's canonical field indices once and confirm that shared
-  binders have compatible types before lowering.
-- [ ] Implement structural equality for the enum/record/union values used by the
-  compiler, without replacing structural types with nominal record identities.
+- [x] Add tag-only groups (`A | B`) and shared positional payload binders
+  (`(A | B)(x)`). The checker resolves each alternative's canonical field
+  indices and verifies identical binder types before lowering; native tagged
+  dispatch preserves managed ARC/CoW snapshots. Covered by
+  [test_rewrite_match.py](tests/test_rewrite_match.py) and IR verifier tests.
+- [ ] Add qualified match patterns (including imported alternatives). Nested
+  field patterns and wildcard/default arms are deferred.
+- [x] Implement `==` and `!=` for enums, records, tagged unions and optionals
+  using typed descriptors, without nominalizing records. Recursive record
+  fields compare arrays and dictionaries by value; direct collection comparison
+  remains reserved. Cover malformed typed IR, ARC and CoW snapshots in
+  `tests/test_rewrite_equality.py` and its IR driver.
 
 Exit check: the token/node enums and instruction union shapes can be declared,
 constructed and matched. Same-shaped labels stay distinct; nonexhaustive matches,

@@ -239,6 +239,60 @@ def union_definition(table: IR.TypeTable, type: i64) -> string
 	lines = lines.append("static inline void store_" + name + "(" + name + " *dst, " + name + " value) { release_" + name + "(*dst); *dst = value; }\n")
 	return "".join(lines)
 
+# Equality uses checked descriptors, never padding or pointer identity for
+# distinct aggregate values. Child helpers precede their parents by TypeId.
+def equal_value(table: IR.TypeTable, type: i64, left: string, right: string) -> string
+	if type == IR.TYPE_STRING
+		return "(s_string_compare(" + left + ", " + right + ") == 0)"
+	if IR.is_record(table, type)
+		return "equal_R" + str(type) + "(" + left + ", " + right + ")"
+	if IR.is_union(table, type)
+		return "equal_U" + str(type) + "(" + left + ", " + right + ")"
+	if IR.is_optional(table, type)
+		return "equal_O" + str(type) + "(" + left + ", " + right + ")"
+	if IR.is_array(table, type)
+		return "equal_A" + str(type) + "(" + left + ", " + right + ")"
+	if IR.is_dict(table, type)
+		return "equal_D" + str(type) + "(" + left + ", " + right + ")"
+	return "(" + left + " == " + right + ")"
+
+def equality_definition(table: IR.TypeTable, type: i64) -> string
+	if IR.is_record(table, type)
+		let name = "R" + str(type)
+		var lines = ["static inline bool equal_" + name + "(" + name + " a, " + name + " b) {\n"]
+		let fields = table.entries[!type].fields
+		if len(fields) == 0
+			lines = lines.append("(void)a; (void)b;\n")
+		for i in 0..len(fields)
+			lines = lines.append("if (!" + equal_value(table, fields[!i].type, "a.f" + str(i), "b.f" + str(i)) + ") return false;\n")
+		return "".join(lines) + "return true; }\n"
+	if IR.is_optional(table, type)
+		let name = "O" + str(type)
+		return "static inline bool equal_" + name + "(" + name + " a, " + name + " b) { if (a.has_value != b.has_value) return false; if (!a.has_value) return true; return " + equal_value(table, IR.optional_payload(table, type), "a.value", "b.value") + "; }\n"
+	if IR.is_union(table, type)
+		let name = "U" + str(type)
+		var lines = ["static inline bool equal_" + name + "(" + name + " a, " + name + " b) { if (a.tag != b.tag) return false; switch (a.tag) {\n"]
+		let alternatives = table.entries[!type].fields
+		for i in 0..len(alternatives)
+			lines = lines.append("case " + str(i) + ": return " + equal_value(table, alternatives[!i].type, "a.data.p" + str(i), "b.data.p" + str(i)) + ";\n")
+		return "".join(lines) + "default: s_panic(\"invalid union tag\"); } }\n"
+	if IR.is_array(table, type)
+		let element = IR.array_element(table, type)
+		let name = "equal_A" + str(type)
+		if not managed_array(table, type)
+			return "static inline bool " + name + "(const S_Array_i64 *a, const S_Array_i64 *b) { if (a == b) return true; if (!a || !b || a->length != b->length) return false; for (size_t i = 0; i < a->length; ++i) if (a->data[i] != b->data[i]) return false; return true; }\n"
+		let c = c_type(element, table)
+		let left = "*(" + c + "const *)s_array_at(a, (int64_t)i)"
+		let right = "*(" + c + "const *)s_array_at(b, (int64_t)i)"
+		return "static inline bool " + name + "(const S_Array *a, const S_Array *b) { if (a == b) return true; if (!a || !b || s_array_length(a) != s_array_length(b)) return false; for (size_t i = 0; i < s_array_length(a); ++i) if (!" + equal_value(table, element, left, right) + ") return false; return true; }\n"
+	if IR.is_dict(table, type)
+		let value = IR.dict_value(table, type)
+		let c = c_type(value, table)
+		let left = "*(" + c + "const *)s_dict_value_slot(a, cursor)"
+		let right = "*(" + c + "const *)found"
+		return "static inline bool equal_D" + str(type) + "(const S_Dict *a, const S_Dict *b) { if (a == b) return true; if (!a || !b || s_dict_length(a) != s_dict_length(b)) return false; int64_t cursor = -1; while ((cursor = s_dict_next_slot(a, cursor)) >= 0) { const void *found = s_dict_get(b, s_dict_key_slot(a, cursor)); if (!found || !" + equal_value(table, value, left, right) + ") return false; } return true; }\n"
+	return ""
+
 # Composite layout definitions are emitted in descriptor order: a record may
 # contain an optional and an optional may contain an earlier record.
 def value_definitions(table: IR.TypeTable) -> string
@@ -252,6 +306,7 @@ def value_definitions(table: IR.TypeTable) -> string
 			parts = parts.append(optional_definition(table, type))
 		elif IR.is_union(table, type)
 			parts = parts.append(union_definition(table, type))
+		parts = parts.append(equality_definition(table, type))
 	return "".join(parts)
 
 # Generic arrays need one copy/drop/get group per distinct element descriptor.
@@ -663,6 +718,13 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				lines = lines.append("if (" + condition + ") goto L" + str(target) + ";\n")
 			IR.Compare(dst, left, right, op)
 				lines = lines.append(slot(dst) + " = signed_value(" + slot(left) + ") " + op + " signed_value(" + slot(right) + ");\n")
+			IR.ValueCompare(dst, left, right, op)
+				let type = function.types[!left]
+				let same = equal_value(table, type, value_slot(left, type, table), value_slot(right, type, table))
+				if op == "!="
+					lines = lines.append(slot(dst) + " = !" + same + ";\n")
+				else
+					lines = lines.append(slot(dst) + " = " + same + ";\n")
 			IR.Branch(input, target)
 				lines = lines.append("if (!" + slot(input) + ") goto L" + str(target) + ";\n")
 			IR.Jump(target)
@@ -686,6 +748,14 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				if IR.is_union(table, function.types[!input])
 					value = value_slot(input, function.types[!input], table) + ".tag"
 				lines = lines.append(slot(dst) + " = " + value + " == UINT64_C(" + str(tag) + ");\n")
+			IR.TagAny(dst, input, tags)
+				var value = slot(input)
+				if IR.is_union(table, function.types[!input])
+					value = value_slot(input, function.types[!input], table) + ".tag"
+				var tests = Array[string]()
+				for tag in tags
+					tests = tests.append(value + " == UINT64_C(" + str(tag) + ")")
+				lines = lines.append(slot(dst) + " = " + " || ".join(tests) + ";\n")
 			IR.UnionField(dst, input, tag, field)
 				let type = function.types[!input]
 				let payload = IR.union_payload(table, type, tag)
@@ -693,6 +763,19 @@ def emit_function(function: IR.Function, id: i64, table: IR.TypeTable) -> string
 				let source = value_slot(input, type, table)
 				lines = lines.append("if (" + source + ".tag != UINT64_C(" + str(tag) + ")) s_panic(\"union match tag mismatch\");\n")
 				lines = lines.append(store_value(table, field_type, value_slot(dst, field_type, table), retain_value(table, field_type, source + ".data.p" + str(tag) + ".f" + str(field))))
+			IR.UnionFields(dst, input, tags, fields)
+				let type = function.types[!input]
+				let source = value_slot(input, type, table)
+				lines = lines.append("switch (" + source + ".tag) {\n")
+				for j in 0..len(tags)
+					let tag = tags[!j]
+					let payload = IR.union_payload(table, type, tag)
+					let field = fields[!j]
+					let field_type = table.entries[!payload].fields[!field].type
+					lines = lines.append("case " + str(tag) + ":\n")
+					lines = lines.append(store_value(table, field_type, value_slot(dst, field_type, table), retain_value(table, field_type, source + ".data.p" + str(tag) + ".f" + str(field))))
+					lines = lines.append("break;\n")
+				lines = lines.append("default: s_panic(\"union match tag mismatch\"); }\n")
 			IR.Trap
 				lines = lines.append("s_panic(\"invalid match tag\");\n")
 				fallthrough = false

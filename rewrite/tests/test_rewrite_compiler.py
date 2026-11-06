@@ -195,6 +195,7 @@ def main() -> None:
 			('var text = str(0)\n\tlet saved = text\n\tfor i in 0..4\n\t\ttext = str(i)\n\tprint(text)\n\tprint(saved)\n\treturn 0', b'3\n0\n'),
 		]
 		string_cases += [
+			('print("x".find("x") == "x".find("x"))\n\tprint("x".find("x") != "x".find("absent"))\n\treturn 0', b'true\ntrue\n'),
 			('print("abc".byte_at(0) or -1)\n\tprint("abc".byte_at(-1) or -1)\n\tprint("abc".byte_at(3) or -1)\n\tprint("".byte_at(0) or -1)\n\treturn 0', b'97\n-1\n-1\n-1\n'),
 			('print("Aé\\0".byte_at(1) or -1)\n\tprint("Aé\\0".byte_at(2) or -1)\n\tprint("Aé\\0".byte_at(3) or 99)\n\treturn 0', b'195\n169\n0\n'),
 			('print("abcabc".find("bc") or -1)\n\tprint("abc".find("a") or 99)\n\tprint("abc".find("z") or -1)\n\tprint("".find("") or 99)\n\tprint("abc".find("") or 99)\n\treturn 0', b'1\n0\n-1\n0\n0\n'),
@@ -209,7 +210,7 @@ def main() -> None:
 			'print("x".find("x", "y"))\n\treturn 0', 'print("x".find("x"))\n\treturn 0',
 			'eprint("x".byte_at(0))\n\treturn 0', 'return "x".find("x")',
 			'print("x".find("x") or false)\n\treturn 0', 'print("x".find("x") and true)\n\treturn 0',
-			'print("x".find("x") == "x".find("x"))\n\treturn 0', 'print("x".find("x") or unknown)\n\treturn 0',
+			'print("x".find("x") or unknown)\n\treturn 0',
 			'var found = "x".find("x")\n\tfound = 1\n\treturn 0', 'let x: Optional[string] = "x".find("x")\n\treturn 0',
 			'let x: i64 = "x".find("x")\n\treturn 0', 'let x: Optional[i64] = 1\n\treturn 0',
 		]

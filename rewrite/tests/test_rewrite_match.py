@@ -162,6 +162,110 @@ def main() -> i64
             print(n)
     return 0
 ''', b'value\noriginal\n'),
+    ('tag-only alternatives with heterogeneous payloads', '''rec Ok(code: i64)
+rec Text(text: string)
+rec Data(values: Array[i64])
+let Result = Ok | Text | Data
+def classify(value: Result) -> i64
+    match value
+        Ok | Data
+            return 10
+        Text
+            return 20
+def main() -> i64
+    print(classify(Result.Ok(Ok(3))))
+    print(classify(Result.Text(Text("message"))))
+    print(classify(Result.Data(Data([1, 2]))))
+    return 0
+''', b'10\n20\n10\n'),
+    ('shared binders follow each constructors declared field order', '''rec First(z: i64, a: string)
+rec Second(a: i64, z: string)
+let Layout = First | Second
+def show(value: Layout) -> i64
+    match value
+        (First | Second)(code, msg)
+            print(msg)
+            return code
+def main() -> i64
+    print(show(Layout.First(First(3, "one"))))
+    print(show(Layout.Second(Second(4, "two"))))
+    return 0
+''', b'one\n3\ntwo\n4\n'),
+    ('managed grouped binders preserve snapshots and nested matching', '''rec First(values: Array[string], text: string)
+rec Second(text: Array[string], values: string)
+rec Other(note: string)
+let Value = First | Second | Other
+def show(item: Value) -> i64
+    match item
+        (First | Second)(words, label)
+            var copy = words
+            copy[!0] = "changed"
+            print(words[!0])
+            print(copy[!0])
+            match item
+                First | Second
+                    print(label)
+                Other
+                    print("unexpected")
+            return len(words)
+        Other(text)
+            print(text)
+            return 0
+def main() -> i64
+    print(show(Value.First(First(["before"], "left"))))
+    print(show(Value.Second(Second(["right"], "right label"))))
+    return 0
+''', b'before\nchanged\nleft\n1\nright\nchanged\nright label\n1\n'),
+    ('grouped enum patterns and single parenthesized patterns', '''enum Color
+    Red
+    Green
+    Blue
+def classify(color: Color) -> i64
+    match color
+        (Red | Green)()
+            return 1
+        (Blue)
+            return 2
+def main() -> i64
+    print(classify(Color.Red()))
+    print(classify(Color.Green()))
+    print(classify(Color.Blue()))
+    return 0
+''', b'1\n1\n2\n'),
+    ('single evaluation with grouped branch and shared field', '''rec A(value: i64)
+rec B(value: i64)
+rec C(value: i64)
+let U = A | B | C
+def make() -> U
+    print(9)
+    return U.B(B(5))
+def main() -> i64
+    match make()
+        (A | B)(value)
+            print(value)
+        C(value)
+            print(value * 2)
+    return 0
+''', b'9\n5\n'),
+    ('grouped arms nested in a loop with break', '''rec One(value: i64)
+rec Two(value: i64)
+rec Other(value: i64)
+let U = One | Two | Other
+def main() -> i64
+    var total = 0
+    for i in 0..5
+        let value = U.Two(Two(i))
+        match value
+            (One | Two)(n)
+                if n == 4
+                    break
+                total += n
+            Other(n)
+                total += n
+    print(total)
+    return 0
+''', b'6\n'),
+
 ]
 
 INVALID = [
@@ -272,6 +376,115 @@ def main() -> i64
             print(1)
     return 0
 ''', b'non-exhaustive match'),
+    ('duplicate tags within group', '''enum Color
+    Red
+    Green
+def main() -> i64
+    match Color.Red()
+        Red | Red
+            print(1)
+        Green
+            print(2)
+    return 0
+''', b'duplicate match alternative'),
+    ('duplicate tags across groups', '''rec A()
+rec B()
+rec C()
+let U = A | B | C
+def main() -> i64
+    match U.A(A())
+        A | B
+            print(1)
+        B | C
+            print(2)
+    return 0
+''', b'duplicate match alternative'),
+    ('nonexhaustive grouped tags', '''enum C
+    A
+    B
+    C
+def main() -> i64
+    match C.A()
+        A | B
+            print(0)
+    return 0
+''', b'non-exhaustive match'),
+    ('unknown tag in group', '''enum C
+    A
+    B
+def main() -> i64
+    match C.A()
+        A | Missing
+            print(1)
+        B
+            print(2)
+    return 0
+''', b'unknown match alternative'),
+    ('incompatible shared binder types', '''rec A(n: i64)
+rec B(n: string)
+let U = A | B
+def main() -> i64
+    match U.A(A(1))
+        (A | B)(n)
+            print(n)
+    return 0
+''', b'grouped match binding types must agree'),
+    ('incompatible shared binder arity', '''rec A(a: i64)
+rec B(a: i64, b: i64)
+let U = A | B
+def main() -> i64
+    match U.A(A(1))
+        (A | B)(x)
+            print(x)
+    return 0
+''', b'match payload binding count mismatch'),
+    ('duplicate grouped binder', '''rec A(a: i64, b: i64)
+rec B(a: i64, b: i64)
+let U = A | B
+def main() -> i64
+    match U.A(A(1, 2))
+        (A | B)(x, x)
+            print(x)
+    return 0
+''', b'duplicate match binding'),
+    ('no grouped binder leaks into outer scope', '''rec A(a: i64)
+rec B(a: i64)
+let U = A | B
+def main() -> i64
+    match U.A(A(1))
+        (A | B)(x)
+            print(x)
+    print(x)
+    return 0
+''', b'unknown name'),
+    ('shared binders are immutable', '''rec A(a: i64)
+rec B(a: i64)
+let U = A | B
+def main() -> i64
+    match U.A(A(1))
+        (A | B)(x)
+            x = 2
+    return 0
+''', b'cannot assign to immutable binding'),
+    ('grouped enum cannot bind payload', '''enum E
+    A
+    B
+def main() -> i64
+    match E.A()
+        (A | B)(n)
+            print(n)
+    return 0
+''', b'enum match cannot bind fields'),
+    ('tag-only group cannot follow with unparenthesized binders', '''rec A(n: i64)
+rec B(n: i64)
+let U = A | B
+def main() -> i64
+    match U.A(A(1))
+        A | B(n)
+            print(n)
+    return 0
+''', b'grouped match bindings require parenthesized alternatives'),
+
 ]
 
 

@@ -80,8 +80,18 @@ nor an already-tagged union converts implicitly to another union alternative.
 
 This stage collects aliases after their record alternatives; references to a
 union type in an earlier record declaration, contextual conversion from a
-record constructor, bare constructor selection, and union equality are still
-unsupported. Exhaustive `match` is supported for enums and record-based unions:
+record constructor, and bare constructor selection are still unsupported.
+`==` and `!=` compare records, optionals, enums and unions structurally:
+records compare corresponding canonical fields, unions compare both their
+label and payload, and optionals distinguish absent from present values.
+Nested arrays and dictionaries compare their contents (dictionary insertion
+order is irrelevant), without copying or consuming owned payloads. Direct
+array and dictionary comparison remains disallowed. Ordered comparisons of
+these aggregate types are rejected. `tests/test_rewrite_equality.py` exercises
+native semantics, invalid programs and ARC; `tests/drivers/equality_ir_test_driver.sirius`
+checks typed instruction verification.
+
+Exhaustive `match` is supported for enums and record-based unions:
 
 ```sirius
 rec Meters(value: i64)
@@ -102,9 +112,16 @@ constructor field order (the compiler maps them to canonical field storage),
 are immutable and local to their arm, and own managed payload snapshots.
 A bare tag ignores the payload. The scrutinee is evaluated once; unmatched
 runtime tags trap rather than falling through. `match` also supports enum
-labels without payload binders. Grouped tags, shared binders, qualified
-patterns, nested field patterns and wildcard/default arms remain unsupported;
-these are needed before the rewrite can compile its own grouped IR matches.
+labels without payload binders. A tag-only group, `Meters | Feet`, shares one
+body even when the payload shapes differ. To bind fields across alternatives,
+use a parenthesized group: `(Meters | Feet)(n)`. The checker verifies the
+binding count for **each** alternative, requires corresponding binder types to
+be identical, and resolves canonical field offsets separately for each label.
+The shared body runs once for the selected tag and its managed binders own
+CoW-safe snapshots. `(Meters)(n)` and `(Red | Green)()` are also accepted;
+`Meters(n) | Feet(n)` is not a supported grouped pattern spelling.
+Qualified patterns, nested field patterns and wildcard/default arms remain
+unsupported.
 `python rewrite/tests/test_rewrite_unions.py` covers the native subset and ARC;
 `tests/drivers/union_ir_test_driver.sirius` checks type/IR verification.
 `python rewrite/tests/test_rewrite_enums.py` checks enum native execution, invalid
@@ -175,7 +192,7 @@ existing string/array retain/release operations. IR verification checks construc
 copy and update types and initialization. Nested records must refer to earlier
 declarations (cycles and forward references are not supported).
 Recursive or forward record references, record literals, constructor bodies,
-record equality and direct record formatting remain unimplemented.
+direct record formatting remains unimplemented.
 `python rewrite/tests/test_rewrite_records.py` covers native behavior,
 canonical aliases, constructor order, invalid records and managed-field ARC.
 
@@ -294,7 +311,7 @@ Nested interpolation, quoted strings and ordinary expressions work inside `${}`;
 Expressions retain the surrounding scope and original source positions. Strings
 remain single-line, without inline format specifiers. Interpolation lowers to
 formatting and ordinary string concatenation, with the same ownership rules.
-Optional comparison and direct optional printing remain unsupported.
+Direct optional printing remains unsupported.
 `str(Optional[T])` is currently available only for `T = i64`.
 Scalar-only C
 programs need no string slots.

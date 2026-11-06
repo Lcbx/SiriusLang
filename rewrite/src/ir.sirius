@@ -366,8 +366,12 @@ export rec MakeUnion(dst: i64, input: i64, tag: i64)
 export rec CopyUnion(dst: i64, input: i64)
 export rec UnionIndex(dst: i64, input: i64)
 export rec TagTest(dst: i64, input: i64, tag: i64)
+# A group tests tags together; its subject is evaluated only once.
+export rec TagAny(dst: i64, input: i64, tags: Array[i64])
 # Extract a canonical record field from the active union payload.
 export rec UnionField(dst: i64, input: i64, tag: i64, field: i64)
+# Each alternative selects its own canonical payload field; types must agree.
+export rec UnionFields(dst: i64, input: i64, tags: Array[i64], fields: Array[i64])
 export rec Trap()
 export rec Constant(dst: i64, value: i64)
 export rec Negate(dst: i64, input: i64)
@@ -414,6 +418,8 @@ export rec ReadField(dst: i64, input: i64, index: i64)
 # Mutate an owned record slot; earlier copies own independent struct values.
 export rec SetField(record: i64, index: i64, input: i64)
 export rec Compare(dst: i64, left: i64, right: i64, op: string)
+# Structural equality of owned, descriptor-typed values (without consuming them).
+export rec ValueCompare(dst: i64, left: i64, right: i64, op: string)
 export rec Branch(input: i64, target: i64)
 # Copy the left value on both edges; skip the right operand when it decides.
 export rec ShortCircuit(dst: i64, input: i64, target: i64, when_true: bool)
@@ -436,7 +442,7 @@ export rec OptionalCopy(dst: i64, input: i64)
 export rec OptionalUnwrap(dst: i64, input: i64)
 # Initializes the payload destination on both edges; only a present value skips fallback.
 export rec OptionalDefault(dst: i64, input: i64, target: i64)
-export let Instruction = EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | UnionField | Trap | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
+export let Instruction = EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Return | Call | Compare | ValueCompare | Branch | ShortCircuit | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | MakeOptional | OptionalCopy | OptionalDefault | OptionalUnwrap
 export rec Program(instructions: Array[Instruction], slots: i64, error: string, line: i64)
 export rec Function(name: string, body: Program, parameters: Array[i64], result: i64, types: Array[i64])
 export rec Module(functions: Array[Function], entry: i64, type_table: TypeTable, error: string, line: i64)
@@ -844,6 +850,41 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 				output_type = table.entries[!payload].fields[!field].type
 				inputs = [input]
 				input_types = [types[!input]]
+			TagAny(target, input, tags)
+				if not typed or not in_bounds(input, program.slots) or (not is_union(table, types[!input]) and not is_enum(table, types[!input])) or len(tags) == 0
+					return "invalid grouped match tag test"
+				for j in 0..len(tags)
+					let tag = tags[!j]
+					if tag < 0 or tag >= len(table.entries[!types[!input]].fields)
+						return "invalid grouped match tag"
+					for earlier in 0..j
+						if tags[!earlier] == tag
+							return "duplicate grouped match tag"
+				dst = target
+				writes = true
+				output_type = TYPE_BOOL
+				inputs = [input]
+				input_types = [types[!input]]
+			UnionFields(target, input, tags, fields)
+				if not typed or not in_bounds(input, program.slots) or not is_union(table, types[!input]) or len(tags) == 0 or len(tags) != len(fields)
+					return "invalid grouped match payload read"
+				output_type = NO_TYPE
+				for j in 0..len(tags)
+					let tag = tags[!j]
+					let payload = union_payload(table, types[!input], tag)
+					if payload == NO_TYPE or fields[!j] < 0 or fields[!j] >= len(table.entries[!payload].fields)
+						return "invalid grouped match payload field"
+					for earlier in 0..j
+						if tags[!earlier] == tag
+							return "duplicate grouped match tag"
+					let field_type = table.entries[!payload].fields[!fields[!j]].type
+					if output_type != NO_TYPE and output_type != field_type
+						return "grouped match payload type mismatch"
+					output_type = field_type
+				dst = target
+				writes = true
+				inputs = [input]
+				input_types = [types[!input]]
 			UnionIndex(target, input)
 				if not typed or not in_bounds(input, program.slots) or not is_union(table, types[!input])
 					return "union index requires union"
@@ -886,7 +927,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 					strings = FIRST_TWO_INPUTS_MASK
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
-			(Compare | StringCompare)(target, left, right, op)
+			(Compare | StringCompare | ValueCompare)(target, left, right, op)
 				dst = target
 				first = left
 				second = right
@@ -895,6 +936,11 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 					strings = FIRST_TWO_INPUTS_MASK
 				if not in_bounds(left, program.slots) or not in_bounds(right, program.slots)
 					return "undefined input slot"
+				if Instruction.index(instruction) == Instruction.index(ValueCompare)
+					if not typed or types[!left] != types[!right] or (not is_record(table, types[!left]) and not is_union(table, types[!left]) and not is_optional(table, types[!left]))
+						return "invalid structural comparison"
+					if op != "==" and op != "!="
+						return "invalid structural comparison operator"
 				if op != "==" and op != "!=" and op != "<" and op != "<=" and op != ">" and op != ">="
 					return "invalid comparison"
 			Output(input, type, stderr)
@@ -993,9 +1039,9 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			Not
 				output_type = boolean
 				input_types[!0] = boolean
-			Compare(target, left, right, op)
+			(Compare | ValueCompare)(target, left, right, op)
 				output_type = boolean
-				if typed and (types[!left] == boolean or is_enum(table, types[!left])) and (op == "==" or op == "!=")
+				if typed and (Instruction.index(instruction) == Instruction.index(ValueCompare) or ((types[!left] == boolean or is_enum(table, types[!left])) and (op == "==" or op == "!=")))
 					input_types = [types[!left], types[!left]]
 			StringCompare | StringStarts | StringEnds
 				output_type = boolean
@@ -1012,7 +1058,7 @@ def verify_body(program: Program, types: Array[i64], parameters: Array[i64], res
 			StringFormat(target, input, type)
 				if type == FormatType.Boolean(Boolean())
 					input_types[!0] = boolean
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | UnionField | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Negate | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Jump | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringSlice | StringByteAt | StringFind | StringJoin
 				if not runtime_type(table, output_type)
 					return "invalid instruction type"
 		if typed
@@ -1147,7 +1193,7 @@ export def prune(program: Program) -> Program
 				queue = queue.append(pc + 1)
 			Return | Trap
 				continue
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | UnionField | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				queue = queue.append(pc + 1)
 	var size = 0
 	for i in 0..count
@@ -1176,7 +1222,7 @@ export def prune(program: Program) -> Program
 				if target < 0 or target >= count
 					return Program([], 0, "invalid jump target", 0)
 				result = result.append(ShortCircuit(dst, input, ids[!target], when_true))
-			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | UnionField | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
+			EnumConstant | EnumIndex | MakeUnion | CopyUnion | UnionIndex | TagTest | TagAny | UnionField | UnionFields | Trap | MakeOptional | MakeDict | CopyDict | DictLength | DictInsert | DictRead | DictGet | DictNext | DictKey | MakeArray | CopyArray | ArrayLength | ArrayRead | ArrayGet | ArrayAppend | ArraySet | MakeRecord | CopyRecord | ReadField | SetField | Call | Constant | Negate | Not | Add | Subtract | Multiply | Divide | Remainder | BitAnd | BitOr | ShiftLeft | ShiftRight | Copy | Output | Compare | ValueCompare | Nop | Return | StringConstant | StringCopy | StringConcat | StringLength | StringCompare | StringSlice | StringStarts | StringEnds | StringFormat | StringByteAt | StringFind | StringJoin | OptionalCopy | OptionalUnwrap
 				result = result.append(instruction)
 	return Program(result, program.slots, "", 0)
 
@@ -1232,8 +1278,12 @@ export def rebase(instruction: Instruction, base: i64) -> Instruction
 			return UnionIndex(dst - base, input - base)
 		TagTest(dst, input, tag)
 			return TagTest(dst - base, input - base, tag)
+		TagAny(dst, input, tags)
+			return TagAny(dst - base, input - base, tags)
 		UnionField(dst, input, tag, field)
 			return UnionField(dst - base, input - base, tag, field)
+		UnionFields(dst, input, tags, fields)
+			return UnionFields(dst - base, input - base, tags, fields)
 		Trap
 			return Trap()
 		MakeOptional(dst, input)
@@ -1340,6 +1390,8 @@ export def rebase(instruction: Instruction, base: i64) -> Instruction
 			return StringJoin(dst - base, separator - base, parts - base)
 		Compare(dst, left, right, op)
 			return Compare(dst - base, left - base, right - base, op)
+		ValueCompare(dst, left, right, op)
+			return ValueCompare(dst - base, left - base, right - base, op)
 		StringCompare(dst, left, right, op)
 			return StringCompare(dst - base, left - base, right - base, op)
 		StringSlice(dst, input, start, end)

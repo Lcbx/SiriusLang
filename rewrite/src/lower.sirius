@@ -65,10 +65,27 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 		let node = parsed.nodes[!i]
 		match node.kind
 			Parser.MatchCase
-				instructions = instructions.append(IR.TagTest(i, node.left, checked.references[!i]))
+				instructions = instructions.append(IR.Nop())
+			Parser.MatchGroup
+				let first = parsed.nodes[!node.left]
+				if node.left == node.right
+					instructions = instructions.append(IR.TagTest(i, first.left, checked.references[!node.left]))
+				else
+					var tags = Array[i64]()
+					for case_id in node.left..node.right + 1
+						tags = tags.append(checked.references[!case_id])
+					instructions = instructions.append(IR.TagAny(i, first.left, tags))
 			Parser.MatchBind
-				let test = parsed.nodes[!node.right]
-				instructions = instructions.append(IR.UnionField(i, test.left, checked.references[!node.right], checked.references[!i]))
+				let group = parsed.nodes[!node.right]
+				let first = parsed.nodes[!group.left]
+				let fields = checked.match_fields.get(i) or Array[i64]()
+				if group.left == group.right
+					instructions = instructions.append(IR.UnionField(i, first.left, checked.references[!group.left], fields[!0]))
+				else
+					var tags = Array[i64]()
+					for case_id in group.left..group.right + 1
+						tags = tags.append(checked.references[!case_id])
+					instructions = instructions.append(IR.UnionFields(i, first.left, tags, fields))
 			Parser.MatchFail
 				instructions = instructions.append(IR.Trap())
 			Parser.MatchEnd
@@ -283,8 +300,11 @@ def lower_function(checked: Semantic.Checked, function_id: i64) -> IR.Program
 			Parser.Compare
 				let token = parsed.tokens[!node.token]
 				let op = source.slice(token.start, token.end)
-				if checked.types[!node.left] == IR.TYPE_STRING
+				let type = checked.types[!node.left]
+				if type == IR.TYPE_STRING
 					instructions = instructions.append(IR.StringCompare(i, node.left, node.right, op))
+				elif IR.is_record(checked.type_table, type) or IR.is_union(checked.type_table, type) or IR.is_optional(checked.type_table, type)
+					instructions = instructions.append(IR.ValueCompare(i, node.left, node.right, op))
 				else
 					instructions = instructions.append(IR.Compare(i, node.left, node.right, op))
 			Parser.If | Parser.While

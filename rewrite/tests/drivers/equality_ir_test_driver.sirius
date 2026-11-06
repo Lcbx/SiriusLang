@@ -1,0 +1,24 @@
+import ir alias IR
+import emit_c alias Emit
+
+def entry(table: IR.TypeTable, instructions: Array[IR.Instruction], slots: Array[i64]) -> IR.Module
+	return IR.Module([IR.Function("main", IR.Program(instructions, len(slots), "", 0), [], IR.TYPE_I64, slots)], 0, table, "", 0)
+
+def main() -> i64
+	let table = IR.intern_record(IR.runtime_types(), [IR.RecordField("x", IR.TYPE_I64)])
+	let good = entry(table.table, [IR.Constant(0, 7), IR.MakeRecord(1, table.id, [0]), IR.CopyRecord(2, 1), IR.ValueCompare(3, 1, 2, "=="), IR.Return(0)], [IR.TYPE_I64, table.id, table.id, IR.TYPE_BOOL])
+	if IR.verify_module(good) != "" or Emit.emit(good).error != ""
+		return 1
+	let wrong_source = entry(table.table, [IR.Constant(0, 1), IR.Constant(1, 2), IR.ValueCompare(2, 0, 1, "=="), IR.Return(0)], [IR.TYPE_I64, IR.TYPE_I64, IR.TYPE_BOOL])
+	if IR.verify_module(wrong_source) != "main: invalid structural comparison"
+		return 2
+	let wrong_output = entry(table.table, [IR.Constant(0, 1), IR.MakeRecord(1, table.id, [0]), IR.ValueCompare(2, 1, 1, "=="), IR.Return(0)], [IR.TYPE_I64, table.id, IR.TYPE_I64])
+	if IR.verify_module(wrong_output) != "main: slot type mismatch"
+		return 3
+	let wrong_op = entry(table.table, [IR.Constant(0, 1), IR.MakeRecord(1, table.id, [0]), IR.ValueCompare(2, 1, 1, "<"), IR.Return(0)], [IR.TYPE_I64, table.id, IR.TYPE_BOOL])
+	if IR.verify_module(wrong_op) != "main: invalid structural comparison operator"
+		return 4
+	let out_of_bounds = entry(table.table, [IR.Constant(0, 1), IR.MakeRecord(1, table.id, [0]), IR.ValueCompare(2, 1, 99, "=="), IR.Return(0)], [IR.TYPE_I64, table.id, IR.TYPE_BOOL])
+	if IR.verify_module(out_of_bounds) != "main: undefined input slot"
+		return 5
+	return 0
