@@ -258,8 +258,10 @@ invalid payloads and incompatible grouped binders fail.
   functions, including transitive imported forwarding, forward local calls,
   arithmetic, and multiple-return validation at instantiation. Checked
   index/field projection paths and compositions through imported calls are also
-  supported. Cyclic dependencies and local intermediate bindings still require
-  explicit results. Covered by `tests/test_rewrite_inferred_generics.py`
+  supported. Inference also follows unannotated immutable local bindings,
+  respecting shadowing and lexical scopes. Cyclic dependencies, mutable aliases,
+  and annotated locals still require explicit results.
+  Covered by `tests/test_rewrite_inferred_generics.py`
   with native ARC/CoW checks.
 - [ ] Extend inference to other computed aggregates, optional reads, and
   general recursive result dependencies; allow generic specialization in standalone

@@ -173,7 +173,7 @@ def append_projection(table: IR.TypeTable, rule: ResultRule, path: Array[string]
 		return ResultRule(projected_result(table, rule.type, path), -1, [])
 	return ResultRule(IR.NO_TYPE, -1, [])
 
-def inferred_expression(parsed: Parser.State, function: Parser.Function, expression: i64, signatures: Array[Signature], functions: Dict[string, i64], table: IR.TypeTable) -> ResultRule
+def inferred_expression(parsed: Parser.State, expression: i64, signatures: Array[Signature], functions: Dict[string, i64], table: IR.TypeTable, locals: Dict[string, ResultRule]) -> ResultRule
 	if expression < 0
 		return ResultRule(IR.NO_TYPE, -1, [])
 	let node = parsed.nodes[!expression]
@@ -188,17 +188,14 @@ def inferred_expression(parsed: Parser.State, function: Parser.Function, express
 	if Parser.kind_is(node.kind, Parser.Negate()) or Parser.kind_is(node.kind, Parser.Subtract()) or Parser.kind_is(node.kind, Parser.Multiply()) or Parser.kind_is(node.kind, Parser.Divide()) or Parser.kind_is(node.kind, Parser.Remainder()) or Parser.kind_is(node.kind, Parser.BitAnd()) or Parser.kind_is(node.kind, Parser.BitOr()) or Parser.kind_is(node.kind, Parser.ShiftLeft()) or Parser.kind_is(node.kind, Parser.ShiftRight())
 		return ResultRule(IR.TYPE_I64, -1, [])
 	if Parser.kind_is(node.kind, Parser.Add())
-		return inferred_expression(parsed, function, node.left, signatures, functions, table)
+		return inferred_expression(parsed, node.left, signatures, functions, table, locals)
 	if Parser.kind_is(node.kind, Parser.Variable())
-		for i in 0..len(function.parameters)
-			let parameter = parsed.nodes[!function.parameters[!i]]
-			if name(parsed, parameter.token) == name(parsed, node.token)
-				return ResultRule(IR.NO_TYPE, i, [])
+		return locals.get(name(parsed, node.token)) or ResultRule(IR.NO_TYPE, -1, [])
 	if Parser.kind_is(node.kind, Parser.ArrayRead())
-		let base = inferred_expression(parsed, function, node.left, signatures, functions, table)
+		let base = inferred_expression(parsed, node.left, signatures, functions, table, locals)
 		return append_projection(table, base, [""])
 	if Parser.kind_is(node.kind, Parser.FieldRead())
-		let base = inferred_expression(parsed, function, node.left, signatures, functions, table)
+		let base = inferred_expression(parsed, node.left, signatures, functions, table, locals)
 		return append_projection(table, base, [name(parsed, node.token)])
 	if Parser.kind_is(node.kind, Parser.Call())
 		let target = functions.get(call_name(parsed, expression)) or -1
@@ -212,16 +209,52 @@ def inferred_expression(parsed: Parser.State, function: Parser.Function, express
 				while argument >= 0
 					position -= 1
 					if position == signature.result_parameter
-						let rule = inferred_expression(parsed, function, parsed.nodes[!argument].left, signatures, functions, table)
+						let rule = inferred_expression(parsed, parsed.nodes[!argument].left, signatures, functions, table, locals)
 						return append_projection(table, rule, signature.result_path)
 					argument = parsed.nodes[!argument].right
 	return ResultRule(IR.NO_TYPE, -1, [])
 
+# Resolve immutable aliases in statement order. Scope snapshots mirror the
+# checker's If/Else/EndIf and loop scopes; no inferred rule crosses a branch
+# or loop boundary. A mutable binding or match binder shadows earlier rules
+# without claiming a stable inferred value.
 def inferred_result(parsed: Parser.State, function: Parser.Function, signatures: Array[Signature], functions: Dict[string, i64], table: IR.TypeTable) -> ResultRule
+	var locals = Dict[string, ResultRule]()
+	for position in 0..len(function.parameters)
+		let parameter = parsed.nodes[!function.parameters[!position]]
+		locals = locals.insert(name(parsed, parameter.token), ResultRule(IR.NO_TYPE, position, []))
+	var scopes = Array[Dict[string, ResultRule]]()
+	var depth = 0
 	for i in function.start..function.end
 		let node = parsed.nodes[!i]
 		if Parser.kind_is(node.kind, Parser.Return())
-			return inferred_expression(parsed, function, node.left, signatures, functions, table)
+			return inferred_expression(parsed, node.left, signatures, functions, table, locals)
+		if Parser.kind_is(node.kind, Parser.Binding())
+			var rule = ResultRule(IR.NO_TYPE, -1, [])
+			# An annotation can change an aggregate's representation through
+			# contextual injection/rewrapping. Do not reuse the source's rule.
+			if node.right < 0
+				rule = inferred_expression(parsed, node.left, signatures, functions, table, locals)
+			locals = locals.insert(name(parsed, node.token), rule)
+		elif Parser.kind_is(node.kind, Parser.MutableBinding()) or Parser.kind_is(node.kind, Parser.MatchBind())
+			locals = locals.insert(name(parsed, node.token), ResultRule(IR.NO_TYPE, -1, []))
+		elif Parser.kind_is(node.kind, Parser.If()) or Parser.kind_is(node.kind, Parser.While()) or Parser.kind_is(node.kind, Parser.RangeBinding()) or Parser.kind_is(node.kind, Parser.ArrayIndex())
+			if depth == len(scopes)
+				scopes = scopes.append(locals)
+			else
+				scopes[!depth] = locals
+			depth += 1
+			if Parser.kind_is(node.kind, Parser.RangeBinding()) or Parser.kind_is(node.kind, Parser.ArrayIndex())
+				locals = locals.insert(name(parsed, node.token), ResultRule(IR.NO_TYPE, -1, []))
+		elif Parser.kind_is(node.kind, Parser.ArrayElement())
+			locals = locals.insert(name(parsed, node.token), ResultRule(IR.NO_TYPE, -1, []))
+		elif Parser.kind_is(node.kind, Parser.Else())
+			if depth > 0
+				locals = scopes[!depth - 1]
+		elif Parser.kind_is(node.kind, Parser.EndIf()) or Parser.kind_is(node.kind, Parser.EndWhile())
+			if depth > 0
+				depth -= 1
+				locals = scopes[!depth]
 	return ResultRule(IR.NO_TYPE, -1, [])
 
 # Concrete compilation checks only non-generic bodies. A selected specialization

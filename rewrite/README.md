@@ -66,14 +66,19 @@ left operand has an inferable result rule. Parameter-dependent results can also
 follow checked index reads (`values[!0]`, including dictionaries) and record
 fields (`box.items[!0].name`) across multiple levels. Inferred projection
 paths carry field **names**, not physical field offsets, and can be composed
-through local or imported forwarding calls. For parameter-dependent results,
+through local or imported forwarding calls. Immutable local bindings can
+carry these rules across several declarations (`let item = box.items[!0]`;
+`return item.name`). Inference follows source order and respects conditional,
+match-arm, and loop scopes, including shadowed names. For parameter-dependent results,
 the caller's concrete argument type determines the result type *before*
 checking the caller; every instantiated body is checked against that type.
 Invalid projected types are diagnosed rather than treated as unspecified
 results. Inference also works through forward local function declarations.
-Multiple return paths must agree for each instantiated type. Local intermediate
-bindings and optional/unchecked index reads (`values[?0]`) still require an
-explicit `-> Type`. Cyclic inferred-result dependencies without an anchored
+Multiple return paths must agree for each instantiated type. Mutable
+aliases, explicitly annotated local bindings (which can perform conversions),
+local aggregate literals without an inferable rule, and optional/unchecked
+index reads (`values[?0]`) still require an explicit `-> Type` in these
+cases. Cyclic inferred-result dependencies without an anchored
 rule are also rejected; annotate a return type to break the cycle. `main`
 still requires the explicit signature `main() -> i64`.
 

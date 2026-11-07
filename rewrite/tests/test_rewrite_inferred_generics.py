@@ -195,7 +195,6 @@ def main() -> i64
 ]
 
 INVALID = [
-    ({'Lib': 'export def unsupported(x)\n    let y = x\n    return y\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.unsupported(1)\n'}, 'cannot infer function result'),
     ({'Lib': 'export def broken(x)\n    return broken(x)\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.broken(1)\n'}, 'cannot infer function result'),
     ({'Lib': 'export def choose(x, flag: bool)\n    if flag\n        return x\n    return 4\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.choose("word", true))\n    return 0\n'}, 'return type mismatch'),
     ({'Lib': 'export def echo(x)\n    return x\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.echo("not i64")\n'}, 'return type mismatch'),
@@ -208,6 +207,120 @@ INVALID = [
     ({'Lib': 'export def head(x)\n    return x[!"wrong"]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.head([1, 2]))\n    return 0\n'}, 'checked array read requires array and i64 index'),
     ({'Lib': 'export def unsupported(x)\n    return x[?0]\n', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.unsupported([1])\n'}, 'cannot infer function result'),
 ]
+
+
+# Local immutable alias inference, including nested projections, forwarding,
+# managed snapshots, and names shadowed inside branches or loops.
+VALID.extend([
+    ({'Lib': '''export def identity(value)
+    let alias = value
+    return alias
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    print(L.identity(1))
+    print(L.identity("hello"))
+    return 0
+'''}, b'1\nhello\n', 3),
+    ({'Lib': '''export def name(box)
+    let element = box.items[!0]
+    let result = element.name
+    return result
+''', 'Main': '''import Lib alias L
+rec Item(name: string)
+rec Box(items: Array[Item])
+def main() -> i64
+    let box = Box([Item("alpha")])
+    print(L.name(box))
+    return 0
+'''}, b'alpha\n', 2),
+    ({'Lib': '''export def entry(mapping)
+    let alias = mapping
+    let value = alias[!"key"]
+    return value
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    let mapping = Dict[string, string]().insert("key", "data")
+    print(L.entry(mapping))
+    return 0
+'''}, b'data\n', 2),
+    ({'Lib': '''export def part(box)
+    let alias = box
+    let elements = alias.items
+    return elements[!0].name
+export def forwarded(box)
+    let value = part(box)
+    return value
+''', 'Main': '''import Lib alias L
+rec Item(name: string)
+rec Box(items: Array[Item])
+def main() -> i64
+    var items = [Item("old")]
+    let box = Box(items)
+    items[!0] = Item("new")
+    print(L.forwarded(box))
+    return 0
+'''}, b'old\n', 3),
+    ({'Lib': '''export def head(values, flag: bool)
+    if flag
+        let values = "inner"
+        let result = values
+        return result
+    let result = values[!0]
+    return result
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    print(L.head(["outer"], true))
+    print(L.head(["outer"], false))
+    return 0
+'''}, b'inner\nouter\n', 2),
+    ({'Lib': '''export def outer(values)
+    for values in 0..2
+        print(values)
+    let result = values[!0]
+    return result
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    print(L.outer(["outer"]))
+    return 0
+'''}, b'0\n1\nouter\n', 2),
+    ({'Lib': '''export def first(values)
+    let alias = values
+    return choose(alias)
+def choose(values)
+    let item = values[!0]
+    return item
+''', 'Main': '''import Lib alias L
+def main() -> i64
+    print(L.first([42]))
+    return 0
+'''}, b'42\n', 3),
+])
+INVALID.extend([
+    ({'Lib': '''export def mutable(values)
+    var item = values[!0]
+    return item
+''', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.mutable([1])\n'}, 'cannot infer function result'),
+    ({'Lib': '''export def escape(values)
+    if true
+        let item = values[!0]
+    return item
+''', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.escape([1])\n'}, 'cannot infer function result'),
+    ({'Lib': '''export def shadow(value, flag: bool)
+    if flag
+        let value = 3
+        return value
+    return value
+''', 'Main': 'import Lib alias L\ndef main() -> i64\n    print(L.shadow("text", true))\n    return 0\n'}, 'return type mismatch'),
+    ({'Lib': '''export def forward(value)
+    let earlier = later
+    let later = value
+    return earlier
+''', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.forward(2)\n'}, 'cannot infer function result'),
+    ({'Lib': '''export def wrong(value)
+    let item = value[!0]
+    return item
+''', 'Main': 'import Lib alias L\ndef main() -> i64\n    return L.wrong(12)\n'}, 'invalid inferred result projection'),
+])
 
 
 def run(*args):
